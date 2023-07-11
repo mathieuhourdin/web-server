@@ -1,0 +1,67 @@
+use reqwest;
+use reqwest::Error as ReqwestError;
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+
+const BASE_URL: &str = "http://admin:password@127.0.0.1:5984";
+
+#[derive(Serialize, Deserialize)]
+pub struct UuidsResponse {
+    pub uuids: Vec<String>
+}
+
+impl UuidsResponse {
+    pub fn get_one(&self) -> String {
+        self.uuids[0].clone()
+    }
+}
+
+pub async fn health_check() -> Result<String, ReqwestError> {
+    let response = reqwest::get("http://127.0.0.1:5984").await?;
+    let body = response.text().await?;
+    println!("Body : {}", body);
+    Ok(body)
+}
+
+pub async fn get_new_uuids() -> Result<UuidsResponse, ReqwestError> {
+    let full_url = format!("{BASE_URL}{}", "/_uuids");
+    reqwest::get(full_url).await?.json::<UuidsResponse>().await
+}
+
+
+pub async fn get_new_uuid() -> Result<String, ReqwestError> {
+    let new_uuids = get_new_uuids().await;
+
+    match new_uuids {
+        Err(err) => Err(err),
+        Ok(value) => Ok(value.get_one()),
+    }
+}
+
+pub async fn create_article(article_content: &String) -> Result<String, ReqwestError> {
+    let uuid = get_new_uuid().await?;
+    let mut body = HashMap::new();
+    body.insert("article", article_content);
+    let client = reqwest::Client::new();
+    let response = client.put(format!("{BASE_URL}/articles/{uuid}"))
+        .json(&body)
+        .send()
+        .await?;
+    let response_body = response.text().await?;
+    Ok(response_body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn test_database_is_up() {
+        health_check().await.expect("database should be up");
+    }
+
+    #[tokio::test]
+    async fn test_get_new_uuid() {
+        let new_uuid = get_new_uuid().await.expect("we should retrieve a uuid");
+        assert_eq!(new_uuid.len(), 32);
+    }
+}
