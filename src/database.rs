@@ -38,6 +38,12 @@ pub async fn get_new_uuid() -> Result<String, ReqwestError> {
     }
 }
 
+pub async fn get_article(article_uuid: &str) -> Result<String, ReqwestError> {
+    println!("Article uuid : {article_uuid}");
+    let full_url = format!("{BASE_URL}/articles/{article_uuid}");
+    reqwest::get(full_url).await?.text().await
+}
+
 pub async fn create_article(article_content: &String) -> Result<String, ReqwestError> {
     let uuid = get_new_uuid().await?;
     let mut body = HashMap::new();

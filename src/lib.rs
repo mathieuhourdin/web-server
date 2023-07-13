@@ -50,11 +50,19 @@ impl HttpRequest {
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
-    let mut buffer = [0; 1024];
+    let mut request = String::new();
 
-    let read_bytes = stream.read(&mut buffer).unwrap();
+    loop {
+        let mut buffer = [0; 1024];
 
-    let request = String::from(String::from_utf8_lossy(&buffer[..read_bytes]));
+        let read_bytes = stream.read(&mut buffer).unwrap();
+
+        request += &String::from(String::from_utf8_lossy(&buffer[..read_bytes]))[..];
+
+        if read_bytes < 1024 {
+            break;
+        }
+    }
 
     println!("Request is : {request}");
 
@@ -88,7 +96,8 @@ async fn response_from_file(status_code: u32, file_name: &str) -> (String, Strin
 
 async fn get_article_route(article_uuid: &str) -> (String, String) {
     println!("Article uuid : {article_uuid}");
-    (String::new(), String::new())
+    let uuid = article_uuid.split("/").collect::<Vec<&str>>()[2];
+    (format_status_line_from_code(200), database::get_article(uuid).await.unwrap())
 }
 
 async fn post_articles_route(body: &String) -> (String, String) {
@@ -112,6 +121,7 @@ fn sleep_route() -> (String, String) {
     (String::from(format_status_line_from_code(200)), String::from("hello.html"))
 }
 
+// should use a struct constructor instead
 fn format_status_line_from_code(status_code: u32) -> String {
     String::from(match status_code {
         200 => "HTTP/1.1 200 OK",
