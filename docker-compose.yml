@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  web-server:
+    build: .
+    ports:
+      - "7878:7878"
+    volumes:
+      - ./:/usr/src/app
+    command: bash -c "cargo watch -x run"
+  db:
+    image: "couchdb"
+    ports: 
+      - "5984:5984"
+    environment:
+      COUCHDB_USER: "admin"
+      COUCHDB_PASSWORD: "password"

@@ -3,7 +3,7 @@ use reqwest::Error as ReqwestError;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-const BASE_URL: &str = "http://admin:password@127.0.0.1:5984";
+const BASE_URL: &str = "http://admin:password@172.17.0.1:5984";
 
 #[derive(Serialize, Deserialize)]
 pub struct UuidsResponse {
@@ -17,7 +17,7 @@ impl UuidsResponse {
 }
 
 pub async fn health_check() -> Result<String, ReqwestError> {
-    let response = reqwest::get("http://127.0.0.1:5984").await?;
+    let response = reqwest::get("http://172.17.0.1:5984").await?;
     let body = response.text().await?;
     println!("Body : {}", body);
     Ok(body)

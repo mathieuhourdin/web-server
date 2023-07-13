@@ -56,7 +56,7 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
     let request = String::from(String::from_utf8_lossy(&buffer[..read_bytes]));
 
-    println!("Request : {request}");
+    println!("Request is : {request}");
 
     let http_request = HttpRequest::from(&request);
 
@@ -82,9 +82,7 @@ async fn response_from_request(request: HttpRequest) -> (String, String) {
 }
 
 async fn response_from_file(status_code: u32, file_name: &str) -> (String, String) {
-    println!("Response from file");
-    let response = database::health_check().await.unwrap();
-    println!("Response : {response}");
+    println!("Response from file route");
     (format_status_line_from_code(status_code), fs::read_to_string(file_name).unwrap())
 }
 
