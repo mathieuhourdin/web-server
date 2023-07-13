@@ -2,6 +2,7 @@ use reqwest;
 use reqwest::Error as ReqwestError;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
+use crate::entities::article::Article;
 
 const BASE_URL: &str = "http://admin:password@172.17.0.1:5984";
 
@@ -38,19 +39,20 @@ pub async fn get_new_uuid() -> Result<String, ReqwestError> {
     }
 }
 
-pub async fn get_article(article_uuid: &str) -> Result<String, ReqwestError> {
+pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
     println!("Article uuid : {article_uuid}");
     let full_url = format!("{BASE_URL}/articles/{article_uuid}");
-    reqwest::get(full_url).await?.text().await
+    reqwest::get(full_url).await?.json::<Article>().await
 }
 
-pub async fn create_article(article_content: &String) -> Result<String, ReqwestError> {
+pub async fn create_article(article: &mut Article) -> Result<String, ReqwestError> {
     let uuid = get_new_uuid().await?;
-    let mut body = HashMap::new();
-    body.insert("article", article_content);
+    article.uuid = Some(uuid.clone());
+    let payload = &serde_json::to_string(&article).unwrap();
+    println!("Payload: {payload}");
     let client = reqwest::Client::new();
     let response = client.put(format!("{BASE_URL}/articles/{uuid}"))
-        .json(&body)
+        .json::<Article>(article)
         .send()
         .await?;
     let response_body = response.text().await?;

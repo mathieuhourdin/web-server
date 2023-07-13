@@ -4,10 +4,12 @@ use std::fs;
 use std::thread;
 use std::time::Duration;
 use std::collections::HashMap;
+use serde_json;
 
 pub mod threadpool;
 pub mod httpclient;
 pub mod database;
+pub mod entities;
 
 pub struct HttpRequest {
     pub method: String,
@@ -97,18 +99,15 @@ async fn response_from_file(status_code: u32, file_name: &str) -> (String, Strin
 async fn get_article_route(article_uuid: &str) -> (String, String) {
     println!("Article uuid : {article_uuid}");
     let uuid = article_uuid.split("/").collect::<Vec<&str>>()[2];
-    (format_status_line_from_code(200), database::get_article(uuid).await.unwrap())
+    (format_status_line_from_code(200), serde_json::to_string(&database::get_article(uuid).await.unwrap()).unwrap())
 }
 
 async fn post_articles_route(body: &String) -> (String, String) {
-    let content;
-    let default = &String::from("Sample article");
-    if body.len() > 0 {
-        content = body;
-    } else {
-        content = default;
+
+    match serde_json::from_str(&body[..]) {
+        Ok(mut article) => (format_status_line_from_code(200), database::create_article(&mut article).await.unwrap()),
+        Err(err) => return (format_status_line_from_code(400), format!("Error with the payload : {:#?}", err)),
     }
-    (format_status_line_from_code(200), database::create_article(content).await.unwrap())
 }
 
 fn post_mathilde_route() -> (String, String) {
@@ -127,6 +126,7 @@ fn format_status_line_from_code(status_code: u32) -> String {
         200 => "HTTP/1.1 200 OK",
         201 => "HTTP/1.1 201 CREATED",
         404 => "HTTP/1.1 404 NOT FOUND",
+        400 => "HTTP/1.1 400 BAD REQUEST",
         _ => panic!("Supposed to have a known status code")
     })
 }
