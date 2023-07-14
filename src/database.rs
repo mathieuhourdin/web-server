@@ -1,6 +1,5 @@
 use reqwest;
 use reqwest::Error as ReqwestError;
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use crate::entities::article::Article;
 
