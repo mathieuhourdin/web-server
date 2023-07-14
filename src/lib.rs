@@ -14,23 +14,23 @@ pub mod http;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
-    let mut request = String::new();
+    let mut string_request = String::new();
 
     loop {
         let mut buffer = [0; 1024];
 
         let read_bytes = stream.read(&mut buffer).unwrap();
 
-        request += &String::from(String::from_utf8_lossy(&buffer[..read_bytes]))[..];
+        string_request += &String::from(String::from_utf8_lossy(&buffer[..read_bytes]))[..];
 
         if read_bytes < 1024 {
             break;
         }
     }
 
-    println!("Request is : {request}");
+    println!("Request is : {string_request}");
 
-    let http_request = HttpRequest::from(&request);
+    let http_request = HttpRequest::from(&string_request);
 
     let http_response: HttpResponse = response_from_request(http_request).await;
 
@@ -39,13 +39,13 @@ pub async fn handle_connection(mut stream: TcpStream) {
 }
 
 async fn response_from_request(request: HttpRequest) -> HttpResponse {
-    match (&request.method[..], &request.uri[..]) {
-        ("GET", "/") => response_from_file(StatusCode::Ok, "hello.html").await,
-        ("GET", "/mathilde") => response_from_file(StatusCode::Ok, "mathilde.html").await,
-        ("POST", "/mathilde") => post_mathilde_route(),
-        ("POST", "/articles") => post_articles_route(&request.body).await,
-        ("GET",_) if request.uri[..].starts_with("/articles/") => get_article_route(&request.uri[..]).await,
-        ("GET", "/sleep") => sleep_route(),
+    match (&request.method[..], &request.parsed_uri()[..]) {
+        ("GET", []) => response_from_file(StatusCode::Ok, "hello.html").await,
+        ("GET", ["mathilde"]) => response_from_file(StatusCode::Ok, "mathilde.html").await,
+        ("POST", ["mathilde"]) => post_mathilde_route(),
+        ("POST", ["articles"]) => post_articles_route(&request.body).await,
+        ("GET", ["articles", uuid]) => get_article_route(uuid).await,
+        ("GET", ["sleep"]) => sleep_route(),
         _ => response_from_file(StatusCode::NotFound, "404.html").await
     }
 }
@@ -57,11 +57,10 @@ async fn response_from_file(status_code: StatusCode, file_name: &str) -> HttpRes
 
 async fn get_article_route(article_uuid: &str) -> HttpResponse {
     println!("Article uuid : {article_uuid}");
-    let uuid = article_uuid.split("/").collect::<Vec<&str>>()[2];
     HttpResponse::from(
         StatusCode::Ok,
         HashMap::new(),
-        serde_json::to_string(&database::get_article(uuid)
+        serde_json::to_string(&database::get_article(article_uuid)
             .await
             .unwrap())
         .unwrap())

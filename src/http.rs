@@ -21,6 +21,7 @@ impl HttpRequest {
         let first_row = first_part[0].split(" ").collect::<Vec<&str>>();
         let method = String::from(first_row[0]);
         let uri = String::from(first_row[1]);
+
         println!("Method : {method}");
 
         let mut headers = HashMap::new();
@@ -36,6 +37,10 @@ impl HttpRequest {
         }
 
         HttpRequest { method, uri, headers, body }
+    }
+
+    pub fn parsed_uri(&self) -> Vec<&str> {
+        self.uri[1..].split("/").collect::<Vec<&str>>()
     }
 }
 
