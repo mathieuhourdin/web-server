@@ -1,6 +1,5 @@
 use std::net::{TcpStream};
 use std::io::{prelude::*};
-use std::fs;
 use std::thread;
 use std::time::Duration;
 use serde_json;
@@ -40,19 +39,14 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
 async fn response_from_request(request: HttpRequest) -> HttpResponse {
     match (&request.method[..], &request.parsed_uri()[..]) {
-        ("GET", []) => response_from_file(StatusCode::Ok, "hello.html").await,
-        ("GET", ["mathilde"]) => response_from_file(StatusCode::Ok, "mathilde.html").await,
+        ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
+        ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
         ("POST", ["mathilde"]) => post_mathilde_route(),
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
-        _ => response_from_file(StatusCode::NotFound, "404.html").await
+        _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
-}
-
-async fn response_from_file(status_code: StatusCode, file_name: &str) -> HttpResponse {
-    println!("Response from file route");
-    HttpResponse::from(status_code, HashMap::new(), fs::read_to_string(file_name).unwrap())
 }
 
 async fn get_article_route(article_uuid: &str) -> HttpResponse {

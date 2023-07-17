@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 
 pub struct HttpRequest {
     pub method: String,
@@ -53,6 +54,10 @@ pub struct HttpResponse {
 impl HttpResponse {
     pub fn from(status_code: StatusCode, headers: HashMap<String, String>, body: String) -> HttpResponse {
         HttpResponse { status_code, headers, body }
+    }
+
+    pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
+        HttpResponse::from(status_code, HashMap::new(), fs::read_to_string(file_path).unwrap())
     }
 
     pub fn to_stream(&self) -> String {
