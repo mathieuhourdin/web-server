@@ -57,13 +57,19 @@ impl HttpResponse {
     }
 
     pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
-        HttpResponse::from(status_code, HashMap::new(), fs::read_to_string(file_path).unwrap())
+        let mut headers = HashMap::new();
+        headers.insert(String::from("Set-Cookie"), String::from("coucou=true;"));
+        HttpResponse::from(status_code, headers, fs::read_to_string(file_path).unwrap())
     }
 
     pub fn to_stream(&self) -> String {
         let status_line = self.status_code.to_status_line();
         let content_size = self.body.len();
-        format!("{status_line}\r\nContent-Length: {content_size}\r\n\r\n{}", self.body)
+        let mut headers_string = String::new();
+        for (key, value) in &self.headers {
+            headers_string += &format!("\r\n{key}: {value}")[..];
+        }
+        format!("{status_line}{headers_string}\r\nContent-Length: {content_size}\r\n\r\n{}", self.body)
     }
 }
 
