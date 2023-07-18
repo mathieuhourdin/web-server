@@ -1,7 +1,7 @@
 use reqwest;
 use reqwest::Error as ReqwestError;
 use serde::{Serialize, Deserialize};
-use crate::entities::article::Article;
+use crate::entities::{article::Article, user::User};
 
 const BASE_URL: &str = "http://admin:password@172.17.0.1:5984";
 
@@ -36,6 +36,24 @@ pub async fn get_new_uuid() -> Result<String, ReqwestError> {
         Err(err) => Err(err),
         Ok(value) => Ok(value.get_one()),
     }
+}
+
+pub async fn create_user(user : &mut User) -> Result<String, ReqwestError> {
+    let uuid = get_new_uuid().await?;
+    user.uuid = Some(uuid.clone());
+    let client = reqwest::Client::new();
+    let response = client
+        .put(format!("{BASE_URL}/users/{uuid}"))
+        .json::<User>(user)
+        .send()
+        .await?;
+    let response_body = response.text().await?;
+    Ok(response_body)
+}
+
+pub async fn get_user_by_uuid(uuid: &str) -> Result<User, ReqwestError> {
+    let full_url = format!("{BASE_URL}/users/{uuid}");
+    reqwest::get(full_url).await?.json::<User>().await
 }
 
 pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {

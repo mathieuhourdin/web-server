@@ -41,12 +41,36 @@ async fn response_from_request(request: HttpRequest) -> HttpResponse {
     match (&request.method[..], &request.parsed_uri()[..]) {
         ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
+        ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
+        ("POST", ["users"]) => post_user(&request).await,
         ("POST", ["mathilde"]) => post_mathilde_route(),
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
+}
+
+async fn post_user(request: &HttpRequest) -> HttpResponse {
+    match serde_json::from_str(&request.body[..]) {
+        Ok(mut user) => HttpResponse::from(
+            StatusCode::Created,
+            HashMap::new(),
+            database::create_user(&mut user).await.unwrap()
+        ),
+        Err(err) => HttpResponse::from(
+            StatusCode::BadRequest,
+            HashMap::new(),
+            format!("Error with the payload: {:#?}", err))
+    }
+}
+
+async fn get_user_by_uuid(user_uuid: &str) -> HttpResponse {
+    HttpResponse::from(
+        StatusCode::Ok,
+        HashMap::new(),
+        serde_json::to_string(&database::get_user_by_uuid(user_uuid).await.unwrap()).unwrap()
+        )
 }
 
 async fn get_article_route(article_uuid: &str) -> HttpResponse {
