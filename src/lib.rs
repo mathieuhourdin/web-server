@@ -5,11 +5,13 @@ use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode};
 use std::collections::HashMap;
+use entities::user::User;
 
 pub mod threadpool;
 pub mod database;
 pub mod entities;
 pub mod http;
+pub mod sessions_service;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
@@ -41,9 +43,10 @@ async fn response_from_request(request: HttpRequest) -> HttpResponse {
     match (&request.method[..], &request.parsed_uri()[..]) {
         ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
+        ("POST", ["mathilde"]) => post_mathilde_route(),
         ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
         ("POST", ["users"]) => post_user(&request).await,
-        ("POST", ["mathilde"]) => post_mathilde_route(),
+        ("POST", ["sessions"]) => sessions_service::post_session_route(&request).await,
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
@@ -52,12 +55,15 @@ async fn response_from_request(request: HttpRequest) -> HttpResponse {
 }
 
 async fn post_user(request: &HttpRequest) -> HttpResponse {
-    match serde_json::from_str(&request.body[..]) {
-        Ok(mut user) => HttpResponse::from(
-            StatusCode::Created,
-            HashMap::new(),
-            database::create_user(&mut user).await.unwrap()
-        ),
+    match serde_json::from_str::<User>(&request.body[..]) {
+        Ok(mut user) => {
+            user.hash_password();
+            HttpResponse::from(
+                StatusCode::Created,
+                HashMap::new(),
+                database::create_user(&mut user).await.unwrap()
+            )
+        },
         Err(err) => HttpResponse::from(
             StatusCode::BadRequest,
             HashMap::new(),
