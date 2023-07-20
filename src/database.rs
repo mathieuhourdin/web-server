@@ -2,6 +2,8 @@ use reqwest;
 use reqwest::Error as ReqwestError;
 use serde::{Serialize, Deserialize};
 use crate::entities::{article::Article, user::User};
+use std::collections::HashMap;
+use crate::entities::error::{PpdcError, ErrorType};
 
 const BASE_URL: &str = "http://admin:password@172.17.0.1:5984";
 
@@ -49,6 +51,38 @@ pub async fn create_user(user : &mut User) -> Result<String, ReqwestError> {
         .await?;
     let response_body = response.text().await?;
     Ok(response_body)
+}
+
+#[derive(Serialize, Deserialize)]
+struct SelectorPayload {
+    selector: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FindResult {
+    docs: Option<Vec<User>>,
+}
+
+pub async fn find_user_by_username(username: &str) -> Result<Option<User>, PpdcError> {
+    let full_url = format!("{BASE_URL}/users/_find");
+    let mut selection_hashmap = HashMap::new();
+    selection_hashmap.insert(String::from("email"), String::from(username));
+    let json_payload = SelectorPayload { selector: selection_hashmap };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(full_url)
+        .json::<SelectorPayload>(&json_payload)
+        .send()
+        .await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with db: {:#?}", err)))?;
+    let response_body = response.json::<FindResult>().await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Could not decode response : {:#?}", err)))?;
+    let user_array = response_body.docs.unwrap();
+    if user_array.len() > 1 {
+        return Err(PpdcError::new(500, ErrorType::InternalError, String::from("Should have only one user with this username")));
+    }
+    let first_user = user_array.first().cloned();
+    Ok(first_user)
 }
 
 pub async fn get_user_by_uuid(uuid: &str) -> Result<User, ReqwestError> {

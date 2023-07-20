@@ -78,6 +78,7 @@ pub enum StatusCode {
     NotFound,
     Created,
     BadRequest,
+    InternalServerError
 }
 
 impl StatusCode {
@@ -87,6 +88,7 @@ impl StatusCode {
             StatusCode::Created => "HTTP/1.1 201 CREATED",
             StatusCode::NotFound => "HTTP/1.1 404 NOT FOUND",
             StatusCode::BadRequest => "HTTP/1.1 400 BAD REQUEST",
+            StatusCode::InternalServerError => "HTTP/1.1 500 INTERNAL SERVER ERROR",
         }
     }
 }

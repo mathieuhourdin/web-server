@@ -57,7 +57,7 @@ async fn response_from_request(request: HttpRequest) -> HttpResponse {
 async fn post_user(request: &HttpRequest) -> HttpResponse {
     match serde_json::from_str::<User>(&request.body[..]) {
         Ok(mut user) => {
-            user.hash_password();
+            user.hash_password().unwrap();
             HttpResponse::from(
                 StatusCode::Created,
                 HashMap::new(),

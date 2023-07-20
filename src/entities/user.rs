@@ -1,8 +1,9 @@
 use serde::{Serialize, Deserialize};
-use argon2::Config;
+use argon2::{Config};
 use rand::Rng;
+use crate::entities::error::{PpdcError, ErrorType};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct User {
     pub uuid: Option<String>,
     pub email: String,
@@ -14,11 +15,23 @@ pub struct User {
 }
 
 impl User {
-    pub fn hash_password(&mut self) {
+    pub fn hash_password(&mut self) -> Result<(), PpdcError> {
         let salt: [u8; 32] = rand::thread_rng().gen();
         let config = Config::default();
 
-        self.password = argon2::hash_encoded(self.password.as_bytes(), &salt, &config).unwrap();
+        self.password = argon2::hash_encoded(self.password.as_bytes(), &salt, &config)
+            .map_err(|err| PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Unable to encode password: {:#?}", err)))?;
+        Ok(())
+    }
+
+    pub fn verify_password(&mut self, tested_password_bytes: &[u8]) -> Result<bool, PpdcError> {
+        argon2::verify_encoded(&self.password, tested_password_bytes).map_err(|err| PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Unable to decode password: {:#?}", err)))
     }
 }
 
