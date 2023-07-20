@@ -3,7 +3,7 @@ use std::fmt;
 pub struct PpdcError {
     status_code: u32,
     error_type: ErrorType,
-    message: String,
+    pub message: String,
 }
 
 pub enum ErrorType {

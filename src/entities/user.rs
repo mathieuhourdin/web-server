@@ -27,7 +27,7 @@ impl User {
         Ok(())
     }
 
-    pub fn verify_password(&mut self, tested_password_bytes: &[u8]) -> Result<bool, PpdcError> {
+    pub fn verify_password(&self, tested_password_bytes: &[u8]) -> Result<bool, PpdcError> {
         argon2::verify_encoded(&self.password, tested_password_bytes).map_err(|err| PpdcError::new(
                 500,
                 ErrorType::InternalError,

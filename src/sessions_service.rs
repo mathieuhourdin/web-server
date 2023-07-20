@@ -30,5 +30,17 @@ pub async fn post_session_route(request: &HttpRequest) -> HttpResponse {
             String::from("Can't find user with this username")),
     };
     println!("Matching user : {:#?}", existing_user.email);
-    HttpResponse::from(StatusCode::Ok, HashMap::new(), String::from("Ok"))
+    let is_valid_password = match existing_user.verify_password(&login_check.password.as_bytes()) {
+        Ok(value) => value,
+        Err(err) => return HttpResponse::from(
+            StatusCode::InternalServerError,
+            HashMap::new(),
+            err.message,
+        ),
+    };
+    if is_valid_password {
+        return HttpResponse::from(StatusCode::Ok, HashMap::new(), String::from("Session is valid"));
+    } else {
+        return HttpResponse::from(StatusCode::BadRequest, HashMap::new(), String::from("Invalid password"));
+    }
 }
