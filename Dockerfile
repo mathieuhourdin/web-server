@@ -1,11 +1,14 @@
-FROM rustlang/rust:nightly
+# Use a base image with the latest version of Rust installed
+FROM rust:latest
 
-RUN cargo install diesel_cli --no-default-features --features postgres
+# Set the working directory in the container
+WORKDIR /app
 
-RUN cargo install cargo-watch
+# Copy the local application code into the container
+COPY . .
 
-WORKDIR /usr/src/app
+# Build the Rust application
+RUN cargo build --release
 
-EXPOSE 7878
-
-VOLUME ["/usr/local/cargo"]
+# Specify the command to run when the container starts
+CMD ["./target/release/web-server"]
