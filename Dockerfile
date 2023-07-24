@@ -9,6 +9,7 @@ COPY . .
 
 # Build the Rust application
 RUN cargo build --release
+RUN cargo install cargo-watch
 
 # Specify the command to run when the container starts
 CMD ["./target/release/web-server"]

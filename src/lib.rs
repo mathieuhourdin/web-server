@@ -12,6 +12,7 @@ pub mod database;
 pub mod entities;
 pub mod http;
 pub mod sessions_service;
+pub mod environment;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
