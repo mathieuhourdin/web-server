@@ -3,6 +3,7 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use serde_json;
 use crate::database;
+use crate::entities::session::Session;
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
@@ -43,4 +44,28 @@ pub async fn post_session_route(request: &HttpRequest) -> HttpResponse {
     } else {
         return HttpResponse::from(StatusCode::BadRequest, HashMap::new(), String::from("Invalid password"));
     }
+}
+
+pub fn decode_session_id(session_id: &String) -> String {
+    String::from(&session_id[..])
+}
+
+pub async fn create_or_attach_session(request: &mut HttpRequest) {
+
+    match request.headers.get("Session-ID") {
+        Some(value) => {
+            let decoded_session_id = decode_session_id(value);
+            request.session = match database::get_session_by_uuid(&decoded_session_id[..]).await {
+                Err(err) => {
+                    println!("Cant find session for session_id: {decoded_session_id}, error : {:#?}", err);
+                    Some(Session::new())
+                },
+                Ok(value) => Some(value),
+            }
+        },
+        None => {
+            let new_session = Session::new();
+            request.session = Some(new_session);
+        }
+    };
 }

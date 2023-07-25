@@ -1,7 +1,7 @@
 use reqwest;
 use reqwest::Error as ReqwestError;
 use serde::{Serialize, Deserialize};
-use crate::entities::{article::Article, user::User};
+use crate::entities::{article::Article, user::User, session::Session};
 use std::collections::HashMap;
 use crate::entities::error::{PpdcError, ErrorType};
 use crate::environment::get_database_url;
@@ -88,6 +88,17 @@ pub async fn get_user_by_uuid(uuid: &str) -> Result<User, ReqwestError> {
     let full_url = format!("{}/users/{uuid}", get_database_url());
     reqwest::get(full_url).await?.json::<User>().await
 }
+
+pub async fn get_session_by_uuid(uuid: &str) -> Result<Session, PpdcError> {
+    let full_url = format!("{}/users/{uuid}", get_database_url());
+    reqwest::get(full_url)
+        .await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with db: {:#?}", err)))?
+        .json::<Session>()
+        .await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while decoding session: {:#?}", err)))
+}
+
 
 pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
     println!("Article uuid : {article_uuid}");

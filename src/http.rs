@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::fs;
+use crate::entities::session::Session;
 
 pub struct HttpRequest {
     pub method: String,
     pub uri: String,
     pub headers: HashMap<String, String>,
     pub body: String,
+    pub session: Option<Session>
 }
 
 impl HttpRequest {
@@ -37,7 +39,7 @@ impl HttpRequest {
             println!("Line : {line}");
         }
 
-        HttpRequest { method, uri, headers, body }
+        HttpRequest { method, uri, headers, body, session: None }
     }
 
     pub fn parsed_uri(&self) -> Vec<&str> {
@@ -60,6 +62,10 @@ impl HttpResponse {
         let mut headers = HashMap::new();
         headers.insert(String::from("Set-Cookie"), String::from("coucou=true;"));
         HttpResponse::from(status_code, headers, fs::read_to_string(file_path).unwrap())
+    }
+
+    pub fn set_header(&self, header_title: &str, header_content: String) {
+        self.headers.insert(String::from(header_title), header_content);
     }
 
     pub fn to_stream(&self) -> String {

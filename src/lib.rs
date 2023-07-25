@@ -32,15 +32,21 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
     println!("Request is : {string_request}");
 
-    let http_request = HttpRequest::from(&string_request);
+    let mut http_request = HttpRequest::from(&string_request);
 
-    let http_response: HttpResponse = response_from_request(http_request).await;
+
+    let http_response: HttpResponse = add_session_to_request(&mut http_request).await;
 
     let response = http_response.to_stream(); 
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-async fn response_from_request(request: HttpRequest) -> HttpResponse {
+async fn add_session_to_request(request: &mut HttpRequest) -> HttpResponse {
+    sessions_service::create_or_attach_session(request).await;
+    route_request(request).await
+}
+
+async fn route_request(request: &mut HttpRequest) -> HttpResponse {
     match (&request.method[..], &request.parsed_uri()[..]) {
         ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
