@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use crate::entities::session::Session;
+use crate::environment::get_api_url;
 
 pub struct HttpRequest {
     pub method: String,
@@ -55,16 +56,20 @@ pub struct HttpResponse {
 
 impl HttpResponse {
     pub fn from(status_code: StatusCode, headers: HashMap<String, String>, body: String) -> HttpResponse {
+        let mut headers = headers.clone();
+        headers.insert("Access-Control-Allow-Origin".to_string(), "*".to_string());
         HttpResponse { status_code, headers, body }
     }
 
     pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
         let mut headers = HashMap::new();
         headers.insert(String::from("Set-Cookie"), String::from("coucou=true;"));
-        HttpResponse::from(status_code, headers, fs::read_to_string(file_path).unwrap())
+        let html_body = fs::read_to_string(file_path).unwrap();
+        let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
+        HttpResponse::from(status_code, headers, html_body)
     }
 
-    pub fn set_header(&self, header_title: &str, header_content: String) {
+    pub fn set_header(&mut self, header_title: &str, header_content: String) {
         self.headers.insert(String::from(header_title), header_content);
     }
 

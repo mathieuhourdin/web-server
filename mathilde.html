@@ -4,15 +4,82 @@
         <meta charset="utf-8">
         <title>Mathilde</title>
     </head>
-    <body>
-        <h1>Mathilde</h1>
-        <p>C'est une très belle femme et très intelligente</p>
-        <p>C'est ma copine</p>
+    <body class="bg-pink">
+        <div class="align-center bg-skyblue ma-10p">
+            <div class="pa-5p bg-skyblue">
+                <h1>Mathilde</h1>
+                <p>C'est une très belle femme et très intelligente</p>
+                <p>C'est ma copine</p>
+                <button 
+                    id="sendButton"
+                    class="action-button"
+                    >Créer une nouvelle Mathilde</button>
+                <div class="ma-20">
+                    <span id="text">...</span>
+                </div>
+            </div>
+        </div>
     </body>
 </html>
 
+<script>
+    const button = document.getElementById("sendButton");
+
+    const text = document.getElementById("text");
+
+    button.addEventListener('click', async function() {
+            text.textContent = "Suspense...";
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            const url = process.env.API_URL + "/mathilde";
+            const options = {
+                    method: "POST",
+                };
+            fetch(url, options)
+                .then((response) => response.text())
+                .then((data) => {
+                        text.textContent = data + " ❤️ " ;
+                        console.log(data)
+                    });
+        });
+</script>
 <style>
-p {
+
+.bg-pink {
     background-color: pink;
+}
+.bg-skyblue {
+    background-color: skyblue;
+}
+.ma-8 {
+    margin: 8px;
+}
+.ma-20 {
+    margin: 20px;
+}
+.ma-10p {
+    margin: 10%;
+}
+.pa-5p {
+    padding: 5%;
+}
+
+.align-center {
+    text-align: center;
+}
+
+.action-button {
+    box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.5);
+    background-color: #ece6e6;
+    border-radius: 8px;
+    border-color: black;
+    border-width: 2px;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    color: #d92242;
+    letter-spacing: 0.08em;
+}
+
+body {
+    font-family: system-ui;
 }
 </style>
