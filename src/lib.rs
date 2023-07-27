@@ -3,7 +3,7 @@ use std::io::{prelude::*};
 use std::thread;
 use std::time::Duration;
 use serde_json;
-use http::{HttpRequest, HttpResponse, StatusCode};
+use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use std::collections::HashMap;
 use entities::user::User;
 
@@ -35,15 +35,31 @@ pub async fn handle_connection(mut stream: TcpStream) {
     let mut http_request = HttpRequest::from(&string_request);
 
 
-    let http_response: HttpResponse = add_session_to_request(&mut http_request).await;
+    let http_response: HttpResponse = decode_cookie_for_request_middleware(&mut http_request).await;
 
     let response = http_response.to_stream(); 
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-async fn add_session_to_request(request: &mut HttpRequest) -> HttpResponse {
-    sessions_service::create_or_attach_session(request).await;
-    route_request(request).await
+async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> HttpResponse {
+    let request_cookies = request.headers.get("Cookie").unwrap();
+    let formatted_cookie = Cookie::from(&request_cookies);
+    request.cookies = formatted_cookie;
+    add_session_to_request_middleware(request).await
+}
+
+async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpResponse {
+    let session_id = match sessions_service::create_or_attach_session(request).await {
+        Ok(value) => value,
+        Err(err) => return HttpResponse::from(
+            StatusCode::InternalServerError,
+            HashMap::new(),
+            format!("Error when creating session: {:#?}", err.message)
+            )
+    };
+    let mut response = route_request(request).await;
+    response.set_header("Set-Cookie", format!("session_id={}; Expires=Thu, 31 Oct 2024 07:28:00 GMT;", session_id));
+    response
 }
 
 async fn route_request(request: &mut HttpRequest) -> HttpResponse {

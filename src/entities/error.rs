@@ -1,8 +1,8 @@
 use std::fmt;
 
 pub struct PpdcError {
-    status_code: u32,
-    error_type: ErrorType,
+    pub status_code: u32,
+    pub error_type: ErrorType,
     pub message: String,
 }
 
@@ -14,6 +14,7 @@ pub enum ErrorType {
 
 impl PpdcError {
     pub fn new(status_code: u32, error_type: ErrorType, message: String) -> PpdcError {
+        println!("status code: {status_code}; message : {message}");
         PpdcError { status_code, error_type, message }
     }
 }

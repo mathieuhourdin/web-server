@@ -89,15 +89,35 @@ pub async fn get_user_by_uuid(uuid: &str) -> Result<User, ReqwestError> {
     reqwest::get(full_url).await?.json::<User>().await
 }
 
-pub async fn get_session_by_uuid(uuid: &str) -> Result<Session, PpdcError> {
-    let full_url = format!("{}/users/{uuid}", get_database_url());
-    reqwest::get(full_url)
+pub async fn get_session_by_uuid(uuid: &str) -> Result<Option<Session>, PpdcError> {
+    let full_url = format!("{}/sessions/{uuid}", get_database_url());
+    println!("Fill url : {full_url}");
+    let db_response = reqwest::get(full_url)
         .await
-        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with db: {:#?}", err)))?
-        .json::<Session>()
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with db: {:#?}", err)))?;
+
+    if db_response.status() == 404 {
+        return Ok(None);
+    }
+    
+    println!("{:#?}", db_response);
+    let found_session = db_response.json::<Session>()
         .await
-        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while decoding session: {:#?}", err)))
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while decoding session: {:#?}", err)))?;
+    Ok(Some(found_session))
 }
+
+pub async fn create_session(session: &Session) -> Result<(), PpdcError> {
+    let uuid = session.id;
+    let client = reqwest::Client::new();
+    client.put(format!("{}/sessions/{uuid}", get_database_url()))
+        .json::<Session>(&session)
+        .send()
+        .await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a new session: {:#?}", err)))?;
+    Ok(())
+}
+
 
 
 pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {

@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use serde_json;
 use crate::database;
-use crate::entities::session::Session;
+use crate::entities::{session::Session, error::PpdcError};
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
@@ -50,22 +50,40 @@ pub fn decode_session_id(session_id: &String) -> String {
     String::from(&session_id[..])
 }
 
-pub async fn create_or_attach_session(request: &mut HttpRequest) {
+pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<String, PpdcError> {
 
-    match request.headers.get("Session-ID") {
+    match request.cookies.data.get("session_id") {
         Some(value) => {
             let decoded_session_id = decode_session_id(value);
-            request.session = match database::get_session_by_uuid(&decoded_session_id[..]).await {
+            let found_session = match database::get_session_by_uuid(&decoded_session_id[..]).await {
                 Err(err) => {
-                    println!("Cant find session for session_id: {decoded_session_id}, error : {:#?}", err);
-                    Some(Session::new())
+                    println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
+                    let new_session = Session::new();
+                    database::create_session(&new_session).await?;
+                    new_session
                 },
-                Ok(value) => Some(value),
-            }
+                Ok(value) => {
+                    match value {
+                        Some(session) => session,
+                        None => {
+                            println!("Cant find session for session_id: {decoded_session_id}");
+                            let new_session = Session::new();
+                            database::create_session(&new_session).await?;
+                            new_session
+                        },
+                    }
+                },
+            };
+            let session_uuid = found_session.id;
+            request.session = Some(found_session);
+            Ok(format!("{}", session_uuid))
         },
         None => {
             let new_session = Session::new();
+            database::create_session(&new_session).await?;
+            let session_uuid = new_session.id;
             request.session = Some(new_session);
+            Ok(format!("{}", session_uuid))
         }
-    };
+    }
 }
