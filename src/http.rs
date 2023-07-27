@@ -8,6 +8,7 @@ pub struct HttpRequest {
     pub uri: String,
     pub headers: HashMap<String, String>,
     pub body: String,
+    pub cookies: Cookie,
     pub session: Option<Session>
 }
 
@@ -40,7 +41,9 @@ impl HttpRequest {
             println!("Line : {line}");
         }
 
-        HttpRequest { method, uri, headers, body, session: None }
+        let cookies = Cookie { data: HashMap::new() };
+
+        HttpRequest { method, uri, headers, body, cookies, session: None }
     }
 
     pub fn parsed_uri(&self) -> Vec<&str> {
@@ -62,9 +65,8 @@ impl HttpResponse {
     }
 
     pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
-        let mut headers = HashMap::new();
-        headers.insert(String::from("Set-Cookie"), String::from("coucou=true;"));
-        let html_body = fs::read_to_string(file_path).unwrap();
+        let headers = HashMap::new();
+        let html_body = fs::read_to_string(format!("public/{file_path}")).unwrap();
         let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
         HttpResponse::from(status_code, headers, html_body)
     }
@@ -101,5 +103,21 @@ impl StatusCode {
             StatusCode::BadRequest => "HTTP/1.1 400 BAD REQUEST",
             StatusCode::InternalServerError => "HTTP/1.1 500 INTERNAL SERVER ERROR",
         }
+    }
+}
+
+pub struct Cookie {
+    pub data: HashMap<String, String>
+}
+
+impl Cookie {
+    pub fn from(string_cookie: &String) -> Cookie {
+        let mut data_hashmap = HashMap::new();
+        let splitted_values = string_cookie.split("; ").collect::<Vec<&str>>();
+        for value in splitted_values {
+            let splitted_cookie_value = value.split("=").collect::<Vec<&str>>();
+            data_hashmap.insert(splitted_cookie_value[0].to_string(), splitted_cookie_value[1].to_string());
+        }
+        Cookie { data: data_hashmap }
     }
 }
