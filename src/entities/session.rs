@@ -5,7 +5,7 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
-    user_id: Option<String>,
+    pub user_id: Option<String>,
     created_at: SystemTime,
     expires_at: SystemTime,
     authenticated: bool,
@@ -24,5 +24,9 @@ impl Session {
 
     pub fn is_valid(&self) -> bool {
         self.expires_at > SystemTime::now()
+    }
+
+    pub fn set_user_id(&mut self, user_id: String) {
+        self.user_id = Some(user_id);
     }
 }

@@ -5,6 +5,10 @@
         <title>Mathilde</title>
     </head>
     <body class="bg-pink">
+        <button
+            id="authButton"
+            class="action-button auth-button"
+            >S'authentifier</button>
         <div class="align-center bg-skyblue ma-10p">
             <div class="pa-5p bg-skyblue">
                 <h1>Mathilde</h1>
@@ -40,6 +44,19 @@
                         text.textContent = data + " ❤️ " ;
                         console.log(data)
                     });
+        });
+
+
+    const authButton = document.getElementById("authButton");
+
+    authButton.addEventListener('click', async function() {
+            console.log("New auth button click");
+            const url = process.env.API_URL + "/sessions";
+            const options = {
+                    method: "POST",
+                    body: JSON.stringify({username: "mathieu.hourdin@gmail.com", password: "mathieu"})
+                };
+            fetch(url, options);
         });
 </script>
 <style>
@@ -77,6 +94,12 @@
     padding: 10px 16px;
     color: #d92242;
     letter-spacing: 0.08em;
+}
+
+.auth-button {
+    position: absolute;
+    right: 5%;
+    top: 10%;
 }
 
 body {

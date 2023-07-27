@@ -88,9 +88,10 @@ impl HttpResponse {
 
 pub enum StatusCode {
     Ok,
-    NotFound,
     Created,
     BadRequest,
+    Unauthorized,
+    NotFound,
     InternalServerError
 }
 
@@ -99,8 +100,9 @@ impl StatusCode {
         match self {
             StatusCode::Ok => "HTTP/1.1 200 OK",
             StatusCode::Created => "HTTP/1.1 201 CREATED",
-            StatusCode::NotFound => "HTTP/1.1 404 NOT FOUND",
             StatusCode::BadRequest => "HTTP/1.1 400 BAD REQUEST",
+            StatusCode::Unauthorized => "HTTP/1.1 401 UNAUTHORIZED",
+            StatusCode::NotFound => "HTTP/1.1 404 NOT FOUND",
             StatusCode::InternalServerError => "HTTP/1.1 500 INTERNAL SERVER ERROR",
         }
     }

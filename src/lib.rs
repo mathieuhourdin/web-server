@@ -57,20 +57,21 @@ async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpRes
             format!("Error when creating session: {:#?}", err.message)
             )
     };
-    let immutable_request: &_ = request;
-    let mut response = route_request(immutable_request).await;
+    let mut response = route_request(request).await;
     response.set_header("Set-Cookie", format!("session_id={}; Expires=Thu, 31 Oct 2024 07:28:00 GMT;", session_id));
     response
 }
 
-async fn route_request(request: &HttpRequest) -> HttpResponse {
+async fn route_request(request: &mut HttpRequest) -> HttpResponse {
+    let session_id = &request.session.as_ref().unwrap().id;
+    println!("Request with session id : {session_id}");
     match (&request.method[..], &request.parsed_uri()[..]) {
         ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
-        ("POST", ["mathilde"]) => post_mathilde_route(),
+        ("POST", ["mathilde"]) => post_mathilde_route(&request).await,
         ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
         ("POST", ["users"]) => post_user(&request).await,
-        ("POST", ["sessions"]) => sessions_service::post_session_route(&request).await,
+        ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
@@ -130,9 +131,26 @@ async fn post_articles_route(body: &String) -> HttpResponse {
     }
 }
 
-fn post_mathilde_route() -> HttpResponse {
+async fn post_mathilde_route(request: &HttpRequest) -> HttpResponse {
+
+    match &request.session.as_ref().unwrap().user_id {
+        Some(user_id) => {
+            let user_first_name = match database::get_user_by_uuid(user_id).await {
+                Ok(user) => user.first_name,
+               Err(err) => return HttpResponse::from(
+                   StatusCode::InternalServerError,
+                   HashMap::new(),
+                   format!("Cannot get user with uuid : {user_id}; error : {:#?}", err)
+                   )
+            };
+            HttpResponse::from(
+                StatusCode::Created,
+                HashMap::new(),
+                format!("Cool {user_first_name} but I already have one"))
+        },
+        None => HttpResponse::from(StatusCode::Unauthorized, HashMap::new(), String::from("Not authenticated request")),
+    }
     
-    HttpResponse::from(StatusCode::Created, HashMap::new(), String::from("Cool but I already have one"))
 }
 
 fn sleep_route() -> HttpResponse {

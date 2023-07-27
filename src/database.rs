@@ -107,14 +107,18 @@ pub async fn get_session_by_uuid(uuid: &str) -> Result<Option<Session>, PpdcErro
     Ok(Some(found_session))
 }
 
-pub async fn create_session(session: &Session) -> Result<(), PpdcError> {
+pub async fn create_or_update_session(session: &Session) -> Result<(), PpdcError> {
+    println!("create_or_update_session : new session persisting");
     let uuid = session.id;
     let client = reqwest::Client::new();
-    client.put(format!("{}/sessions/{uuid}", get_database_url()))
+    let response = client.put(format!("{}/sessions/{uuid}", get_database_url()))
         .json::<Session>(&session)
         .send()
         .await
         .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a new session: {:#?}", err)))?;
+    if response.status().as_u16() >= 400 {
+        return Err(PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a session: {}", response.text().await.unwrap())));
+    }
     Ok(())
 }
 

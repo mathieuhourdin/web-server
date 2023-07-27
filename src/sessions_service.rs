@@ -11,7 +11,7 @@ struct LoginCheck {
     password: String,
 }
 
-pub async fn post_session_route(request: &HttpRequest) -> HttpResponse { 
+pub async fn post_session_route(request: &mut HttpRequest) -> HttpResponse { 
     let login_check = match serde_json::from_str::<LoginCheck>(&request.body[..]) {
         Err(err) => return HttpResponse::from(StatusCode::BadRequest, HashMap::new(), format!("Invalid post session : {:#?}", err)),
         Ok(value) => value,
@@ -40,7 +40,21 @@ pub async fn post_session_route(request: &HttpRequest) -> HttpResponse {
         ),
     };
     if is_valid_password {
-        return HttpResponse::from(StatusCode::Ok, HashMap::new(), String::from("Session is valid"));
+        println!("Password is valid. Let's authenticate session");
+        request
+            .session
+            .as_mut()
+            .expect("request should have a session")
+            .set_user_id(existing_user.uuid
+                .expect("user should have an uuid"));
+        match database::create_or_update_session(request.session.as_ref().unwrap()).await {
+            Err(err) => return HttpResponse::from(
+                StatusCode::InternalServerError,
+                HashMap::new(),
+                format!("Error updating session : {:#?}", err)),
+            Ok(_) => return HttpResponse::from(StatusCode::Ok, HashMap::new(), String::from("Session is valid")),
+        }
+        
     } else {
         return HttpResponse::from(StatusCode::BadRequest, HashMap::new(), String::from("Invalid password"));
     }
@@ -59,7 +73,7 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
                 Err(err) => {
                     println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
                     let new_session = Session::new();
-                    database::create_session(&new_session).await?;
+                    database::create_or_update_session(&new_session).await?;
                     new_session
                 },
                 Ok(value) => {
@@ -70,14 +84,14 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
                             } else {
                                 println!("Session {} not valid anymore", session.id);
                                 let new_session = Session::new();
-                                database::create_session(&new_session).await?;
+                                database::create_or_update_session(&new_session).await?;
                                 new_session
                             }
                         },
                         None => {
                             println!("Cant find session for session_id: {decoded_session_id}");
                             let new_session = Session::new();
-                            database::create_session(&new_session).await?;
+                            database::create_or_update_session(&new_session).await?;
                             new_session
                         },
                     }
@@ -89,7 +103,7 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
         },
         None => {
             let new_session = Session::new();
-            database::create_session(&new_session).await?;
+            database::create_or_update_session(&new_session).await?;
             let session_uuid = new_session.id;
             request.session = Some(new_session);
             Ok(format!("{}", session_uuid))
