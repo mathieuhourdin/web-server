@@ -17,8 +17,12 @@ impl Session {
             id: Uuid::new_v4(),
             user_id: None,
             created_at: SystemTime::now(),
-            expires_at: SystemTime::now() + Duration::from_secs(6400),
+            expires_at: SystemTime::now() + Duration::from_secs(3600),
             authenticated: false,
         }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.expires_at > SystemTime::now()
     }
 }

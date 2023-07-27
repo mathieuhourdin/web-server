@@ -42,8 +42,8 @@ pub async fn handle_connection(mut stream: TcpStream) {
 }
 
 async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> HttpResponse {
-    let request_cookies = request.headers.get("Cookie").unwrap();
-    let formatted_cookie = Cookie::from(&request_cookies);
+    let request_cookies = request.headers.get("Cookie");
+    let formatted_cookie = Cookie::from(request_cookies);
     request.cookies = formatted_cookie;
     add_session_to_request_middleware(request).await
 }
@@ -57,12 +57,13 @@ async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpRes
             format!("Error when creating session: {:#?}", err.message)
             )
     };
-    let mut response = route_request(request).await;
+    let immutable_request: &_ = request;
+    let mut response = route_request(immutable_request).await;
     response.set_header("Set-Cookie", format!("session_id={}; Expires=Thu, 31 Oct 2024 07:28:00 GMT;", session_id));
     response
 }
 
-async fn route_request(request: &mut HttpRequest) -> HttpResponse {
+async fn route_request(request: &HttpRequest) -> HttpResponse {
     match (&request.method[..], &request.parsed_uri()[..]) {
         ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),

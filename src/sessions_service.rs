@@ -64,7 +64,16 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
                 },
                 Ok(value) => {
                     match value {
-                        Some(session) => session,
+                        Some(session) => {
+                            if session.is_valid() {
+                                session
+                            } else {
+                                println!("Session {} not valid anymore", session.id);
+                                let new_session = Session::new();
+                                database::create_session(&new_session).await?;
+                                new_session
+                            }
+                        },
                         None => {
                             println!("Cant find session for session_id: {decoded_session_id}");
                             let new_session = Session::new();

@@ -111,13 +111,18 @@ pub struct Cookie {
 }
 
 impl Cookie {
-    pub fn from(string_cookie: &String) -> Cookie {
-        let mut data_hashmap = HashMap::new();
-        let splitted_values = string_cookie.split("; ").collect::<Vec<&str>>();
-        for value in splitted_values {
-            let splitted_cookie_value = value.split("=").collect::<Vec<&str>>();
-            data_hashmap.insert(splitted_cookie_value[0].to_string(), splitted_cookie_value[1].to_string());
+    pub fn from(string_cookie: Option<&String>) -> Cookie {
+        match string_cookie {
+            None => Cookie { data: HashMap::new() },
+            Some(value) => {
+                let mut data_hashmap = HashMap::new();
+                let splitted_values = value.split("; ").collect::<Vec<&str>>();
+                for value in splitted_values {
+                    let splitted_cookie_value = value.split("=").collect::<Vec<&str>>();
+                    data_hashmap.insert(splitted_cookie_value[0].to_string(), splitted_cookie_value[1].to_string());
+                }
+                Cookie { data: data_hashmap }
+            }
         }
-        Cookie { data: data_hashmap }
     }
 }
