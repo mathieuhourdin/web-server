@@ -13,6 +13,21 @@ pub struct Document {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct AllDocsResponse {
+    pub total_rows: u32,
+    pub offset: u32,
+    pub rows: Vec<AllDocsResponseContent>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AllDocsResponseContent {
+    pub id: String,
+    pub key: String,
+    pub value: HashMap<String, String>,
+    pub doc: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct UuidsResponse {
     pub uuids: Vec<String>
 }
@@ -156,7 +171,32 @@ pub async fn update_session(session: &Session) -> Result<(), PpdcError> {
     Ok(())
 }
 
+pub async fn get_all_docs(database_name: &str, skip: u32, limit: u32) -> Result<AllDocsResponse, PpdcError> {
+    let full_url = format!("{}/{database_name}/_all_docs?include_docs=true&skip={skip}&limit={limit}", get_database_url());
 
+    reqwest::get(full_url)
+        .await
+        .map_err(|err| PpdcError::new(
+                500,
+                ErrorType::DatabaseError,
+                format!("Error whith get all for {database_name}, skip={skip} limit={limit}: {:#?}", err)))?
+        .json::<AllDocsResponse>()
+        .await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Cant decode all_docs response: {:#?}", err)))
+}
+
+pub async fn get_articles(offset: u32, limit: u32) -> Result<Vec<Article>, PpdcError> {
+    let all_docs_response = get_all_docs("articles", offset, limit).await?;
+    all_docs_response
+        .rows
+        .iter()
+        .map(|row| {
+            let value = serde_json::Value::from_iter(row.doc.clone().into_iter());
+            serde_json::from_value(value)
+            .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with article format: {:#?}", err)))
+            })
+        .collect()
+}
 
 pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
     println!("Article uuid : {article_uuid}");

@@ -120,10 +120,16 @@ async fn get_user_by_uuid(user_uuid: &str) -> HttpResponse {
 }
 
 async fn get_articles(request: &HttpRequest) -> HttpResponse {
-    if let Some(limit) = request.query.get("limit") {
-        println!("Limit : {limit}");
+    let limit: u32 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
+    let offset: u32 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+    match &database::get_articles(offset, limit).await {
+        Ok(articles) => HttpResponse::new(
+            StatusCode::Ok,
+            serde_json::to_string(articles).unwrap()),
+        Err(err) => HttpResponse::new(
+            StatusCode::InternalServerError,
+            format!("Error with db: {:#?}", err))
     }
-    HttpResponse::new(StatusCode::Ok, "Ok".to_string())
 }
 
 async fn get_article_route(article_uuid: &str) -> HttpResponse {
