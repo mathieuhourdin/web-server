@@ -7,8 +7,8 @@ pub struct Article {
     pub title: String,
     pub description: String,
     pub content: String,
-    pub author_id: String,
+    pub author_id: Option<String>,
     pub progress: u32,
-    pub gdoc_link: String,
+    pub gdoc_url: String,
     pub image_url: String,
 }

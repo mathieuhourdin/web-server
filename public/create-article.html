@@ -13,8 +13,32 @@
         <div class="align-center bg-skyblue ma-10p">
             <div class="pa-5p bg-skyblue">
                 <h1>Créer un article</h1>
-                <p>C'est une très belle femme et très intelligente</p>
-                <p>C'est ma copine</p>
+                    <div class="w-60p">
+                        <div class="align-left ma-8">
+                            <label style="display: block" for="article-title">Titre de l'article</label>
+                            <input id="article-title" type="text" placeholder="Titre" size=90>
+                        </div>
+                        <div class="align-left ma-8">
+                            <label style="display: block" for="article-description">Description de l'article</label>
+                            <input id="article-description" type="text" placeholder="Titre" size=90>
+                        </div>
+                        <div class="align-left ma-8">
+                            <label style="display: block" for="article-image-url">Lien image de l'article</label>
+                            <input id="article-image-url" type="text" placeholder="Titre" size=90>
+                        </div>
+                        <div class="align-left ma-8">
+                            <label style="display: block" for="article-gdoc-url">Lien gdoc de l'article</label>
+                            <input id="article-gdoc-url" type="text" placeholder="Titre" size=90>
+                        </div>
+                        <div class="align-left ma-8">
+                            <label style="display: block" for="article-progress">Avancement de l'article</label>
+                            <input id="article-progress" type="number" min=0 max=100 placeholder="Progression" size=90>
+                        </div>
+                        <div class="align-left ma-8">
+                            <label style="display: block" for="article-content">Contenu de l'article</label>
+                            <textarea id="article-content" type="text" placeholder="Titre" rows=120 cols=180></textarea>
+                        </div>
+                    </div>
                 <button 
                     id="sendButton"
                     class="action-button"
@@ -32,13 +56,19 @@
 
     const text = document.getElementById("text");
 
-    button.addEventListener('click', async function() {
-            text.textContent = "Suspense...";
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-            const url = process.env.API_URL + "/mathilde";
+    button.addEventListener('click', function() {
+            const url = process.env.API_URL + "/articles";
             const options = {
                     method: "POST",
                     credentials: "include",
+                    body: JSON.stringify({
+                            title: articleTitle,
+                            description: articleDescription,
+                            gdoc_url: articleGdocUrl,
+                            image_url: articleImageUrl,
+                            progress: Number(articleProgress),
+                            content: articleContent,
+                        })
                 };
             fetch(url, options)
                 .then((response) => response.text())
@@ -47,6 +77,25 @@
                         console.log(data)
                     });
         });
+
+    const titleInput = document.getElementById("article-title");
+    let articleTitle = "";
+    titleInput.addEventListener("change", (event) => articleTitle = event.target.value);
+    const descriptionInput = document.getElementById("article-description");
+    let articleDescription = "";
+    descriptionInput.addEventListener("change", (event) => articleDescription = event.target.value);
+    const imageUrlInput = document.getElementById("article-image-url");
+    let articleImageUrl = "";
+    imageUrlInput.addEventListener("change", (event) => articleImageUrl = event.target.value);
+    const gdocUrlInput = document.getElementById("article-gdoc-url");
+    let articleGdocUrl = "";
+    gdocUrlInput.addEventListener("change", (event) => articleGdocUrl = event.target.value);
+    const progressInput = document.getElementById("article-progress");
+    let articleProgress = "";
+    progressInput.addEventListener("change", (event) => articleProgress = event.target.value);
+    const contentInput = document.getElementById("article-content");
+    let articleContent = "";
+    contentInput.addEventListener("change", (event) => articleContent = event.target.value);
 
 
     const authButton = document.getElementById("authButton");

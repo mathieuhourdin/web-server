@@ -18,8 +18,16 @@
     padding: 5%;
 }
 
+.w-60p {
+    width: 60%;
+}
+
 .align-center {
     text-align: center;
+}
+
+.align-left {
+    text-align: left;
 }
 
 .action-button {
