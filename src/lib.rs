@@ -89,6 +89,7 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("POST", ["users"]) => post_user(&request).await,
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
+        ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["articles"]) => get_articles(&request).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),

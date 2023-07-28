@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Créer un article</title>
+        <link rel="stylesheet" type="text/css" href="/public/style.css" />
+    </head>
+    <body class="bg-pink">
+        <button
+            id="authButton"
+            class="action-button auth-button"
+            >S'authentifier</button>
+        <div class="align-center bg-skyblue ma-10p">
+            <div class="pa-5p bg-skyblue">
+                <h1>Créer un article</h1>
+                <p>C'est une très belle femme et très intelligente</p>
+                <p>C'est ma copine</p>
+                <button 
+                    id="sendButton"
+                    class="action-button"
+                    >Créer une nouvelle Mathilde</button>
+                <div class="ma-20">
+                    <span id="text">...</span>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
+
+<script>
+    const button = document.getElementById("sendButton");
+
+    const text = document.getElementById("text");
+
+    button.addEventListener('click', async function() {
+            text.textContent = "Suspense...";
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            const url = process.env.API_URL + "/mathilde";
+            const options = {
+                    method: "POST",
+                    credentials: "include",
+                };
+            fetch(url, options)
+                .then((response) => response.text())
+                .then((data) => {
+                        text.textContent = data + " ❤️ " ;
+                        console.log(data)
+                    });
+        });
+
+
+    const authButton = document.getElementById("authButton");
+
+    authButton.addEventListener('click', async function() {
+            console.log("New auth button click");
+            const url = process.env.API_URL + "/sessions";
+            const options = {
+                    method: "POST",
+                    body: JSON.stringify({username: "mathieu.hourdin@gmail.com", password: "mathieu"}),
+                    credentials: "include"
+                };
+            fetch(url, options);
+        });
+</script>
