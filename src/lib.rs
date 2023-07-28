@@ -5,6 +5,7 @@ use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::user::User;
+use regex::Regex;
 
 pub mod threadpool;
 pub mod database;
@@ -41,16 +42,17 @@ pub async fn handle_connection(mut stream: TcpStream) {
 }
 
 async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {
+    let regex_string = environment::get_allow_origin();
+    let regex = Regex::new(&regex_string).expect("cors should be a valid regex");
     let mut allow_origin_host = String::new();
     if let Some(origin) = request.headers.get("Origin") {
-        if origin == "127.0.0.1" {
-            allow_origin_host = "127.0.0.1".to_string();
-        } else if origin == "http://localhost:8080" {
-            allow_origin_host = "http://localhost:8080".to_string();
+        if regex.is_match(origin) {
+            allow_origin_host = origin.to_string();
         }
     }
     let mut response = decode_cookie_for_request_middleware(request).await;
     response.headers.insert("Access-Control-Allow-Origin".to_string(), allow_origin_host);
+    response.headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
     response
 }
 

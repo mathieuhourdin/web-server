@@ -108,9 +108,7 @@ pub struct HttpResponse {
 
 impl HttpResponse {
     pub fn new(status_code: StatusCode, body: String) -> HttpResponse {
-        let mut headers = HashMap::new();
-        headers.insert("Access-Control-Allow-Origin".to_string(), ServerUrl::from(get_api_url()).host);
-        headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
+        let headers = HashMap::new();
         HttpResponse { status_code, headers, body }
     }
 
