@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use crate::entities::session::Session;
 use crate::environment::get_api_url;
-use std::time::{SystemTime, Duration};
+use std::time::{SystemTime};
 use chrono::{DateTime, Local};
 
 pub struct ServerUrl {
@@ -107,18 +107,17 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
-    pub fn from(status_code: StatusCode, headers: HashMap<String, String>, body: String) -> HttpResponse {
-        let mut headers = headers.clone();
+    pub fn new(status_code: StatusCode, body: String) -> HttpResponse {
+        let mut headers = HashMap::new();
         headers.insert("Access-Control-Allow-Origin".to_string(), ServerUrl::from(get_api_url()).host);
         headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
         HttpResponse { status_code, headers, body }
     }
 
     pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
-        let headers = HashMap::new();
         let html_body = fs::read_to_string(format!("public/{file_path}")).unwrap();
         let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
-        HttpResponse::from(status_code, headers, html_body)
+        HttpResponse::new(status_code, html_body)
     }
 
     pub fn set_header(&mut self, header_title: &str, header_content: String) {

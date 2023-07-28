@@ -3,8 +3,7 @@ use std::io::{prelude::*};
 use std::thread;
 use std::time::Duration;
 use serde_json;
-use http::{ServerUrl, HttpRequest, HttpResponse, StatusCode, Cookie};
-use std::collections::HashMap;
+use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::user::User;
 
 pub mod threadpool;
@@ -52,9 +51,8 @@ async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> Http
 async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpResponse {
     let session_cookie = match sessions_service::create_or_attach_session(request).await {
         Ok(value) => value,
-        Err(err) => return HttpResponse::from(
+        Err(err) => return HttpResponse::new(
             StatusCode::InternalServerError,
-            HashMap::new(),
             format!("Error when creating session: {:#?}", err.message)
             )
     };
@@ -87,23 +85,20 @@ async fn post_user(request: &HttpRequest) -> HttpResponse {
     match serde_json::from_str::<User>(&request.body[..]) {
         Ok(mut user) => {
             user.hash_password().unwrap();
-            HttpResponse::from(
+            HttpResponse::new(
                 StatusCode::Created,
-                HashMap::new(),
                 database::create_user(&mut user).await.unwrap()
             )
         },
-        Err(err) => HttpResponse::from(
+        Err(err) => HttpResponse::new(
             StatusCode::BadRequest,
-            HashMap::new(),
             format!("Error with the payload: {:#?}", err))
     }
 }
 
 async fn get_user_by_uuid(user_uuid: &str) -> HttpResponse {
-    HttpResponse::from(
+    HttpResponse::new(
         StatusCode::Ok,
-        HashMap::new(),
         serde_json::to_string(&database::get_user_by_uuid(user_uuid).await.unwrap()).unwrap()
         )
 }
@@ -112,14 +107,13 @@ async fn get_articles(request: &HttpRequest) -> HttpResponse {
     if let Some(limit) = request.query.get("limit") {
         println!("Limit : {limit}");
     }
-    HttpResponse::from(StatusCode::Ok, HashMap::new(), "Ok".to_string())
+    HttpResponse::new(StatusCode::Ok, "Ok".to_string())
 }
 
 async fn get_article_route(article_uuid: &str) -> HttpResponse {
     println!("Article uuid : {article_uuid}");
-    HttpResponse::from(
+    HttpResponse::new(
         StatusCode::Ok,
-        HashMap::new(),
         serde_json::to_string(&database::get_article(article_uuid)
             .await
             .unwrap())
@@ -129,15 +123,13 @@ async fn get_article_route(article_uuid: &str) -> HttpResponse {
 async fn post_articles_route(body: &String) -> HttpResponse {
 
     match serde_json::from_str(&body[..]) {
-        Ok(mut article) => HttpResponse::from(
+        Ok(mut article) => HttpResponse::new(
             StatusCode::Ok,
-            HashMap::new(),
             database::create_article(&mut article)
             .await
             .unwrap()),
-        Err(err) => HttpResponse::from(
+        Err(err) => HttpResponse::new(
             StatusCode::BadRequest,
-            HashMap::new(),
             format!("Error with the payload : {:#?}", err)),
     }
 }
@@ -148,23 +140,21 @@ async fn post_mathilde_route(request: &HttpRequest) -> HttpResponse {
         Some(user_id) => {
             let user_first_name = match database::get_user_by_uuid(user_id).await {
                 Ok(user) => user.first_name,
-               Err(err) => return HttpResponse::from(
+               Err(err) => return HttpResponse::new(
                    StatusCode::InternalServerError,
-                   HashMap::new(),
                    format!("Cannot get user with uuid : {user_id}; error : {:#?}", err)
                    )
             };
-            HttpResponse::from(
+            HttpResponse::new(
                 StatusCode::Created,
-                HashMap::new(),
                 format!("Cool {user_first_name} but I already have one"))
         },
-        None => HttpResponse::from(StatusCode::Unauthorized, HashMap::new(), String::from("Not authenticated request")),
+        None => HttpResponse::new(StatusCode::Unauthorized, String::from("Not authenticated request")),
     }
     
 }
 
 fn sleep_route() -> HttpResponse {
     thread::sleep(Duration::from_secs(10));
-    HttpResponse::from(StatusCode::Ok, HashMap::new(),String::from("hello.html"))
+    HttpResponse::new(StatusCode::Ok, String::from("hello.html"))
 }
