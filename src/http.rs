@@ -31,11 +31,26 @@ impl ServerUrl {
 
 pub struct HttpRequest {
     pub method: String,
-    pub uri: String,
+    pub path: String,
     pub headers: HashMap<String, String>,
+    pub query: HashMap<String, String>,
     pub body: String,
     pub cookies: Cookie,
     pub session: Option<Session>
+}
+
+fn decode_query_string(query_string: &str) -> HashMap<String, String> {
+    let mut query_hash_map = HashMap::new();
+    let splitted = query_string.split("&").collect::<Vec<&str>>();
+    for query in splitted {
+        let vec_value = query.split("=").collect::<Vec<&str>>();
+        if let Some(key) = vec_value.get(0) {
+            if let Some(value) = vec_value.get(1) {
+                query_hash_map.insert(key.to_string(), value.to_string());
+            }
+        }
+    }
+    query_hash_map
 }
 
 impl HttpRequest {
@@ -51,7 +66,15 @@ impl HttpRequest {
 
         let first_row = first_part[0].split(" ").collect::<Vec<&str>>();
         let method = String::from(first_row[0]);
-        let uri = String::from(first_row[1]);
+
+        let uri = first_row[1];
+
+        let path = uri.split("?").collect::<Vec<&str>>().get(0).expect("Should have a uri").to_string();
+        let query = if let Some(query_string) = uri.split("?").collect::<Vec<&str>>().get(1) {
+            decode_query_string(query_string)
+        } else {
+            HashMap::new()
+        };
 
         println!("Method : {method}");
 
@@ -69,11 +92,11 @@ impl HttpRequest {
 
         let cookies = Cookie { data: HashMap::new() };
 
-        HttpRequest { method, uri, headers, body, cookies, session: None }
+        HttpRequest { method, path, query, headers, body, cookies, session: None }
     }
 
-    pub fn parsed_uri(&self) -> Vec<&str> {
-        self.uri[1..].split("/").collect::<Vec<&str>>()
+    pub fn parsed_path(&self) -> Vec<&str> {
+        self.path[1..].split("/").collect::<Vec<&str>>()
     }
 }
 

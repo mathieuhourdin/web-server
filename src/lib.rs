@@ -67,7 +67,7 @@ async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpRes
 async fn route_request(request: &mut HttpRequest) -> HttpResponse {
     let session_id = &request.session.as_ref().unwrap().id;
     println!("Request with session id : {session_id}");
-    match (&request.method[..], &request.parsed_uri()[..]) {
+    match (&request.method[..], &request.parsed_path()[..]) {
         ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
         ("POST", ["mathilde"]) => post_mathilde_route(&request).await,
@@ -75,6 +75,7 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("POST", ["users"]) => post_user(&request).await,
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
+        ("GET", ["articles"]) => get_articles(&request).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
@@ -105,6 +106,13 @@ async fn get_user_by_uuid(user_uuid: &str) -> HttpResponse {
         HashMap::new(),
         serde_json::to_string(&database::get_user_by_uuid(user_uuid).await.unwrap()).unwrap()
         )
+}
+
+async fn get_articles(request: &HttpRequest) -> HttpResponse {
+    if let Some(limit) = request.query.get("limit") {
+        println!("Limit : {limit}");
+    }
+    HttpResponse::from(StatusCode::Ok, HashMap::new(), "Ok".to_string())
 }
 
 async fn get_article_route(article_uuid: &str) -> HttpResponse {
