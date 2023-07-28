@@ -37,6 +37,7 @@
             const url = process.env.API_URL + "/mathilde";
             const options = {
                     method: "POST",
+                    credentials: "same-origin",
                 };
             fetch(url, options)
                 .then((response) => response.text())
@@ -54,7 +55,8 @@
             const url = process.env.API_URL + "/sessions";
             const options = {
                     method: "POST",
-                    body: JSON.stringify({username: "mathieu.hourdin@gmail.com", password: "mathieu"})
+                    body: JSON.stringify({username: "mathieu.hourdin@gmail.com", password: "mathieu"}),
+                    credentials: "same-origin"
                 };
             fetch(url, options);
         });

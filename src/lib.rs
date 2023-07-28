@@ -43,13 +43,14 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
 async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> HttpResponse {
     let request_cookies = request.headers.get("Cookie");
+    println!("Request cookies : {:#?}", request_cookies);
     let formatted_cookie = Cookie::from(request_cookies);
     request.cookies = formatted_cookie;
     add_session_to_request_middleware(request).await
 }
 
 async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpResponse {
-    let session_id = match sessions_service::create_or_attach_session(request).await {
+    let session_cookie = match sessions_service::create_or_attach_session(request).await {
         Ok(value) => value,
         Err(err) => return HttpResponse::from(
             StatusCode::InternalServerError,
@@ -58,7 +59,7 @@ async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpRes
             )
     };
     let mut response = route_request(request).await;
-    response.set_header("Set-Cookie", format!("session_id={}; Expires=Thu, 31 Oct 2024 07:28:00 GMT;", session_id));
+    response.set_header("Set-Cookie", format!("{session_cookie}; Domain=localhost; SameSite=Lax"));
     response
 }
 

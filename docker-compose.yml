@@ -10,7 +10,7 @@ services:
       - ./:/usr/src/app
     environment:
       DATABASE_URL: "http://admin:password@172.17.0.1:5984"
-      API_URL: "http://127.0.0.1:8080"
+      API_URL: "http://localhost:8080"
     command: bash -c "cargo watch -x run"
   db:
     image: "couchdb"

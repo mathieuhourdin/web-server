@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use serde_json;
 use crate::database;
 use crate::entities::{session::Session, error::PpdcError};
+use chrono::{DateTime, Local};
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
@@ -47,7 +48,7 @@ pub async fn post_session_route(request: &mut HttpRequest) -> HttpResponse {
             .expect("request should have a session")
             .set_user_id(existing_user.uuid
                 .expect("user should have an uuid"));
-        match database::create_or_update_session(request.session.as_ref().unwrap()).await {
+        match database::update_session(request.session.as_ref().unwrap()).await {
             Err(err) => return HttpResponse::from(
                 StatusCode::InternalServerError,
                 HashMap::new(),
@@ -105,8 +106,10 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
             let new_session = Session::new();
             database::create_or_update_session(&new_session).await?;
             let session_uuid = new_session.id;
+            let datetime: DateTime<Local> = new_session.expires_at.into();
+            let response = format!("session_id={}; Expires={}", session_uuid, datetime.format("%a, %d-%b-%Y %H:%M:%S GMT"));
             request.session = Some(new_session);
-            Ok(format!("{}", session_uuid))
+            Ok(response)
         }
     }
 }

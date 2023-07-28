@@ -7,7 +7,7 @@ pub struct Session {
     pub id: Uuid,
     pub user_id: Option<String>,
     created_at: SystemTime,
-    expires_at: SystemTime,
+    pub expires_at: SystemTime,
     authenticated: bool,
 }
 

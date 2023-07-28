@@ -60,7 +60,8 @@ pub struct HttpResponse {
 impl HttpResponse {
     pub fn from(status_code: StatusCode, headers: HashMap<String, String>, body: String) -> HttpResponse {
         let mut headers = headers.clone();
-        headers.insert("Access-Control-Allow-Origin".to_string(), "*".to_string());
+        headers.insert("Access-Control-Allow-Origin".to_string(), "http://localhost:8080".to_string());
+        headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
         HttpResponse { status_code, headers, body }
     }
 
@@ -121,7 +122,11 @@ impl Cookie {
                 let splitted_values = value.split("; ").collect::<Vec<&str>>();
                 for value in splitted_values {
                     let splitted_cookie_value = value.split("=").collect::<Vec<&str>>();
-                    data_hashmap.insert(splitted_cookie_value[0].to_string(), splitted_cookie_value[1].to_string());
+                    if let Some(key) = splitted_cookie_value.get(0) {
+                        if let Some(value) = splitted_cookie_value.get(1) {
+                            data_hashmap.insert(key.to_string(), value.to_string());
+                        }
+                    }
                 }
                 Cookie { data: data_hashmap }
             }
