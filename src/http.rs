@@ -2,6 +2,32 @@ use std::collections::HashMap;
 use std::fs;
 use crate::entities::session::Session;
 use crate::environment::get_api_url;
+use std::time::{SystemTime, Duration};
+use chrono::{DateTime, Local};
+
+pub struct ServerUrl {
+    pub protocol: String,
+    pub host: String,
+    pub port: Option<String>,
+}
+
+impl ServerUrl {
+    pub fn from(url_string: String) -> ServerUrl {
+        let splitted_first = url_string.split("://").collect::<Vec<&str>>();
+        let protocol = splitted_first.get(0).expect("Should have a protocol value in url").to_string();
+        let authority = splitted_first.get(1).expect("Should have an authority");
+        let host = authority.split(":").collect::<Vec<_>>().get(0).expect("Should have a host").to_string();
+        let port = authority.split(":").collect::<Vec<_>>().get(1).map(|value| value.to_string());
+        ServerUrl { protocol, host, port }
+    }
+
+    pub fn to_string_url(&self) -> String {
+        match &self.port {
+            Some(value) => format!("{}://{}:{}", self.protocol, self.host, value),
+            None => format!("{}://{}", self.protocol, self.host),
+        }
+    }
+}
 
 pub struct HttpRequest {
     pub method: String,
@@ -60,7 +86,7 @@ pub struct HttpResponse {
 impl HttpResponse {
     pub fn from(status_code: StatusCode, headers: HashMap<String, String>, body: String) -> HttpResponse {
         let mut headers = headers.clone();
-        headers.insert("Access-Control-Allow-Origin".to_string(), "http://localhost:8080".to_string());
+        headers.insert("Access-Control-Allow-Origin".to_string(), ServerUrl::from(get_api_url()).host);
         headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
         HttpResponse { status_code, headers, body }
     }
@@ -131,5 +157,32 @@ impl Cookie {
                 Cookie { data: data_hashmap }
             }
         }
+    }
+}
+
+pub struct CookieValue {
+    pub key: String,
+    pub value: String,
+    pub expires: SystemTime,
+    pub domain: String,
+    pub path: String,
+    pub same_site: String,
+    pub secure: bool,
+}
+
+impl CookieValue {
+    pub fn new(key: String, value: String, expires: SystemTime) -> CookieValue {
+        let domain = ServerUrl::from(get_api_url()).host;
+        let path = "/".to_string();
+        let same_site = "Lax".to_string();
+        let secure = true;
+        CookieValue { key, value, expires, domain, path, same_site, secure }
+    }
+
+    pub fn format(&self) -> String {
+
+        let datetime: DateTime<Local> = self.expires.into();
+        let expires = datetime.format("%a, %d-%b-%Y %H:%M:%S GMT");
+        format!("{}={}; Expires={expires}; Domain={}; Path={}; SameSite={}; Secure", self.key, self.value, self.domain, self.path, self.same_site)
     }
 }

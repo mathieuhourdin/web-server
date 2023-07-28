@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use serde_json;
 use crate::database;
 use crate::entities::{session::Session, error::PpdcError};
-use chrono::{DateTime, Local};
+use crate::http::{CookieValue};
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
@@ -98,16 +98,16 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
                     }
                 },
             };
-            let session_uuid = found_session.id;
+            let session_uuid = format!("{}", found_session.id);
+            let response = CookieValue::new("session_id".to_string(), session_uuid, found_session.expires_at).format();
             request.session = Some(found_session);
-            Ok(format!("{}", session_uuid))
+            Ok(response)
         },
         None => {
             let new_session = Session::new();
             database::create_or_update_session(&new_session).await?;
-            let session_uuid = new_session.id;
-            let datetime: DateTime<Local> = new_session.expires_at.into();
-            let response = format!("session_id={}; Expires={}", session_uuid, datetime.format("%a, %d-%b-%Y %H:%M:%S GMT"));
+            let session_uuid = format!("{}", new_session.id);
+            let response = CookieValue::new("session_id".to_string(), session_uuid, new_session.expires_at).format();
             request.session = Some(new_session);
             Ok(response)
         }

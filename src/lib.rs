@@ -3,7 +3,7 @@ use std::io::{prelude::*};
 use std::thread;
 use std::time::Duration;
 use serde_json;
-use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
+use http::{ServerUrl, HttpRequest, HttpResponse, StatusCode, Cookie};
 use std::collections::HashMap;
 use entities::user::User;
 
@@ -59,7 +59,8 @@ async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpRes
             )
     };
     let mut response = route_request(request).await;
-    response.set_header("Set-Cookie", format!("{session_cookie}; Domain=localhost; SameSite=Lax"));
+    println!("Session cookie : {session_cookie}");
+    response.set_header("Set-Cookie", session_cookie);
     response
 }
 
