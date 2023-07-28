@@ -183,6 +183,6 @@ impl CookieValue {
 
         let datetime: DateTime<Local> = self.expires.into();
         let expires = datetime.format("%a, %d-%b-%Y %H:%M:%S GMT");
-        format!("{}={}; Expires={expires}; Domain={}; Path={}; SameSite={}; Secure", self.key, self.value, self.domain, self.path, self.same_site)
+        format!("{}={}; Expires={expires}; Domain={}; Path={}; SameSite={}", self.key, self.value, self.domain, self.path, self.same_site)
     }
 }
