@@ -34,10 +34,24 @@ pub async fn handle_connection(mut stream: TcpStream) {
     let mut http_request = HttpRequest::from(&string_request);
 
 
-    let http_response: HttpResponse = decode_cookie_for_request_middleware(&mut http_request).await;
+    let http_response: HttpResponse = cors_middleware(&mut http_request).await;
 
     let response = http_response.to_stream(); 
     stream.write_all(response.as_bytes()).unwrap();
+}
+
+async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {
+    let mut allow_origin_host = String::new();
+    if let Some(origin) = request.headers.get("Origin") {
+        if origin == "127.0.0.1" {
+            allow_origin_host = "127.0.0.1".to_string();
+        } else if origin == "http://localhost:8080" {
+            allow_origin_host = "http://localhost:8080".to_string();
+        }
+    }
+    let mut response = decode_cookie_for_request_middleware(request).await;
+    response.headers.insert("Access-Control-Allow-Origin".to_string(), allow_origin_host);
+    response
 }
 
 async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> HttpResponse {
