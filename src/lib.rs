@@ -68,7 +68,7 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
     let session_id = &request.session.as_ref().unwrap().id;
     println!("Request with session id : {session_id}");
     match (&request.method[..], &request.parsed_uri()[..]) {
-        ("GET", []) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
+        ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
         ("POST", ["mathilde"]) => post_mathilde_route(&request).await,
         ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
@@ -77,6 +77,7 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("POST", ["articles"]) => post_articles_route(&request.body).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
+        ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
 }

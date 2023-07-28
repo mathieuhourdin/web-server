@@ -1,0 +1,45 @@
+
+.bg-pink {
+    background-color: pink;
+}
+.bg-skyblue {
+    background-color: skyblue;
+}
+.ma-8 {
+    margin: 8px;
+}
+.ma-20 {
+    margin: 20px;
+}
+.ma-10p {
+    margin: 10%;
+}
+.pa-5p {
+    padding: 5%;
+}
+
+.align-center {
+    text-align: center;
+}
+
+.action-button {
+    box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.5);
+    background-color: #ece6e6;
+    border-radius: 8px;
+    border-color: black;
+    border-width: 2px;
+    text-transform: uppercase;
+    padding: 10px 16px;
+    color: #d92242;
+    letter-spacing: 0.08em;
+}
+
+.auth-button {
+    position: absolute;
+    right: 5%;
+    top: 10%;
+}
+
+body {
+    font-family: system-ui;
+}
