@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::user::User;
+use entities::{user::User, article::Article};
 use regex::Regex;
 
 pub mod threadpool;
@@ -88,7 +88,7 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
         ("POST", ["users"]) => post_user(&request).await,
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
-        ("POST", ["articles"]) => post_articles_route(&request.body).await,
+        ("POST", ["articles"]) => post_articles_route(&request).await,
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["articles"]) => get_articles(&request).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
@@ -143,14 +143,20 @@ async fn get_article_route(article_uuid: &str) -> HttpResponse {
         .unwrap())
 }
 
-async fn post_articles_route(body: &String) -> HttpResponse {
+async fn post_articles_route(request: &HttpRequest) -> HttpResponse {
 
-    match serde_json::from_str(&body[..]) {
-        Ok(mut article) => HttpResponse::new(
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string());
+    }
+    match serde_json::from_str::<Article>(&request.body[..]) {
+        Ok(mut article) => {
+            article.author_id = request.session.as_ref().unwrap().user_id.clone();
+            HttpResponse::new(
             StatusCode::Ok,
             database::create_article(&mut article)
             .await
-            .unwrap()),
+            .unwrap())
+        },
         Err(err) => HttpResponse::new(
             StatusCode::BadRequest,
             format!("Error with the payload : {:#?}", err)),

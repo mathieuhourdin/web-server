@@ -5,46 +5,51 @@
         <title>Créer un article</title>
         <link rel="stylesheet" type="text/css" href="/public/style.css" />
     </head>
-    <body class="bg-pink">
+    <header class="header d-flex">
+        <h3 class="mr-auto ma-8">Nav</h3>
+        <a class="justify-self-center ma-8" href="/">Plus proche du coeur</a>
         <button
             id="authButton"
-            class="action-button auth-button"
+            class="action-button ml-auto ma-8"
             >S'authentifier</button>
-        <div class="align-center bg-skyblue ma-10p">
+    </header>
+    <body class="bg-pink">
+        <div class="bg-skyblue ma-10p">
             <div class="pa-5p bg-skyblue">
-                <h1>Créer un article</h1>
-                    <div class="w-60p">
-                        <div class="align-left ma-8">
-                            <label style="display: block" for="article-title">Titre de l'article</label>
-                            <input id="article-title" type="text" placeholder="Titre" size=90>
-                        </div>
-                        <div class="align-left ma-8">
-                            <label style="display: block" for="article-description">Description de l'article</label>
-                            <input id="article-description" type="text" placeholder="Titre" size=90>
-                        </div>
-                        <div class="align-left ma-8">
-                            <label style="display: block" for="article-image-url">Lien image de l'article</label>
-                            <input id="article-image-url" type="text" placeholder="Titre" size=90>
-                        </div>
-                        <div class="align-left ma-8">
-                            <label style="display: block" for="article-gdoc-url">Lien gdoc de l'article</label>
-                            <input id="article-gdoc-url" type="text" placeholder="Titre" size=90>
-                        </div>
-                        <div class="align-left ma-8">
-                            <label style="display: block" for="article-progress">Avancement de l'article</label>
-                            <input id="article-progress" type="number" min=0 max=100 placeholder="Progression" size=90>
-                        </div>
-                        <div class="align-left ma-8">
-                            <label style="display: block" for="article-content">Contenu de l'article</label>
-                            <textarea id="article-content" type="text" placeholder="Titre" rows=120 cols=180></textarea>
-                        </div>
+                <div class="d-flex">
+                    <h1>Créer un article</h1>
+                    <button 
+                        id="sendButton"
+                        class="action-button ml-auto h-40p"
+                        >
+                     Enregistrer
+                    </button>
+                </div>
+                <div class="pa-2p">
+                    <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-title">Titre de l'article</label>
+                        <input id="article-title" class="w-100p" type="text" placeholder="Titre">
                     </div>
-                <button 
-                    id="sendButton"
-                    class="action-button"
-                    >Créer une nouvelle Mathilde</button>
-                <div class="ma-20">
-                    <span id="text">...</span>
+                    <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-description">Description de l'article</label>
+                        <input id="article-description" class="w-100p" type="text" placeholder="Titre" size=90>
+                    </div>
+                    <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-image-url">Lien image de l'article</label>
+                        <input id="article-image-url" class="w-100p" type="text" placeholder="Titre" size=90>
+                    </div>
+                    <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-gdoc-url">Lien gdoc de l'article</label>
+                        <input id="article-gdoc-url" class="w-100p" type="text" placeholder="Titre" size=90>
+                    </div>
+                    <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-progress">Avancement de l'article</label>
+                        <input id="article-progress" class="w-100p" type="number" min=0 max=100 placeholder="Progression" size=90>
+                    </div>
+                    <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-content">Contenu de l'article</label>
+                        <textarea id="article-content" class="w-100p" type="text" placeholder="Titre" rows=120 cols=180></textarea>
+                    </div>
                 </div>
             </div>
         </div>

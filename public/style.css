@@ -1,4 +1,6 @@
-
+.d-flex {
+    display: flex;
+}
 .bg-pink {
     background-color: pink;
 }
@@ -14,6 +16,15 @@
 .ma-10p {
     margin: 10%;
 }
+.ml-auto {
+    margin-left: auto;
+}
+.mr-auto {
+    margin-right: auto;
+}
+.pa-2p {
+    padding: 2%;
+}
 .pa-5p {
     padding: 5%;
 }
@@ -22,6 +33,22 @@
     width: 60%;
 }
 
+.w-80p {
+    width: 80%;
+}
+
+.w-100p {
+    width: 100%
+}
+.h-20 {
+    height: 20px;
+}
+.h-40p {
+    height: 40%;
+}
+.justify-self-center {
+    justify-self: center;
+}
 .align-center {
     text-align: center;
 }
@@ -46,6 +73,14 @@
     position: absolute;
     right: 5%;
     top: 10%;
+}
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background-color: #f7eeee;
 }
 
 body {

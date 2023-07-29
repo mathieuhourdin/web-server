@@ -1,5 +1,4 @@
 use serde::{Serialize, Deserialize};
-use std::time::{SystemTime};
 
 #[derive(Serialize, Deserialize)]
 pub struct Article {
