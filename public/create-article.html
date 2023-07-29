@@ -47,6 +47,10 @@
                         <input id="article-progress" class="w-100p" type="number" min=0 max=100 placeholder="Progression" size=90>
                     </div>
                     <div class="align-left ma-8 w-100p">
+                        <label style="display: block" for="article-url-slug">Suffix de l'url de l'article</label>
+                        <input id="article-url-slug" class="w-100p" type="text" min=0 max=100 placeholder="Suffix url" size=90>
+                    </div>
+                    <div class="align-left ma-8 w-100p">
                         <label style="display: block" for="article-content">Contenu de l'article</label>
                         <textarea id="article-content" class="w-100p" type="text" placeholder="Titre" rows=120 cols=180></textarea>
                     </div>
@@ -72,6 +76,7 @@
                             gdoc_url: articleGdocUrl,
                             image_url: articleImageUrl,
                             progress: Number(articleProgress),
+                            url_slug: articleUrlSlug,
                             content: articleContent,
                         })
                 };
@@ -86,18 +91,27 @@
     const titleInput = document.getElementById("article-title");
     let articleTitle = "";
     titleInput.addEventListener("change", (event) => articleTitle = event.target.value);
+
     const descriptionInput = document.getElementById("article-description");
     let articleDescription = "";
     descriptionInput.addEventListener("change", (event) => articleDescription = event.target.value);
+
     const imageUrlInput = document.getElementById("article-image-url");
     let articleImageUrl = "";
     imageUrlInput.addEventListener("change", (event) => articleImageUrl = event.target.value);
+
     const gdocUrlInput = document.getElementById("article-gdoc-url");
     let articleGdocUrl = "";
     gdocUrlInput.addEventListener("change", (event) => articleGdocUrl = event.target.value);
+
     const progressInput = document.getElementById("article-progress");
     let articleProgress = "";
     progressInput.addEventListener("change", (event) => articleProgress = event.target.value);
+
+    const urlSlugInput = document.getElementById("article-urlSlug");
+    let articleUrlSlug = "";
+    urlSlugInput.addEventListener("change", (event) => articleUrlSlug = event.target.value);
+
     const contentInput = document.getElementById("article-content");
     let articleContent = "";
     contentInput.addEventListener("change", (event) => articleContent = event.target.value);

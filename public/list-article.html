@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Créer un article</title>
+        <link rel="stylesheet" type="text/css" href="/public/style.css" />
+    </head>
+    <header class="header d-flex">
+        <h3 class="mr-auto ma-8">Nav</h3>
+        <a class="justify-self-center ma-8" href="/">Plus proche du coeur</a>
+        <button
+            id="authButton"
+            class="action-button ml-auto ma-8"
+            >S'authentifier</button>
+    </header>
+    <body class="bg-pink">
+        <div class="bg-skyblue ma-10p">
+            <div class="pa-5p bg-skyblue">
+                <div class="d-flex">
+                    <h1>Liste des articles</h1>
+                </div>
+                <div class="pa-2p grid grid-col-2" id="articles-list">
+                    
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
+
+<script>
+
+    const articlesListElement = document.getElementById("articles-list");
+    let articlesListData = [];
+
+    addEventListener("load", async (event) => await fetchArticles());
+
+    const fetchArticles = async () => {
+        const getUrl = process.env.API_URL + "/articles";
+        const options = {
+                method: "GET",
+                credentials: "include",
+            };
+        const response = await fetch(getUrl, options);
+        articlesListData = await response.json();
+        articlesListData.forEach((article) => {
+            const newArticleElement = createArticleElementFromJson(article);
+            articlesListElement.appendChild(newArticleElement);
+        })
+    }
+
+    const createArticleElementFromJson = (article) => {
+        const containerElement = document.createElement("div");
+        containerElement.classList.add("ma-20", "align-center");
+        linkElement = document.createElement("a");
+        linkElement.href = "/articles/" + article.url_slug;
+        containerElement.appendChild(linkElement);
+        //image element
+        const imageElement = document.createElement("img");
+        imageElement.src = article.image_url;
+        imageElement.width = 500;
+        imageElement.classList.add("rounded-xl", "ratio-2");
+        linkElement.appendChild(imageElement);
+        //title element
+        const titleElement = document.createElement("div");
+        titleElement.textContent = article.title;
+        titleElement.classList.add("text-bold");
+        linkElement.appendChild(titleElement);
+        //description element
+        const descriptionElement = document.createElement("div");
+        descriptionElement.textContent = article.description;
+        linkElement.appendChild(descriptionElement);
+        return containerElement;
+    }
+    
+
+    const authButton = document.getElementById("authButton");
+
+    authButton.addEventListener('click', async function() {
+            console.log("New auth button click");
+            const url = process.env.API_URL + "/sessions";
+            const options = {
+                    method: "POST",
+                    body: JSON.stringify({username: "mathieu.hourdin@gmail.com", password: "mathieu"}),
+                    credentials: "include"
+                };
+            fetch(url, options);
+        });
+</script>

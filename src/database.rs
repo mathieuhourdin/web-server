@@ -24,7 +24,7 @@ pub struct AllDocsResponseContent {
     pub id: String,
     pub key: String,
     pub value: HashMap<String, String>,
-    pub doc: HashMap<String, String>,
+    pub doc: Article,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -187,15 +187,7 @@ pub async fn get_all_docs(database_name: &str, skip: u32, limit: u32) -> Result<
 
 pub async fn get_articles(offset: u32, limit: u32) -> Result<Vec<Article>, PpdcError> {
     let all_docs_response = get_all_docs("articles", offset, limit).await?;
-    all_docs_response
-        .rows
-        .iter()
-        .map(|row| {
-            let value = serde_json::Value::from_iter(row.doc.clone().into_iter());
-            serde_json::from_value(value)
-            .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with article format: {:#?}", err)))
-            })
-        .collect()
+    Ok(all_docs_response.rows.iter().map(|value| value.doc.clone()).collect::<Vec<Article>>())
 }
 
 pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
