@@ -91,6 +91,7 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("POST", ["articles"]) => post_articles_route(&request).await,
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
+        ("GET", ["see-article", uuid]) => see_article(uuid, &request),
         ("GET", ["articles"]) => get_articles(&request).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
         ("GET", ["sleep"]) => sleep_route(),
@@ -119,6 +120,12 @@ async fn get_user_by_uuid(user_uuid: &str) -> HttpResponse {
         StatusCode::Ok,
         serde_json::to_string(&database::get_user_by_uuid(user_uuid).await.unwrap()).unwrap()
         )
+}
+
+fn see_article(uuid: &str, request: &HttpRequest) -> HttpResponse {
+    let mut response = HttpResponse::from_file(StatusCode::Ok, "article_id.html");
+    response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
+    response
 }
 
 async fn get_articles(request: &HttpRequest) -> HttpResponse {

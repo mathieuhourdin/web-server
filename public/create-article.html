@@ -65,6 +65,35 @@
 
     const text = document.getElementById("text");
 
+
+    const titleInput = document.getElementById("article-title");
+    let articleTitle = "";
+    titleInput.addEventListener("change", (event) => articleTitle = event.target.value);
+
+    const descriptionInput = document.getElementById("article-description");
+    let articleDescription = "";
+    descriptionInput.addEventListener("change", (event) => articleDescription = event.target.value);
+
+    const imageUrlInput = document.getElementById("article-image-url");
+    let articleImageUrl = "";
+    imageUrlInput.addEventListener("change", (event) => articleImageUrl = event.target.value);
+
+    const gdocUrlInput = document.getElementById("article-gdoc-url");
+    let articleGdocUrl = "";
+    gdocUrlInput.addEventListener("change", (event) => articleGdocUrl = event.target.value);
+
+    const progressInput = document.getElementById("article-progress");
+    let articleProgress = "";
+    progressInput.addEventListener("change", (event) => articleProgress = event.target.value);
+
+    const urlSlugInput = document.getElementById("article-url-slug");
+    let articleUrlSlug = "";
+    urlSlugInput.addEventListener("change", (event) => articleUrlSlug = event.target.value);
+
+    const contentInput = document.getElementById("article-content");
+    let articleContent = "";
+    contentInput.addEventListener("change", (event) => articleContent = event.target.value);
+
     button.addEventListener('click', function() {
             const url = process.env.API_URL + "/articles";
             const options = {
@@ -87,35 +116,6 @@
                         console.log(data)
                     });
         });
-
-    const titleInput = document.getElementById("article-title");
-    let articleTitle = "";
-    titleInput.addEventListener("change", (event) => articleTitle = event.target.value);
-
-    const descriptionInput = document.getElementById("article-description");
-    let articleDescription = "";
-    descriptionInput.addEventListener("change", (event) => articleDescription = event.target.value);
-
-    const imageUrlInput = document.getElementById("article-image-url");
-    let articleImageUrl = "";
-    imageUrlInput.addEventListener("change", (event) => articleImageUrl = event.target.value);
-
-    const gdocUrlInput = document.getElementById("article-gdoc-url");
-    let articleGdocUrl = "";
-    gdocUrlInput.addEventListener("change", (event) => articleGdocUrl = event.target.value);
-
-    const progressInput = document.getElementById("article-progress");
-    let articleProgress = "";
-    progressInput.addEventListener("change", (event) => articleProgress = event.target.value);
-
-    const urlSlugInput = document.getElementById("article-urlSlug");
-    let articleUrlSlug = "";
-    urlSlugInput.addEventListener("change", (event) => articleUrlSlug = event.target.value);
-
-    const contentInput = document.getElementById("article-content");
-    let articleContent = "";
-    contentInput.addEventListener("change", (event) => articleContent = event.target.value);
-
 
     const authButton = document.getElementById("authButton");
 

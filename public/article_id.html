@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Créer un article</title>
+        <link rel="stylesheet" type="text/css" href="/public/style.css" />
+    </head>
+    <header class="header d-flex">
+        <h3 class="mr-auto ma-8">Nav</h3>
+        <a class="justify-self-center ma-8" href="/">Plus proche du coeur</a>
+        <button
+            id="authButton"
+            class="action-button ml-auto ma-8"
+            >S'authentifier</button>
+    </header>
+    <body class="bg-pink">
+        <div class="bg-skyblue ma-10p">
+            <div class="pa-5p bg-skyblue">
+                 <h1 id="article-title"></h1>
+                 <h3 id="article-description"><h3>
+                <div id="article-content"></div>
+            </div>
+        </div>
+    </body>
+</html>
+<script src="https://cdn.jsdelivr.net/npm/marked@3.0.8/marked.min.js"></script>
+<script>
+
+    const articleId = INJECTED_ARTICLE_ID;
+    const articlesListElement = document.getElementById("articles-list");
+    const articleTitleElement = document.getElementById("article-title");
+    const articleDescriptionElement = document.getElementById("article-description");
+    const articleContentElement = document.getElementById("article-content");
+    let articleData = {};
+
+    addEventListener("load", async (event) => await fetchArticle());
+
+    const fetchArticle = async () => {
+        const getUrl = process.env.API_URL + "/articles/" + articleId;
+        const options = {
+                method: "GET",
+                credentials: "include",
+            };
+        const response = await fetch(getUrl, options);
+        articleData = await response.json();
+        articleTitleElement.textContent = articleData.title;
+        articleDescriptionElement.textContent = articleData.description;
+        articleContentElement.innerHTML = marked(articleData.content);
+
+    }
+
+    const authButton = document.getElementById("authButton");
+
+    authButton.addEventListener('click', async function() {
+            console.log("New auth button click");
+            const url = process.env.API_URL + "/sessions";
+            const options = {
+                    method: "POST",
+                    body: JSON.stringify({username: "mathieu.hourdin@gmail.com", password: "mathieu"}),
+                    credentials: "include"
+                };
+            fetch(url, options);
+        });
+</script>
