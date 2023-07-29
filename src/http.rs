@@ -4,6 +4,7 @@ use crate::entities::session::Session;
 use crate::environment::get_api_url;
 use std::time::{SystemTime};
 use chrono::{DateTime, Local};
+use crate::entities::error::{PpdcError, ErrorType};
 
 pub struct ServerUrl {
     pub protocol: String,
@@ -54,12 +55,12 @@ fn decode_query_string(query_string: &str) -> HashMap<String, String> {
 }
 
 impl HttpRequest {
-    pub fn from(request_string: &String) -> HttpRequest {
+    pub fn from(request_string: &String) -> Result<HttpRequest, PpdcError> {
 
         let request_array = request_string.split("\r\n\r\n").collect::<Vec<&str>>();
 
         if request_array.len() < 2 {
-            panic!("Should be a valid http request");
+            return Err(PpdcError::new(500, ErrorType::InternalError, format!("Not enouth lines in request : {:#?}", request_string)));
         }
 
         let first_part = &request_array[0].split("\r\n").collect::<Vec<&str>>();
@@ -92,7 +93,7 @@ impl HttpRequest {
 
         let cookies = Cookie { data: HashMap::new() };
 
-        HttpRequest { method, path, query, headers, body, cookies, session: None }
+        Ok(HttpRequest { method, path, query, headers, body, cookies, session: None })
     }
 
     pub fn parsed_path(&self) -> Vec<&str> {

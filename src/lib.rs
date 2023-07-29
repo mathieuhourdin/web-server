@@ -32,7 +32,15 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
     println!("Request is : {string_request}");
 
-    let mut http_request = HttpRequest::from(&string_request);
+    let mut http_request = match HttpRequest::from(&string_request) {
+        Ok(value) => value,
+        Err(_) => {
+            let response = HttpResponse::new(StatusCode::BadRequest, "invalid request".to_string());
+            let response = response.to_stream();
+            stream.write_all(response.as_bytes()).unwrap();
+            return;
+        },
+    };
 
 
     let http_response: HttpResponse = cors_middleware(&mut http_request).await;
