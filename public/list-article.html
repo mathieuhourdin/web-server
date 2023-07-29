@@ -14,12 +14,12 @@
             >S'authentifier</button>
     </header>
     <body class="bg-pink">
-        <div class="bg-skyblue ma-10p">
+        <div class="bg-skyblue md:ma-10p ld:ma-5p">
             <div class="pa-5p bg-skyblue">
                 <div class="d-flex">
                     <h1>Liste des articles</h1>
                 </div>
-                <div class="pa-2p grid grid-col-2" id="articles-list">
+                <div class="pa-2p grid grid-cols-1 md:grid-cols-2" id="articles-list">
                     
                 </div>
             </div>
@@ -58,7 +58,7 @@
         const imageElement = document.createElement("img");
         imageElement.src = article.image_url;
         imageElement.width = 500;
-        imageElement.classList.add("rounded-xl", "ratio-2");
+        imageElement.classList.add("rounded-xl", "ratio-2", "mw-100p");
         linkElement.appendChild(imageElement);
         //title element
         const titleElement = document.createElement("div");

@@ -4,14 +4,30 @@
 .grid {
     display: grid;
 }
-.grid-col-2 {
+.grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+.grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 768px) {
+    .md\:grid-cols-2 {
+      grid-template-columns: repeat(2,minmax(0,1fr));
+    }
 }
 .bg-pink {
     background-color: pink;
 }
 .bg-skyblue {
     background-color: skyblue;
+}
+.ma-3p {
+    margin: 3%;
+}
+@media (max-width: 768px) {
+    .ld\:ma-5p {
+      margin: 5%;
+    }
 }
 .ma-8 {
     margin: 8px;
@@ -21,6 +37,11 @@
 }
 .ma-10p {
     margin: 10%;
+}
+@media (min-width: 768px) {
+    .md\:ma-10p {
+      margin: 10%;
+    }
 }
 .ml-auto {
     margin-left: auto;
@@ -35,6 +56,9 @@
     padding: 5%;
 }
 
+.mw-100p {
+    max-width: 100%;
+}
 .w-60p {
     width: 60%;
 }
