@@ -196,6 +196,23 @@ pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
     reqwest::get(full_url).await?.json::<Article>().await
 }
 
+pub async fn update_article(article: &Article) -> Result<(), PpdcError> {
+    println!("create_or_update_session : new session persisting");
+    let uuid = article.uuid.as_ref().unwrap();
+    let revision_id = get_revision_for_document("articles", format!("{}", article.uuid.clone().unwrap())).await?;
+    let client = reqwest::Client::new();
+    let response = client.put(format!("{}/articles/{uuid}", get_database_url()))
+        .json::<Article>(&article)
+        .header("If-Match", revision_id)
+        .send()
+        .await
+        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a new article: {:#?}", err)))?;
+    if response.status().as_u16() >= 400 {
+        return Err(PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a article: {}", response.text().await.unwrap())));
+    }
+    Ok(())
+}
+
 pub async fn create_article(article: &mut Article) -> Result<String, ReqwestError> {
     let uuid = get_new_uuid().await?;
     article.uuid = Some(uuid.clone());

@@ -61,6 +61,7 @@ async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {
     let mut response = decode_cookie_for_request_middleware(request).await;
     response.headers.insert("Access-Control-Allow-Origin".to_string(), allow_origin_host);
     response.headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
+    response.headers.insert("Access-Control-Allow-Methods".to_string(), "GET, POST, PUT, OPTIONS, DELETE".to_string());
     response
 }
 
@@ -100,10 +101,13 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("GET", ["see-article", uuid]) => see_article(uuid, &request),
+        ("GET", ["edit-article", uuid]) => edit_article(uuid, &request),
         ("GET", ["articles"]) => get_articles(&request).await,
         ("GET", ["articles", uuid]) => get_article_route(uuid).await,
+        ("PUT", ["articles", uuid]) => put_article_route(uuid, &request).await,
         ("GET", ["sleep"]) => sleep_route(),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
+        ("OPTIONS", [..]) => HttpResponse::new(StatusCode::Ok, "Ok".to_string()),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
 }
@@ -134,6 +138,32 @@ fn see_article(uuid: &str, request: &HttpRequest) -> HttpResponse {
     let mut response = HttpResponse::from_file(StatusCode::Ok, "article_id.html");
     response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
     response
+}
+
+fn edit_article(uuid: &str, request: &HttpRequest) -> HttpResponse {
+    let mut response = HttpResponse::from_file(StatusCode::Ok, "edit-article-id.html");
+    response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
+    response
+}
+
+async fn put_article_route(uuid: &str, request: &HttpRequest) -> HttpResponse {
+
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string());
+    }
+    match serde_json::from_str::<Article>(&request.body[..]) {
+        Ok(mut article) => {
+            article.author_id = request.session.as_ref().unwrap().user_id.clone();
+            HttpResponse::new(
+            StatusCode::Ok,
+            database::update_article(&mut article)
+            .await
+            .map(|()| "Ok".to_string()).unwrap())
+        },
+        Err(err) => HttpResponse::new(
+            StatusCode::BadRequest,
+            format!("Error with the payload : {:#?}", err)),
+    }
 }
 
 async fn get_articles(request: &HttpRequest) -> HttpResponse {

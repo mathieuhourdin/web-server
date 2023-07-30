@@ -16,7 +16,10 @@
     <body class="bg-pink">
         <div class="bg-skyblue ma-10p">
             <div class="pa-5p bg-skyblue">
+                 <div class="d-flex">
                  <h1 id="article-title"></h1>
+                 <a id="edit-link" class="ml-auto">Editer</a>
+                 </div>
                  <h3 id="article-description"><h3>
                 <div id="article-content"></div>
             </div>
@@ -27,6 +30,8 @@
 <script>
 
     const articleId = INJECTED_ARTICLE_ID;
+    const editLink = document.getElementById("edit-link");
+    editLink.href = "/edit-article/" + articleId;
     const articlesListElement = document.getElementById("articles-list");
     const articleTitleElement = document.getElementById("article-title");
     const articleDescriptionElement = document.getElementById("article-description");
