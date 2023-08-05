@@ -21,6 +21,8 @@ pub async fn handle_connection(mut stream: TcpStream) {
     loop {
         let mut buffer = [0; 1024];
 
+        thread::sleep(Duration::from_millis(10));
+
         let read_bytes = stream.read(&mut buffer).unwrap();
 
         string_request += &String::from(String::from_utf8_lossy(&buffer[..read_bytes]))[..];
