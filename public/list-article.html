@@ -5,22 +5,20 @@
         <title>Créer un article</title>
         <link rel="stylesheet" type="text/css" href="/public/style.css" />
     </head>
-    <header class="header d-flex">
-        <h3 class="mr-auto ma-8">Nav</h3>
-        <a class="justify-self-center ma-8" href="/">Plus proche du coeur</a>
-        <button
-            id="authButton"
-            class="action-button ml-auto ma-8"
-            >S'authentifier</button>
-    </header>
-    <body class="bg-pink">
-        <div class="bg-skyblue md:ma-10p ld:ma-5p">
-            <div class="pa-5p bg-skyblue">
-                <div class="d-flex">
-                    <h1>Liste des articles</h1>
-                </div>
+    <body class="ma-0" style="border-color: #e5e7eb">
+        <Header />
+        <section class="d-flex h-80 relative mat-80 justify-center items-center">
+            <div class="absolute overflow-hidden w-100p h-100p opacity-30">
+            <img
+                src="https://img.freepik.com/photos-gratuite/jetee-au-bord-lac-hallstatt-autriche_181624-44201.jpg"
+                class="absolute w-100p"
+            ></img>
+            </div>
+            <h1 class="align-center text-bold text-2xl">👨‍🚀 Bienvenue plus proche du coeur</h1>
+        </section>
+        <div class="md:ma-10p ld:ma-5p mat-10" style="margin-top: 10px">
+            <div class="pa-5p">
                 <div class="pa-2p grid grid-cols-1 md:grid-cols-2" id="articles-list">
-                    
                 </div>
             </div>
         </div>

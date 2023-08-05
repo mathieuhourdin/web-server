@@ -5,22 +5,18 @@
         <title>Créer un article</title>
         <link rel="stylesheet" type="text/css" href="/public/style.css" />
     </head>
-    <header class="header d-flex">
-        <h3 class="mr-auto ma-8">Nav</h3>
-        <a class="justify-self-center ma-8" href="/">Plus proche du coeur</a>
-        <button
-            id="authButton"
-            class="action-button ml-auto ma-8"
-            >S'authentifier</button>
-    </header>
-    <body class="bg-pink">
-        <div class="bg-skyblue ma-10p">
-            <div class="pa-5p bg-skyblue">
+    <Header />
+    <body class="">
+        <div class="ma-10p">
+            <div class="pa-5p">
+                <div class="d-flex">
+                    <img id="article-image" class="rounded-xl mw-100p ml-auto mr-auto"></img>
+                </div>
                  <div class="d-flex">
-                 <h1 id="article-title"></h1>
-                 <a id="edit-link" class="ml-auto">Editer</a>
+                     <h1 id="article-title" class="align-center"></h1>
+                     <a id="edit-link" class="ml-auto">Editer</a>
                  </div>
-                 <h3 id="article-description"><h3>
+                 <h3 id="article-description" class="align-center mab-50"><h3>
                 <div id="article-content"></div>
             </div>
         </div>
@@ -32,10 +28,12 @@
     const articleId = INJECTED_ARTICLE_ID;
     const editLink = document.getElementById("edit-link");
     editLink.href = "/edit-article/" + articleId;
-    const articlesListElement = document.getElementById("articles-list");
+
     const articleTitleElement = document.getElementById("article-title");
     const articleDescriptionElement = document.getElementById("article-description");
     const articleContentElement = document.getElementById("article-content");
+    const articleImageElement = document.getElementById("article-image");
+
     let articleData = {};
 
     addEventListener("load", async (event) => await fetchArticle());
@@ -50,6 +48,7 @@
         articleData = await response.json();
         articleTitleElement.textContent = articleData.title;
         articleDescriptionElement.textContent = articleData.description;
+        articleImageElement.src = articleData.image_url;
         articleContentElement.innerHTML = marked(articleData.content);
 
     }

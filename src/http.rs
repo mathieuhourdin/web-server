@@ -116,6 +116,9 @@ impl HttpResponse {
     pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
         let html_body = fs::read_to_string(format!("public/{file_path}")).unwrap();
         let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
+
+        let header_code = fs::read_to_string("public/Header.html").unwrap();
+        let html_body = html_body.replace("<Header />", &header_code);
         HttpResponse::new(status_code, html_body)
     }
 
