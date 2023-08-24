@@ -115,10 +115,14 @@ impl HttpResponse {
 
     pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
         let html_body = fs::read_to_string(format!("public/{file_path}")).unwrap();
-        let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
 
         let header_code = fs::read_to_string("public/Header.html").unwrap();
         let html_body = html_body.replace("<Header />", &header_code);
+
+        let user_management_code = fs::read_to_string("public/user-datas.html").unwrap();
+        let html_body = html_body + &user_management_code;
+
+        let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
         HttpResponse::new(status_code, html_body)
     }
 
@@ -196,7 +200,7 @@ pub struct CookieValue {
 
 impl CookieValue {
     pub fn new(key: String, value: String, expires: SystemTime) -> CookieValue {
-        let domain = ServerUrl::from(get_api_url()).host;
+        let domain = ServerUrl::from("http://localhost:5173".to_string()).host;
         let path = "/".to_string();
         let same_site = "Lax".to_string();
         let secure = true;

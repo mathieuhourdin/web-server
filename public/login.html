@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Bienvenue Plus Proche du Coeur</title>
+        <link rel="stylesheet" type="text/css" href="/public/style.css" />
+    </head>
+    <Header />
+    <body class="">
+        <div class="d-flex justify-center align-center ma-10p">
+            <div class="w-30p h40p elevation-xs border-black border-xs pa-20 rounded-m">
+                <div class="align-left ma-8">
+                    <label style="display: block" for="username">Nom d'utilisateur</label>
+                    <input id="username" class="w-100p" type="text" placeholder="Nom d'utilisateur">
+                </div>
+                <div class="align-left ma-8">
+                    <label style="display: block" for="password">Mot de passe</label>
+                    <input id="password" class="w-100p" type="text" placeholder="Mot de passe" size=90>
+                </div>
+                <button
+                    id="submitt-login-form"
+                    class="action-button"
+                    >
+                    Se connecter</button>
+            </div>
+        </div>
+    </body>
+</html>
+
+<script>
+
+    const usernameElement = document.getElementById("username");
+    let usernameValue = "";
+    usernameElement.addEventListener("change", (event) => usernameValue = event.target.value);
+
+    const passwordElement = document.getElementById("password");
+    let passwordValue = "";
+    passwordElement.addEventListener("change", (event) => passwordValue = event.target.value);
+
+    const submittButtonElement = document.getElementById("submitt-login-form");
+    submittButtonElement.addEventListener('click', async function() {
+            console.log("New auth button click");
+            const url = process.env.API_URL + "/sessions";
+            const options = {
+                    method: "POST",
+                    body: JSON.stringify({
+                            username: usernameValue,
+                            password: passwordValue
+                        }),
+                    credentials: "include"
+                };
+            fetch(url, options);
+        });
+</script>

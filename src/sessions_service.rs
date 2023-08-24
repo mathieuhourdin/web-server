@@ -42,18 +42,29 @@ pub async fn post_session_route(request: &mut HttpRequest) -> HttpResponse {
             .session
             .as_mut()
             .expect("request should have a session")
-            .set_user_id(existing_user.uuid
-                .expect("user should have an uuid"));
+            .set_user_id(existing_user.uuid.as_ref()
+                .expect("user should have an uuid").clone());
         match database::update_session(request.session.as_ref().unwrap()).await {
             Err(err) => return HttpResponse::new(
                 StatusCode::InternalServerError,
                 format!("Error updating session : {:#?}", err)),
-            Ok(_) => return HttpResponse::new(StatusCode::Ok, String::from("Session is valid")),
+            Ok(_) => {
+                let mut response = HttpResponse::new(StatusCode::Ok, serde_json::to_string(request.session.as_ref().unwrap()).unwrap());
+                response.headers.insert("Set-Cookie".to_string(), format!("user_id={}", existing_user.uuid.as_ref().unwrap().clone()));
+                return response;
+            },
         }
         
     } else {
         return HttpResponse::new(StatusCode::BadRequest, String::from("Invalid password"));
     }
+}
+
+pub async fn get_session_route(request: &HttpRequest) -> HttpResponse {
+    HttpResponse::new(
+        StatusCode::Ok,
+        serde_json::to_string(request.session.as_ref().unwrap()).unwrap()
+    )
 }
 
 pub fn decode_session_id(session_id: &String) -> String {

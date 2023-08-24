@@ -1,0 +1,41 @@
+<script>
+    let userManagementElement = document.getElementById("userManagement");
+    let user = {};
+    addEventListener("load", async (event) => {
+            console.log("loaded the page");
+            user = await getUser();
+            if (!user) {
+                userManagementElement.innerHTML = `
+                            <a
+                                href="/login"
+                                class="ma-8"
+                            >
+                                <button
+                                id="authButton"
+                                class="action-button"
+                                >S'authentifier</button>
+                            </a>
+                        `
+                } else {
+                        userManagementElement.innerHTML = `
+                            <button class="action-button">${user.first_name}</button>
+                            `;
+                    }
+        });
+
+    const getUser = async () => {
+            const url = process.env.API_URL + "/users";
+            const options = {
+                    method: "GET",
+                    credentials: "include"
+                };
+            
+            const response = await fetch(url, options)
+            if (response.statusCode < 400) {
+                return response.json();
+            } else {
+                return null;
+            }
+        }
+    
+</script>

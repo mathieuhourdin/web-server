@@ -56,6 +56,13 @@ async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {
     let regex = Regex::new(&regex_string).expect("cors should be a valid regex");
     let mut allow_origin_host = String::new();
     if let Some(origin) = request.headers.get("Origin") {
+        println!("Request Origin : {}", origin);
+        if regex.is_match(origin) {
+            allow_origin_host = origin.to_string();
+        }
+    }
+    if let Some(origin) = request.headers.get("origin") {
+        println!("Request origin : {}", origin);
         if regex.is_match(origin) {
             allow_origin_host = origin.to_string();
         }
@@ -98,7 +105,9 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("POST", ["mathilde"]) => post_mathilde_route(&request).await,
         ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
         ("POST", ["users"]) => post_user(&request).await,
+        ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
+        ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
         ("POST", ["articles"]) => post_articles_route(&request).await,
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
@@ -109,9 +118,15 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
         ("PUT", ["articles", uuid]) => put_article_route(uuid, &request).await,
         ("GET", ["sleep"]) => sleep_route(),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
-        ("OPTIONS", [..]) => HttpResponse::new(StatusCode::Ok, "Ok".to_string()),
+        ("OPTIONS", [..]) => option_response(&request),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
+}
+
+fn option_response(request: &HttpRequest) -> HttpResponse {
+    let mut response = HttpResponse::new(StatusCode::Ok, "Ok".to_string());
+    response.headers.insert("Access-Control-Allow-Headers".to_string(), "authorization, content-type".to_string());
+    response
 }
 
 async fn post_user(request: &HttpRequest) -> HttpResponse {
