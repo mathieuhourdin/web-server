@@ -58,9 +58,10 @@ impl User {
         let user = User::from(user);
         let user = diesel::insert_into(users::table)
             .values(user)
-            .get_result(&mut conn).unwrap();
+            .get_result(&mut conn)?;
         Ok(user)
     }
+
 }
 
 impl From<UserMessage> for User {
