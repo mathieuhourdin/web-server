@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::User, article::Article};
+use entities::{user::{User, UserMessage}, article::Article};
 use regex::Regex;
 
 pub mod threadpool;
@@ -13,6 +13,8 @@ pub mod entities;
 pub mod http;
 pub mod sessions_service;
 pub mod environment;
+pub mod db;
+pub mod schema;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
@@ -130,12 +132,13 @@ fn option_response(request: &HttpRequest) -> HttpResponse {
 }
 
 async fn post_user(request: &HttpRequest) -> HttpResponse {
-    match serde_json::from_str::<User>(&request.body[..]) {
-        Ok(mut user) => {
-            user.hash_password().unwrap();
+    match serde_json::from_str::<UserMessage>(&request.body[..]) {
+        Ok(mut user_message) => {
+            user_message.hash_password().unwrap();
+            let created_user = User::create(user_message).unwrap();
             HttpResponse::new(
                 StatusCode::Created,
-                database::create_user(&mut user).await.unwrap()
+                serde_json::to_string(&created_user).unwrap()
             )
         },
         Err(err) => HttpResponse::new(
@@ -164,6 +167,8 @@ fn edit_article(uuid: &str, request: &HttpRequest) -> HttpResponse {
 }
 
 async fn put_article_route(uuid: &str, request: &HttpRequest) -> HttpResponse {
+
+    println!("Put_article_route with uuid : {:#?}", uuid);
 
     if request.session.as_ref().unwrap().user_id.is_none() {
         return HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string());

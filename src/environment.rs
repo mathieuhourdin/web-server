@@ -2,6 +2,11 @@ extern crate dotenv;
 
 use dotenv::dotenv;
 
+pub fn get_couch_database_url() -> String {
+    dotenv().ok();
+    std::env::var("COUCHDB_URL").expect("Database url should be set")
+}
+
 pub fn get_database_url() -> String {
     dotenv().ok();
     std::env::var("DATABASE_URL").expect("Database url should be set")

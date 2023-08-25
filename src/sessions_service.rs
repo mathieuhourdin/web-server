@@ -42,15 +42,14 @@ pub async fn post_session_route(request: &mut HttpRequest) -> HttpResponse {
             .session
             .as_mut()
             .expect("request should have a session")
-            .set_user_id(existing_user.uuid.as_ref()
-                .expect("user should have an uuid").clone());
+            .set_user_id(existing_user.id.to_string().clone());
         match database::update_session(request.session.as_ref().unwrap()).await {
             Err(err) => return HttpResponse::new(
                 StatusCode::InternalServerError,
                 format!("Error updating session : {:#?}", err)),
             Ok(_) => {
                 let mut response = HttpResponse::new(StatusCode::Ok, serde_json::to_string(request.session.as_ref().unwrap()).unwrap());
-                response.headers.insert("Set-Cookie".to_string(), format!("user_id={}", existing_user.uuid.as_ref().unwrap().clone()));
+                response.headers.insert("Set-Cookie".to_string(), format!("user_id={}", existing_user.id.clone()));
                 return response;
             },
         }

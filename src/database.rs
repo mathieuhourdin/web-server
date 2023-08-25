@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use crate::entities::{article::Article, user::User, session::Session};
 use std::collections::HashMap;
 use crate::entities::error::{PpdcError, ErrorType};
-use crate::environment::get_database_url;
+use crate::environment::get_couch_database_url;
 
 #[derive(Serialize, Deserialize)]
 pub struct Document {
@@ -39,14 +39,14 @@ impl UuidsResponse {
 }
 
 pub async fn health_check() -> Result<String, ReqwestError> {
-    let response = reqwest::get(get_database_url()).await?;
+    let response = reqwest::get(get_couch_database_url()).await?;
     let body = response.text().await?;
     println!("Body : {}", body);
     Ok(body)
 }
 
 pub async fn get_new_uuids() -> Result<UuidsResponse, ReqwestError> {
-    let full_url = format!("{}{}", get_database_url(), "/_uuids");
+    let full_url = format!("{}{}", get_couch_database_url(), "/_uuids");
     reqwest::get(full_url).await?.json::<UuidsResponse>().await
 }
 
@@ -60,18 +60,18 @@ pub async fn get_new_uuid() -> Result<String, ReqwestError> {
     }
 }
 
-pub async fn create_user(user : &mut User) -> Result<String, ReqwestError> {
+/*pub async fn create_user(user : &mut User) -> Result<String, ReqwestError> {
     let uuid = get_new_uuid().await?;
     user.uuid = Some(uuid.clone());
     let client = reqwest::Client::new();
     let response = client
-        .put(format!("{}/users/{uuid}", get_database_url()))
+        .put(format!("{}/users/{uuid}", get_couch_database_url()))
         .json::<User>(user)
         .send()
         .await?;
     let response_body = response.text().await?;
     Ok(response_body)
-}
+}*/
 
 #[derive(Serialize, Deserialize)]
 struct SelectorPayload {
@@ -84,7 +84,7 @@ struct FindResult {
 }
 
 pub async fn find_user_by_username(username: &str) -> Result<Option<User>, PpdcError> {
-    let full_url = format!("{}/users/_find", get_database_url());
+    let full_url = format!("{}/users/_find", get_couch_database_url());
     let mut selection_hashmap = HashMap::new();
     selection_hashmap.insert(String::from("email"), String::from(username));
     let json_payload = SelectorPayload { selector: selection_hashmap };
@@ -106,12 +106,12 @@ pub async fn find_user_by_username(username: &str) -> Result<Option<User>, PpdcE
 }
 
 pub async fn get_user_by_uuid(uuid: &str) -> Result<User, ReqwestError> {
-    let full_url = format!("{}/users/{uuid}", get_database_url());
+    let full_url = format!("{}/users/{uuid}", get_couch_database_url());
     reqwest::get(full_url).await?.json::<User>().await
 }
 
 pub async fn get_session_by_uuid(uuid: &str) -> Result<Option<Session>, PpdcError> {
-    let full_url = format!("{}/sessions/{uuid}", get_database_url());
+    let full_url = format!("{}/sessions/{uuid}", get_couch_database_url());
     println!("Fill url : {full_url}");
     let db_response = reqwest::get(full_url)
         .await
@@ -129,7 +129,7 @@ pub async fn get_session_by_uuid(uuid: &str) -> Result<Option<Session>, PpdcErro
 }
 
 pub async fn get_revision_for_document(database: &str, object_id: String) -> Result<String, PpdcError> {
-    let full_url = format!("{}/{database}/{object_id}", get_database_url());
+    let full_url = format!("{}/{database}/{object_id}", get_couch_database_url());
     let db_response = reqwest::get(full_url)
         .await
         .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with db: {:#?}", err)))?
@@ -143,7 +143,7 @@ pub async fn create_or_update_session(session: &Session) -> Result<(), PpdcError
     println!("create_or_update_session : new session persisting");
     let uuid = session.id;
     let client = reqwest::Client::new();
-    let response = client.put(format!("{}/sessions/{uuid}", get_database_url()))
+    let response = client.put(format!("{}/sessions/{uuid}", get_couch_database_url()))
         .json::<Session>(&session)
         .send()
         .await
@@ -159,7 +159,7 @@ pub async fn update_session(session: &Session) -> Result<(), PpdcError> {
     let uuid = session.id;
     let revision_id = get_revision_for_document("sessions", format!("{}", session.id)).await?;
     let client = reqwest::Client::new();
-    let response = client.put(format!("{}/sessions/{uuid}", get_database_url()))
+    let response = client.put(format!("{}/sessions/{uuid}", get_couch_database_url()))
         .json::<Session>(&session)
         .header("If-Match", revision_id)
         .send()
@@ -172,7 +172,7 @@ pub async fn update_session(session: &Session) -> Result<(), PpdcError> {
 }
 
 pub async fn get_all_docs(database_name: &str, skip: u32, limit: u32) -> Result<AllDocsResponse, PpdcError> {
-    let full_url = format!("{}/{database_name}/_all_docs?include_docs=true&skip={skip}&limit={limit}", get_database_url());
+    let full_url = format!("{}/{database_name}/_all_docs?include_docs=true&skip={skip}&limit={limit}", get_couch_database_url());
 
     reqwest::get(full_url)
         .await
@@ -192,7 +192,7 @@ pub async fn get_articles(offset: u32, limit: u32) -> Result<Vec<Article>, PpdcE
 
 pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
     println!("Article uuid : {article_uuid}");
-    let full_url = format!("{}/articles/{article_uuid}", get_database_url());
+    let full_url = format!("{}/articles/{article_uuid}", get_couch_database_url());
     reqwest::get(full_url).await?.json::<Article>().await
 }
 
@@ -201,7 +201,7 @@ pub async fn update_article(article: &Article) -> Result<(), PpdcError> {
     let uuid = article.uuid.as_ref().unwrap();
     let revision_id = get_revision_for_document("articles", format!("{}", article.uuid.clone().unwrap())).await?;
     let client = reqwest::Client::new();
-    let response = client.put(format!("{}/articles/{uuid}", get_database_url()))
+    let response = client.put(format!("{}/articles/{uuid}", get_couch_database_url()))
         .json::<Article>(&article)
         .header("If-Match", revision_id)
         .send()
@@ -219,7 +219,7 @@ pub async fn create_article(article: &mut Article) -> Result<String, ReqwestErro
     let payload = &serde_json::to_string(&article).unwrap();
     println!("Payload: {payload}");
     let client = reqwest::Client::new();
-    let response = client.put(format!("{}/articles/{uuid}", get_database_url()))
+    let response = client.put(format!("{}/articles/{uuid}", get_couch_database_url()))
         .json::<Article>(article)
         .send()
         .await?;
