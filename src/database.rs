@@ -70,11 +70,6 @@ struct FindResult {
     docs: Option<Vec<User>>,
 }
 
-pub async fn get_user_by_uuid(uuid: &str) -> Result<User, PpdcError> {
-    let full_url = format!("{}/users/{uuid}", get_couch_database_url());
-    reqwest::get(full_url).await.unwrap().json::<User>().await.map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, err.to_string()))
-}
-
 pub async fn get_session_by_uuid(uuid: &str) -> Result<Option<Session>, PpdcError> {
     let full_url = format!("{}/sessions/{uuid}", get_couch_database_url());
     println!("Fill url : {full_url}");

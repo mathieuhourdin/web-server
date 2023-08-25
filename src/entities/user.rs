@@ -62,7 +62,7 @@ impl User {
         Ok(user)
     }
 
-    pub fn find(id: Uuid) -> Result<User, PpdcError> {
+    pub fn find(id: &Uuid) -> Result<User, PpdcError> {
         let mut conn = db::establish_connection();
 
         let user = users::table

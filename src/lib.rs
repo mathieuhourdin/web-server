@@ -145,7 +145,7 @@ async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 async fn get_user_by_uuid(user_uuid: &str) -> Result<HttpResponse, PpdcError> {
     Ok(HttpResponse::new(
         StatusCode::Ok,
-        serde_json::to_string(&User::find(HttpRequest::parse_uuid(user_uuid)?)?)?
+        serde_json::to_string(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)?
         ))
 }
 
@@ -169,7 +169,7 @@ async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResp
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
     let mut article = serde_json::from_str::<Article>(&request.body[..])?;
-    article.author_id = request.session.as_ref().unwrap().user_id.clone();
+    article.author_id = Some(request.session.as_ref().unwrap().user_id.as_ref().unwrap().to_string().clone());
     Ok(HttpResponse::new(
         StatusCode::Ok,
         database::update_article(&mut article)
@@ -202,7 +202,7 @@ async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, Ppdc
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
     let mut article = serde_json::from_str::<Article>(&request.body[..])?;
-    article.author_id = request.session.as_ref().unwrap().user_id.clone();
+    article.author_id = Some(request.session.as_ref().unwrap().user_id.as_ref().unwrap().to_string().clone());
     Ok(HttpResponse::new(
         StatusCode::Ok,
         database::create_article(&mut article)
@@ -214,7 +214,7 @@ async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, Ppdc
 
     match &request.session.as_ref().unwrap().user_id {
         Some(user_id) => {
-            let user_first_name = database::get_user_by_uuid(user_id).await?.first_name;
+            let user_first_name = User::find(user_id)?.first_name;
             Ok(HttpResponse::new(
                 StatusCode::Created,
                 format!("Cool {user_first_name} but I already have one")))

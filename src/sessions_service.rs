@@ -24,7 +24,7 @@ pub async fn post_session_route(request: &mut HttpRequest) -> Result<HttpRespons
             .session
             .as_mut()
             .expect("request should have a session")
-            .set_user_id(existing_user.id.to_string().clone());
+            .set_user_id(existing_user.id);
 
         database::update_session(request.session.as_ref().unwrap()).await?;
 
