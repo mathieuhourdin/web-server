@@ -145,7 +145,7 @@ async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 async fn get_user_by_uuid(user_uuid: &str) -> Result<HttpResponse, PpdcError> {
     Ok(HttpResponse::new(
         StatusCode::Ok,
-        serde_json::to_string(&database::get_user_by_uuid(user_uuid).await.unwrap()).unwrap()
+        serde_json::to_string(&User::find(HttpRequest::parse_uuid(user_uuid)?)?)?
         ))
 }
 

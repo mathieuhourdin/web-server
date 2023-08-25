@@ -5,6 +5,7 @@ use crate::environment::get_api_url;
 use std::time::{SystemTime};
 use chrono::{DateTime, Local};
 use crate::entities::error::{PpdcError, ErrorType};
+use uuid::Uuid;
 
 pub struct ServerUrl {
     pub protocol: String,
@@ -98,6 +99,10 @@ impl HttpRequest {
 
     pub fn parsed_path(&self) -> Vec<&str> {
         self.path[1..].split("/").collect::<Vec<&str>>()
+    }
+
+    pub fn parse_uuid(uuid: &str) -> Result<Uuid, PpdcError> {
+        Uuid::parse_str(uuid).map_err(|err| PpdcError::new(400, ErrorType::ApiError, format!("Incorrect uuid for ressource : {:#?}", err)))
     }
 }
 

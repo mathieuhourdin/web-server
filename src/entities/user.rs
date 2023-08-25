@@ -62,6 +62,15 @@ impl User {
         Ok(user)
     }
 
+    pub fn find(id: Uuid) -> Result<User, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let user = users::table
+            .filter(users::id.eq(id))
+            .first(&mut conn)?;
+        Ok(user)
+    }
+
     pub fn find_by_username(email: &String) -> Result<User, PpdcError> {
         let mut conn = db::establish_connection();
         let user = users::table

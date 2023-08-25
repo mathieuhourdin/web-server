@@ -47,3 +47,9 @@ impl From<SerdeError> for PpdcError {
         PpdcError::new(400, ErrorType::ApiError, error.to_string())
     }
 }
+
+/*impl From<std::error::Error> for PpdcError {
+    fn from(error: std::error::Error) -> PpdcError {
+        PpdcError::new(400, ErrorType::InternalError, error.to_string())
+    }
+}*/
