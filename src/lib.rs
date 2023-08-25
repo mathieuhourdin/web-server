@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::{User, UserMessage}, article::Article};
+use entities::{user::{User, UserMessage}, article::Article, error::PpdcError};
 use regex::Regex;
 
 pub mod threadpool;
@@ -81,24 +81,25 @@ async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> Http
     println!("Request cookies : {:#?}", request_cookies);
     let formatted_cookie = Cookie::from(request_cookies);
     request.cookies = formatted_cookie;
-    add_session_to_request_middleware(request).await
+    transform_error_to_response_middleware(request).await
 }
 
-async fn add_session_to_request_middleware(request: &mut HttpRequest) -> HttpResponse {
-    let session_cookie = match sessions_service::create_or_attach_session(request).await {
-        Ok(value) => value,
-        Err(err) => return HttpResponse::new(
-            StatusCode::InternalServerError,
-            format!("Error when creating session: {:#?}", err.message)
-            )
-    };
-    let mut response = route_request(request).await;
+async fn transform_error_to_response_middleware(request: &mut HttpRequest) -> HttpResponse {
+    match add_session_to_request_middleware(request).await {
+        Ok(value) => return value,
+        Err(err) => return HttpResponse::new(StatusCode::InternalServerError, err.message)
+    }
+}
+
+async fn add_session_to_request_middleware(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let session_cookie = sessions_service::create_or_attach_session(request).await?;
+    let mut response = route_request(request).await?;
     println!("Session cookie : {session_cookie}");
     response.set_header("Set-Cookie", session_cookie);
-    response
+    Ok(response)
 }
 
-async fn route_request(request: &mut HttpRequest) -> HttpResponse {
+async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
     let session_id = &request.session.as_ref().unwrap().id;
     println!("Request with session id : {session_id}");
     match (&request.method[..], &request.parsed_path()[..]) {
@@ -125,133 +126,105 @@ async fn route_request(request: &mut HttpRequest) -> HttpResponse {
     }
 }
 
-fn option_response(request: &HttpRequest) -> HttpResponse {
+fn option_response(_request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let mut response = HttpResponse::new(StatusCode::Ok, "Ok".to_string());
     response.headers.insert("Access-Control-Allow-Headers".to_string(), "authorization, content-type".to_string());
-    response
+    Ok(response)
 }
 
-async fn post_user(request: &HttpRequest) -> HttpResponse {
-    match serde_json::from_str::<UserMessage>(&request.body[..]) {
-        Ok(mut user_message) => {
-            user_message.hash_password().unwrap();
-            let created_user = User::create(user_message).unwrap();
-            HttpResponse::new(
-                StatusCode::Created,
-                serde_json::to_string(&created_user).unwrap()
-            )
-        },
-        Err(err) => HttpResponse::new(
-            StatusCode::BadRequest,
-            format!("Error with the payload: {:#?}", err))
-    }
+async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let mut user_message = serde_json::from_str::<UserMessage>(&request.body[..])?;
+    user_message.hash_password().unwrap();
+    let created_user = User::create(user_message)?;
+    Ok(HttpResponse::new(
+        StatusCode::Created,
+        serde_json::to_string(&created_user).unwrap()
+    ))
 }
 
-async fn get_user_by_uuid(user_uuid: &str) -> HttpResponse {
-    HttpResponse::new(
+async fn get_user_by_uuid(user_uuid: &str) -> Result<HttpResponse, PpdcError> {
+    Ok(HttpResponse::new(
         StatusCode::Ok,
         serde_json::to_string(&database::get_user_by_uuid(user_uuid).await.unwrap()).unwrap()
-        )
+        ))
 }
 
-fn see_article(uuid: &str, request: &HttpRequest) -> HttpResponse {
-    let mut response = HttpResponse::from_file(StatusCode::Ok, "article_id.html");
+fn see_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let mut response = HttpResponse::from_file(StatusCode::Ok, "article_id.html")?;
     response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
-    response
+    Ok(response)
 }
 
-fn edit_article(uuid: &str, request: &HttpRequest) -> HttpResponse {
-    let mut response = HttpResponse::from_file(StatusCode::Ok, "edit-article-id.html");
+fn edit_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let mut response = HttpResponse::from_file(StatusCode::Ok, "edit-article-id.html")?;
     response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
-    response
+    Ok(response)
 }
 
-async fn put_article_route(uuid: &str, request: &HttpRequest) -> HttpResponse {
+async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
     println!("Put_article_route with uuid : {:#?}", uuid);
 
     if request.session.as_ref().unwrap().user_id.is_none() {
-        return HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string());
+        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
-    match serde_json::from_str::<Article>(&request.body[..]) {
-        Ok(mut article) => {
-            article.author_id = request.session.as_ref().unwrap().user_id.clone();
-            HttpResponse::new(
-            StatusCode::Ok,
-            database::update_article(&mut article)
-            .await
-            .map(|()| "Ok".to_string()).unwrap())
-        },
-        Err(err) => HttpResponse::new(
-            StatusCode::BadRequest,
-            format!("Error with the payload : {:#?}", err)),
-    }
+    let mut article = serde_json::from_str::<Article>(&request.body[..])?;
+    article.author_id = request.session.as_ref().unwrap().user_id.clone();
+    Ok(HttpResponse::new(
+        StatusCode::Ok,
+        database::update_article(&mut article)
+        .await
+        .map(|()| "Ok".to_string()).unwrap()))
 }
 
-async fn get_articles(request: &HttpRequest) -> HttpResponse {
+async fn get_articles(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let limit: u32 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
     let offset: u32 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
-    match &database::get_articles(offset, limit).await {
-        Ok(articles) => HttpResponse::new(
-            StatusCode::Ok,
-            serde_json::to_string(articles).unwrap()),
-        Err(err) => HttpResponse::new(
-            StatusCode::InternalServerError,
-            format!("Error with db: {:#?}", err))
-    }
+    let articles = &database::get_articles(offset, limit).await?;
+    Ok(HttpResponse::new(
+       StatusCode::Ok,
+       serde_json::to_string(articles).unwrap()))
 }
 
-async fn get_article_route(article_uuid: &str) -> HttpResponse {
+async fn get_article_route(article_uuid: &str) -> Result<HttpResponse, PpdcError> {
     println!("Article uuid : {article_uuid}");
-    HttpResponse::new(
+    Ok(HttpResponse::new(
         StatusCode::Ok,
         serde_json::to_string(&database::get_article(article_uuid)
             .await
             .unwrap())
-        .unwrap())
+        .unwrap()))
 }
 
-async fn post_articles_route(request: &HttpRequest) -> HttpResponse {
+async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
     if request.session.as_ref().unwrap().user_id.is_none() {
-        return HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string());
+        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
-    match serde_json::from_str::<Article>(&request.body[..]) {
-        Ok(mut article) => {
-            article.author_id = request.session.as_ref().unwrap().user_id.clone();
-            HttpResponse::new(
-            StatusCode::Ok,
-            database::create_article(&mut article)
-            .await
-            .unwrap())
-        },
-        Err(err) => HttpResponse::new(
-            StatusCode::BadRequest,
-            format!("Error with the payload : {:#?}", err)),
-    }
+    let mut article = serde_json::from_str::<Article>(&request.body[..])?;
+    article.author_id = request.session.as_ref().unwrap().user_id.clone();
+    Ok(HttpResponse::new(
+        StatusCode::Ok,
+        database::create_article(&mut article)
+        .await
+        .unwrap()))
 }
 
-async fn post_mathilde_route(request: &HttpRequest) -> HttpResponse {
+async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
     match &request.session.as_ref().unwrap().user_id {
         Some(user_id) => {
-            let user_first_name = match database::get_user_by_uuid(user_id).await {
-                Ok(user) => user.first_name,
-               Err(err) => return HttpResponse::new(
-                   StatusCode::InternalServerError,
-                   format!("Cannot get user with uuid : {user_id}; error : {:#?}", err)
-                   )
-            };
-            HttpResponse::new(
+            let user_first_name = database::get_user_by_uuid(user_id).await?.first_name;
+            Ok(HttpResponse::new(
                 StatusCode::Created,
-                format!("Cool {user_first_name} but I already have one"))
+                format!("Cool {user_first_name} but I already have one")))
         },
-        None => HttpResponse::new(StatusCode::Unauthorized, String::from("Not authenticated request")),
+        None => Ok(HttpResponse::new(StatusCode::Unauthorized, String::from("Not authenticated request"))),
     }
     
 }
 
-fn sleep_route() -> HttpResponse {
+fn sleep_route() -> Result<HttpResponse, PpdcError> {
     thread::sleep(Duration::from_secs(10));
-    HttpResponse::new(StatusCode::Ok, String::from("hello.html"))
+    Ok(HttpResponse::new(StatusCode::Ok, String::from("hello.html")))
 }

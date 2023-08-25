@@ -62,6 +62,13 @@ impl User {
         Ok(user)
     }
 
+    pub fn find_by_username(email: &String) -> Result<User, PpdcError> {
+        let mut conn = db::establish_connection();
+        let user = users::table
+            .filter(users::email.eq(email))
+            .first(&mut conn)?;
+        Ok(user)
+    }
 }
 
 impl From<UserMessage> for User {

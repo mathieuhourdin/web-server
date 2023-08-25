@@ -113,7 +113,7 @@ impl HttpResponse {
         HttpResponse { status_code, headers, body }
     }
 
-    pub fn from_file(status_code: StatusCode, file_path: &str) -> HttpResponse {
+    pub fn from_file(status_code: StatusCode, file_path: &str) -> Result<HttpResponse, PpdcError> {
         let html_body = fs::read_to_string(format!("public/{file_path}")).unwrap();
 
         let header_code = fs::read_to_string("public/Header.html").unwrap();
@@ -123,7 +123,7 @@ impl HttpResponse {
         let html_body = html_body + &user_management_code;
 
         let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
-        HttpResponse::new(status_code, html_body)
+        Ok(HttpResponse::new(status_code, html_body))
     }
 
     pub fn set_header(&mut self, header_title: &str, header_content: String) {

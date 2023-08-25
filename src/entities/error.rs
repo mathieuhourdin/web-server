@@ -1,5 +1,6 @@
 use std::fmt;
 use diesel::result::Error as DieselError;
+use serde_json::Error as SerdeError;
 
 pub struct PpdcError {
     pub status_code: u32,
@@ -39,5 +40,10 @@ impl From<DieselError> for PpdcError {
             DieselError::NotFound => PpdcError::new(404, ErrorType::ApiError, "Record not found".to_string()),
             err => PpdcError::new(500, ErrorType::DatabaseError, format!("Diesel error: {}", err)),
         }
+    }
+}
+impl From<SerdeError> for PpdcError {
+    fn from(error: SerdeError) -> PpdcError {
+        PpdcError::new(400, ErrorType::ApiError, error.to_string())
     }
 }

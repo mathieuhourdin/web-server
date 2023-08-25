@@ -2,7 +2,7 @@ use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use serde::{Serialize, Deserialize};
 use serde_json;
 use crate::database;
-use crate::entities::{session::Session, error::PpdcError};
+use crate::entities::{user::User, session::Session, error::PpdcError};
 use crate::http::{CookieValue};
 
 #[derive(Serialize, Deserialize)]
@@ -11,31 +11,13 @@ struct LoginCheck {
     password: String,
 }
 
-pub async fn post_session_route(request: &mut HttpRequest) -> HttpResponse { 
-    let login_check = match serde_json::from_str::<LoginCheck>(&request.body[..]) {
-        Err(err) => return HttpResponse::new(StatusCode::BadRequest, format!("Invalid post session : {:#?}", err)),
-        Ok(value) => value,
-    };
-    let matching_user = match database::find_user_by_username(&login_check.username).await {
-        Err(err) => return HttpResponse::new(
-            StatusCode::InternalServerError,
-            format!("Error : {:#?}", err)),
-        Ok(value) => value,
-    };
-    let existing_user = match matching_user {
-        Some(value) => value,
-        None => return HttpResponse::new(
-            StatusCode::NotFound,
-            String::from("Can't find user with this username")),
-    };
-    println!("Matching user : {:#?}", existing_user.email);
-    let is_valid_password = match existing_user.verify_password(&login_check.password.as_bytes()) {
-        Ok(value) => value,
-        Err(err) => return HttpResponse::new(
-            StatusCode::InternalServerError,
-            err.message,
-        ),
-    };
+pub async fn post_session_route(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> { 
+    let login_check = serde_json::from_str::<LoginCheck>(&request.body[..])?;
+
+    let existing_user = User::find_by_username(&login_check.username)?;
+
+    let is_valid_password = existing_user.verify_password(&login_check.password.as_bytes())?;
+
     if is_valid_password {
         println!("Password is valid. Let's authenticate session");
         request
@@ -43,27 +25,23 @@ pub async fn post_session_route(request: &mut HttpRequest) -> HttpResponse {
             .as_mut()
             .expect("request should have a session")
             .set_user_id(existing_user.id.to_string().clone());
-        match database::update_session(request.session.as_ref().unwrap()).await {
-            Err(err) => return HttpResponse::new(
-                StatusCode::InternalServerError,
-                format!("Error updating session : {:#?}", err)),
-            Ok(_) => {
-                let mut response = HttpResponse::new(StatusCode::Ok, serde_json::to_string(request.session.as_ref().unwrap()).unwrap());
-                response.headers.insert("Set-Cookie".to_string(), format!("user_id={}", existing_user.id.clone()));
-                return response;
-            },
-        }
+
+        database::update_session(request.session.as_ref().unwrap()).await?;
+
+        let mut response = HttpResponse::new(StatusCode::Ok, serde_json::to_string(request.session.as_ref().unwrap()).unwrap());
+        response.headers.insert("Set-Cookie".to_string(), format!("user_id={}", existing_user.id.clone()));
+        return Ok(response);
         
     } else {
-        return HttpResponse::new(StatusCode::BadRequest, String::from("Invalid password"));
+        return Ok(HttpResponse::new(StatusCode::BadRequest, String::from("Invalid password")));
     }
 }
 
-pub async fn get_session_route(request: &HttpRequest) -> HttpResponse {
-    HttpResponse::new(
+pub async fn get_session_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    Ok(HttpResponse::new(
         StatusCode::Ok,
         serde_json::to_string(request.session.as_ref().unwrap()).unwrap()
-    )
+    ))
 }
 
 pub fn decode_session_id(session_id: &String) -> String {
