@@ -70,24 +70,6 @@ struct FindResult {
     docs: Option<Vec<User>>,
 }
 
-pub async fn get_session_by_uuid(uuid: &str) -> Result<Option<Session>, PpdcError> {
-    let full_url = format!("{}/sessions/{uuid}", get_couch_database_url());
-    println!("Fill url : {full_url}");
-    let db_response = reqwest::get(full_url)
-        .await
-        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error with db: {:#?}", err)))?;
-
-    if db_response.status() == 404 {
-        return Ok(None);
-    }
-    
-    println!("{:#?}", db_response);
-    let found_session = db_response.json::<Session>()
-        .await
-        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while decoding session: {:#?}", err)))?;
-    Ok(Some(found_session))
-}
-
 pub async fn get_revision_for_document(database: &str, object_id: String) -> Result<String, PpdcError> {
     let full_url = format!("{}/{database}/{object_id}", get_couch_database_url());
     let db_response = reqwest::get(full_url)
@@ -97,38 +79,6 @@ pub async fn get_revision_for_document(database: &str, object_id: String) -> Res
         .await
         .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while decoding session: {:#?}", err)))?;
     Ok(db_response._rev)
-}
-
-pub async fn create_or_update_session(session: &Session) -> Result<(), PpdcError> {
-    println!("create_or_update_session : new session persisting");
-    let uuid = session.id;
-    let client = reqwest::Client::new();
-    let response = client.put(format!("{}/sessions/{uuid}", get_couch_database_url()))
-        .json::<Session>(&session)
-        .send()
-        .await
-        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a new session: {:#?}", err)))?;
-    if response.status().as_u16() >= 400 {
-        return Err(PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a session: {}", response.text().await.unwrap())));
-    }
-    Ok(())
-}
-
-pub async fn update_session(session: &Session) -> Result<(), PpdcError> {
-    println!("create_or_update_session : new session persisting");
-    let uuid = session.id;
-    let revision_id = get_revision_for_document("sessions", format!("{}", session.id)).await?;
-    let client = reqwest::Client::new();
-    let response = client.put(format!("{}/sessions/{uuid}", get_couch_database_url()))
-        .json::<Session>(&session)
-        .header("If-Match", revision_id)
-        .send()
-        .await
-        .map_err(|err| PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a new session: {:#?}", err)))?;
-    if response.status().as_u16() >= 400 {
-        return Err(PpdcError::new(500, ErrorType::DatabaseError, format!("Error while persisting a session: {}", response.text().await.unwrap())));
-    }
-    Ok(())
 }
 
 pub async fn get_all_docs(database_name: &str, skip: u32, limit: u32) -> Result<AllDocsResponse, PpdcError> {
