@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::{User, UserMessage}, article::Article, error::PpdcError};
+use entities::{user::{User, NewUser}, article::Article, error::PpdcError};
 use regex::Regex;
 
 pub mod threadpool;
@@ -133,7 +133,7 @@ fn option_response(_request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 }
 
 async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let mut user_message = serde_json::from_str::<UserMessage>(&request.body[..])?;
+    let mut user_message = serde_json::from_str::<NewUser>(&request.body[..])?;
     user_message.hash_password().unwrap();
     let created_user = User::create(user_message)?;
     Ok(HttpResponse::new(

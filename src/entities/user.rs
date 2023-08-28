@@ -22,8 +22,9 @@ pub struct User {
     pub updated_at: Option<SystemTime>
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct UserMessage {
+#[derive(Serialize, Deserialize, Insertable)]
+#[diesel(table_name = crate::schema::users)]
+pub struct NewUser {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
@@ -31,7 +32,7 @@ pub struct UserMessage {
     pub password: String,
 }
 
-impl UserMessage {
+impl NewUser {
     pub fn hash_password(&mut self) -> Result<(), PpdcError> {
         let salt: [u8; 32] = rand::thread_rng().gen();
         let config = Config::default();
@@ -53,11 +54,11 @@ impl User {
                 format!("Unable to decode password: {:#?}", err)))
     }
 
-    pub fn create(user: UserMessage) -> Result<User, PpdcError> {
+    pub fn create(user: NewUser) -> Result<User, PpdcError> {
         let mut conn = db::establish_connection();
-        let user = User::from(user);
+        //let user = User::from(user);
         let user = diesel::insert_into(users::table)
-            .values(user)
+            .values(&user)
             .get_result(&mut conn)?;
         Ok(user)
     }
@@ -79,22 +80,6 @@ impl User {
         Ok(user)
     }
 }
-
-impl From<UserMessage> for User {
-    fn from(user: UserMessage) -> Self {
-        User {
-            id: Uuid::new_v4(),
-            email: user.email,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            handle: user.handle,
-            password: user.password,
-            created_at: SystemTime::now(),
-            updated_at: None,
-        }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
