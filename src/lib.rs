@@ -8,7 +8,6 @@ use entities::{user::{User, NewUser}, article::{Article, NewArticle}, error::Ppd
 use regex::Regex;
 
 pub mod threadpool;
-pub mod database;
 pub mod entities;
 pub mod http;
 pub mod sessions_service;
@@ -177,12 +176,12 @@ async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResp
 }
 
 async fn get_articles(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let limit: u32 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
-    let offset: u32 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
-    let articles = &database::get_articles(offset, limit).await?;
+    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
+    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+    let articles = Article::find_paginated(offset, limit)?;
     Ok(HttpResponse::new(
        StatusCode::Ok,
-       serde_json::to_string(articles).unwrap()))
+       serde_json::to_string(&articles)?))
 }
 
 async fn get_article_route(article_uuid: &str) -> Result<HttpResponse, PpdcError> {

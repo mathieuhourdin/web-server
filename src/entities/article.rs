@@ -44,6 +44,16 @@ pub struct NewArticle {
 
 impl Article {
 
+    pub fn find_paginated(offset: i64, limit: i64) -> Result<Vec<Article>, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let articles = articles::table
+            .offset(offset)
+            .limit(limit)
+            .load::<Article>(&mut conn)?;
+        Ok(articles)
+    }
+
     pub fn find(id: Uuid) -> Result<Article, PpdcError> {
         let mut conn = db::establish_connection();
 
