@@ -1,14 +1,54 @@
 use serde::{Serialize, Deserialize};
+use diesel::prelude::*;
+use std::time::{SystemTime};
+use uuid::Uuid;
+use crate::db;
+use crate::schema::articles;
+use diesel;
+use crate::entities::error::PpdcError;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
+#[diesel(table_name=articles)]
 pub struct Article {
-    pub uuid: Option<String>,
+    pub id: Uuid,
     pub title: String,
     pub description: String,
     pub content: String,
-    pub author_id: Option<String>,
-    pub progress: u32,
-    pub gdoc_url: String,
-    pub image_url: String,
-    pub url_slug: String,
+    pub potential_improvements: String,
+    pub author_id: Option<Uuid>,
+    pub progress: i32,
+    pub maturing_state: String,
+    pub parent_id: Option<Uuid>,
+    pub gdoc_url: Option<String>,
+    pub image_url: Option<String>,
+    pub url_slug: Option<String>,
+    created_at: SystemTime,
+    updated_at: SystemTime,
+}
+
+#[derive(Deserialize, Insertable, Queryable)]
+#[diesel(table_name=articles)]
+pub struct NewArticle {
+    pub title: String,
+    pub description: String,
+    pub content: String,
+    pub potential_improvements: String,
+    pub author_id: Option<Uuid>,
+    pub progress: i32,
+    pub maturing_state: String,
+    pub parent_id: Option<Uuid>,
+    pub gdoc_url: Option<String>,
+    pub image_url: Option<String>,
+    pub url_slug: Option<String>,
+}
+
+impl Article {
+    pub fn create(article: NewArticle) -> Result<Article, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let article = diesel::insert_into(articles::table)
+            .values(&article)
+            .get_result(&mut conn)?;
+        Ok(article)
+    }
 }

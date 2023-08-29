@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::{User, NewUser}, article::Article, error::PpdcError};
+use entities::{user::{User, NewUser}, article::{Article, NewArticle}, error::PpdcError};
 use regex::Regex;
 
 pub mod threadpool;
@@ -169,7 +169,7 @@ async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResp
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
     let mut article = serde_json::from_str::<Article>(&request.body[..])?;
-    article.author_id = Some(request.session.as_ref().unwrap().user_id.as_ref().unwrap().to_string().clone());
+    article.author_id = request.session.as_ref().unwrap().user_id;
     Ok(HttpResponse::new(
         StatusCode::Ok,
         database::update_article(&mut article)
@@ -201,13 +201,12 @@ async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, Ppdc
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
-    let mut article = serde_json::from_str::<Article>(&request.body[..])?;
-    article.author_id = Some(request.session.as_ref().unwrap().user_id.as_ref().unwrap().to_string().clone());
+    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
+    article.author_id = request.session.as_ref().unwrap().user_id;
     Ok(HttpResponse::new(
         StatusCode::Ok,
-        database::create_article(&mut article)
-        .await
-        .unwrap()))
+        serde_json::to_string(&Article::create(article)?)?
+        ))
 }
 
 async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {

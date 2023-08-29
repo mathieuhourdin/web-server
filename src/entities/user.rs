@@ -3,7 +3,7 @@ use argon2::{Config};
 use rand::Rng;
 use crate::entities::error::{PpdcError, ErrorType};
 use std::time::{SystemTime};
-use diesel::prelude::{*, Selectable};
+use diesel::prelude::*;
 use uuid::Uuid;
 use crate::db;
 use crate::schema::users;

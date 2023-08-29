@@ -1,10 +1,11 @@
 use reqwest;
 use reqwest::Error as ReqwestError;
 use serde::{Serialize, Deserialize};
-use crate::entities::{article::Article, user::User, session::Session};
+use crate::entities::{article::Article, user::User};
 use std::collections::HashMap;
 use crate::entities::error::{PpdcError, ErrorType};
 use crate::environment::get_couch_database_url;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 pub struct Document {
@@ -108,8 +109,8 @@ pub async fn get_article(article_uuid: &str) -> Result<Article, ReqwestError> {
 
 pub async fn update_article(article: &Article) -> Result<(), PpdcError> {
     println!("create_or_update_session : new session persisting");
-    let uuid = article.uuid.as_ref().unwrap();
-    let revision_id = get_revision_for_document("articles", format!("{}", article.uuid.clone().unwrap())).await?;
+    let uuid = article.id;
+    let revision_id = get_revision_for_document("articles", format!("{}", article.id)).await?;
     let client = reqwest::Client::new();
     let response = client.put(format!("{}/articles/{uuid}", get_couch_database_url()))
         .json::<Article>(&article)
@@ -125,7 +126,7 @@ pub async fn update_article(article: &Article) -> Result<(), PpdcError> {
 
 pub async fn create_article(article: &mut Article) -> Result<String, ReqwestError> {
     let uuid = get_new_uuid().await?;
-    article.uuid = Some(uuid.clone());
+    article.id = Uuid::parse_str(&uuid).unwrap();
     let payload = &serde_json::to_string(&article).unwrap();
     println!("Payload: {payload}");
     let client = reqwest::Client::new();
