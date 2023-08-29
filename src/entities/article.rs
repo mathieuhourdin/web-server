@@ -26,7 +26,7 @@ pub struct Article {
     updated_at: SystemTime,
 }
 
-#[derive(Deserialize, Insertable, Queryable)]
+#[derive(Deserialize, Insertable, Queryable, AsChangeset)]
 #[diesel(table_name=articles)]
 pub struct NewArticle {
     pub title: String,
@@ -58,6 +58,16 @@ impl Article {
 
         let article = diesel::insert_into(articles::table)
             .values(&article)
+            .get_result(&mut conn)?;
+        Ok(article)
+    }
+    
+    pub fn update(id: &Uuid, article: NewArticle) -> Result<Article, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let article = diesel::update(articles::table)
+            .filter(articles::id.eq(id))
+            .set(&article)
             .get_result(&mut conn)?;
         Ok(article)
     }

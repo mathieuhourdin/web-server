@@ -168,13 +168,12 @@ async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResp
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
-    let mut article = serde_json::from_str::<Article>(&request.body[..])?;
+    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
     article.author_id = request.session.as_ref().unwrap().user_id;
     Ok(HttpResponse::new(
         StatusCode::Ok,
-        database::update_article(&mut article)
-        .await
-        .map(|()| "Ok".to_string()).unwrap()))
+        serde_json::to_string(&Article::update(&HttpRequest::parse_uuid(uuid)?, article)?)?
+        ))
 }
 
 async fn get_articles(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
