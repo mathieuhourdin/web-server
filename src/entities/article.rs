@@ -43,6 +43,16 @@ pub struct NewArticle {
 }
 
 impl Article {
+
+    pub fn find(id: Uuid) -> Result<Article, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let article = articles::table
+            .filter(articles::id.eq(id))
+            .first(&mut conn)?;
+        Ok(article)
+    }
+
     pub fn create(article: NewArticle) -> Result<Article, PpdcError> {
         let mut conn = db::establish_connection();
 

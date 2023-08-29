@@ -190,10 +190,7 @@ async fn get_article_route(article_uuid: &str) -> Result<HttpResponse, PpdcError
     println!("Article uuid : {article_uuid}");
     Ok(HttpResponse::new(
         StatusCode::Ok,
-        serde_json::to_string(&database::get_article(article_uuid)
-            .await
-            .unwrap())
-        .unwrap()))
+        serde_json::to_string(&Article::find(HttpRequest::parse_uuid(article_uuid)?)?)?))
 }
 
 async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
