@@ -3,7 +3,6 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use crate::entities::{user::User, session::Session, session::NewSession, error::PpdcError};
 use crate::http::{CookieValue};
-use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
@@ -48,33 +47,45 @@ pub fn decode_session_id(session_id: &String) -> String {
     String::from(&session_id[..])
 }
 
-pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<String, PpdcError> {
+fn generate_valid_session_from_id(id: &str, request: &mut HttpRequest) -> Result<String, PpdcError> {
 
-    match request.cookies.data.get("session_id") {
-        Some(value) => {
-            let decoded_session_id = decode_session_id(value);
-            let found_session = match Session::find(&Uuid::parse_str(&decoded_session_id[..]).unwrap()) {
-                Err(err) => {
-                    println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
+    println!("generate_valid_session_from_id id : {id}");
+    let decoded_session_id = HttpRequest::parse_uuid(id)?;
+    let found_session = match Session::find(&decoded_session_id) {
+        Err(err) => {
+            println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
+            let new_session = NewSession::new();
+            Session::create(&new_session)?
+        },
+        Ok(session) => {
+                if session.is_valid() {
+                    session
+                } else {
+                    println!("Session {} not valid anymore", session.id);
                     let new_session = NewSession::new();
                     Session::create(&new_session)?
-                },
-                Ok(session) => {
-                        if session.is_valid() {
-                            session
-                        } else {
-                            println!("Session {} not valid anymore", session.id);
-                            let new_session = NewSession::new();
-                            Session::create(&new_session)?
-                        }
-                    }
-            };
-            let session_uuid = format!("{}", found_session.id);
-            let response = CookieValue::new("session_id".to_string(), session_uuid, found_session.expires_at).format();
-            request.session = Some(found_session);
-            Ok(response)
-        },
-        None => {
+                }
+            }
+    };
+    println!("generate_valid_session_from_id found_session id {:#?}", found_session.id);
+    let session_uuid = format!("{}", found_session.id);
+    let response = CookieValue::new("session_id".to_string(), session_uuid, found_session.expires_at).format();
+    request.session = Some(found_session);
+    Ok(response)
+}
+
+pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<String, PpdcError> {
+
+    if request.cookies.data.contains_key("session_id") {
+        let session_id = request.cookies.data["session_id"].clone();
+        generate_valid_session_from_id(&session_id[..], request)
+    } else {
+        if request.headers.contains_key("Authorization") {
+            let session_id = request.headers.get("Authorization").unwrap().clone();
+            let coming_response = generate_valid_session_from_id(&session_id[..], request);
+            println!("create_or_attach_session finished generating");
+            coming_response
+        } else {
             let new_session = NewSession::new();
             let new_session = Session::create(&new_session)?;
             let session_id = format!("{}", new_session.id);

@@ -105,7 +105,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
         ("POST", ["mathilde"]) => post_mathilde_route(&request).await,
-        ("GET", ["users", uuid]) => get_user_by_uuid(uuid).await,
+        ("GET", ["users", uuid]) => get_user_by_uuid(uuid, &request).await,
         ("POST", ["users"]) => post_user(&request).await,
         ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
@@ -141,7 +141,10 @@ async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     ))
 }
 
-async fn get_user_by_uuid(user_uuid: &str) -> Result<HttpResponse, PpdcError> {
+async fn get_user_by_uuid(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
+    }
     Ok(HttpResponse::new(
         StatusCode::Ok,
         serde_json::to_string(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)?
@@ -196,7 +199,9 @@ async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, Ppdc
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
+    println!("post_articles_route passing security");
     let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
+    println!("post_articles_route passing serde");
     article.author_id = request.session.as_ref().unwrap().user_id;
     Ok(HttpResponse::new(
         StatusCode::Ok,
