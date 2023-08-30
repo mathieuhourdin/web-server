@@ -128,7 +128,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
 fn option_response(_request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     Ok(HttpResponse::ok()
         .body("Ok".to_string())
-        .header("Access-Control-Allow-Headers", "authorization, content-type".to_string()))
+        .header("Access-Control-Allow-Headers", "Authorization, Content-type".to_string()))
 }
 
 async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -141,8 +141,10 @@ async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
 async fn get_user_by_uuid(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     if request.session.as_ref().unwrap().user_id.is_none() {
+        println!("get_user_by_uuid invalid session, session id : {:#?}", request.session.as_ref().unwrap().id);
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
+    println!("get_user_by_uuid valid session id : {:#?}", request.session.as_ref().unwrap().id);
     HttpResponse::ok()
         .json(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)
 }

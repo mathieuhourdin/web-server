@@ -34,7 +34,7 @@ impl NewSession {
             user_id: None,
             token: None,
             authenticated: false,
-            expires_at: SystemTime::now() + Duration::from_secs(3600),
+            expires_at: SystemTime::now() + Duration::from_secs(36000),
         }
     }
 }
