@@ -205,11 +205,10 @@ async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, Ppdc
     match &request.session.as_ref().unwrap().user_id {
         Some(user_id) => {
             let user_first_name = User::find(user_id)?.first_name;
-            Ok(HttpResponse::new(
-                StatusCode::Created,
-                format!("Cool {user_first_name} but I already have one")))
+            Ok(HttpResponse::created()
+                .body(format!("Cool {user_first_name} but I already have one")))
         },
-        None => Ok(HttpResponse::new(StatusCode::Unauthorized, String::from("Not authenticated request"))),
+        None => Ok(HttpResponse::unauthorized()),
     }
     
 }
