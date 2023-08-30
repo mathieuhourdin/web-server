@@ -6,6 +6,8 @@ use std::time::{SystemTime};
 use chrono::{DateTime, Local};
 use crate::entities::error::{PpdcError, ErrorType};
 use uuid::Uuid;
+use serde_json;
+use serde::Serialize;
 
 pub struct ServerUrl {
     pub protocol: String,
@@ -116,6 +118,36 @@ impl HttpResponse {
     pub fn new(status_code: StatusCode, body: String) -> HttpResponse {
         let headers = HashMap::new();
         HttpResponse { status_code, headers, body }
+    }
+
+    pub fn ok() -> HttpResponse {
+        HttpResponse::new(StatusCode::Ok, String::new())
+    }
+
+    pub fn created() -> HttpResponse {
+        HttpResponse::new(StatusCode::Created, String::new())
+    }
+
+    pub fn unauthorized() -> HttpResponse {
+        HttpResponse::new(StatusCode::Unauthorized, "User should be authenticated".to_string())
+    }
+
+    pub fn body(mut self, body: String) -> HttpResponse {
+        self.body = body;
+        self
+    }
+
+    pub fn json<T>(mut self, body: &T) -> Result<HttpResponse, PpdcError>
+        where
+            T: ?Sized + Serialize,
+    {
+        self.body = serde_json::to_string(body)?;
+        Ok(self)
+    }
+
+    pub fn header(mut self, key: &str, value: String) -> HttpResponse {
+        self.headers.insert(key.to_string(), value);
+        self
     }
 
     pub fn from_file(status_code: StatusCode, file_path: &str) -> Result<HttpResponse, PpdcError> {

@@ -126,29 +126,25 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
 }
 
 fn option_response(_request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let mut response = HttpResponse::new(StatusCode::Ok, "Ok".to_string());
-    response.headers.insert("Access-Control-Allow-Headers".to_string(), "authorization, content-type".to_string());
-    Ok(response)
+    Ok(HttpResponse::ok()
+        .body("Ok".to_string())
+        .header("Access-Control-Allow-Headers", "authorization, content-type".to_string()))
 }
 
 async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let mut user_message = serde_json::from_str::<NewUser>(&request.body[..])?;
     user_message.hash_password().unwrap();
     let created_user = User::create(user_message)?;
-    Ok(HttpResponse::new(
-        StatusCode::Created,
-        serde_json::to_string(&created_user).unwrap()
-    ))
+    HttpResponse::created()
+        .json(&created_user)
 }
 
 async fn get_user_by_uuid(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
-    Ok(HttpResponse::new(
-        StatusCode::Ok,
-        serde_json::to_string(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)?
-        ))
+    HttpResponse::ok()
+        .json(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)
 }
 
 fn see_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -168,45 +164,40 @@ async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResp
     println!("Put_article_route with uuid : {:#?}", uuid);
 
     if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
+        return Ok(HttpResponse::unauthorized());
     }
+    let uuid = &HttpRequest::parse_uuid(uuid)?;
     let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
     article.author_id = request.session.as_ref().unwrap().user_id;
-    Ok(HttpResponse::new(
-        StatusCode::Ok,
-        serde_json::to_string(&Article::update(&HttpRequest::parse_uuid(uuid)?, article)?)?
-        ))
+    HttpResponse::ok()
+        .json(&Article::update(uuid, article)?)
 }
 
 async fn get_articles(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
     let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
     let articles = Article::find_paginated(offset, limit)?;
-    Ok(HttpResponse::new(
-       StatusCode::Ok,
-       serde_json::to_string(&articles)?))
+    HttpResponse::ok()
+        .json(&articles)
 }
 
-async fn get_article_route(article_uuid: &str) -> Result<HttpResponse, PpdcError> {
-    println!("Article uuid : {article_uuid}");
-    Ok(HttpResponse::new(
-        StatusCode::Ok,
-        serde_json::to_string(&Article::find(HttpRequest::parse_uuid(article_uuid)?)?)?))
+async fn get_article_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
+    let uuid = HttpRequest::parse_uuid(uuid)?;
+    HttpResponse::ok()
+        .json(&Article::find(uuid)?)
 }
 
 async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
     if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
+        return Ok(HttpResponse::unauthorized());
     }
     println!("post_articles_route passing security");
     let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
     println!("post_articles_route passing serde");
     article.author_id = request.session.as_ref().unwrap().user_id;
-    Ok(HttpResponse::new(
-        StatusCode::Ok,
-        serde_json::to_string(&Article::create(article)?)?
-        ))
+    HttpResponse::ok()
+        .json(&Article::create(article)?)
 }
 
 async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
