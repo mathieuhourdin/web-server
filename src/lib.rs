@@ -128,7 +128,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
 fn option_response(_request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     Ok(HttpResponse::ok()
         .body("Ok".to_string())
-        .header("Access-Control-Allow-Headers", "Authorization, Content-type".to_string()))
+        .header("Access-Control-Allow-Headers", "authorization, content-type".to_string()))
 }
 
 async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
