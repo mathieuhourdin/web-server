@@ -17,7 +17,7 @@ pub mod schema;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
-    let mut string_request = String::new();
+    let mut encoded_vector = vec![];
 
     loop {
         let mut buffer = [0; 1024];
@@ -26,12 +26,14 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
         let read_bytes = stream.read(&mut buffer).unwrap();
 
-        string_request += &String::from(String::from_utf8_lossy(&buffer[..read_bytes]))[..];
+        encoded_vector.append(&mut buffer[..read_bytes].to_vec());
+
 
         if read_bytes < 1024 {
             break;
         }
     }
+    let string_request = String::from_utf8(encoded_vector).unwrap();
 
     println!("Request is : {string_request}");
 
