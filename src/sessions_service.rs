@@ -80,7 +80,7 @@ pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<Strin
         let session_id = request.cookies.data["session_id"].clone();
         generate_valid_session_from_id(&session_id[..], request)
     } else {
-        if request.headers.contains_key("authorization") {
+        if request.headers.contains_key("authorization") && (request.headers["authorization"] != "null".to_string()) {
             let session_id = request.headers.get("authorization").unwrap().clone();
             let coming_response = generate_valid_session_from_id(&session_id[..], request);
             println!("create_or_attach_session finished generating");

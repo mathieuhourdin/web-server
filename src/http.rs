@@ -85,7 +85,12 @@ impl HttpRequest {
         let mut headers = HashMap::new();
         for row in &first_part[1..] {
             let parsed_header = row.split(": ").collect::<Vec<&str>>();
-            headers.insert(parsed_header[0].to_string().to_lowercase(), parsed_header[1].to_string()); // convert header keys to lowercase. Compatible with http2
+            headers.insert(
+                parsed_header[0]
+                    .to_string()
+                    .to_lowercase(), // convert header keys to lowercase. Compatible with http2
+                parsed_header[1]
+                    .to_string()); 
             println!("Header : {row}");
         }
         let body = String::from(request_array[1]);
