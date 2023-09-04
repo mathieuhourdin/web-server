@@ -20,6 +20,22 @@ diesel::table! {
 }
 
 diesel::table! {
+    comments (id) {
+        id -> Uuid,
+        content -> Text,
+        article_id -> Uuid,
+        comment_type -> Nullable<Text>,
+        start_index -> Nullable<Int4>,
+        end_index -> Nullable<Int4>,
+        parent_id -> Nullable<Uuid>,
+        editing -> Bool,
+        author_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     sessions (id) {
         id -> Uuid,
         user_id -> Nullable<Uuid>,
@@ -45,10 +61,13 @@ diesel::table! {
 }
 
 diesel::joinable!(articles -> users (author_id));
+diesel::joinable!(comments -> articles (article_id));
+diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(sessions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     articles,
+    comments,
     sessions,
     users,
 );
