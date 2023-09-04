@@ -3,9 +3,9 @@ use serde::{Serialize, Deserialize};
 use diesel::prelude::*;
 use std::time::{SystemTime};
 use crate::db;
-use crate::schema::comments;
+use crate::schema::{comments, users};
 use crate::http::{HttpRequest, HttpResponse};
-use crate::entities::{article::Article, error::PpdcError};
+use crate::entities::{article::Article, error::PpdcError, user::User};
 use serde_json;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
@@ -22,6 +22,13 @@ pub struct Comment {
     pub author_id: Uuid,
     pub created_at: SystemTime,
     pub updated_at: SystemTime,
+}
+
+#[derive(Serialize, Queryable)]
+pub struct CommentWithAuthor {
+    #[serde(flatten)]
+    pub comment: Comment,
+    pub author: User,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
@@ -46,6 +53,20 @@ impl Comment {
         let comments = comments::table
             .filter(comments::article_id.eq(article_id))
             .load::<Comment>(&mut conn)?;
+        Ok(comments)
+    }
+
+    pub fn find_all_for_article_with_author(article_id: Uuid) -> Result<Vec<CommentWithAuthor>, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let comments = comments::table
+            .inner_join(users::table)
+            .filter(comments::article_id.eq(article_id))
+            .select((Comment::as_select(), User::as_select()))
+            .load::<(Comment, User)>(&mut conn)?
+            .into_iter()
+            .map(|(comment, author)| CommentWithAuthor { comment, author })
+            .collect();
         Ok(comments)
     }
     
@@ -80,8 +101,13 @@ impl Comment {
 
 pub fn get_comments_for_article(article_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let article_id = HttpRequest::parse_uuid(article_id)?;
-    HttpResponse::ok()
-        .json(&Comment::find_all_for_article(article_id)?)
+    if request.query.contains_key("author") && request.query["author"] == "true" {
+        HttpResponse::ok()
+            .json(&Comment::find_all_for_article_with_author(article_id)?)
+    } else {
+        HttpResponse::ok()
+            .json(&Comment::find_all_for_article(article_id)?)
+    }
 }
 
 pub fn post_comment_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -104,10 +130,12 @@ pub fn put_comment(id: &str, request: &HttpRequest) -> Result<HttpResponse, Ppdc
     }
     let id = HttpRequest::parse_uuid(id)?;
     let db_comment = Comment::find(id)?;
-    if db_comment.author_id != request.session.as_ref().unwrap().user_id.unwrap() {
+    let comment = serde_json::from_str::<NewComment>(&request.body[..])?;
+    if db_comment.author_id != request.session.as_ref().unwrap().user_id.unwrap() 
+        && &db_comment.content != comment.content.as_ref().unwrap_or(&"".to_string())
+    {
         return Ok(HttpResponse::unauthorized());
     }
-    let comment = serde_json::from_str::<NewComment>(&request.body[..])?;
     HttpResponse::ok()
         .json(&Comment::update(&id, comment)?)
 }
