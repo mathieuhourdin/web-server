@@ -48,12 +48,31 @@ impl Comment {
             .load::<Comment>(&mut conn)?;
         Ok(comments)
     }
+    
+    pub fn find(id: Uuid) -> Result<Comment, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let comment = comments::table
+            .filter(comments::id.eq(id))
+            .first(&mut conn)?;
+        Ok(comment)
+    }
 
     pub fn create(comment: NewComment) -> Result<Comment, PpdcError> {
         let mut conn = db::establish_connection();
 
         let comment = diesel::insert_into(comments::table)
             .values(&comment)
+            .get_result(&mut conn)?;
+        Ok(comment)
+    }
+
+    pub fn update(id: &Uuid, comment: NewComment) -> Result<Comment, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let comment = diesel::update(comments::table)
+            .filter(comments::id.eq(id))
+            .set(&comment)
             .get_result(&mut conn)?;
         Ok(comment)
     }
@@ -77,4 +96,18 @@ pub fn post_comment_route(id: &str, request: &HttpRequest) -> Result<HttpRespons
     let comment = Comment::create(comment)?;
     HttpResponse::ok()
         .json(&comment)
+}
+
+pub fn put_comment(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let id = HttpRequest::parse_uuid(id)?;
+    let db_comment = Comment::find(id)?;
+    if db_comment.author_id != request.session.as_ref().unwrap().user_id.unwrap() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let comment = serde_json::from_str::<NewComment>(&request.body[..])?;
+    HttpResponse::ok()
+        .json(&Comment::update(&id, comment)?)
 }

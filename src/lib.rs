@@ -115,6 +115,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("POST", ["articles"]) => post_articles_route(&request).await,
         ("GET", ["articles", id, "comments"]) => comment::get_comments_for_article(id, &request),
         ("POST", ["articles", id, "comments"]) => comment::post_comment_route(id, &request),
+        ("PUT", ["comments", id]) => comment::put_comment(id, &request),
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("GET", ["see-article", uuid]) => see_article(uuid, &request),
