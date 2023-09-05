@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::db;
 use crate::schema::users;
 use diesel;
+use chrono::NaiveDateTime;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::users)]
@@ -17,9 +18,10 @@ pub struct User {
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
+    #[serde(skip_serializing)]
     pub password: String,
-    pub created_at: SystemTime,
-    pub updated_at: Option<SystemTime>
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime 
 }
 
 #[derive(Serialize, Deserialize, Insertable)]
