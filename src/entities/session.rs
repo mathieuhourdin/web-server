@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use std::time::{SystemTime, Duration};
+use chrono::{NaiveDateTime, Utc, Duration};
 use uuid::Uuid;
 use diesel::prelude::*;
 use crate::db;
@@ -14,9 +14,9 @@ pub struct Session {
     pub user_id: Option<Uuid>,
     pub token: Option<String>,
     authenticated: bool,
-    pub expires_at: SystemTime,
-    created_at: SystemTime,
-    updated_at: SystemTime,
+    pub expires_at: NaiveDateTime,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
 }
 
 #[derive(Deserialize, Insertable)]
@@ -25,7 +25,7 @@ pub struct NewSession {
     pub user_id: Option<Uuid>,
     pub token: Option<String>,
     authenticated: bool,
-    pub expires_at: SystemTime,
+    pub expires_at: NaiveDateTime,
 }
 
 impl NewSession {
@@ -34,7 +34,7 @@ impl NewSession {
             user_id: None,
             token: None,
             authenticated: false,
-            expires_at: SystemTime::now() + Duration::from_secs(36000),
+            expires_at: Utc::now().naive_utc().checked_add_signed(Duration::hours(10)).unwrap()
         }
     }
 }
@@ -45,15 +45,15 @@ impl Session {
             id: Uuid::new_v4(),
             user_id: None,
             token: None,
-            created_at: SystemTime::now(),
-            updated_at: SystemTime::now(),
-            expires_at: SystemTime::now() + Duration::from_secs(3600),
+            created_at: Utc::now().naive_utc(),
+            updated_at: Utc::now().naive_utc(),
+            expires_at: Utc::now().naive_utc().checked_add_signed(Duration::hours(10)).unwrap(),
             authenticated: false,
         }
     }
 
     pub fn is_valid(&self) -> bool {
-        self.expires_at > SystemTime::now()
+        self.expires_at > Utc::now().naive_utc()
     }
 
     pub fn set_authenticated_and_user_id(&mut self, user_id: Uuid) {

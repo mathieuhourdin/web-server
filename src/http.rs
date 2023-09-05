@@ -2,8 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use crate::entities::session::Session;
 use crate::environment::get_api_url;
-use std::time::{SystemTime};
-use chrono::{DateTime, Local};
+use chrono::{NaiveDateTime};
 use crate::entities::error::{PpdcError, ErrorType};
 use uuid::Uuid;
 use serde_json;
@@ -233,7 +232,7 @@ impl Cookie {
 pub struct CookieValue {
     pub key: String,
     pub value: String,
-    pub expires: SystemTime,
+    pub expires: NaiveDateTime,
     pub domain: String,
     pub path: String,
     pub same_site: String,
@@ -241,7 +240,7 @@ pub struct CookieValue {
 }
 
 impl CookieValue {
-    pub fn new(key: String, value: String, expires: SystemTime) -> CookieValue {
+    pub fn new(key: String, value: String, expires: NaiveDateTime) -> CookieValue {
         let domain = ServerUrl::from("http://localhost:5173".to_string()).host;
         let path = "/".to_string();
         let same_site = "Lax".to_string();
@@ -251,7 +250,7 @@ impl CookieValue {
 
     pub fn format(&self) -> String {
 
-        let datetime: DateTime<Local> = self.expires.into();
+        let datetime: NaiveDateTime = self.expires.into();
         let expires = datetime.format("%a, %d-%b-%Y %H:%M:%S GMT");
         format!("{}={}; Expires={expires}; Domain={}; Path={}; SameSite={}", self.key, self.value, self.domain, self.path, self.same_site)
     }

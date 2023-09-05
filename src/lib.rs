@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::{User, NewUser}, article::{Article, NewArticle}, error::PpdcError, comment};
+use entities::{user::{User, NewUser}, article::{Article, NewArticle, self}, error::PpdcError, comment};
 use regex::Regex;
 
 pub mod threadpool;
@@ -120,8 +120,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("GET", ["see-article", uuid]) => see_article(uuid, &request),
         ("GET", ["edit-article", uuid]) => edit_article(uuid, &request),
-        ("GET", ["articles"]) => get_articles(&request).await,
-        ("GET", ["articles", uuid]) => get_article_route(uuid).await,
+        ("GET", ["articles"]) => article::get_articles_route(&request),
+        ("GET", ["articles", uuid]) => article::get_article_route(uuid),
         ("PUT", ["articles", uuid]) => put_article_route(uuid, &request).await,
         ("GET", ["sleep"]) => sleep_route(),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
@@ -178,20 +178,6 @@ async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResp
     article.author_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
         .json(&Article::update(uuid, article)?)
-}
-
-async fn get_articles(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
-    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
-    let articles = Article::find_paginated(offset, limit)?;
-    HttpResponse::ok()
-        .json(&articles)
-}
-
-async fn get_article_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
-    let uuid = HttpRequest::parse_uuid(uuid)?;
-    HttpResponse::ok()
-        .json(&Article::find(uuid)?)
 }
 
 async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {

@@ -2,7 +2,6 @@ use serde::{Serialize, Deserialize};
 use argon2::{Config};
 use rand::Rng;
 use crate::entities::error::{PpdcError, ErrorType};
-use std::time::{SystemTime};
 use diesel::prelude::*;
 use uuid::Uuid;
 use crate::db;
@@ -21,7 +20,7 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password: String,
     pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime 
+    pub updated_at: Option<NaiveDateTime> 
 }
 
 #[derive(Serialize, Deserialize, Insertable)]

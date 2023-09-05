@@ -1,11 +1,11 @@
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use diesel::prelude::*;
-use std::time::{SystemTime};
 use crate::db;
+use chrono::NaiveDateTime;
 use crate::schema::{comments, users};
 use crate::http::{HttpRequest, HttpResponse};
-use crate::entities::{article::Article, error::PpdcError, user::User};
+use crate::entities::{error::PpdcError, user::User};
 use serde_json;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
@@ -20,8 +20,8 @@ pub struct Comment {
     pub parent_id: Option<Uuid>,
     pub editing: bool,
     pub author_id: Uuid,
-    pub created_at: SystemTime,
-    pub updated_at: SystemTime,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Serialize, Queryable)]
