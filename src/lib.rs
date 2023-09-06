@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::{User, NewUser}, article::{Article, NewArticle, self}, error::PpdcError, comment};
+use entities::{user::{User, NewUser}, article::{model::{Article, NewArticle}, routes as article}, error::PpdcError, comment};
 use regex::Regex;
 
 pub mod threadpool;
