@@ -1,6 +1,6 @@
 use crate::http::{HttpRequest, HttpResponse};
 use serde_json;
-use crate::entities::{error::{PpdcError, ErrorType}, user::User};
+use crate::entities::error::PpdcError;
 use super::model::*;
 
 pub fn get_article_route(uuid: &str) -> Result<HttpResponse, PpdcError> {

@@ -5,7 +5,7 @@ use chrono::NaiveDateTime;
 use crate::db;
 use crate::schema::*;
 use diesel;
-use crate::entities::{error::{PpdcError, ErrorType}, user::User};
+use crate::entities::{error::{PpdcError}, user::User};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=articles)]

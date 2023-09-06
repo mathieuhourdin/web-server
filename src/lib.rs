@@ -2,9 +2,8 @@ use std::net::{TcpStream};
 use std::io::{prelude::*};
 use std::thread;
 use std::time::Duration;
-use serde_json;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::{User, NewUser}, article::{model::{Article, NewArticle}, routes as article}, error::PpdcError, comment};
+use entities::{user::self, article::routes as article, error::PpdcError, comment};
 use regex::Regex;
 
 pub mod threadpool;
@@ -14,6 +13,7 @@ pub mod sessions_service;
 pub mod environment;
 pub mod db;
 pub mod schema;
+pub mod legacy;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 
@@ -70,7 +70,14 @@ async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {
             allow_origin_host = origin.to_string();
         }
     }
-    let mut response = decode_cookie_for_request_middleware(request).await;
+    let mut response;
+    if request.method == "OPTIONS" {
+        response = HttpResponse::ok()
+            .body("Ok".to_string())
+            .header("Access-Control-Allow-Headers", "authorization, content-type".to_string())
+    } else {
+        response = decode_cookie_for_request_middleware(request).await;
+    }
     response.headers.insert("Access-Control-Allow-Origin".to_string(), allow_origin_host);
     response.headers.insert("Access-Control-Allow-Credentials".to_string(), "true".to_string());
     response.headers.insert("Access-Control-Allow-Methods".to_string(), "GET, POST, PUT, OPTIONS, DELETE".to_string());
@@ -106,9 +113,9 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
     match (&request.method[..], &request.parsed_path()[..]) {
         ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
-        ("POST", ["mathilde"]) => post_mathilde_route(&request).await,
-        ("GET", ["users", uuid]) => get_user_by_uuid(uuid, &request).await,
-        ("POST", ["users"]) => post_user(&request).await,
+        ("POST", ["mathilde"]) => legacy::post_mathilde_route(&request),
+        ("GET", ["users", id]) => user::get_user(id, &request),
+        ("POST", ["users"]) => user::post_user(&request),
         ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
@@ -117,69 +124,13 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("PUT", ["comments", id]) => comment::put_comment(id, &request),
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
-        ("GET", ["see-article", uuid]) => see_article(uuid, &request),
-        ("GET", ["edit-article", uuid]) => edit_article(uuid, &request),
+        ("GET", ["see-article", uuid]) => legacy::see_article(uuid, &request),
+        ("GET", ["edit-article", uuid]) => legacy::edit_article(uuid, &request),
         ("GET", ["articles"]) => article::get_articles_route(&request),
         ("GET", ["articles", uuid]) => article::get_article_route(uuid),
         ("POST", ["articles"]) => article::post_articles_route(&request),
         ("PUT", ["articles", uuid]) => article::put_article_route(uuid, &request),
-        ("GET", ["sleep"]) => sleep_route(),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
-        ("OPTIONS", [..]) => option_response(&request),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
-}
-
-fn option_response(_request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    Ok(HttpResponse::ok()
-        .body("Ok".to_string())
-        .header("Access-Control-Allow-Headers", "authorization, content-type".to_string()))
-}
-
-async fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let mut user_message = serde_json::from_str::<NewUser>(&request.body[..])?;
-    user_message.hash_password().unwrap();
-    let created_user = User::create(user_message)?;
-    HttpResponse::created()
-        .json(&created_user)
-}
-
-async fn get_user_by_uuid(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        println!("get_user_by_uuid invalid session, session id : {:#?}", request.session.as_ref().unwrap().id);
-        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
-    }
-    println!("get_user_by_uuid valid session id : {:#?}", request.session.as_ref().unwrap().id);
-    HttpResponse::ok()
-        .json(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)
-}
-
-fn see_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let mut response = HttpResponse::from_file(StatusCode::Ok, "article_id.html")?;
-    response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
-    Ok(response)
-}
-
-fn edit_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let mut response = HttpResponse::from_file(StatusCode::Ok, "edit-article-id.html")?;
-    response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
-    Ok(response)
-}
-
-async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-
-    match &request.session.as_ref().unwrap().user_id {
-        Some(user_id) => {
-            let user_first_name = User::find(user_id)?.first_name;
-            Ok(HttpResponse::created()
-                .body(format!("Cool {user_first_name} but I already have one")))
-        },
-        None => Ok(HttpResponse::unauthorized()),
-    }
-    
-}
-
-fn sleep_route() -> Result<HttpResponse, PpdcError> {
-    thread::sleep(Duration::from_secs(10));
-    Ok(HttpResponse::new(StatusCode::Ok, String::from("hello.html")))
 }

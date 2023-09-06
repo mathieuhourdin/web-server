@@ -2,10 +2,12 @@ use serde::{Serialize, Deserialize};
 use argon2::{Config};
 use rand::Rng;
 use crate::entities::error::{PpdcError, ErrorType};
+use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use diesel::prelude::*;
 use uuid::Uuid;
 use crate::db;
 use crate::schema::users;
+use serde_json;
 use diesel;
 use chrono::NaiveDateTime;
 
@@ -82,6 +84,24 @@ impl User {
     }
 }
 
+pub fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let mut user_message = serde_json::from_str::<NewUser>(&request.body[..])?;
+    user_message.hash_password().unwrap();
+    let created_user = User::create(user_message)?;
+    HttpResponse::created()
+        .json(&created_user)
+}
+
+pub fn get_user(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        println!("get_user_by_uuid invalid session, session id : {:#?}", request.session.as_ref().unwrap().id);
+        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
+    }
+    println!("get_user_by_uuid valid session id : {:#?}", request.session.as_ref().unwrap().id);
+    HttpResponse::ok()
+        .json(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,4 +120,3 @@ mod tests {
         assert_ne!(user.password, String::from("password"));
     }
 }
-
