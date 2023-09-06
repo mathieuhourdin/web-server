@@ -5,6 +5,7 @@ use chrono::NaiveDateTime;
 use crate::db;
 use crate::schema::*;
 use diesel;
+use diesel::dsl::not;
 use crate::entities::{error::{PpdcError}, user::User};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
@@ -53,20 +54,34 @@ pub struct NewArticle {
 
 impl Article {
 
-    pub fn find_paginated(offset: i64, limit: i64) -> Result<Vec<Article>, PpdcError> {
+    pub fn find_paginated_published(offset: i64, limit: i64) -> Result<Vec<Article>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let articles = articles::table
+            .filter(not(articles::publishing_state.eq("drft")))
             .offset(offset)
             .limit(limit)
             .load::<Article>(&mut conn)?;
         Ok(articles)
     }
 
-    pub fn find_paginated_with_author(offset: i64, limit: i64) -> Result<Vec<ArticleWithAuthor>, PpdcError> {
+    pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<Article>, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let articles = articles::table
+            .filter(articles::publishing_state.eq("drft"))
+            .filter(articles::author_id.eq(user_id))
+            .offset(offset)
+            .limit(limit)
+            .load::<Article>(&mut conn)?;
+        Ok(articles)
+    }
+
+    pub fn find_paginated_published_with_author(offset: i64, limit: i64) -> Result<Vec<ArticleWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let articles_with_author = articles::table
+            .filter(not(articles::publishing_state.eq("drft")))
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)

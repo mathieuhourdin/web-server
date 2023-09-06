@@ -13,12 +13,21 @@ pub fn get_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
     let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
     let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
     let with_author = request.query.get("author").map(|value| &value[..]).unwrap_or("false");
+    let drafts = request.query.get("drafts").map(|value| &value[..]).unwrap_or("false");
     if with_author == "true" {
-        let articles = Article::find_paginated_with_author(offset, limit)?;
+        let articles = Article::find_paginated_published_with_author(offset, limit)?;
+        HttpResponse::ok()
+            .json(&articles)
+    } else if drafts == "true" {
+        if request.session.as_ref().unwrap().user_id.is_none() {
+            return Ok(HttpResponse::unauthorized());
+        }
+        let user_id = request.session.as_ref().unwrap().user_id.unwrap();
+        let articles = Article::find_paginated_drafts(offset, limit, user_id)?;
         HttpResponse::ok()
             .json(&articles)
     } else {
-        let articles = Article::find_paginated(offset, limit)?;
+        let articles = Article::find_paginated_published(offset, limit)?;
         HttpResponse::ok()
             .json(&articles)
     }
