@@ -24,4 +24,29 @@ pub fn get_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
     }
 }
 
+pub fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    println!("post_articles_route passing security");
+    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
+    println!("post_articles_route passing serde");
+    article.author_id = request.session.as_ref().unwrap().user_id;
+    HttpResponse::ok()
+        .json(&Article::create(article)?)
+}
+
+pub fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+
+    println!("Put_article_route with uuid : {:#?}", uuid);
+
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let uuid = &HttpRequest::parse_uuid(uuid)?;
+    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
+    article.author_id = request.session.as_ref().unwrap().user_id;
+    HttpResponse::ok()
+        .json(&Article::update(uuid, article)?)
+}

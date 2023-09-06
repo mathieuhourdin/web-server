@@ -112,7 +112,6 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
-        ("POST", ["articles"]) => post_articles_route(&request).await,
         ("GET", ["articles", id, "comments"]) => comment::get_comments_for_article(id, &request),
         ("POST", ["articles", id, "comments"]) => comment::post_comment_route(id, &request),
         ("PUT", ["comments", id]) => comment::put_comment(id, &request),
@@ -122,7 +121,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["edit-article", uuid]) => edit_article(uuid, &request),
         ("GET", ["articles"]) => article::get_articles_route(&request),
         ("GET", ["articles", uuid]) => article::get_article_route(uuid),
-        ("PUT", ["articles", uuid]) => put_article_route(uuid, &request).await,
+        ("POST", ["articles"]) => article::post_articles_route(&request),
+        ("PUT", ["articles", uuid]) => article::put_article_route(uuid, &request),
         ("GET", ["sleep"]) => sleep_route(),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
         ("OPTIONS", [..]) => option_response(&request),
@@ -164,33 +164,6 @@ fn edit_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, Ppdc
     let mut response = HttpResponse::from_file(StatusCode::Ok, "edit-article-id.html")?;
     response.body = response.body.replace("INJECTED_ARTICLE_ID", format!("'{}'", uuid).as_str());
     Ok(response)
-}
-
-async fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-
-    println!("Put_article_route with uuid : {:#?}", uuid);
-
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    let uuid = &HttpRequest::parse_uuid(uuid)?;
-    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
-    article.author_id = request.session.as_ref().unwrap().user_id;
-    HttpResponse::ok()
-        .json(&Article::update(uuid, article)?)
-}
-
-async fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    println!("post_articles_route passing security");
-    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
-    println!("post_articles_route passing serde");
-    article.author_id = request.session.as_ref().unwrap().user_id;
-    HttpResponse::ok()
-        .json(&Article::create(article)?)
 }
 
 async fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
