@@ -10,6 +10,7 @@ diesel::table! {
         author_id -> Nullable<Uuid>,
         progress -> Int4,
         maturing_state -> Text,
+        publishing_state -> Text,
         parent_id -> Nullable<Uuid>,
         gdoc_url -> Nullable<Text>,
         image_url -> Nullable<Text>,
