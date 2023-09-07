@@ -20,7 +20,7 @@ pub fn get_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
             .json(&articles)
     } else if drafts == "true" {
         if request.session.as_ref().unwrap().user_id.is_none() {
-            return Ok(HttpResponse::unauthorized());
+            return HttpResponse::ok().json::<Vec<String>>(&vec![]);
         }
         let user_id = request.session.as_ref().unwrap().user_id.unwrap();
         let articles = Article::find_paginated_drafts(offset, limit, user_id)?;
