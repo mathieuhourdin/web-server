@@ -49,6 +49,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    thought_inputs (id) {
+        id -> Uuid,
+        resource_title -> Text,
+        resource_author_name -> Text,
+        resource_type -> Nullable<Text>,
+        resource_link -> Nullable<Text>,
+        resource_image_link -> Nullable<Text>,
+        resource_comment -> Text,
+        input_progress -> Int4,
+        input_date -> Nullable<Timestamp>,
+        input_comment -> Text,
+        input_is_public -> Bool,
+        input_user_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -65,10 +84,12 @@ diesel::joinable!(articles -> users (author_id));
 diesel::joinable!(comments -> articles (article_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(sessions -> users (user_id));
+diesel::joinable!(thought_inputs -> users (input_user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     articles,
     comments,
     sessions,
+    thought_inputs,
     users,
 );

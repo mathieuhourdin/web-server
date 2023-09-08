@@ -4,6 +4,7 @@ use std::thread;
 use std::time::Duration;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::{user::self, article::routes as article, error::PpdcError, comment};
+use entities::thought_input;
 use regex::Regex;
 
 pub mod threadpool;
@@ -130,6 +131,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["articles", uuid]) => article::get_article_route(uuid),
         ("POST", ["articles"]) => article::post_articles_route(&request),
         ("PUT", ["articles", uuid]) => article::put_article_route(uuid, &request),
+        ("POST", ["thought_inputs"]) => thought_input::post_thought_input_route(&request),
+        ("GET", ["users", id, "thought_inputs"]) => thought_input::get_thought_inputs_for_user(id, &request),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
