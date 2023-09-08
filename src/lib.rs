@@ -132,6 +132,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("POST", ["articles"]) => article::post_articles_route(&request),
         ("PUT", ["articles", uuid]) => article::put_article_route(uuid, &request),
         ("POST", ["thought_inputs"]) => thought_input::post_thought_input_route(&request),
+        ("PUT", ["thought_inputs", id]) => thought_input::put_thought_input_route(id, &request),
+        ("GET", ["thought_inputs", id]) => thought_input::get_one_thought_input_route(id, &request),
         ("GET", ["users", id, "thought_inputs"]) => thought_input::get_thought_inputs_for_user(id, &request),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")

@@ -51,6 +51,16 @@ impl NewThoughtInput {
             .get_result(&mut conn)?;
         Ok(thought_input)
     }
+
+    pub fn update(self, id: &Uuid) -> Result<ThoughtInput, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let thought_input = diesel::update(thought_inputs::table)
+            .filter(thought_inputs::id.eq(id))
+            .set(&self)
+            .get_result(&mut conn)?;
+        Ok(thought_input)
+    }
 }
 
 impl ThoughtInput {
@@ -65,6 +75,15 @@ impl ThoughtInput {
             .load::<ThoughtInput>(&mut conn)?;
         Ok(thought_input)
     }
+
+    pub fn find(id: Uuid) -> Result<ThoughtInput, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let thought_input = thought_inputs::table
+            .filter(thought_inputs::id.eq(id))
+            .first(&mut conn)?;
+        Ok(thought_input)
+    }
 }
 
 pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -73,6 +92,12 @@ pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Resu
     let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
     HttpResponse::ok()
         .json(&ThoughtInput::find_paginated_public_by_user(offset, limit, user_id)?)
+}
+
+pub fn get_one_thought_input_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let id = HttpRequest::parse_uuid(id)?;
+    HttpResponse::ok()
+        .json(&ThoughtInput::find(id)?)
 }
 
 pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -85,4 +110,19 @@ pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, P
     let thought_input = NewThoughtInput::create(thought_input)?;
     HttpResponse::ok()
         .json(&thought_input)
+}
+
+pub fn put_thought_input_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let id = HttpRequest::parse_uuid(id)?;
+    let db_thought_input = ThoughtInput::find(id)?;
+    let thought_input = serde_json::from_str::<NewThoughtInput>(&request.body[..])?;
+    if db_thought_input.input_user_id != request.session.as_ref().unwrap().user_id.unwrap() 
+    {
+        return Ok(HttpResponse::unauthorized());
+    }
+    HttpResponse::ok()
+        .json(&thought_input.update(&id)?)
 }
