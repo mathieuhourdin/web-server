@@ -34,7 +34,17 @@ pub async fn handle_connection(mut stream: TcpStream) {
             break;
         }
     }
-    let string_request = String::from_utf8(encoded_vector).unwrap();
+    let string_request = String::from_utf8(encoded_vector);
+
+    let string_request = match string_request {
+        Err(err) => {
+            println!("Error during request utf8 decoding : {:#?}", err);
+            let response = HttpResponse::new(StatusCode::BadRequest, "Unable to decode request".to_string());
+            stream.write_all(response.to_stream().as_bytes()).unwrap();
+            return;
+        },
+        Ok(value) => value
+    };
 
     println!("Request is : {string_request}");
 
