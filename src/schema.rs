@@ -64,6 +64,7 @@ diesel::table! {
         url_slug -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        output_type -> Text,
     }
 }
 

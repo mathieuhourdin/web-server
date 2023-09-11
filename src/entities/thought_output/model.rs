@@ -26,6 +26,7 @@ pub struct ThoughtOutput {
     pub url_slug: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub output_type: String,
 }
 
 #[derive(Serialize, Queryable)]
@@ -50,26 +51,33 @@ pub struct NewThoughtOutput {
     pub gdoc_url: Option<String>,
     pub image_url: Option<String>,
     pub url_slug: Option<String>,
+    pub output_type: Option<String>
 }
 
 impl ThoughtOutput {
 
-    pub fn find_paginated_published(offset: i64, limit: i64) -> Result<Vec<ThoughtOutput>, PpdcError> {
+    pub fn find_paginated_published(offset: i64, limit: i64, output_type: &str) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_outputs = thought_outputs::table
-            .filter(not(thought_outputs::publishing_state.eq("drft")))
+        let mut query = thought_outputs::table.into_boxed();
+        if output_type != "all" {
+            query = query.filter(thought_outputs::output_type.eq(output_type))
+        };
+        let thought_outputs = query.filter(not(thought_outputs::publishing_state.eq("drft")))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
         Ok(thought_outputs)
     }
 
-    pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<ThoughtOutput>, PpdcError> {
+    pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid, output_type: &str) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_outputs = thought_outputs::table
-            .filter(thought_outputs::publishing_state.eq("drft"))
+        let mut query = thought_outputs::table.into_boxed();
+        if output_type != "all" {
+            query = query.filter(thought_outputs::output_type.eq(output_type))
+        };
+        let thought_outputs = query.filter(thought_outputs::publishing_state.eq("drft"))
             .filter(thought_outputs::author_id.eq(user_id))
             .offset(offset)
             .limit(limit)
@@ -77,11 +85,14 @@ impl ThoughtOutput {
         Ok(thought_outputs)
     }
 
-    pub fn find_paginated_published_with_author(offset: i64, limit: i64) -> Result<Vec<ThoughtOutputWithAuthor>, PpdcError> {
+    pub fn find_paginated_published_with_author(offset: i64, limit: i64, output_type: &str) -> Result<Vec<ThoughtOutputWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_outputs_with_author = thought_outputs::table
-            .filter(not(thought_outputs::publishing_state.eq("drft")))
+        let mut query = thought_outputs::table.select(thought_outputs::all_columns).into_boxed();
+        if output_type != "all" {
+            query = query.filter(thought_outputs::output_type.eq(output_type))
+        };
+        let thought_outputs_with_author = query.filter(not(thought_outputs::publishing_state.eq("drft")))
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)

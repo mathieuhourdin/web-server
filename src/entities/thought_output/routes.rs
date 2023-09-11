@@ -9,13 +9,13 @@ pub fn get_thought_output_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
         .json(&ThoughtOutput::find(uuid)?)
 }
 
-pub fn get_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+pub fn get_thought_outputs_route(request: &HttpRequest, filter: &str) -> Result<HttpResponse, PpdcError> {
     let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
     let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
     let with_author = request.query.get("author").map(|value| &value[..]).unwrap_or("false");
     let drafts = request.query.get("drafts").map(|value| &value[..]).unwrap_or("false");
     if with_author == "true" {
-        let thought_outputs = ThoughtOutput::find_paginated_published_with_author(offset, limit)?;
+        let thought_outputs = ThoughtOutput::find_paginated_published_with_author(offset, limit, filter)?;
         HttpResponse::ok()
             .json(&thought_outputs)
     } else if drafts == "true" {
@@ -23,11 +23,11 @@ pub fn get_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse, 
             return HttpResponse::ok().json::<Vec<String>>(&vec![]);
         }
         let user_id = request.session.as_ref().unwrap().user_id.unwrap();
-        let thought_outputs = ThoughtOutput::find_paginated_drafts(offset, limit, user_id)?;
+        let thought_outputs = ThoughtOutput::find_paginated_drafts(offset, limit, user_id, filter)?;
         HttpResponse::ok()
             .json(&thought_outputs)
     } else {
-        let thought_outputs = ThoughtOutput::find_paginated_published(offset, limit)?;
+        let thought_outputs = ThoughtOutput::find_paginated_published(offset, limit, filter)?;
         HttpResponse::ok()
             .json(&thought_outputs)
     }
