@@ -6,7 +6,7 @@ use super::model::*;
 pub fn get_article_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
     let uuid = HttpRequest::parse_uuid(uuid)?;
     HttpResponse::ok()
-        .json(&Article::find(uuid)?)
+        .json(&ThoughtOutput::find(uuid)?)
 }
 
 pub fn get_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -15,7 +15,7 @@ pub fn get_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
     let with_author = request.query.get("author").map(|value| &value[..]).unwrap_or("false");
     let drafts = request.query.get("drafts").map(|value| &value[..]).unwrap_or("false");
     if with_author == "true" {
-        let articles = Article::find_paginated_published_with_author(offset, limit)?;
+        let articles = ThoughtOutput::find_paginated_published_with_author(offset, limit)?;
         HttpResponse::ok()
             .json(&articles)
     } else if drafts == "true" {
@@ -23,11 +23,11 @@ pub fn get_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
             return HttpResponse::ok().json::<Vec<String>>(&vec![]);
         }
         let user_id = request.session.as_ref().unwrap().user_id.unwrap();
-        let articles = Article::find_paginated_drafts(offset, limit, user_id)?;
+        let articles = ThoughtOutput::find_paginated_drafts(offset, limit, user_id)?;
         HttpResponse::ok()
             .json(&articles)
     } else {
-        let articles = Article::find_paginated_published(offset, limit)?;
+        let articles = ThoughtOutput::find_paginated_published(offset, limit)?;
         HttpResponse::ok()
             .json(&articles)
     }
@@ -39,11 +39,11 @@ pub fn post_articles_route(request: &HttpRequest) -> Result<HttpResponse, PpdcEr
         return Ok(HttpResponse::unauthorized());
     }
     println!("post_articles_route passing security");
-    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
+    let mut article = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
     println!("post_articles_route passing serde");
     article.author_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
-        .json(&Article::create(article)?)
+        .json(&ThoughtOutput::create(article)?)
 }
 
 pub fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -54,8 +54,8 @@ pub fn put_article_route(uuid: &str, request: &HttpRequest) -> Result<HttpRespon
         return Ok(HttpResponse::unauthorized());
     }
     let uuid = &HttpRequest::parse_uuid(uuid)?;
-    let mut article = serde_json::from_str::<NewArticle>(&request.body[..])?;
+    let mut article = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
     article.author_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
-        .json(&Article::update(uuid, article)?)
+        .json(&ThoughtOutput::update(uuid, article)?)
 }

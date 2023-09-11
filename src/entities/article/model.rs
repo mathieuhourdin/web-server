@@ -10,7 +10,7 @@ use crate::entities::{error::{PpdcError}, user::User};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=thought_outputs)]
-pub struct Article {
+pub struct ThoughtOutput {
     pub id: Uuid,
     pub title: String,
     pub description: String,
@@ -29,15 +29,15 @@ pub struct Article {
 }
 
 #[derive(Serialize, Queryable)]
-pub struct ArticleWithAuthor {
+pub struct ThoughtOutputWithAuthor {
     #[serde(flatten)]
-    pub article: Article,
+    pub article: ThoughtOutput,
     pub author: User,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
 #[diesel(table_name=thought_outputs)]
-pub struct NewArticle {
+pub struct NewThoughtOutput {
     pub title: String,
     pub description: String,
     pub content: String,
@@ -52,20 +52,20 @@ pub struct NewArticle {
     pub url_slug: Option<String>,
 }
 
-impl Article {
+impl ThoughtOutput {
 
-    pub fn find_paginated_published(offset: i64, limit: i64) -> Result<Vec<Article>, PpdcError> {
+    pub fn find_paginated_published(offset: i64, limit: i64) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let articles = thought_outputs::table
             .filter(not(thought_outputs::publishing_state.eq("drft")))
             .offset(offset)
             .limit(limit)
-            .load::<Article>(&mut conn)?;
+            .load::<ThoughtOutput>(&mut conn)?;
         Ok(articles)
     }
 
-    pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<Article>, PpdcError> {
+    pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let articles = thought_outputs::table
@@ -73,11 +73,11 @@ impl Article {
             .filter(thought_outputs::author_id.eq(user_id))
             .offset(offset)
             .limit(limit)
-            .load::<Article>(&mut conn)?;
+            .load::<ThoughtOutput>(&mut conn)?;
         Ok(articles)
     }
 
-    pub fn find_paginated_published_with_author(offset: i64, limit: i64) -> Result<Vec<ArticleWithAuthor>, PpdcError> {
+    pub fn find_paginated_published_with_author(offset: i64, limit: i64) -> Result<Vec<ThoughtOutputWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let articles_with_author = thought_outputs::table
@@ -85,15 +85,15 @@ impl Article {
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)
-            .select((Article::as_select(), User::as_select()))
-            .load::<(Article, User)>(&mut conn)?
+            .select((ThoughtOutput::as_select(), User::as_select()))
+            .load::<(ThoughtOutput, User)>(&mut conn)?
             .into_iter()
-            .map(|(article, author)| ArticleWithAuthor { article, author })
+            .map(|(article, author)| ThoughtOutputWithAuthor { article, author })
             .collect();
         Ok(articles_with_author)
     }
 
-    pub fn find(id: Uuid) -> Result<Article, PpdcError> {
+    pub fn find(id: Uuid) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
         let article = thought_outputs::table
@@ -102,7 +102,7 @@ impl Article {
         Ok(article)
     }
 
-    pub fn create(article: NewArticle) -> Result<Article, PpdcError> {
+    pub fn create(article: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
         let article = diesel::insert_into(thought_outputs::table)
@@ -111,7 +111,7 @@ impl Article {
         Ok(article)
     }
     
-    pub fn update(id: &Uuid, article: NewArticle) -> Result<Article, PpdcError> {
+    pub fn update(id: &Uuid, article: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
         let article = diesel::update(thought_outputs::table)
