@@ -31,7 +31,7 @@ pub struct ThoughtOutput {
 #[derive(Serialize, Queryable)]
 pub struct ThoughtOutputWithAuthor {
     #[serde(flatten)]
-    pub article: ThoughtOutput,
+    pub thought_output: ThoughtOutput,
     pub author: User,
 }
 
@@ -57,30 +57,30 @@ impl ThoughtOutput {
     pub fn find_paginated_published(offset: i64, limit: i64) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let articles = thought_outputs::table
+        let thought_outputs = thought_outputs::table
             .filter(not(thought_outputs::publishing_state.eq("drft")))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
-        Ok(articles)
+        Ok(thought_outputs)
     }
 
     pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let articles = thought_outputs::table
+        let thought_outputs = thought_outputs::table
             .filter(thought_outputs::publishing_state.eq("drft"))
             .filter(thought_outputs::author_id.eq(user_id))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
-        Ok(articles)
+        Ok(thought_outputs)
     }
 
     pub fn find_paginated_published_with_author(offset: i64, limit: i64) -> Result<Vec<ThoughtOutputWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let articles_with_author = thought_outputs::table
+        let thought_outputs_with_author = thought_outputs::table
             .filter(not(thought_outputs::publishing_state.eq("drft")))
             .inner_join(users::table)
             .offset(offset)
@@ -88,36 +88,36 @@ impl ThoughtOutput {
             .select((ThoughtOutput::as_select(), User::as_select()))
             .load::<(ThoughtOutput, User)>(&mut conn)?
             .into_iter()
-            .map(|(article, author)| ThoughtOutputWithAuthor { article, author })
+            .map(|(thought_output, author)| ThoughtOutputWithAuthor { thought_output, author })
             .collect();
-        Ok(articles_with_author)
+        Ok(thought_outputs_with_author)
     }
 
     pub fn find(id: Uuid) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let article = thought_outputs::table
+        let thought_output = thought_outputs::table
             .filter(thought_outputs::id.eq(id))
             .first(&mut conn)?;
-        Ok(article)
+        Ok(thought_output)
     }
 
-    pub fn create(article: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
+    pub fn create(thought_output: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let article = diesel::insert_into(thought_outputs::table)
-            .values(&article)
+        let thought_output = diesel::insert_into(thought_outputs::table)
+            .values(&thought_output)
             .get_result(&mut conn)?;
-        Ok(article)
+        Ok(thought_output)
     }
     
-    pub fn update(id: &Uuid, article: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
+    pub fn update(id: &Uuid, thought_output: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let article = diesel::update(thought_outputs::table)
+        let thought_output = diesel::update(thought_outputs::table)
             .filter(thought_outputs::id.eq(id))
-            .set(&article)
+            .set(&thought_output)
             .get_result(&mut conn)?;
-        Ok(article)
+        Ok(thought_output)
     }
 }
