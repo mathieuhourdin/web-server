@@ -1,4 +1,4 @@
-pub mod article;
+pub mod thought_output;
 pub mod user;
 pub mod error;
 pub mod session;

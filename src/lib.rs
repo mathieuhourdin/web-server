@@ -3,7 +3,7 @@ use std::io::{prelude::*};
 use std::thread;
 use std::time::Duration;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::self, article::routes as article, error::PpdcError, comment};
+use entities::{user::self, thought_output::routes as thought_output, error::PpdcError, comment};
 use entities::thought_input;
 use regex::Regex;
 
@@ -130,17 +130,17 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
-        ("GET", ["articles", id, "comments"]) => comment::get_comments_for_article(id, &request),
-        ("POST", ["articles", id, "comments"]) => comment::post_comment_route(id, &request),
+        ("GET", ["thought_outputs", id, "comments"]) => comment::get_comments_for_thought_output(id, &request),
+        ("POST", ["thought_outputs", id, "comments"]) => comment::post_comment_route(id, &request),
         ("PUT", ["comments", id]) => comment::put_comment(id, &request),
         ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("GET", ["see-article", uuid]) => legacy::see_article(uuid, &request),
         ("GET", ["edit-article", uuid]) => legacy::edit_article(uuid, &request),
-        ("GET", ["articles"]) => article::get_articles_route(&request),
-        ("GET", ["articles", uuid]) => article::get_article_route(uuid),
-        ("POST", ["articles"]) => article::post_articles_route(&request),
-        ("PUT", ["articles", uuid]) => article::put_article_route(uuid, &request),
+        ("GET", ["thought_outputs"]) => thought_output::get_thought_outputs_route(&request),
+        ("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
+        ("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),
+        ("PUT", ["thought_outputs", uuid]) => thought_output::put_thought_output_route(uuid, &request),
         ("POST", ["thought_inputs"]) => thought_input::post_thought_input_route(&request),
         ("PUT", ["thought_inputs", id]) => thought_input::put_thought_input_route(id, &request),
         ("GET", ["thought_inputs", id]) => thought_input::get_one_thought_input_route(id, &request),

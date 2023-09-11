@@ -47,7 +47,7 @@ pub struct NewComment {
 
 impl Comment {
 
-    pub fn find_all_for_article(thought_output_id: Uuid) -> Result<Vec<Comment>, PpdcError> {
+    pub fn find_all_for_thought_output(thought_output_id: Uuid) -> Result<Vec<Comment>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let comments = comments::table
@@ -56,7 +56,7 @@ impl Comment {
         Ok(comments)
     }
 
-    pub fn find_all_for_article_with_author(thought_output_id: Uuid) -> Result<Vec<CommentWithAuthor>, PpdcError> {
+    pub fn find_all_for_thought_output_with_author(thought_output_id: Uuid) -> Result<Vec<CommentWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let comments = comments::table
@@ -99,14 +99,14 @@ impl Comment {
     }
 }
 
-pub fn get_comments_for_article(thought_output_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+pub fn get_comments_for_thought_output(thought_output_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let thought_output_id = HttpRequest::parse_uuid(thought_output_id)?;
     if request.query.contains_key("author") && request.query["author"] == "true" {
         HttpResponse::ok()
-            .json(&Comment::find_all_for_article_with_author(thought_output_id)?)
+            .json(&Comment::find_all_for_thought_output_with_author(thought_output_id)?)
     } else {
         HttpResponse::ok()
-            .json(&Comment::find_all_for_article(thought_output_id)?)
+            .json(&Comment::find_all_for_thought_output(thought_output_id)?)
     }
 }
 
