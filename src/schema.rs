@@ -1,30 +1,10 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    articles (id) {
-        id -> Uuid,
-        title -> Text,
-        description -> Text,
-        content -> Text,
-        potential_improvements -> Text,
-        author_id -> Nullable<Uuid>,
-        progress -> Int4,
-        maturing_state -> Text,
-        publishing_state -> Text,
-        parent_id -> Nullable<Uuid>,
-        gdoc_url -> Nullable<Text>,
-        image_url -> Nullable<Text>,
-        url_slug -> Nullable<Text>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     comments (id) {
         id -> Uuid,
         content -> Text,
-        article_id -> Uuid,
+        thought_output_id -> Uuid,
         comment_type -> Nullable<Text>,
         start_index -> Nullable<Int4>,
         end_index -> Nullable<Int4>,
@@ -68,6 +48,26 @@ diesel::table! {
 }
 
 diesel::table! {
+    thought_outputs (id) {
+        id -> Uuid,
+        title -> Text,
+        description -> Text,
+        content -> Text,
+        potential_improvements -> Text,
+        author_id -> Nullable<Uuid>,
+        progress -> Int4,
+        maturing_state -> Text,
+        publishing_state -> Text,
+        parent_id -> Nullable<Uuid>,
+        gdoc_url -> Nullable<Text>,
+        image_url -> Nullable<Text>,
+        url_slug -> Nullable<Text>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -80,16 +80,16 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(articles -> users (author_id));
-diesel::joinable!(comments -> articles (article_id));
+diesel::joinable!(comments -> thought_outputs (thought_output_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(thought_inputs -> users (input_user_id));
+diesel::joinable!(thought_outputs -> users (author_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    articles,
     comments,
     sessions,
     thought_inputs,
+    thought_outputs,
     users,
 );

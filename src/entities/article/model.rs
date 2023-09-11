@@ -9,7 +9,7 @@ use diesel::dsl::not;
 use crate::entities::{error::{PpdcError}, user::User};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
-#[diesel(table_name=articles)]
+#[diesel(table_name=thought_outputs)]
 pub struct Article {
     pub id: Uuid,
     pub title: String,
@@ -36,7 +36,7 @@ pub struct ArticleWithAuthor {
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
-#[diesel(table_name=articles)]
+#[diesel(table_name=thought_outputs)]
 pub struct NewArticle {
     pub title: String,
     pub description: String,
@@ -57,8 +57,8 @@ impl Article {
     pub fn find_paginated_published(offset: i64, limit: i64) -> Result<Vec<Article>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let articles = articles::table
-            .filter(not(articles::publishing_state.eq("drft")))
+        let articles = thought_outputs::table
+            .filter(not(thought_outputs::publishing_state.eq("drft")))
             .offset(offset)
             .limit(limit)
             .load::<Article>(&mut conn)?;
@@ -68,9 +68,9 @@ impl Article {
     pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<Article>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let articles = articles::table
-            .filter(articles::publishing_state.eq("drft"))
-            .filter(articles::author_id.eq(user_id))
+        let articles = thought_outputs::table
+            .filter(thought_outputs::publishing_state.eq("drft"))
+            .filter(thought_outputs::author_id.eq(user_id))
             .offset(offset)
             .limit(limit)
             .load::<Article>(&mut conn)?;
@@ -80,8 +80,8 @@ impl Article {
     pub fn find_paginated_published_with_author(offset: i64, limit: i64) -> Result<Vec<ArticleWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let articles_with_author = articles::table
-            .filter(not(articles::publishing_state.eq("drft")))
+        let articles_with_author = thought_outputs::table
+            .filter(not(thought_outputs::publishing_state.eq("drft")))
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)
@@ -96,8 +96,8 @@ impl Article {
     pub fn find(id: Uuid) -> Result<Article, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let article = articles::table
-            .filter(articles::id.eq(id))
+        let article = thought_outputs::table
+            .filter(thought_outputs::id.eq(id))
             .first(&mut conn)?;
         Ok(article)
     }
@@ -105,7 +105,7 @@ impl Article {
     pub fn create(article: NewArticle) -> Result<Article, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let article = diesel::insert_into(articles::table)
+        let article = diesel::insert_into(thought_outputs::table)
             .values(&article)
             .get_result(&mut conn)?;
         Ok(article)
@@ -114,8 +114,8 @@ impl Article {
     pub fn update(id: &Uuid, article: NewArticle) -> Result<Article, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let article = diesel::update(articles::table)
-            .filter(articles::id.eq(id))
+        let article = diesel::update(thought_outputs::table)
+            .filter(thought_outputs::id.eq(id))
             .set(&article)
             .get_result(&mut conn)?;
         Ok(article)
