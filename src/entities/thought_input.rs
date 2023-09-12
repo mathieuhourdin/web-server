@@ -64,6 +64,17 @@ impl NewThoughtInput {
 }
 
 impl ThoughtInput {
+
+    pub fn find_paginated(offset: i64, limit: i64) -> Result<Vec<ThoughtInput>, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let thought_input = thought_inputs::table
+            .offset(offset)
+            .limit(limit)
+            .load::<ThoughtInput>(&mut conn)?;
+        Ok(thought_input)
+    }
+
     pub fn find_paginated_public_by_user(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<ThoughtInput>, PpdcError> {
         let mut conn = db::establish_connection();
 
@@ -92,6 +103,13 @@ pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Resu
     let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
     HttpResponse::ok()
         .json(&ThoughtInput::find_paginated_public_by_user(offset, limit, user_id)?)
+}
+
+pub fn get_thought_inputs(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
+    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+    HttpResponse::ok()
+        .json(&ThoughtInput::find_paginated(offset, limit)?)
 }
 
 pub fn get_one_thought_input_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
