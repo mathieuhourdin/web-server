@@ -137,6 +137,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("GET", ["see-article", uuid]) => legacy::see_article(uuid, &request),
         ("GET", ["edit-article", uuid]) => legacy::edit_article(uuid, &request),
+        ("GET", ["problems"]) => thought_output::get_thought_outputs_route(&request, "pblm"),
         ("GET", ["articles"]) => thought_output::get_thought_outputs_route(&request, "atcl"),
         ("GET", ["articles", id]) => thought_output::get_thought_output_route(id),
         ("POST", ["articles"]) => thought_output::post_thought_outputs_route(&request),

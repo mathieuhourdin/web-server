@@ -29,6 +29,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    thought_input_usages (thought_input_id, thought_output_id) {
+        id -> Uuid,
+        thought_input_id -> Uuid,
+        thought_output_id -> Uuid,
+        usage_reason -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     thought_inputs (id) {
         id -> Uuid,
         resource_title -> Text,
@@ -84,12 +95,15 @@ diesel::table! {
 diesel::joinable!(comments -> thought_outputs (thought_output_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(sessions -> users (user_id));
+diesel::joinable!(thought_input_usages -> thought_inputs (thought_input_id));
+diesel::joinable!(thought_input_usages -> thought_outputs (thought_output_id));
 diesel::joinable!(thought_inputs -> users (input_user_id));
 diesel::joinable!(thought_outputs -> users (author_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     comments,
     sessions,
+    thought_input_usages,
     thought_inputs,
     thought_outputs,
     users,
