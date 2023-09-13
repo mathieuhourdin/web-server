@@ -5,6 +5,7 @@ use std::time::Duration;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::{user::self, thought_output::routes as thought_output, error::PpdcError, comment};
 use entities::thought_input;
+use entities::thought_input_usage;
 use regex::Regex;
 
 pub mod threadpool;
@@ -145,6 +146,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
         ("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),
         ("PUT", ["thought_outputs", uuid]) => thought_output::put_thought_output_route(uuid, &request),
+        ("GET", ["thought_outputs", id, "thought_input_usages"]) => thought_input_usage::get_thought_input_usages_for_thought_output_route(id, &request),
+        ("POST", ["thought_input_usages"]) => thought_input_usage::post_thought_input_usage_route(&request),
         ("POST", ["thought_inputs"]) => thought_input::post_thought_input_route(&request),
         ("PUT", ["thought_inputs", id]) => thought_input::put_thought_input_route(id, &request),
         ("GET", ["thought_inputs", id]) => thought_input::get_one_thought_input_route(id, &request),
