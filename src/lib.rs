@@ -7,6 +7,8 @@ use entities::{user::self, thought_output::routes as thought_output, error::Ppdc
 use entities::thought_input;
 use entities::thought_input_usage;
 use regex::Regex;
+use std::time::SystemTime;
+use chrono::{NaiveDateTime, Utc};
 
 pub mod threadpool;
 pub mod entities;
@@ -18,6 +20,9 @@ pub mod schema;
 pub mod legacy;
 
 pub async fn handle_connection(mut stream: TcpStream) {
+
+    let current_time = Utc::now().naive_utc();
+    println!("[handle_connection lib.rs] Current time : {:#?}", current_time);
 
     let mut encoded_vector = vec![];
 
@@ -87,6 +92,11 @@ async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {
         response = HttpResponse::ok()
             .body("Ok".to_string())
             .header("Access-Control-Allow-Headers", "authorization, content-type".to_string())
+    } else if request.method == "GET" && request.path == "/" {
+        // Google health check
+        println!("Google Health Check");
+        response = HttpResponse::ok()
+            .body("Ok".to_string());
     } else {
         response = decode_cookie_for_request_middleware(request).await;
     }
