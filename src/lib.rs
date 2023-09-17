@@ -1,13 +1,12 @@
 use std::net::{TcpStream};
 use std::io::{prelude::*};
 use std::thread;
-use std::time::Duration;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::{user::self, thought_output::routes as thought_output, error::PpdcError, comment};
 use entities::thought_input;
 use entities::thought_input_usage;
 use regex::Regex;
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 use chrono::{NaiveDateTime, Utc};
 
 pub mod threadpool;
@@ -24,6 +23,11 @@ pub async fn handle_connection(mut stream: TcpStream) {
     let current_time = Utc::now().naive_utc();
     println!("[handle_connection lib.rs] Current time : {:#?}", current_time);
 
+    if let Err(err) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
+        println!("Error setting read timeout");
+        return;
+    }
+
     let mut encoded_vector = vec![];
 
     loop {
@@ -31,7 +35,17 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
         thread::sleep(Duration::from_millis(10));
 
-        let read_bytes = stream.read(&mut buffer).unwrap();
+        let read_bytes = stream.read(&mut buffer);
+
+        let read_bytes = match read_bytes {
+            Err(err) => {
+                println!("Error during request package reading : {:#?}", err);
+                let response = HttpResponse::new(StatusCode::BadRequest, "Unable to decode request".to_string());
+                stream.write_all(response.to_stream().as_bytes()).unwrap();
+                return;
+            },
+            Ok(value) => value
+        };
 
         encoded_vector.append(&mut buffer[..read_bytes].to_vec());
 
