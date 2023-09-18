@@ -168,6 +168,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["articles", id]) => thought_output::get_thought_output_route(id),
         ("POST", ["articles"]) => thought_output::post_thought_outputs_route(&request),
         ("GET", ["categories"]) => category::get_categories_route(&request),
+        ("POST", ["categories"]) => category::post_category_route(&request),
         ("GET", ["thought_outputs"]) => thought_output::get_thought_outputs_route(&request, "all"),
         ("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
         ("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),

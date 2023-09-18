@@ -5,6 +5,7 @@ use diesel::prelude::*;
 use uuid::Uuid;
 use crate::db;
 use crate::schema::categories;
+use serde_json;
 use diesel;
 use chrono::NaiveDateTime;
 
@@ -60,4 +61,10 @@ pub fn get_categories_route(request: &HttpRequest) -> Result<HttpResponse, PpdcE
     let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
     HttpResponse::ok()
         .json(&Category::find_paginated(offset, limit)?)
+}
+
+pub fn post_category_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let category = serde_json::from_str::<NewCategory>(&request.body[..])?;
+    HttpResponse::ok()
+        .json(&NewCategory::create(category)?)
 }
