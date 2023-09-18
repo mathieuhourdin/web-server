@@ -27,6 +27,7 @@ pub struct ThoughtOutput {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub output_type: String,
+    pub category_id: Option<Uuid>
 }
 
 #[derive(Serialize, Queryable)]
@@ -51,7 +52,8 @@ pub struct NewThoughtOutput {
     pub gdoc_url: Option<String>,
     pub image_url: Option<String>,
     pub url_slug: Option<String>,
-    pub output_type: Option<String>
+    pub output_type: Option<String>,
+    pub category_id: Option<Uuid>
 }
 
 impl ThoughtOutput {

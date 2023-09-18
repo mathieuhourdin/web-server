@@ -5,6 +5,7 @@ use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::{user::self, thought_output::routes as thought_output, error::PpdcError, comment};
 use entities::thought_input;
 use entities::thought_input_usage;
+use entities::category;
 use regex::Regex;
 use std::time::{SystemTime, Duration};
 use chrono::{NaiveDateTime, Utc};
@@ -166,6 +167,7 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["articles"]) => thought_output::get_thought_outputs_route(&request, "atcl"),
         ("GET", ["articles", id]) => thought_output::get_thought_output_route(id),
         ("POST", ["articles"]) => thought_output::post_thought_outputs_route(&request),
+        ("GET", ["categories"]) => category::get_categories_route(&request),
         ("GET", ["thought_outputs"]) => thought_output::get_thought_outputs_route(&request, "all"),
         ("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
         ("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),

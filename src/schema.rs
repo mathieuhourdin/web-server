@@ -1,6 +1,15 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    categories (id) {
+        id -> Uuid,
+        display_name -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     comments (id) {
         id -> Uuid,
         content -> Text,
@@ -76,6 +85,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         output_type -> Text,
+        category_id -> Nullable<Uuid>,
     }
 }
 
@@ -98,9 +108,11 @@ diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(thought_input_usages -> thought_inputs (thought_input_id));
 diesel::joinable!(thought_input_usages -> thought_outputs (thought_output_id));
 diesel::joinable!(thought_inputs -> users (input_user_id));
+diesel::joinable!(thought_outputs -> categories (category_id));
 diesel::joinable!(thought_outputs -> users (author_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    categories,
     comments,
     sessions,
     thought_input_usages,
