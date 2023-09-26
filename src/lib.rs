@@ -132,7 +132,7 @@ async fn decode_cookie_for_request_middleware(request: &mut HttpRequest) -> Http
 async fn transform_error_to_response_middleware(request: &mut HttpRequest) -> HttpResponse {
     match add_session_to_request_middleware(request).await {
         Ok(value) => return value,
-        Err(err) => return HttpResponse::new(StatusCode::InternalServerError, err.message)
+        Err(err) => return HttpResponse::new(StatusCode::InternalServerError, "".to_string()).json(&err).unwrap()
     }
 }
 

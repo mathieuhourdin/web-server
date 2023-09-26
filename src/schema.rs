@@ -70,22 +70,22 @@ diesel::table! {
 diesel::table! {
     thought_outputs (id) {
         id -> Uuid,
-        title -> Text,
-        description -> Text,
-        content -> Text,
-        potential_improvements -> Text,
+        resource_title -> Text,
+        resource_subtitle -> Text,
+        resource_content -> Text,
+        resource_comment -> Text,
         author_id -> Nullable<Uuid>,
         progress -> Int4,
         maturing_state -> Text,
-        publishing_state -> Text,
+        resource_type -> Text,
         parent_id -> Nullable<Uuid>,
-        gdoc_url -> Nullable<Text>,
-        image_url -> Nullable<Text>,
+        resource_external_content_url -> Nullable<Text>,
+        resource_image_url -> Nullable<Text>,
         url_slug -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        output_type -> Text,
-        category_id -> Nullable<Uuid>,
+        publishing_state -> Text,
+        resource_category_id -> Nullable<Uuid>,
     }
 }
 
@@ -108,7 +108,7 @@ diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(thought_input_usages -> thought_inputs (thought_input_id));
 diesel::joinable!(thought_input_usages -> thought_outputs (thought_output_id));
 diesel::joinable!(thought_inputs -> users (input_user_id));
-diesel::joinable!(thought_outputs -> categories (category_id));
+diesel::joinable!(thought_outputs -> categories (resource_category_id));
 diesel::joinable!(thought_outputs -> users (author_id));
 
 diesel::allow_tables_to_appear_in_same_query!(

@@ -1,13 +1,17 @@
 use std::fmt;
 use diesel::result::Error as DieselError;
 use serde_json::Error as SerdeError;
+use serde::{Serialize, Deserialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct PpdcError {
     pub status_code: u32,
+    #[serde(skip_serializing)]
     pub error_type: ErrorType,
     pub message: String,
 }
 
+#[derive(Deserialize)]
 pub enum ErrorType {
     InternalError,
     DatabaseError,
