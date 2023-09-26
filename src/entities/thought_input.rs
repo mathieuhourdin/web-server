@@ -7,15 +7,19 @@ use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User};
 use crate::http::{HttpRequest, HttpResponse};
 
-#[derive(Serialize, Deserialize, Clone, Queryable, Selectable)]
+#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=thought_inputs)]
 pub struct ThoughtInput {
     id: Uuid,
     resource_title: String,
+    resource_subtitle: String,
+    resource_content: String,
     resource_author_name: String,
     resource_type: Option<String>,
-    resource_link: Option<String>,
-    resource_image_link: Option<String>,
+    #[serde(rename = "resource_link")]
+    resource_external_content_url: Option<String>,
+    #[serde(rename = "resource_image_link")]
+    resource_image_url: Option<String>,
     resource_comment: String,
     input_progress: i32,
     input_date: Option<NaiveDateTime>,
@@ -23,23 +27,29 @@ pub struct ThoughtInput {
     input_is_public: bool,
     input_user_id: Uuid,
     created_at: NaiveDateTime,
-    updated_at: NaiveDateTime
+    updated_at: NaiveDateTime,
+    resource_category_id: Option<Uuid>
 }
 
-#[derive(Deserialize, Insertable, AsChangeset)]
+#[derive(Deserialize, Insertable, Queryable, AsChangeset)]
 #[diesel(table_name=thought_inputs)]
 pub struct NewThoughtInput {
     resource_title: String,
+    resource_subtitle: Option<String>,
+    resource_content: Option<String>,
     resource_author_name: String,
     resource_type: Option<String>,
-    resource_link: Option<String>,
-    resource_image_link: Option<String>,
+    #[serde(rename = "resource_link")]
+    resource_external_content_url: Option<String>,
+    #[serde(rename = "resource_image_link")]
+    resource_image_url: Option<String>,
     resource_comment: String,
     input_progress: i32,
     input_date: Option<NaiveDateTime>,
     input_comment: String,
     input_is_public: bool,
     input_user_id: Option<Uuid>,
+    resource_category_id: Option<Uuid>
 }
 
 impl NewThoughtInput {
