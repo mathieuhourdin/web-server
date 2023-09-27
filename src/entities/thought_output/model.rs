@@ -12,29 +12,21 @@ use crate::entities::{error::{PpdcError}, user::User};
 #[diesel(table_name=thought_outputs)]
 pub struct ThoughtOutput {
     pub id: Uuid,
-    #[serde(rename = "title")]
     pub resource_title: String,
-    #[serde(rename = "description")]
     pub resource_subtitle: String,
-    #[serde(rename = "content")]
     pub resource_content: String,
-    #[serde(rename = "potential_improvements")]
     pub resource_comment: String,
     pub author_id: Option<Uuid>,
     pub progress: i32,
     pub maturing_state: String,
     pub publishing_state: String,
     pub parent_id: Option<Uuid>,
-    #[serde(rename = "gdoc_url ")]
     pub resource_external_content_url: Option<String>,
-    #[serde(rename = "image_url")]
     pub resource_image_url: Option<String>,
     pub url_slug: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    #[serde(rename = "output_type")]
     pub resource_type: String,
-    #[serde(rename = "category_id")]
     pub resource_category_id: Option<Uuid>
 }
 

@@ -16,9 +16,7 @@ pub struct ThoughtInput {
     resource_content: String,
     resource_author_name: String,
     resource_type: Option<String>,
-    #[serde(rename = "resource_link")]
     resource_external_content_url: Option<String>,
-    #[serde(rename = "resource_image_link")]
     resource_image_url: Option<String>,
     resource_comment: String,
     input_progress: i32,
@@ -39,9 +37,7 @@ pub struct NewThoughtInput {
     resource_content: Option<String>,
     resource_author_name: String,
     resource_type: Option<String>,
-    #[serde(rename = "resource_link")]
     resource_external_content_url: Option<String>,
-    #[serde(rename = "resource_image_link")]
     resource_image_url: Option<String>,
     resource_comment: String,
     input_progress: i32,
