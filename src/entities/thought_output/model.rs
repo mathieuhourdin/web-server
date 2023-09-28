@@ -16,18 +16,25 @@ pub struct ThoughtOutput {
     pub resource_subtitle: String,
     pub resource_content: String,
     pub resource_comment: String,
-    pub author_id: Option<Uuid>,
-    pub progress: i32,
-    pub maturing_state: String,
-    pub publishing_state: String,
-    pub parent_id: Option<Uuid>,
+    #[serde(rename="author_id")]
+    pub interaction_user_id: Option<Uuid>,
+    #[serde(rename="progress")]
+    pub interaction_progress: i32,
+    #[serde(rename="maturing_state")]
+    pub resource_maturing_state: String,
+    #[serde(rename="publishing_state")]
+    pub resource_publishing_state: String,
+    pub resource_parent_id: Option<Uuid>,
     pub resource_external_content_url: Option<String>,
     pub resource_image_url: Option<String>,
-    pub url_slug: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub resource_type: String,
-    pub resource_category_id: Option<Uuid>
+    pub resource_category_id: Option<Uuid>,
+    pub interaction_comment: Option<String>,
+    pub interaction_date: Option<NaiveDateTime>,
+    pub interaction_type: Option<String>,
+    pub interaction_is_public: bool,
 }
 
 #[derive(Serialize, Queryable)]
@@ -40,28 +47,27 @@ pub struct ThoughtOutputWithAuthor {
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
 #[diesel(table_name=thought_outputs)]
 pub struct NewThoughtOutput {
-    #[serde(rename = "title")]
     pub resource_title: String,
-    #[serde(rename = "description")]
     pub resource_subtitle: String,
-    #[serde(rename = "content")]
     pub resource_content: String,
-    #[serde(rename = "potential_improvements")]
     pub resource_comment: String,
-    pub author_id: Option<Uuid>,
-    pub progress: i32,
-    pub maturing_state: String,
-    pub publishing_state: Option<String>,
-    pub parent_id: Option<Uuid>,
-    #[serde(rename = "gdoc_url ")]
+    #[serde(rename="author_id")]
+    pub interaction_user_id: Option<Uuid>,
+    #[serde(rename="progress")]
+    pub interaction_progress: i32,
+    #[serde(rename="maturing_state")]
+    pub resource_maturing_state: String,
+    #[serde(rename="publishing_state")]
+    pub resource_publishing_state: String,
+    pub resource_parent_id: Option<Uuid>,
     pub resource_external_content_url: Option<String>,
-    #[serde(rename = "image_url")]
     pub resource_image_url: Option<String>,
-    pub url_slug: Option<String>,
-    #[serde(rename = "output_type")]
     pub resource_type: String,
-    #[serde(rename = "category_id")]
-    pub resource_category_id: Option<Uuid>
+    pub resource_category_id: Option<Uuid>,
+    pub interaction_comment: Option<String>,
+    pub interaction_date: Option<NaiveDateTime>,
+    pub interaction_type: Option<String>,
+    pub interaction_is_public: bool,
 }
 
 impl ThoughtOutput {
@@ -73,7 +79,7 @@ impl ThoughtOutput {
         if resource_type != "all" {
             query = query.filter(thought_outputs::resource_type.eq(resource_type))
         };
-        let thought_outputs = query.filter(not(thought_outputs::publishing_state.eq("drft")))
+        let thought_outputs = query.filter(not(thought_outputs::resource_publishing_state.eq("drft")))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
@@ -87,8 +93,8 @@ impl ThoughtOutput {
         if resource_type != "all" {
             query = query.filter(thought_outputs::resource_type.eq(resource_type))
         };
-        let thought_outputs = query.filter(thought_outputs::publishing_state.eq("drft"))
-            .filter(thought_outputs::author_id.eq(user_id))
+        let thought_outputs = query.filter(thought_outputs::resource_publishing_state.eq("drft"))
+            .filter(thought_outputs::interaction_user_id.eq(user_id))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
@@ -102,7 +108,7 @@ impl ThoughtOutput {
         if resource_type != "all" {
             query = query.filter(thought_outputs::resource_type.eq(resource_type))
         };
-        let thought_outputs_with_author = query.filter(not(thought_outputs::publishing_state.eq("drft")))
+        let thought_outputs_with_author = query.filter(not(thought_outputs::resource_publishing_state.eq("drft")))
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)

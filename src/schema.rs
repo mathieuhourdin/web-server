@@ -59,14 +59,16 @@ diesel::table! {
         resource_external_content_url -> Nullable<Text>,
         resource_image_url -> Nullable<Text>,
         resource_comment -> Text,
-        input_progress -> Int4,
-        input_date -> Nullable<Timestamp>,
-        input_comment -> Text,
-        input_is_public -> Bool,
-        input_user_id -> Uuid,
+        interaction_progress -> Int4,
+        interaction_date -> Nullable<Timestamp>,
+        interaction_comment -> Text,
+        interaction_is_public -> Bool,
+        interaction_user_id -> Uuid,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         resource_category_id -> Nullable<Uuid>,
+        resource_publishing_state -> Nullable<Text>,
+        resource_maturing_state -> Nullable<Text>,
     }
 }
 
@@ -77,18 +79,21 @@ diesel::table! {
         resource_subtitle -> Text,
         resource_content -> Text,
         resource_comment -> Text,
-        author_id -> Nullable<Uuid>,
-        progress -> Int4,
-        maturing_state -> Text,
-        publishing_state -> Text,
-        parent_id -> Nullable<Uuid>,
+        interaction_user_id -> Nullable<Uuid>,
+        interaction_progress -> Int4,
+        resource_maturing_state -> Text,
+        resource_publishing_state -> Text,
+        resource_parent_id -> Nullable<Uuid>,
         resource_external_content_url -> Nullable<Text>,
         resource_image_url -> Nullable<Text>,
-        url_slug -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         resource_type -> Text,
         resource_category_id -> Nullable<Uuid>,
+        interaction_comment -> Nullable<Text>,
+        interaction_date -> Nullable<Timestamp>,
+        interaction_type -> Nullable<Text>,
+        interaction_is_public -> Bool,
     }
 }
 
@@ -111,9 +116,9 @@ diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(thought_input_usages -> thought_inputs (thought_input_id));
 diesel::joinable!(thought_input_usages -> thought_outputs (thought_output_id));
 diesel::joinable!(thought_inputs -> categories (resource_category_id));
-diesel::joinable!(thought_inputs -> users (input_user_id));
+diesel::joinable!(thought_inputs -> users (interaction_user_id));
 diesel::joinable!(thought_outputs -> categories (resource_category_id));
-diesel::joinable!(thought_outputs -> users (author_id));
+diesel::joinable!(thought_outputs -> users (interaction_user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,

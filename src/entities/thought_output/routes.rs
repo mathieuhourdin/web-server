@@ -41,7 +41,7 @@ pub fn post_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse,
     println!("post_thought_outputs_route passing security");
     let mut thought_output = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
     println!("post_thought_outputs_route passing serde");
-    thought_output.author_id = request.session.as_ref().unwrap().user_id;
+    thought_output.interaction_user_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
         .json(&ThoughtOutput::create(thought_output)?)
 }
@@ -55,7 +55,7 @@ pub fn put_thought_output_route(uuid: &str, request: &HttpRequest) -> Result<Htt
     }
     let uuid = &HttpRequest::parse_uuid(uuid)?;
     let mut thought_output = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
-    thought_output.author_id = request.session.as_ref().unwrap().user_id;
+    thought_output.interaction_user_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
         .json(&ThoughtOutput::update(uuid, thought_output)?)
 }

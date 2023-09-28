@@ -19,14 +19,21 @@ pub struct ThoughtInput {
     resource_external_content_url: Option<String>,
     resource_image_url: Option<String>,
     resource_comment: String,
-    input_progress: i32,
-    input_date: Option<NaiveDateTime>,
-    input_comment: String,
-    input_is_public: bool,
-    input_user_id: Uuid,
+    #[serde(rename = "input_progress")]
+    interaction_progress: i32,
+    #[serde(rename = "input_date")]
+    interaction_date: Option<NaiveDateTime>,
+    #[serde(rename = "input_comment")]
+    interaction_comment: String,
+    #[serde(rename = "input_is_public")]
+    interaction_is_public: bool,
+    #[serde(rename = "input_user_id")]
+    interaction_user_id: Uuid,
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
-    resource_category_id: Option<Uuid>
+    resource_category_id: Option<Uuid>,
+    resource_publishing_state: Option<String>,
+    resource_maturing_state: Option<String>,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
@@ -40,12 +47,19 @@ pub struct NewThoughtInput {
     resource_external_content_url: Option<String>,
     resource_image_url: Option<String>,
     resource_comment: String,
-    input_progress: i32,
-    input_date: Option<NaiveDateTime>,
-    input_comment: String,
-    input_is_public: bool,
-    input_user_id: Option<Uuid>,
-    resource_category_id: Option<Uuid>
+    #[serde(rename = "input_progress")]
+    interaction_progress: i32,
+    #[serde(rename = "input_date")]
+    interaction_date: Option<NaiveDateTime>,
+    #[serde(rename = "input_comment")]
+    interaction_comment: String,
+    #[serde(rename = "input_is_public")]
+    interaction_is_public: bool,
+    #[serde(rename = "input_user_id")]
+    interaction_user_id: Option<Uuid>,
+    resource_category_id: Option<Uuid>,
+    resource_publishing_state: Option<String>,
+    resource_maturing_state: Option<String>,
 }
 
 impl NewThoughtInput {
@@ -85,8 +99,8 @@ impl ThoughtInput {
         let mut conn = db::establish_connection();
 
         let thought_input = thought_inputs::table
-            .filter(thought_inputs::input_user_id.eq(user_id))
-            .filter(thought_inputs::input_is_public.eq(true))
+            .filter(thought_inputs::interaction_user_id.eq(user_id))
+            .filter(thought_inputs::interaction_is_public.eq(true))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtInput>(&mut conn)?;
@@ -130,7 +144,7 @@ pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, P
         return Ok(HttpResponse::unauthorized());
     }
     let mut thought_input = serde_json::from_str::<NewThoughtInput>(&request.body[..])?;
-    thought_input.input_user_id = request.session.as_ref().unwrap().user_id;
+    thought_input.interaction_user_id = request.session.as_ref().unwrap().user_id;
     let thought_input = NewThoughtInput::create(thought_input)?;
     HttpResponse::ok()
         .json(&thought_input)
@@ -143,7 +157,7 @@ pub fn put_thought_input_route(id: &str, request: &HttpRequest) -> Result<HttpRe
     let id = HttpRequest::parse_uuid(id)?;
     let db_thought_input = ThoughtInput::find(id)?;
     let thought_input = serde_json::from_str::<NewThoughtInput>(&request.body[..])?;
-    if db_thought_input.input_user_id != request.session.as_ref().unwrap().user_id.unwrap() 
+    if db_thought_input.interaction_user_id != request.session.as_ref().unwrap().user_id.unwrap() 
     {
         return Ok(HttpResponse::unauthorized());
     }
