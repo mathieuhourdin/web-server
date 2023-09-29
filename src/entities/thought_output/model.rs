@@ -16,13 +16,9 @@ pub struct ThoughtOutput {
     pub resource_subtitle: String,
     pub resource_content: String,
     pub resource_comment: String,
-    #[serde(rename="author_id")]
     pub interaction_user_id: Option<Uuid>,
-    #[serde(rename="progress")]
     pub interaction_progress: i32,
-    #[serde(rename="maturing_state")]
     pub resource_maturing_state: String,
-    #[serde(rename="publishing_state")]
     pub resource_publishing_state: String,
     pub resource_parent_id: Option<Uuid>,
     pub resource_external_content_url: Option<String>,
@@ -51,13 +47,9 @@ pub struct NewThoughtOutput {
     pub resource_subtitle: String,
     pub resource_content: String,
     pub resource_comment: String,
-    #[serde(rename="author_id")]
     pub interaction_user_id: Option<Uuid>,
-    #[serde(rename="progress")]
     pub interaction_progress: i32,
-    #[serde(rename="maturing_state")]
     pub resource_maturing_state: String,
-    #[serde(rename="publishing_state")]
     pub resource_publishing_state: String,
     pub resource_parent_id: Option<Uuid>,
     pub resource_external_content_url: Option<String>,

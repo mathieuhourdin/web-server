@@ -19,15 +19,10 @@ pub struct ThoughtInput {
     resource_external_content_url: Option<String>,
     resource_image_url: Option<String>,
     resource_comment: String,
-    #[serde(rename = "input_progress")]
     interaction_progress: i32,
-    #[serde(rename = "input_date")]
     interaction_date: Option<NaiveDateTime>,
-    #[serde(rename = "input_comment")]
     interaction_comment: String,
-    #[serde(rename = "input_is_public")]
     interaction_is_public: bool,
-    #[serde(rename = "input_user_id")]
     interaction_user_id: Uuid,
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
@@ -47,15 +42,10 @@ pub struct NewThoughtInput {
     resource_external_content_url: Option<String>,
     resource_image_url: Option<String>,
     resource_comment: String,
-    #[serde(rename = "input_progress")]
     interaction_progress: i32,
-    #[serde(rename = "input_date")]
     interaction_date: Option<NaiveDateTime>,
-    #[serde(rename = "input_comment")]
     interaction_comment: String,
-    #[serde(rename = "input_is_public")]
     interaction_is_public: bool,
-    #[serde(rename = "input_user_id")]
     interaction_user_id: Option<Uuid>,
     resource_category_id: Option<Uuid>,
     resource_publishing_state: Option<String>,
