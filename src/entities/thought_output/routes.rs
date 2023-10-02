@@ -42,6 +42,7 @@ pub fn post_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse,
     let mut thought_output = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
     println!("post_thought_outputs_route passing serde");
     thought_output.interaction_user_id = request.session.as_ref().unwrap().user_id;
+    thought_output.interaction_type = Some("outp".to_string());
     HttpResponse::ok()
         .json(&ThoughtOutput::create(thought_output)?)
 }

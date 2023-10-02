@@ -8,55 +8,64 @@ use crate::entities::{error::{PpdcError}, user::User};
 use crate::http::{HttpRequest, HttpResponse};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
-#[diesel(table_name=thought_inputs)]
+#[diesel(table_name=thought_outputs)]
 pub struct ThoughtInput {
-    id: Uuid,
-    resource_title: String,
-    resource_subtitle: String,
-    resource_content: String,
-    resource_author_name: String,
-    resource_type: Option<String>,
-    resource_external_content_url: Option<String>,
-    resource_image_url: Option<String>,
-    resource_comment: String,
-    interaction_progress: i32,
-    interaction_date: Option<NaiveDateTime>,
-    interaction_comment: String,
-    interaction_is_public: bool,
-    interaction_user_id: Uuid,
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
-    resource_category_id: Option<Uuid>,
-    resource_publishing_state: Option<String>,
-    resource_maturing_state: Option<String>,
+    pub id: Uuid,
+    pub resource_title: String,
+    pub resource_subtitle: String,
+    pub resource_content: String,
+    pub resource_comment: String,
+    pub interaction_user_id: Option<Uuid>,
+    pub interaction_progress: i32,
+    pub resource_maturing_state: String,
+    pub resource_publishing_state: String,
+    pub resource_parent_id: Option<Uuid>,
+    pub resource_external_content_url: Option<String>,
+    pub resource_image_url: Option<String>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub resource_type: String,
+    pub resource_category_id: Option<Uuid>,
+    pub interaction_comment: Option<String>,
+    pub interaction_date: Option<NaiveDateTime>,
+    pub interaction_type: Option<String>,
+    pub interaction_is_public: bool,
+}
+
+#[derive(Serialize, Queryable)]
+pub struct ThoughtInputWithAuthor {
+    #[serde(flatten)]
+    pub thought_output: ThoughtInput,
+    pub author: User,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
-#[diesel(table_name=thought_inputs)]
+#[diesel(table_name=thought_outputs)]
 pub struct NewThoughtInput {
-    resource_title: String,
-    resource_subtitle: Option<String>,
-    resource_content: Option<String>,
-    resource_author_name: String,
-    resource_type: Option<String>,
-    resource_external_content_url: Option<String>,
-    resource_image_url: Option<String>,
-    resource_comment: String,
-    interaction_progress: i32,
-    interaction_date: Option<NaiveDateTime>,
-    interaction_comment: String,
-    interaction_is_public: bool,
-    interaction_user_id: Option<Uuid>,
-    resource_category_id: Option<Uuid>,
-    resource_publishing_state: Option<String>,
-    resource_maturing_state: Option<String>,
+    pub resource_title: String,
+    pub resource_subtitle: Option<String>,
+    pub resource_content: Option<String>,
+    pub resource_comment: Option<String>,
+    pub interaction_user_id: Option<Uuid>,
+    pub interaction_progress: i32,
+    pub resource_maturing_state: Option<String>,
+    pub resource_publishing_state: Option<String>,
+    pub resource_parent_id: Option<Uuid>,
+    pub resource_external_content_url: Option<String>,
+    pub resource_image_url: Option<String>,
+    pub resource_type: String,
+    pub resource_category_id: Option<Uuid>,
+    pub interaction_comment: Option<String>,
+    pub interaction_date: Option<NaiveDateTime>,
+    pub interaction_type: Option<String>,
+    pub interaction_is_public: bool,
 }
 
 impl NewThoughtInput {
     pub fn create(self) -> Result<ThoughtInput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_input = diesel::insert_into(thought_inputs::table)
+        let thought_input = diesel::insert_into(thought_outputs::table)
             .values(&self)
             .get_result(&mut conn)?;
         Ok(thought_input)
@@ -65,8 +74,8 @@ impl NewThoughtInput {
     pub fn update(self, id: &Uuid) -> Result<ThoughtInput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_input = diesel::update(thought_inputs::table)
-            .filter(thought_inputs::id.eq(id))
+        let thought_input = diesel::update(thought_outputs::table)
+            .filter(thought_outputs::id.eq(id))
             .set(&self)
             .get_result(&mut conn)?;
         Ok(thought_input)
@@ -78,7 +87,8 @@ impl ThoughtInput {
     pub fn find_paginated(offset: i64, limit: i64) -> Result<Vec<ThoughtInput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_input = thought_inputs::table
+        let thought_input = thought_outputs::table
+            .filter(thought_outputs::interaction_type.eq("inpt"))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtInput>(&mut conn)?;
@@ -88,9 +98,10 @@ impl ThoughtInput {
     pub fn find_paginated_public_by_user(offset: i64, limit: i64, user_id: Uuid) -> Result<Vec<ThoughtInput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_input = thought_inputs::table
-            .filter(thought_inputs::interaction_user_id.eq(user_id))
-            .filter(thought_inputs::interaction_is_public.eq(true))
+        let thought_input = thought_outputs::table
+            .filter(thought_outputs::interaction_type.eq("inpt"))
+            .filter(thought_outputs::interaction_user_id.eq(user_id))
+            .filter(thought_outputs::interaction_is_public.eq(true))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtInput>(&mut conn)?;
@@ -100,8 +111,8 @@ impl ThoughtInput {
     pub fn find(id: Uuid) -> Result<ThoughtInput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_input = thought_inputs::table
-            .filter(thought_inputs::id.eq(id))
+        let thought_input = thought_outputs::table
+            .filter(thought_outputs::id.eq(id))
             .first(&mut conn)?;
         Ok(thought_input)
     }
@@ -135,6 +146,9 @@ pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, P
     }
     let mut thought_input = serde_json::from_str::<NewThoughtInput>(&request.body[..])?;
     thought_input.interaction_user_id = request.session.as_ref().unwrap().user_id;
+    thought_input.interaction_type = Some("inpt".to_string());
+    thought_input.resource_maturing_state = Some("fnsh".to_string());
+    thought_input.resource_publishing_state = Some("pbsh".to_string());
     let thought_input = NewThoughtInput::create(thought_input)?;
     HttpResponse::ok()
         .json(&thought_input)
@@ -147,7 +161,7 @@ pub fn put_thought_input_route(id: &str, request: &HttpRequest) -> Result<HttpRe
     let id = HttpRequest::parse_uuid(id)?;
     let db_thought_input = ThoughtInput::find(id)?;
     let thought_input = serde_json::from_str::<NewThoughtInput>(&request.body[..])?;
-    if db_thought_input.interaction_user_id != request.session.as_ref().unwrap().user_id.unwrap() 
+    if db_thought_input.interaction_user_id.unwrap() != request.session.as_ref().unwrap().user_id.unwrap() 
     {
         return Ok(HttpResponse::unauthorized());
     }

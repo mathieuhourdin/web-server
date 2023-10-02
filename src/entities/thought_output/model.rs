@@ -59,7 +59,7 @@ pub struct NewThoughtOutput {
     pub interaction_comment: Option<String>,
     pub interaction_date: Option<NaiveDateTime>,
     pub interaction_type: Option<String>,
-    pub interaction_is_public: bool,
+    pub interaction_is_public: Option<bool>,
 }
 
 impl ThoughtOutput {
@@ -71,7 +71,9 @@ impl ThoughtOutput {
         if resource_type != "all" {
             query = query.filter(thought_outputs::resource_type.eq(resource_type))
         };
-        let thought_outputs = query.filter(not(thought_outputs::resource_publishing_state.eq("drft")))
+        let thought_outputs = query
+            .filter(thought_outputs::interaction_type.eq("outp"))
+            .filter(thought_outputs::resource_publishing_state.ne("drft"))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
@@ -85,7 +87,9 @@ impl ThoughtOutput {
         if resource_type != "all" {
             query = query.filter(thought_outputs::resource_type.eq(resource_type))
         };
-        let thought_outputs = query.filter(thought_outputs::resource_publishing_state.eq("drft"))
+        let thought_outputs = query
+            .filter(thought_outputs::interaction_type.eq("outp"))
+            .filter(thought_outputs::resource_publishing_state.eq("drft"))
             .filter(thought_outputs::interaction_user_id.eq(user_id))
             .offset(offset)
             .limit(limit)
@@ -100,7 +104,9 @@ impl ThoughtOutput {
         if resource_type != "all" {
             query = query.filter(thought_outputs::resource_type.eq(resource_type))
         };
-        let thought_outputs_with_author = query.filter(not(thought_outputs::resource_publishing_state.eq("drft")))
+        let thought_outputs_with_author = query
+            .filter(thought_outputs::interaction_type.eq("outp"))
+            .filter(thought_outputs::resource_publishing_state.ne("drft"))
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)
