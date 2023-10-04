@@ -49,7 +49,7 @@ impl ThoughtInputUsage {
         let mut conn = db::establish_connection();
 
         let thought_input_usages = thought_input_usages::table
-            .inner_join(thought_outputs::table)
+            .inner_join(interactions::table.on(thought_input_usages::thought_input_id.eq(interactions::id)))
             .filter(thought_input_usages::thought_output_id.eq(thought_output_id))
             .select((ThoughtInputUsage::as_select(), ThoughtInput::as_select()))
             .load::<(ThoughtInputUsage, ThoughtInput)>(&mut conn)?

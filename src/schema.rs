@@ -26,54 +26,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    sessions (id) {
-        id -> Uuid,
-        user_id -> Nullable<Uuid>,
-        token -> Nullable<Text>,
-        authenticated -> Bool,
-        expires_at -> Timestamp,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    thought_input_usages (thought_input_id, thought_output_id) {
-        id -> Uuid,
-        thought_input_id -> Uuid,
-        thought_output_id -> Uuid,
-        usage_reason -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    thought_inputs (id) {
-        id -> Uuid,
-        resource_title -> Text,
-        resource_subtitle -> Text,
-        resource_content -> Text,
-        resource_author_name -> Text,
-        resource_type -> Nullable<Text>,
-        resource_external_content_url -> Nullable<Text>,
-        resource_image_url -> Nullable<Text>,
-        resource_comment -> Text,
-        interaction_progress -> Int4,
-        interaction_date -> Nullable<Timestamp>,
-        interaction_comment -> Text,
-        interaction_is_public -> Bool,
-        interaction_user_id -> Uuid,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-        resource_category_id -> Nullable<Uuid>,
-        resource_publishing_state -> Nullable<Text>,
-        resource_maturing_state -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    thought_outputs (id) {
+    interactions (id) {
         id -> Uuid,
         resource_title -> Text,
         resource_subtitle -> Text,
@@ -98,6 +51,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    sessions (id) {
+        id -> Uuid,
+        user_id -> Nullable<Uuid>,
+        token -> Nullable<Text>,
+        authenticated -> Bool,
+        expires_at -> Timestamp,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    thought_input_usages (thought_input_id, thought_output_id) {
+        id -> Uuid,
+        thought_input_id -> Uuid,
+        thought_output_id -> Uuid,
+        usage_reason -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -110,22 +86,17 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(comments -> thought_outputs (thought_output_id));
+diesel::joinable!(comments -> interactions (thought_output_id));
 diesel::joinable!(comments -> users (author_id));
+diesel::joinable!(interactions -> categories (resource_category_id));
+diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(sessions -> users (user_id));
-diesel::joinable!(thought_input_usages -> thought_inputs (thought_input_id));
-diesel::joinable!(thought_input_usages -> thought_outputs (thought_output_id));
-diesel::joinable!(thought_inputs -> categories (resource_category_id));
-diesel::joinable!(thought_inputs -> users (interaction_user_id));
-diesel::joinable!(thought_outputs -> categories (resource_category_id));
-diesel::joinable!(thought_outputs -> users (interaction_user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
     comments,
+    interactions,
     sessions,
     thought_input_usages,
-    thought_inputs,
-    thought_outputs,
     users,
 );

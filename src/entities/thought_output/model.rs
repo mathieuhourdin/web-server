@@ -9,7 +9,7 @@ use diesel::dsl::not;
 use crate::entities::{error::{PpdcError}, user::User};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
-#[diesel(table_name=thought_outputs)]
+#[diesel(table_name=interactions)]
 pub struct ThoughtOutput {
     pub id: Uuid,
     pub resource_title: String,
@@ -41,7 +41,7 @@ pub struct ThoughtOutputWithAuthor {
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
-#[diesel(table_name=thought_outputs)]
+#[diesel(table_name=interactions)]
 pub struct NewThoughtOutput {
     pub resource_title: String,
     pub resource_subtitle: String,
@@ -67,13 +67,13 @@ impl ThoughtOutput {
     pub fn find_paginated_published(offset: i64, limit: i64, resource_type: &str) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let mut query = thought_outputs::table.into_boxed();
+        let mut query = interactions::table.into_boxed();
         if resource_type != "all" {
-            query = query.filter(thought_outputs::resource_type.eq(resource_type))
+            query = query.filter(interactions::resource_type.eq(resource_type))
         };
         let thought_outputs = query
-            .filter(thought_outputs::interaction_type.eq("outp"))
-            .filter(thought_outputs::resource_publishing_state.ne("drft"))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(interactions::resource_publishing_state.ne("drft"))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
@@ -83,14 +83,14 @@ impl ThoughtOutput {
     pub fn find_paginated_drafts(offset: i64, limit: i64, user_id: Uuid, resource_type: &str) -> Result<Vec<ThoughtOutput>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let mut query = thought_outputs::table.into_boxed();
+        let mut query = interactions::table.into_boxed();
         if resource_type != "all" {
-            query = query.filter(thought_outputs::resource_type.eq(resource_type))
+            query = query.filter(interactions::resource_type.eq(resource_type))
         };
         let thought_outputs = query
-            .filter(thought_outputs::interaction_type.eq("outp"))
-            .filter(thought_outputs::resource_publishing_state.eq("drft"))
-            .filter(thought_outputs::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(interactions::resource_publishing_state.eq("drft"))
+            .filter(interactions::interaction_user_id.eq(user_id))
             .offset(offset)
             .limit(limit)
             .load::<ThoughtOutput>(&mut conn)?;
@@ -100,13 +100,13 @@ impl ThoughtOutput {
     pub fn find_paginated_published_with_author(offset: i64, limit: i64, resource_type: &str) -> Result<Vec<ThoughtOutputWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let mut query = thought_outputs::table.select(thought_outputs::all_columns).into_boxed();
+        let mut query = interactions::table.select(interactions::all_columns).into_boxed();
         if resource_type != "all" {
-            query = query.filter(thought_outputs::resource_type.eq(resource_type))
+            query = query.filter(interactions::resource_type.eq(resource_type))
         };
         let thought_outputs_with_author = query
-            .filter(thought_outputs::interaction_type.eq("outp"))
-            .filter(thought_outputs::resource_publishing_state.ne("drft"))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(interactions::resource_publishing_state.ne("drft"))
             .inner_join(users::table)
             .offset(offset)
             .limit(limit)
@@ -121,8 +121,8 @@ impl ThoughtOutput {
     pub fn find(id: Uuid) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_output = thought_outputs::table
-            .filter(thought_outputs::id.eq(id))
+        let thought_output = interactions::table
+            .filter(interactions::id.eq(id))
             .first(&mut conn)?;
         Ok(thought_output)
     }
@@ -130,7 +130,7 @@ impl ThoughtOutput {
     pub fn create(thought_output: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_output = diesel::insert_into(thought_outputs::table)
+        let thought_output = diesel::insert_into(interactions::table)
             .values(&thought_output)
             .get_result(&mut conn)?;
         Ok(thought_output)
@@ -139,8 +139,8 @@ impl ThoughtOutput {
     pub fn update(id: &Uuid, thought_output: NewThoughtOutput) -> Result<ThoughtOutput, PpdcError> {
         let mut conn = db::establish_connection();
 
-        let thought_output = diesel::update(thought_outputs::table)
-            .filter(thought_outputs::id.eq(id))
+        let thought_output = diesel::update(interactions::table)
+            .filter(interactions::id.eq(id))
             .set(&thought_output)
             .get_result(&mut conn)?;
         Ok(thought_output)
