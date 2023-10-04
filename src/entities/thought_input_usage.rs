@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db;
 use crate::schema::*;
 use diesel::prelude::*;
-use crate::entities::{error::{PpdcError}, user::User, thought_input::ThoughtInput};
+use crate::entities::{error::{PpdcError}, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
@@ -22,7 +22,7 @@ pub struct ThoughtInputUsage {
 pub struct ThoughtInputUsageWithThoughtInput {
     #[serde(flatten)]
     thought_input_usage: ThoughtInputUsage,
-    thought_input: ThoughtInput,
+    thought_input: Interaction,
 }
 
 #[derive(Deserialize, Insertable, AsChangeset)]
@@ -51,8 +51,8 @@ impl ThoughtInputUsage {
         let thought_input_usages = thought_input_usages::table
             .inner_join(interactions::table.on(thought_input_usages::thought_input_id.eq(interactions::id)))
             .filter(thought_input_usages::thought_output_id.eq(thought_output_id))
-            .select((ThoughtInputUsage::as_select(), ThoughtInput::as_select()))
-            .load::<(ThoughtInputUsage, ThoughtInput)>(&mut conn)?
+            .select((ThoughtInputUsage::as_select(), Interaction::as_select()))
+            .load::<(ThoughtInputUsage, Interaction)>(&mut conn)?
             .into_iter()
             .map(|(thought_input_usage, thought_input)| ThoughtInputUsageWithThoughtInput { thought_input_usage, thought_input })
             .collect();
@@ -66,7 +66,7 @@ pub fn post_thought_input_usage_route(request: &HttpRequest) -> Result<HttpRespo
         .json(&thought_input_usage.create()?)
 }
 
-pub fn get_thought_input_usages_for_thought_output_route(thought_output_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+pub fn get_thought_input_usages_for_thought_output_route(thought_output_id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let thought_output_id = HttpRequest::parse_uuid(thought_output_id)?;
 
     HttpResponse::ok()

@@ -32,7 +32,7 @@ diesel::table! {
         resource_subtitle -> Text,
         resource_content -> Text,
         resource_comment -> Text,
-        interaction_user_id -> Nullable<Uuid>,
+        interaction_user_id -> Uuid,
         interaction_progress -> Int4,
         resource_maturing_state -> Text,
         resource_publishing_state -> Text,

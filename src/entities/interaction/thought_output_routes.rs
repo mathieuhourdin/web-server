@@ -1,12 +1,12 @@
 use crate::http::{HttpRequest, HttpResponse};
 use serde_json;
-use crate::entities::error::PpdcError;
+use crate::entities::{error::PpdcError, user::User};
 use super::model::*;
 
 pub fn get_thought_output_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
     let uuid = HttpRequest::parse_uuid(uuid)?;
     HttpResponse::ok()
-        .json(&ThoughtOutput::find(uuid)?)
+        .json(&Interaction::find(uuid)?)
 }
 
 pub fn get_thought_outputs_route(request: &HttpRequest, filter: &str) -> Result<HttpResponse, PpdcError> {
@@ -15,7 +15,11 @@ pub fn get_thought_outputs_route(request: &HttpRequest, filter: &str) -> Result<
     let with_author = request.query.get("author").map(|value| &value[..]).unwrap_or("false");
     let drafts = request.query.get("drafts").map(|value| &value[..]).unwrap_or("false");
     if with_author == "true" {
-        let thought_outputs = ThoughtOutput::find_paginated_published_with_author(offset, limit, filter)?;
+        let thought_outputs = Interaction::find_paginated_outputs_published(offset, limit, filter)?;
+        let thought_outputs: Vec<InteractionWithAuthor> = thought_outputs
+            .into_iter()
+            .map(|thought_output| InteractionWithAuthor { author: User::find(&thought_output.interaction_user_id).ok(), thought_output })
+            .collect();
         HttpResponse::ok()
             .json(&thought_outputs)
     } else if drafts == "true" {
@@ -23,11 +27,11 @@ pub fn get_thought_outputs_route(request: &HttpRequest, filter: &str) -> Result<
             return HttpResponse::ok().json::<Vec<String>>(&vec![]);
         }
         let user_id = request.session.as_ref().unwrap().user_id.unwrap();
-        let thought_outputs = ThoughtOutput::find_paginated_drafts(offset, limit, user_id, filter)?;
+        let thought_outputs = Interaction::find_paginated_outputs_drafts(offset, limit, user_id, filter)?;
         HttpResponse::ok()
             .json(&thought_outputs)
     } else {
-        let thought_outputs = ThoughtOutput::find_paginated_published(offset, limit, filter)?;
+        let thought_outputs = Interaction::find_paginated_outputs_published(offset, limit, filter)?;
         HttpResponse::ok()
             .json(&thought_outputs)
     }
@@ -38,25 +42,21 @@ pub fn post_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse,
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::unauthorized());
     }
-    println!("post_thought_outputs_route passing security");
-    let mut thought_output = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
-    println!("post_thought_outputs_route passing serde");
+    let mut thought_output = serde_json::from_str::<NewInteraction>(&request.body[..])?;
     thought_output.interaction_user_id = request.session.as_ref().unwrap().user_id;
     thought_output.interaction_type = Some("outp".to_string());
     HttpResponse::ok()
-        .json(&ThoughtOutput::create(thought_output)?)
+        .json(&thought_output.create()?)
 }
 
 pub fn put_thought_output_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-
-    println!("Put_thought_output_route with uuid : {:#?}", uuid);
 
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::unauthorized());
     }
     let uuid = &HttpRequest::parse_uuid(uuid)?;
-    let mut thought_output = serde_json::from_str::<NewThoughtOutput>(&request.body[..])?;
+    let mut thought_output = serde_json::from_str::<NewInteraction>(&request.body[..])?;
     thought_output.interaction_user_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
-        .json(&ThoughtOutput::update(uuid, thought_output)?)
+        .json(&thought_output.update(uuid)?)
 }

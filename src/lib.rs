@@ -2,13 +2,14 @@ use std::net::{TcpStream};
 use std::io::{prelude::*};
 use std::thread;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
-use entities::{user::self, thought_output::routes as thought_output, error::PpdcError, comment};
-use entities::thought_input;
+use entities::{user::self,
+    interaction::{thought_output_routes as thought_output, thought_input_routes as thought_input},
+    error::PpdcError, comment};
 use entities::thought_input_usage;
 use entities::category;
 use regex::Regex;
-use std::time::{SystemTime, Duration};
-use chrono::{NaiveDateTime, Utc};
+use std::time::{Duration};
+use chrono::{Utc};
 
 pub mod threadpool;
 pub mod entities;
@@ -24,7 +25,7 @@ pub async fn handle_connection(mut stream: TcpStream) {
     let current_time = Utc::now().naive_utc();
     println!("[handle_connection lib.rs] Current time : {:#?}", current_time);
 
-    if let Err(err) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
+    if let Err(_err) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
         println!("Error setting read timeout");
         return;
     }
