@@ -47,6 +47,26 @@ diesel::table! {
         interaction_date -> Nullable<Timestamp>,
         interaction_type -> Nullable<Text>,
         interaction_is_public -> Bool,
+        resource_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    resources (id) {
+        id -> Uuid,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        external_content_url -> Nullable<Text>,
+        comment -> Nullable<Text>,
+        image_url -> Nullable<Text>,
+        resource_type -> Text,
+        maturing_state -> Text,
+        publishing_state -> Text,
+        category_id -> Nullable<Uuid>,
+        is_external -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -89,13 +109,16 @@ diesel::table! {
 diesel::joinable!(comments -> interactions (thought_output_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(interactions -> categories (resource_category_id));
+diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
+diesel::joinable!(resources -> categories (category_id));
 diesel::joinable!(sessions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
     comments,
     interactions,
+    resources,
     sessions,
     thought_input_usages,
     users,

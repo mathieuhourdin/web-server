@@ -1,6 +1,6 @@
 use crate::schema::*;
 use diesel::prelude::*;
-use crate::entities::{error::{PpdcError}};
+use crate::entities::{error::{PpdcError}, resource::*};
 use crate::http::{HttpRequest, HttpResponse};
 use super::model::*;
 
@@ -45,14 +45,21 @@ pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, P
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::unauthorized());
     }
-    let mut thought_input = serde_json::from_str::<NewInteraction>(&request.body[..])?;
-    thought_input.interaction_user_id = request.session.as_ref().unwrap().user_id;
-    thought_input.interaction_type = Some("inpt".to_string());
-    thought_input.resource_maturing_state = Some("fnsh".to_string());
-    thought_input.resource_publishing_state = Some("pbsh".to_string());
-    let thought_input = thought_input.create()?;
+    let mut resource = serde_json::from_str::<NewResource>(&request.body[..])?;
+    resource.maturing_state = Some("fnsh".to_string());
+    resource.publishing_state = Some("pbsh".to_string());
+
+    let resource = resource.create()?;
+
+    let mut interaction = serde_json::from_str::<NewInteraction>(&request.body[..])?;
+    interaction.interaction_user_id = request.session.as_ref().unwrap().user_id;
+    interaction.interaction_type = Some("inpt".to_string());
+    interaction.resource_id = Some(resource.id);
+    let interaction = interaction.create()?;
+
+    let thought_input_with_resource = InteractionWithResource { resource, interaction };
     HttpResponse::ok()
-        .json(&thought_input)
+        .json(&thought_input_with_resource)
 }
 
 pub fn put_thought_input_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {

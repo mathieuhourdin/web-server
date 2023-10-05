@@ -16,9 +16,13 @@ pub fn get_thought_outputs_route(request: &HttpRequest, filter: &str) -> Result<
     let drafts = request.query.get("drafts").map(|value| &value[..]).unwrap_or("false");
     if with_author == "true" {
         let thought_outputs = Interaction::find_paginated_outputs_published(offset, limit, filter)?;
-        let thought_outputs: Vec<InteractionWithAuthor> = thought_outputs
+        let thought_outputs: Vec<InteractionWithAuthorAndResource> = thought_outputs
             .into_iter()
-            .map(|thought_output| InteractionWithAuthor { author: User::find(&thought_output.interaction_user_id).ok(), thought_output })
+            .map(|interaction| InteractionWithAuthorAndResource {
+                author: User::find(&interaction.interaction.interaction_user_id).ok(),
+                interaction: interaction.interaction,
+                resource: interaction.resource
+            })
             .collect();
         HttpResponse::ok()
             .json(&thought_outputs)

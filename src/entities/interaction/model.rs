@@ -5,7 +5,7 @@ use chrono::NaiveDateTime;
 use crate::db;
 use crate::schema::*;
 use diesel;
-use crate::entities::{error::{PpdcError}, user::User};
+use crate::entities::{error::{PpdcError}, user::User, resource::Resource};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=interactions)]
@@ -30,12 +30,28 @@ pub struct Interaction {
     pub interaction_date: Option<NaiveDateTime>,
     pub interaction_type: Option<String>,
     pub interaction_is_public: bool,
+    pub resource_id: Option<Uuid>,
+}
+
+#[derive(Serialize, Deserialize, Queryable)]
+pub struct InteractionWithResource {
+    #[serde(flatten)]
+    pub interaction: Interaction,
+    pub resource: Resource,
+}
+
+#[derive(Serialize, Deserialize, Queryable)]
+pub struct InteractionWithAuthorAndResource {
+    #[serde(flatten)]
+    pub interaction: Interaction,
+    pub author: Option<User>,
+    #[serde(flatten)]
+    pub resource: Resource,
 }
 
 #[derive(Serialize, Queryable)]
 pub struct InteractionWithAuthor {
-    #[serde(flatten)]
-    pub thought_output: Interaction,
+    pub interaction: Interaction,
     pub author: Option<User>,
 }
 
@@ -59,18 +75,24 @@ pub struct NewInteraction {
     pub interaction_date: Option<NaiveDateTime>,
     pub interaction_type: Option<String>,
     pub interaction_is_public: Option<bool>,
+    pub resource_id: Option<Uuid>
 }
 
 impl Interaction {
 
-    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>) -> Result<Vec<Interaction>, PpdcError> {
+    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
         let mut conn = db::establish_connection();
 
         let thought_outputs = filtered_interactions_query
             .offset(offset)
             .limit(limit)
-            .load::<Interaction>(&mut conn)?;
+            .inner_join(resources::table)
+            .select((Interaction::as_select(), Resource::as_select()))
+            .load::<(Interaction, Resource)>(&mut conn)?
+            .into_iter()
+            .map(|(interaction, resource)| InteractionWithResource { interaction, resource })
+            .collect();
         Ok(thought_outputs)
     }
 
@@ -83,7 +105,7 @@ impl Interaction {
             .filter(interactions::interaction_type.eq("outp"))
     }
 
-    pub fn find_paginated_outputs_published(offset: i64, limit: i64, resource_type: &str) -> Result<Vec<Interaction>, PpdcError> {
+    pub fn find_paginated_outputs_published(offset: i64, limit: i64, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
         Interaction::load_paginated(
             offset,
@@ -91,7 +113,7 @@ impl Interaction {
             Interaction::filter_outputs(resource_type)
                 .filter(interactions::resource_publishing_state.ne("drft")))
     }
-    pub fn find_paginated_outputs_drafts(offset: i64, limit: i64, user_id: Uuid, resource_type: &str) -> Result<Vec<Interaction>, PpdcError> {
+    pub fn find_paginated_outputs_drafts(offset: i64, limit: i64, user_id: Uuid, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
         Interaction::load_paginated(
             offset,
             limit,
