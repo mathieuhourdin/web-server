@@ -4,7 +4,10 @@ use std::thread;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::{user::self,
     interaction::{thought_output_routes as thought_output, thought_input_routes as thought_input},
-    error::PpdcError, comment};
+    error::PpdcError,
+    comment,
+    resource
+};
 use entities::thought_input_usage;
 use entities::category;
 use regex::Regex;
@@ -164,8 +167,11 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("GET", ["see-article", uuid]) => legacy::see_article(uuid, &request),
         ("GET", ["edit-article", uuid]) => legacy::edit_article(uuid, &request),
-        ("GET", ["problems"]) => thought_output::get_thought_outputs_route(&request, "pblm"),
-        ("GET", ["articles"]) => thought_output::get_thought_outputs_route(&request, "atcl"),
+        ("GET", ["problems"]) => resource::get_resources_route(&request, "pblm"),
+        ("GET", ["articles"]) => resource::get_resources_route(&request, "atcl"),
+        ("GET", ["resources", id]) => resource::get_resource_route(id, &request),
+        ("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
+        ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         ("GET", ["articles", id]) => thought_output::get_thought_output_route(id),
         ("POST", ["articles"]) => thought_output::post_thought_outputs_route(&request),
         ("GET", ["categories"]) => category::get_categories_route(&request),

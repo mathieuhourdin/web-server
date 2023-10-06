@@ -110,6 +110,12 @@ impl HttpRequest {
     pub fn parse_uuid(uuid: &str) -> Result<Uuid, PpdcError> {
         Uuid::parse_str(uuid).map_err(|err| PpdcError::new(400, ErrorType::ApiError, format!("Incorrect uuid for ressource : {:#?}", err)))
     }
+
+    pub fn get_pagination(&self) -> (i64, i64) {
+        let offset: i64 = self.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+        let limit: i64 = self.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
+        (offset, limit)
+    }
 }
 
 pub struct HttpResponse {

@@ -1,6 +1,6 @@
 use crate::http::{HttpRequest, HttpResponse};
 use serde_json;
-use crate::entities::{error::PpdcError, user::User};
+use crate::entities::{error::PpdcError, user::User, resource::NewResource};
 use super::model::*;
 
 pub fn get_thought_output_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
@@ -46,11 +46,18 @@ pub fn post_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse,
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::unauthorized());
     }
-    let mut thought_output = serde_json::from_str::<NewInteraction>(&request.body[..])?;
-    thought_output.interaction_user_id = request.session.as_ref().unwrap().user_id;
-    thought_output.interaction_type = Some("outp".to_string());
+    let resource = serde_json::from_str::<NewResource>(&request.body[..])?;
+    let resource = resource.create()?;
+
+    let mut interaction = serde_json::from_str::<NewInteraction>(&request.body[..])?;
+    interaction.interaction_user_id = request.session.as_ref().unwrap().user_id;
+    interaction.interaction_type = Some("outp".to_string());
+    interaction.resource_id = Some(resource.id);
+    let interaction = interaction.create()?;
+
+    let interaction_with_resource = InteractionWithResource { resource, interaction };
     HttpResponse::ok()
-        .json(&thought_output.create()?)
+        .json(&interaction_with_resource)
 }
 
 pub fn put_thought_output_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
