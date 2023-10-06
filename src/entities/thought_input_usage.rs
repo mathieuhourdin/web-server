@@ -12,7 +12,7 @@ use crate::http::{HttpRequest, HttpResponse};
 pub struct ThoughtInputUsage {
     id: Uuid,
     thought_input_id: Uuid,
-    thought_output_id: Uuid,
+    resource_id: Uuid,
     usage_reason: String,
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
@@ -29,7 +29,7 @@ pub struct ThoughtInputUsageWithThoughtInput {
 #[diesel(table_name=thought_input_usages)]
 pub struct NewThoughtInputUsage {
     thought_input_id: Uuid,
-    thought_output_id: Uuid,
+    resource_id: Uuid,
     usage_reason: String,
 }
 
@@ -45,12 +45,12 @@ impl NewThoughtInputUsage {
 }
 
 impl ThoughtInputUsage {
-    pub fn find_for_thought_output(thought_output_id: Uuid) -> Result<Vec<ThoughtInputUsageWithThoughtInput>, PpdcError> {
+    pub fn find_for_resource(resource_id: Uuid) -> Result<Vec<ThoughtInputUsageWithThoughtInput>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let thought_input_usages = thought_input_usages::table
             .inner_join(interactions::table.on(thought_input_usages::thought_input_id.eq(interactions::id)))
-            .filter(thought_input_usages::thought_output_id.eq(thought_output_id))
+            .filter(thought_input_usages::resource_id.eq(resource_id))
             .select((ThoughtInputUsage::as_select(), Interaction::as_select()))
             .load::<(ThoughtInputUsage, Interaction)>(&mut conn)?
             .into_iter()
@@ -66,9 +66,9 @@ pub fn post_thought_input_usage_route(request: &HttpRequest) -> Result<HttpRespo
         .json(&thought_input_usage.create()?)
 }
 
-pub fn get_thought_input_usages_for_thought_output_route(thought_output_id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let thought_output_id = HttpRequest::parse_uuid(thought_output_id)?;
+pub fn get_thought_input_usages_for_resource_route(resource_id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let resource_id = HttpRequest::parse_uuid(resource_id)?;
 
     HttpResponse::ok()
-        .json(&ThoughtInputUsage::find_for_thought_output(thought_output_id)?)
+        .json(&ThoughtInputUsage::find_for_resource(resource_id)?)
 }
