@@ -28,21 +28,10 @@ diesel::table! {
 diesel::table! {
     interactions (id) {
         id -> Uuid,
-        resource_title -> Text,
-        resource_subtitle -> Text,
-        resource_content -> Text,
-        resource_comment -> Text,
         interaction_user_id -> Uuid,
         interaction_progress -> Int4,
-        resource_maturing_state -> Text,
-        resource_publishing_state -> Text,
-        resource_parent_id -> Nullable<Uuid>,
-        resource_external_content_url -> Nullable<Text>,
-        resource_image_url -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        resource_type -> Text,
-        resource_category_id -> Nullable<Uuid>,
         interaction_comment -> Nullable<Text>,
         interaction_date -> Nullable<Timestamp>,
         interaction_type -> Nullable<Text>,
@@ -108,7 +97,6 @@ diesel::table! {
 
 diesel::joinable!(comments -> interactions (thought_output_id));
 diesel::joinable!(comments -> users (author_id));
-diesel::joinable!(interactions -> categories (resource_category_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(resources -> categories (category_id));

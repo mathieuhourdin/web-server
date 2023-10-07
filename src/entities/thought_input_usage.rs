@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db;
 use crate::schema::*;
 use diesel::prelude::*;
-use crate::entities::{error::{PpdcError}, interaction::model::Interaction};
+use crate::entities::{error::{PpdcError}, interaction::model::{Interaction, InteractionWithResource}, resource::Resource};
 use crate::http::{HttpRequest, HttpResponse};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
@@ -22,7 +22,7 @@ pub struct ThoughtInputUsage {
 pub struct ThoughtInputUsageWithThoughtInput {
     #[serde(flatten)]
     thought_input_usage: ThoughtInputUsage,
-    thought_input: Interaction,
+    thought_input: InteractionWithResource,
 }
 
 #[derive(Deserialize, Insertable, AsChangeset)]
@@ -49,12 +49,12 @@ impl ThoughtInputUsage {
         let mut conn = db::establish_connection();
 
         let thought_input_usages = thought_input_usages::table
-            .inner_join(interactions::table.on(thought_input_usages::thought_input_id.eq(interactions::id)))
+            .inner_join(interactions::table.on(thought_input_usages::thought_input_id.eq(interactions::id)).inner_join(resources::table))
             .filter(thought_input_usages::resource_id.eq(resource_id))
-            .select((ThoughtInputUsage::as_select(), Interaction::as_select()))
-            .load::<(ThoughtInputUsage, Interaction)>(&mut conn)?
+            .select((ThoughtInputUsage::as_select(), Interaction::as_select(), Resource::as_select()))
+            .load::<(ThoughtInputUsage, Interaction, Resource)>(&mut conn)?
             .into_iter()
-            .map(|(thought_input_usage, thought_input)| ThoughtInputUsageWithThoughtInput { thought_input_usage, thought_input })
+            .map(|(thought_input_usage, thought_input, resource)| ThoughtInputUsageWithThoughtInput { thought_input_usage, thought_input: InteractionWithResource { interaction: thought_input, resource } })
             .collect();
         Ok(thought_input_usages)
     }

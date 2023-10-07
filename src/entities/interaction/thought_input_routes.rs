@@ -14,7 +14,10 @@ pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Resu
         interactions::table
             .filter(interactions::interaction_type.eq("inpt"))
             .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_is_public.eq(true)).into_boxed()
+            .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
+        "pbsh",
+        "all"
+
     )?;
     HttpResponse::ok()
         .json(&thought_inputs)
@@ -28,7 +31,9 @@ pub fn get_thought_inputs(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
         limit, 
         interactions::table
             .filter(interactions::interaction_type.eq("inpt"))
-            .filter(interactions::interaction_is_public.eq(true)).into_boxed()
+            .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
+        "pbsh",
+        "all"
     )?;
     HttpResponse::ok()
         .json(&thought_inputs)

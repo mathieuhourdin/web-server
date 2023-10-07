@@ -46,10 +46,13 @@ pub fn post_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse,
     if request.session.as_ref().unwrap().user_id.is_none() {
         return Ok(HttpResponse::unauthorized());
     }
-    let resource = serde_json::from_str::<NewResource>(&request.body[..])?;
+
+    let NewInteractionWithNewResource { interaction: mut interaction, resource: resource } = serde_json::from_str::<NewInteractionWithNewResource>(&request.body[..])?;
+    //let resource = serde_json::from_str::<NewResource>(&request.body[..])?;
     let resource = resource.create()?;
 
-    let mut interaction = serde_json::from_str::<NewInteraction>(&request.body[..])?;
+
+    //let mut interaction = serde_json::from_str::<NewInteraction>(&request.body[..])?;
     interaction.interaction_user_id = request.session.as_ref().unwrap().user_id;
     interaction.interaction_type = Some("outp".to_string());
     interaction.resource_id = Some(resource.id);

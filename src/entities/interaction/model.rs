@@ -5,27 +5,16 @@ use chrono::NaiveDateTime;
 use crate::db;
 use crate::schema::*;
 use diesel;
-use crate::entities::{error::{PpdcError}, user::User, resource::Resource};
+use crate::entities::{error::{PpdcError}, user::User, resource::{Resource, NewResource}};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=interactions)]
 pub struct Interaction {
     pub id: Uuid,
-    pub resource_title: String,
-    pub resource_subtitle: String,
-    pub resource_content: String,
-    pub resource_comment: String,
     pub interaction_user_id: Uuid,
     pub interaction_progress: i32,
-    pub resource_maturing_state: String,
-    pub resource_publishing_state: String,
-    pub resource_parent_id: Option<Uuid>,
-    pub resource_external_content_url: Option<String>,
-    pub resource_image_url: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub resource_type: String,
-    pub resource_category_id: Option<Uuid>,
     pub interaction_comment: Option<String>,
     pub interaction_date: Option<NaiveDateTime>,
     pub interaction_type: Option<String>,
@@ -55,22 +44,18 @@ pub struct InteractionWithAuthor {
     pub author: Option<User>,
 }
 
+#[derive(Deserialize)]
+pub struct NewInteractionWithNewResource {
+    #[serde(flatten)]
+    pub interaction: NewInteraction,
+    pub resource: NewResource
+}
+
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
 #[diesel(table_name=interactions)]
 pub struct NewInteraction {
-    pub resource_title: String,
-    pub resource_subtitle: Option<String>,
-    pub resource_content: Option<String>,
-    pub resource_comment: Option<String>,
     pub interaction_user_id: Option<Uuid>,
     pub interaction_progress: i32,
-    pub resource_maturing_state: Option<String>,
-    pub resource_publishing_state: Option<String>,
-    pub resource_parent_id: Option<Uuid>,
-    pub resource_external_content_url: Option<String>,
-    pub resource_image_url: Option<String>,
-    pub resource_type: String,
-    pub resource_category_id: Option<Uuid>,
     pub interaction_comment: Option<String>,
     pub interaction_date: Option<NaiveDateTime>,
     pub interaction_type: Option<String>,
@@ -80,14 +65,20 @@ pub struct NewInteraction {
 
 impl Interaction {
 
-    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>) -> Result<Vec<InteractionWithResource>, PpdcError> {
+    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>, resource_publishing_state: &str, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
         let mut conn = db::establish_connection();
 
-        let thought_outputs = filtered_interactions_query
+        let mut query = filtered_interactions_query
             .offset(offset)
             .limit(limit)
             .inner_join(resources::table)
+            .filter(resources::publishing_state.eq(resource_publishing_state));
+        if resource_type != "all" {
+            query = query
+            .filter(resources::resource_type.eq(resource_type));
+        }
+        let thought_outputs = query
             .select((Interaction::as_select(), Resource::as_select()))
             .load::<(Interaction, Resource)>(&mut conn)?
             .into_iter()
@@ -96,11 +87,8 @@ impl Interaction {
         Ok(thought_outputs)
     }
 
-    pub fn filter_outputs(resource_type: &str) -> interactions::BoxedQuery<diesel::pg::Pg> {
-        let mut query = interactions::table.into_boxed();
-        if resource_type != "all" {
-            query = query.filter(interactions::resource_type.eq(resource_type))
-        };
+    pub fn filter_outputs() -> interactions::BoxedQuery<'static, diesel::pg::Pg> {
+        let query = interactions::table.into_boxed();
         query
             .filter(interactions::interaction_type.eq("outp"))
     }
@@ -110,17 +98,20 @@ impl Interaction {
         Interaction::load_paginated(
             offset,
             limit,
-            Interaction::filter_outputs(resource_type)
-                .filter(interactions::resource_publishing_state.ne("drft")))
+            Interaction::filter_outputs(),
+            "pbsh",
+            resource_type
+        )
     }
     pub fn find_paginated_outputs_drafts(offset: i64, limit: i64, user_id: Uuid, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
         Interaction::load_paginated(
             offset,
             limit,
-            Interaction::filter_outputs(resource_type)
-                .filter(interactions::resource_publishing_state.eq("drft"))
-                .filter(interactions::interaction_user_id.eq(user_id))
-                )
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id)),
+            "drft",
+            resource_type
+            )
     }
 
     pub fn find(id: Uuid) -> Result<Interaction, PpdcError> {
