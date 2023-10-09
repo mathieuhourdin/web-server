@@ -48,7 +48,7 @@ impl From<DieselError> for PpdcError {
 }
 impl From<SerdeError> for PpdcError {
     fn from(error: SerdeError) -> PpdcError {
-        PpdcError::new(400, ErrorType::ApiError, error.to_string())
+        PpdcError::new(400, ErrorType::ApiError, format!("serde error : {}", error))
     }
 }
 

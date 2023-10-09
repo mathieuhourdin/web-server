@@ -47,7 +47,7 @@ pub struct NewResource {
     #[serde(rename = "resource_subtitle")]
     pub subtitle: String,
     #[serde(rename = "resource_content")]
-    pub content: String,
+    pub content: Option<String>,
     #[serde(rename = "resource_external_content_url")]
     pub external_content_url: Option<String>,
     #[serde(rename = "resource_comment")]
@@ -62,7 +62,7 @@ pub struct NewResource {
     pub publishing_state: Option<String>,
     #[serde(rename = "resource_category_id")]
     pub category_id: Option<Uuid>,
-    pub is_external: bool,
+    pub is_external: Option<bool>,
 }
 
 impl Resource {
