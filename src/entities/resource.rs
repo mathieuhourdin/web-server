@@ -12,55 +12,33 @@ use crate::http::{HttpRequest, HttpResponse};
 #[diesel(table_name=resources)]
 pub struct Resource {
     pub id: Uuid,
-    #[serde(rename = "resource_title")]
     pub title: String,
-    #[serde(rename = "resource_subtitle")]
     pub subtitle: String,
-    #[serde(rename = "resource_content")]
     pub content: String,
-    #[serde(rename = "resource_external_content_url")]
     pub external_content_url: Option<String>,
-    #[serde(rename = "resource_comment")]
     pub comment: Option<String>,
-    #[serde(rename = "resource_image_url")]
     pub image_url: Option<String>,
-    #[serde(rename = "resource_type")]
     pub resource_type: String,
-    #[serde(rename = "resource_maturing_state")]
     pub maturing_state: String,
-    #[serde(rename = "resource_publishing_state")]
     pub publishing_state: String,
-    #[serde(rename = "resource_category_id")]
     pub category_id: Option<Uuid>,
     pub is_external: bool,
-    #[serde(rename = "resource_created_at")]
     pub created_at: NaiveDateTime,
-    #[serde(rename = "resource_updated_at")]
     pub updated_at: NaiveDateTime,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
 #[diesel(table_name=resources)]
 pub struct NewResource {
-    #[serde(rename = "resource_title")]
     pub title: String,
-    #[serde(rename = "resource_subtitle")]
     pub subtitle: String,
-    #[serde(rename = "resource_content")]
     pub content: Option<String>,
-    #[serde(rename = "resource_external_content_url")]
     pub external_content_url: Option<String>,
-    #[serde(rename = "resource_comment")]
     pub comment: Option<String>,
-    #[serde(rename = "resource_image_url")]
     pub image_url: Option<String>,
-    #[serde(rename = "resource_type")]
     pub resource_type: Option<String>,
-    #[serde(rename = "resource_maturing_state")]
     pub maturing_state: Option<String>,
-    #[serde(rename = "resource_publishing_state")]
     pub publishing_state: Option<String>,
-    #[serde(rename = "resource_category_id")]
     pub category_id: Option<Uuid>,
     pub is_external: Option<bool>,
 }
