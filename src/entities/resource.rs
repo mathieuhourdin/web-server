@@ -113,12 +113,27 @@ pub fn get_resource_route(id: &str, _request: &HttpRequest) -> Result<HttpRespon
     HttpResponse::ok().json(&Resource::find(id)?)
 }
 
-pub fn get_resources_route(request: &HttpRequest, filter: &str) -> Result<HttpResponse, PpdcError> {
+pub fn get_external_resources_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let (offset, limit) = request.get_pagination();
 
     let mut conn = db::establish_connection();
 
     let results = resources::table.into_boxed()
+        .filter(resources::is_external.eq(true))
+        .offset(offset)
+        .limit(limit)
+        .load::<Resource>(&mut conn)?;
+    HttpResponse::ok()
+        .json(&results)
+}
+
+pub fn get_internal_resources_route(request: &HttpRequest, filter: &str) -> Result<HttpResponse, PpdcError> {
+    let (offset, limit) = request.get_pagination();
+
+    let mut conn = db::establish_connection();
+
+    let results = resources::table.into_boxed()
+        .filter(resources::is_external.eq(false))
         .filter(resources::resource_type.eq(filter))
         .filter(resources::publishing_state.eq("pbsh"))
         .offset(offset)
