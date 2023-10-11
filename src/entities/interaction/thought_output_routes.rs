@@ -48,17 +48,12 @@ pub fn post_thought_outputs_route(request: &HttpRequest) -> Result<HttpResponse,
     }
 
     println!("post_thought_outputs_route");
-    println!("post_thought_outputs_route payload : {:#?}", request.body);
 
-    let NewInteractionWithNewResource { mut interaction, resource } = serde_json::from_str::<NewInteractionWithNewResource>(&request.body[..])?;
+    let NewInteractionWithNewResource { mut interaction, mut resource } = serde_json::from_str::<NewInteractionWithNewResource>(&request.body[..])?;
 
-    println!("post_thought_outputs_route resource title : {}", resource.title);
-    //let resource = serde_json::from_str::<NewResource>(&request.body[..])?;
+    resource.is_external = Some(false);
     let resource = resource.create()?;
 
-    println!("post_thought_outputs_route after create resource");
-
-    //let mut interaction = serde_json::from_str::<NewInteraction>(&request.body[..])?;
     interaction.interaction_user_id = request.session.as_ref().unwrap().user_id;
     interaction.interaction_type = Some("outp".to_string());
     interaction.resource_id = Some(resource.id);

@@ -54,6 +54,7 @@ pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, P
 
     resource.maturing_state = Some("fnsh".to_string());
     resource.publishing_state = Some("pbsh".to_string());
+    resource.is_external = Some(true);
 
     let resource = resource.create()?;
 
