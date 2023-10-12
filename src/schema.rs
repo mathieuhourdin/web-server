@@ -92,6 +92,7 @@ diesel::table! {
         password -> Text,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
+        profile_picture_url -> Nullable<Text>,
     }
 }
 

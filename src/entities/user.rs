@@ -22,30 +22,58 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password: String,
     pub created_at: NaiveDateTime,
-    pub updated_at: Option<NaiveDateTime> 
+    pub updated_at: Option<NaiveDateTime>,
+    pub profile_picture_url: Option<String>
 }
 
-#[derive(Serialize, Deserialize, Insertable)]
+#[derive(Serialize, Deserialize, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
-    pub password: String,
+    pub password: Option<String>,
+    pub profile_picture_url: Option<String>
 }
 
 impl NewUser {
+    pub fn create(self) -> Result<User, PpdcError> {
+        let mut conn = db::establish_connection();
+        //let user = User::from(user);
+        let user = diesel::insert_into(users::table)
+            .values(&self)
+            .get_result(&mut conn)?;
+        Ok(user)
+    }
+
+    pub fn update(self, id: &Uuid) -> Result<User, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let result = diesel::update(users::table)
+            .filter(users::id.eq(id))
+            .set(&self)
+            .get_result(&mut conn)?;
+        Ok(result)
+    }
+
     pub fn hash_password(&mut self) -> Result<(), PpdcError> {
         let salt: [u8; 32] = rand::thread_rng().gen();
         let config = Config::default();
 
-        self.password = argon2::hash_encoded(self.password.as_bytes(), &salt, &config)
+        if let Some(password) = &self.password {
+        self.password = Some(argon2::hash_encoded(password.as_bytes(), &salt, &config)
             .map_err(|err| PpdcError::new(
                     500,
                     ErrorType::InternalError,
-                    format!("Unable to encode password: {:#?}", err)))?;
+                    format!("Unable to encode password: {:#?}", err)))?);
         Ok(())
+        } else {
+            Err(PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("No password to encode")))
+        }
     }
 }
 
@@ -55,15 +83,6 @@ impl User {
                 500,
                 ErrorType::InternalError,
                 format!("Unable to decode password: {:#?}", err)))
-    }
-
-    pub fn create(user: NewUser) -> Result<User, PpdcError> {
-        let mut conn = db::establish_connection();
-        //let user = User::from(user);
-        let user = diesel::insert_into(users::table)
-            .values(&user)
-            .get_result(&mut conn)?;
-        Ok(user)
     }
 
     pub fn find(id: &Uuid) -> Result<User, PpdcError> {
@@ -84,12 +103,38 @@ impl User {
     }
 }
 
+pub fn get_users(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let (offset, limit) = request.get_pagination();
+    let mut conn = db::establish_connection();
+
+    let results = users::table.into_boxed()
+        .offset(offset)
+        .limit(limit)
+        .load::<User>(&mut conn)?;
+    HttpResponse::ok()
+        .json(&results)
+}
+
 pub fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let mut user_message = serde_json::from_str::<NewUser>(&request.body[..])?;
     user_message.hash_password().unwrap();
-    let created_user = User::create(user_message)?;
+    let created_user = user_message.create()?;
     HttpResponse::created()
         .json(&created_user)
+}
+
+pub fn put_user_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let id = HttpRequest::parse_uuid(id)?;
+    if let Some(user_id) = request.session.as_ref().unwrap().user_id {
+        if user_id != id {
+            return Ok(HttpResponse::unauthorized());
+        }
+    } else {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let new_user = serde_json::from_str::<NewUser>(&request.body[..])?;
+    HttpResponse::ok()
+        .json(&new_user.update(&id)?)
 }
 
 pub fn get_user(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
