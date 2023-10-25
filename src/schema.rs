@@ -41,6 +41,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    resource_relations (origin_resource_id, target_resource_id) {
+        id -> Uuid,
+        origin_resource_id -> Uuid,
+        target_resource_id -> Uuid,
+        relation_comment -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        relation_type -> Text,
+    }
+}
+
+diesel::table! {
     resources (id) {
         id -> Uuid,
         title -> Text,
@@ -72,17 +84,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    thought_input_usages (thought_input_id, resource_id) {
-        id -> Uuid,
-        thought_input_id -> Uuid,
-        resource_id -> Uuid,
-        usage_reason -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -102,15 +103,13 @@ diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(resources -> categories (category_id));
 diesel::joinable!(sessions -> users (user_id));
-diesel::joinable!(thought_input_usages -> interactions (thought_input_id));
-diesel::joinable!(thought_input_usages -> resources (resource_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     categories,
     comments,
     interactions,
+    resource_relations,
     resources,
     sessions,
-    thought_input_usages,
     users,
 );

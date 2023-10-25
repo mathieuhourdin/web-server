@@ -104,7 +104,7 @@ pub fn put_resource_route(id: &str, request: &HttpRequest) -> Result<HttpRespons
 pub fn get_resource_author_interaction_route(id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let id = HttpRequest::parse_uuid(id)?;
     let resource = Resource::find(id)?;
-    let author_interaction = resource.find_resource_author_interaction()?;
+    let author_interaction = resource.find_resource_author_interaction().ok();
     HttpResponse::ok().json(&author_interaction)
 }
 

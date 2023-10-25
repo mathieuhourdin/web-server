@@ -3,12 +3,12 @@ use std::io::{prelude::*};
 use std::thread;
 use http::{HttpRequest, HttpResponse, StatusCode, Cookie};
 use entities::{user::self,
-    interaction::{thought_output_routes as thought_output, thought_input_routes as thought_input},
+    interaction::{thought_output_routes as thought_output, thought_input_routes as thought_input, interaction_routes as interaction},
     error::PpdcError,
     comment,
     resource
 };
-use entities::thought_input_usage;
+use entities::resource_relation;
 use entities::category;
 use regex::Regex;
 use std::time::{Duration};
@@ -174,6 +174,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["resources"]) => resource::get_external_resources_route(&request),
         ("GET", ["resources", id]) => resource::get_resource_route(id, &request),
         ("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
+        ("POST", ["resources", id, "interactions"]) => interaction::post_interaction_for_resource(id, &request),
+        ("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
         ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         ("GET", ["articles", id]) => thought_output::get_thought_output_route(id),
         ("POST", ["articles"]) => thought_output::post_thought_outputs_route(&request),
@@ -183,8 +185,8 @@ async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcEr
         ("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
         ("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),
         ("PUT", ["thought_outputs", uuid]) => thought_output::put_thought_output_route(uuid, &request),
-        ("GET", ["resource", id, "thought_input_usages"]) => thought_input_usage::get_thought_input_usages_for_resource_route(id, &request),
-        ("POST", ["thought_input_usages"]) => thought_input_usage::post_thought_input_usage_route(&request),
+        ("GET", ["resource", id, "thought_input_usages"]) => resource_relation::get_resource_relations_for_resource_route(id, &request),
+        ("POST", ["thought_input_usages"]) => resource_relation::post_resource_relation_route(&request),
         ("POST", ["thought_inputs"]) => thought_input::post_thought_input_route(&request),
         ("PUT", ["thought_inputs", id]) => thought_input::put_thought_input_route(id, &request),
         ("GET", ["thought_inputs", id]) => thought_input::get_one_thought_input_route(id, &request),
