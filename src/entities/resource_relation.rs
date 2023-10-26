@@ -27,6 +27,13 @@ pub struct ResourceRelationWithOriginResource {
     origin_resource: Resource,
 }
 
+#[derive(Serialize, Queryable)]
+pub struct ResourceRelationWithTargetResource {
+    #[serde(flatten)]
+    resource_relation: ResourceRelation,
+    target_resource: Resource,
+}
+
 #[derive(Deserialize, Insertable, AsChangeset)]
 #[diesel(table_name=resource_relations)]
 pub struct NewResourceRelation {
@@ -49,7 +56,7 @@ impl NewResourceRelation {
 }
 
 impl ResourceRelation {
-    pub fn find_for_resource(target_resource_id: Uuid) -> Result<Vec<ResourceRelationWithOriginResource>, PpdcError> {
+    pub fn find_origin_for_resource(target_resource_id: Uuid) -> Result<Vec<ResourceRelationWithOriginResource>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let resource_relations = resource_relations::table
@@ -59,6 +66,20 @@ impl ResourceRelation {
             .load::<(ResourceRelation, Resource)>(&mut conn)?
             .into_iter()
             .map(|(resource_relation, origin_resource)| ResourceRelationWithOriginResource { resource_relation, origin_resource })
+            .collect();
+        Ok(resource_relations)
+    }
+
+    pub fn find_target_for_resource(origin_resource_id: Uuid) -> Result<Vec<ResourceRelationWithTargetResource>, PpdcError> {
+        let mut conn = db::establish_connection();
+
+        let resource_relations = resource_relations::table
+            .inner_join(resources::table.on(resource_relations::target_resource_id.eq(resources::id)))
+            .filter(resource_relations::origin_resource_id.eq(origin_resource_id))
+            .select((ResourceRelation::as_select(), Resource::as_select()))
+            .load::<(ResourceRelation, Resource)>(&mut conn)?
+            .into_iter()
+            .map(|(resource_relation, target_resource)| ResourceRelationWithTargetResource { resource_relation, target_resource })
             .collect();
         Ok(resource_relations)
     }
@@ -78,5 +99,11 @@ pub fn get_resource_relations_for_resource_route(target_resource_id: &str, _requ
     let target_resource_id = HttpRequest::parse_uuid(target_resource_id)?;
 
     HttpResponse::ok()
-        .json(&ResourceRelation::find_for_resource(target_resource_id)?)
+        .json(&ResourceRelation::find_origin_for_resource(target_resource_id)?)
+}
+
+pub fn get_targets_for_resource_route(origin_resource_id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let origin_resource_id = HttpRequest::parse_uuid(origin_resource_id)?;
+
+    HttpResponse::ok().json(&ResourceRelation::find_target_for_resource(origin_resource_id)?)
 }
