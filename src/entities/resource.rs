@@ -101,6 +101,18 @@ pub fn put_resource_route(id: &str, request: &HttpRequest) -> Result<HttpRespons
         .json(&resource.update(&id)?)
 }
 
+pub fn post_resource_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+
+    let mut resource = serde_json::from_str::<NewResource>(&request.body[..])?;
+    resource.publishing_state = Some("drft".to_string());
+
+    HttpResponse::ok().json(&resource.create()?)
+}
+
+
 pub fn get_resource_author_interaction_route(id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let id = HttpRequest::parse_uuid(id)?;
     let resource = Resource::find(id)?;
