@@ -19,3 +19,5 @@ ALTER TABLE thought_input_usages RENAME target_resource_id TO resource_id;
 ALTER TABLE thought_input_usages RENAME relation_comment TO usage_reason;
 
 ALTER TABLE thought_input_usages DROP COLUMN relation_type;
+ALTER TABLE thought_input_usages DROP COLUMN user_id;
+

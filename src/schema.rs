@@ -41,13 +41,14 @@ diesel::table! {
 }
 
 diesel::table! {
-    resource_relations (origin_resource_id, target_resource_id) {
+    resource_relations (id) {
         id -> Uuid,
         origin_resource_id -> Uuid,
         target_resource_id -> Uuid,
         relation_comment -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        user_id -> Uuid,
         relation_type -> Text,
     }
 }
@@ -101,6 +102,7 @@ diesel::joinable!(comments -> interactions (thought_output_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
+diesel::joinable!(resource_relations -> users (user_id));
 diesel::joinable!(resources -> categories (category_id));
 diesel::joinable!(sessions -> users (user_id));
 

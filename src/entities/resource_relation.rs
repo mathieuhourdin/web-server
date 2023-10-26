@@ -11,14 +11,13 @@ use crate::http::{HttpRequest, HttpResponse};
 #[diesel(table_name=resource_relations)]
 pub struct ResourceRelation {
     id: Uuid,
-    #[serde(rename="thought_input_id")]
     origin_resource_id: Uuid,
-    #[serde(rename="resource_id")]
     target_resource_id: Uuid,
     relation_comment: String,
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
-    relation_type: String
+    user_id: Uuid,
+    relation_type: String,
 }
 
 #[derive(Serialize, Queryable)]
@@ -34,7 +33,8 @@ pub struct NewResourceRelation {
     origin_resource_id: Uuid,
     target_resource_id: Uuid,
     relation_comment: String,
-    relation_type: Option<String>
+    user_id: Option<Uuid>,
+    relation_type: Option<String>,
 }
 
 impl NewResourceRelation {
@@ -65,7 +65,11 @@ impl ResourceRelation {
 }
 
 pub fn post_resource_relation_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let resource_relation = serde_json::from_str::<NewResourceRelation>(&request.body[..])?;
+    if request.session.as_ref().unwrap().user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let mut resource_relation = serde_json::from_str::<NewResourceRelation>(&request.body[..])?;
+    resource_relation.user_id = request.session.as_ref().unwrap().user_id;
     HttpResponse::ok()
         .json(&resource_relation.create()?)
 }
