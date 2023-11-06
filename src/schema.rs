@@ -13,7 +13,7 @@ diesel::table! {
     comments (id) {
         id -> Uuid,
         content -> Text,
-        thought_output_id -> Uuid,
+        resource_id -> Uuid,
         comment_type -> Nullable<Text>,
         start_index -> Nullable<Int4>,
         end_index -> Nullable<Int4>,
@@ -98,7 +98,7 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(comments -> interactions (thought_output_id));
+diesel::joinable!(comments -> resources (resource_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));

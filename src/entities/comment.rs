@@ -13,7 +13,7 @@ use serde_json;
 pub struct Comment {
     pub id: Uuid,
     pub content: String,
-    pub thought_output_id: Uuid,
+    pub resource_id: Uuid,
     pub comment_type: Option<String>,
     pub start_index: Option<i32>,
     pub end_index: Option<i32>,
@@ -35,7 +35,7 @@ pub struct CommentWithAuthor {
 #[diesel(table_name=comments)]
 pub struct NewComment {
     pub content: Option<String>,
-    pub thought_output_id: Option<Uuid>,
+    pub resource_id: Option<Uuid>,
     pub comment_type: Option<String>,
     pub start_index: Option<i32>,
     pub end_index: Option<i32>,
@@ -47,21 +47,21 @@ pub struct NewComment {
 
 impl Comment {
 
-    pub fn find_all_for_thought_output(thought_output_id: Uuid) -> Result<Vec<Comment>, PpdcError> {
+    pub fn find_all_for_resource(resource_id: Uuid) -> Result<Vec<Comment>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let comments = comments::table
-            .filter(comments::thought_output_id.eq(thought_output_id))
+            .filter(comments::resource_id.eq(resource_id))
             .load::<Comment>(&mut conn)?;
         Ok(comments)
     }
 
-    pub fn find_all_for_thought_output_with_author(thought_output_id: Uuid) -> Result<Vec<CommentWithAuthor>, PpdcError> {
+    pub fn find_all_for_resource_with_author(resource_id: Uuid) -> Result<Vec<CommentWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let comments = comments::table
             .inner_join(users::table)
-            .filter(comments::thought_output_id.eq(thought_output_id))
+            .filter(comments::resource_id.eq(resource_id))
             .select((Comment::as_select(), User::as_select()))
             .load::<(Comment, User)>(&mut conn)?
             .into_iter()
@@ -99,14 +99,14 @@ impl Comment {
     }
 }
 
-pub fn get_comments_for_thought_output(thought_output_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let thought_output_id = HttpRequest::parse_uuid(thought_output_id)?;
+pub fn get_comments_for_resource(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let resource_id = HttpRequest::parse_uuid(resource_id)?;
     if request.query.contains_key("author") && request.query["author"] == "true" {
         HttpResponse::ok()
-            .json(&Comment::find_all_for_thought_output_with_author(thought_output_id)?)
+            .json(&Comment::find_all_for_resource_with_author(resource_id)?)
     } else {
         HttpResponse::ok()
-            .json(&Comment::find_all_for_thought_output(thought_output_id)?)
+            .json(&Comment::find_all_for_resource(resource_id)?)
     }
 }
 
@@ -118,7 +118,7 @@ pub fn post_comment_route(id: &str, request: &HttpRequest) -> Result<HttpRespons
     let id = HttpRequest::parse_uuid(id)?;
     let mut comment = serde_json::from_str::<NewComment>(&request.body[..])?;
     comment.author_id = request.session.as_ref().unwrap().user_id;
-    comment.thought_output_id = Some(id);
+    comment.resource_id = Some(id);
     let comment = Comment::create(comment)?;
     HttpResponse::ok()
         .json(&comment)
