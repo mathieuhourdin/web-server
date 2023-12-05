@@ -93,9 +93,15 @@ pub fn put_resource_route(id: &str, request: &HttpRequest) -> Result<HttpRespons
     let db_resource = Resource::find(id)?;
     let resource = serde_json::from_str::<NewResource>(&request.body[..])?;
     let author_interaction = db_resource.find_resource_author_interaction();
-    if author_interaction.is_ok() && author_interaction.unwrap().interaction_user_id != request.session.as_ref().unwrap().user_id.unwrap() 
-    {
-        return Ok(HttpResponse::unauthorized());
+    if author_interaction.is_ok() {
+        let author_id = author_interaction.unwrap().interaction_user_id;
+        if author_id != request.session.as_ref().unwrap().user_id.unwrap() 
+        {
+            let author_user = User::find(&author_id)?;
+            if (author_user.is_platform_user) {
+                return Ok(HttpResponse::unauthorized());
+            }
+        }
     }
     HttpResponse::ok()
         .json(&resource.update(&id)?)

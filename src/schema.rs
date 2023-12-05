@@ -95,6 +95,8 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
         profile_picture_url -> Nullable<Text>,
+        is_platform_user -> Bool,
+        biography -> Nullable<Text>,
     }
 }
 

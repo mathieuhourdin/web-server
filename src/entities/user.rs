@@ -23,7 +23,9 @@ pub struct User {
     pub password: String,
     pub created_at: NaiveDateTime,
     pub updated_at: Option<NaiveDateTime>,
-    pub profile_picture_url: Option<String>
+    pub profile_picture_url: Option<String>,
+    pub is_platform_user: bool,
+    pub biography: Option<String>
 }
 
 #[derive(Serialize, Deserialize, Insertable, AsChangeset)]
@@ -34,7 +36,9 @@ pub struct NewUser {
     pub last_name: String,
     pub handle: String,
     pub password: Option<String>,
-    pub profile_picture_url: Option<String>
+    pub profile_picture_url: Option<String>,
+    pub is_platform_user: Option<bool>,
+    pub biography: Option<String>
 }
 
 impl NewUser {
@@ -69,10 +73,15 @@ impl NewUser {
                     format!("Unable to encode password: {:#?}", err)))?);
         Ok(())
         } else {
-            Err(PpdcError::new(
-                500,
-                ErrorType::InternalError,
-                format!("No password to encode")))
+            if self.is_platform_user.is_none() || self.is_platform_user.unwrap() == false {
+                self.password = Some(String::new());
+                Ok(())
+            } else {
+                Err(PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("No password to encode")))
+            }
         }
     }
 }
@@ -126,7 +135,8 @@ pub fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 pub fn put_user_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let id = HttpRequest::parse_uuid(id)?;
     if let Some(user_id) = request.session.as_ref().unwrap().user_id {
-        if user_id != id {
+        let existing_user = User::find(&id)?;
+        if user_id != id && existing_user.is_platform_user {
             return Ok(HttpResponse::unauthorized());
         }
     } else {
