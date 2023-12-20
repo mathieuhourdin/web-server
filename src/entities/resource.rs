@@ -154,6 +154,7 @@ pub fn get_internal_resources_route(request: &HttpRequest, filter: &str) -> Resu
         .filter(resources::is_external.eq(false))
         .filter(resources::resource_type.eq(filter))
         .filter(resources::publishing_state.eq("pbsh"))
+        .order(resources::updated_at.desc())
         .offset(offset)
         .limit(limit)
         .load::<Resource>(&mut conn)?;
