@@ -1,13 +1,12 @@
 use crate::schema::*;
 use diesel::prelude::*;
+use super::model::*;
 use crate::entities::{error::{PpdcError}, resource::*};
 use crate::http::{HttpRequest, HttpResponse};
-use super::model::*;
 
 pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let user_id = HttpRequest::parse_uuid(user_id)?;
-    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
-    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+    let (offset, limit) = request.get_pagination();
     let thought_inputs = Interaction::load_paginated(
         offset,
         limit, 
@@ -24,8 +23,7 @@ pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Resu
 }
 
 pub fn get_thought_inputs(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
-    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+    let (offset, limit) = request.get_pagination();
     let thought_inputs = Interaction::load_paginated(
         offset,
         limit, 

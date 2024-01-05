@@ -1,12 +1,31 @@
-use crate::http::{HttpRequest, HttpResponse};
-use serde_json;
-use crate::entities::{error::PpdcError, user::User, resource::NewResource};
 use super::model::*;
+use diesel::prelude::*;
+use crate::schema::*;
+use serde_json;
+use crate::http::{HttpRequest, HttpResponse};
+use crate::entities::{error::PpdcError, user::User, resource::NewResource};
 
 pub fn get_thought_output_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
     let uuid = HttpRequest::parse_uuid(uuid)?;
     HttpResponse::ok()
         .json(&Interaction::find(uuid)?)
+}
+
+pub fn get_thought_outputs_for_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let user_id = HttpRequest::parse_uuid(user_id)?;
+    let (offset, limit) = request.get_pagination();
+    let thought_inputs = Interaction::load_paginated(
+        offset,
+        limit, 
+        interactions::table
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(interactions::interaction_user_id.eq(user_id)).into_boxed(),
+        "pbsh",
+        "atcl"
+
+    )?;
+    HttpResponse::ok()
+        .json(&thought_inputs)
 }
 
 pub fn get_thought_outputs_route(request: &HttpRequest, filter: &str) -> Result<HttpResponse, PpdcError> {
