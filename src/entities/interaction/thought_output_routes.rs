@@ -3,7 +3,7 @@ use diesel::prelude::*;
 use crate::schema::*;
 use serde_json;
 use crate::http::{HttpRequest, HttpResponse};
-use crate::entities::{error::PpdcError, user::User, resource::NewResource};
+use crate::entities::{error::PpdcError, user::User};
 
 pub fn get_thought_output_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
     let uuid = HttpRequest::parse_uuid(uuid)?;

@@ -98,7 +98,7 @@ pub fn put_resource_route(id: &str, request: &HttpRequest) -> Result<HttpRespons
         if author_id != request.session.as_ref().unwrap().user_id.unwrap() 
         {
             let author_user = User::find(&author_id)?;
-            if (author_user.is_platform_user) {
+            if author_user.is_platform_user {
                 return Ok(HttpResponse::unauthorized());
             }
         }

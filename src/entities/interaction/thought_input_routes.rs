@@ -1,7 +1,7 @@
 use crate::schema::*;
 use diesel::prelude::*;
 use super::model::*;
-use crate::entities::{error::{PpdcError}, resource::*};
+use crate::entities::{error::{PpdcError}};
 use crate::http::{HttpRequest, HttpResponse};
 
 pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {

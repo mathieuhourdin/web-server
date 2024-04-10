@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db;
 use crate::schema::*;
 use diesel::prelude::*;
-use crate::entities::{error::{PpdcError}, interaction::model::{Interaction, InteractionWithResource}, resource::Resource};
+use crate::entities::{error::{PpdcError}, resource::Resource};
 use crate::http::{HttpRequest, HttpResponse};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]

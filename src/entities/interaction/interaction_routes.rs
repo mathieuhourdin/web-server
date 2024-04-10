@@ -3,7 +3,7 @@ use diesel::prelude::*;
 use crate::schema::*;
 use serde_json;
 use super::model::*;
-use crate::entities::{error::PpdcError, user::User, resource::Resource};
+use crate::entities::{error::PpdcError};
 
 pub fn post_interaction_for_resource(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     if request.session.as_ref().unwrap().user_id.is_none() {
@@ -27,7 +27,7 @@ pub fn put_interaction_route(uuid: &str, request: &HttpRequest) -> Result<HttpRe
         return Ok(HttpResponse::unauthorized());
     }
     let uuid = &HttpRequest::parse_uuid(uuid)?;
-    let mut thought_output = serde_json::from_str::<NewInteraction>(&request.body[..])?;
+    let thought_output = serde_json::from_str::<NewInteraction>(&request.body[..])?;
     HttpResponse::ok()
         .json(&thought_output.update(uuid)?)
 }
