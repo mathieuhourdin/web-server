@@ -8,6 +8,7 @@ use crate::entities::{user::self,
 use crate::sessions_service;
 use crate::entities::resource_relation;
 use crate::entities::category;
+use crate::link_preview;
 
 pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
     let session_id = &request.session.as_ref().unwrap().id;
@@ -17,6 +18,7 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
         ("GET", ["users", id]) => user::get_user(id, &request),
         ("GET", ["users"]) => user::get_users(&request),
+        ("POST", ["link_preview"]) => link_preview::post_preview_route(&request).await,
         ("POST", ["users"]) => user::post_user(&request),
         ("PUT", ["users", id]) => user::put_user_route(id, &request),
         ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),

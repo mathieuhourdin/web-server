@@ -163,15 +163,17 @@ mod tests {
     
     #[test]
     fn test_hash_password() {
-        let mut user = User {
-            uuid: Some(String::from("uuid")),
+        let mut user = NewUser {
             email: String::from("email"),
             first_name: String::from("first_name"),
             last_name: String::from("last_name"),
             handle: String::from("@handle"),
-            password: String::from("password"),
+            password: Some(String::from("password")),
+            profile_picture_url: None,
+            is_platform_user: None,
+            biography: None
         };
-        user.hash_password();
-        assert_ne!(user.password, String::from("password"));
+        user.hash_password().unwrap();
+        assert_ne!(user.password, Some(String::from("password")));
     }
 }

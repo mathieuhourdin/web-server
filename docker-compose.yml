@@ -8,7 +8,7 @@ services:
       - "8080:8080"
     volumes:
       - ./:/usr/src/app
-    command: bash -c "cargo watch -x run"
+    command: bash -c "cargo watch -x test -x run"
   db:
     image: "couchdb"
     ports: 

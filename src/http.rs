@@ -57,6 +57,18 @@ fn decode_query_string(query_string: &str) -> HashMap<String, String> {
 }
 
 impl HttpRequest {
+    pub fn new(method: &str, path: &str, body: &str) -> HttpRequest {
+        HttpRequest {
+            method: method.to_string(),
+            path: path.to_string(),
+            headers: HashMap::new(),
+            query: HashMap::new(),
+            body: body.to_string(),
+            cookies: Cookie { data: HashMap::new() },
+            session: None
+        }
+    }
+
     pub fn from(request_string: &String) -> Result<HttpRequest, PpdcError> {
 
         let request_array = request_string.split("\r\n\r\n").collect::<Vec<&str>>();
@@ -118,6 +130,7 @@ impl HttpRequest {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct HttpResponse {
     pub status_code: StatusCode,
     pub headers: HashMap<String, String>,
@@ -188,6 +201,7 @@ impl HttpResponse {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum StatusCode {
     Ok,
     Created,
