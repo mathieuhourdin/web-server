@@ -1,0 +1,199 @@
+use crate::entities::error::PpdcError;
+use std::fs;
+use scraper::{Html,Selector};
+
+pub fn parse_page_title(html: &Html) -> Option<String> {
+    if let Some(title) = find_opengraph_content_from_property(html, "title") {
+        return Some(title);
+    }
+    if let Some(title) = find_twitter_content_from_name(html, "title") {
+        return Some(title);
+    }
+    if let Some(title) = find_schema_content_from_itemprop(html, "name") {
+        return Some(title);
+    }
+    if let Some(title) = find_raw_html_title(html) {
+        return Some(title);
+    }
+    None
+}
+
+pub fn find_raw_html_title(html: &Html) -> Option<String> {
+    let selector = Selector::parse("title").unwrap();
+    html.select(&selector).map(|e| e.inner_html()).next()
+}
+
+pub fn find_opengraph_content_from_property(html: &Html, property: &str) -> Option<String> {
+    let selector = Selector::parse(&format!("meta[property=\"og:{}\"]", property)).unwrap();
+    html.select(&selector).map(|e| e.attr("content").unwrap().to_string()).next()
+}
+
+pub fn find_twitter_content_from_name(html: &Html, name: &str) -> Option<String> {
+    let selector = Selector::parse(&format!("meta[name=\"twitter:{}\"]", name)).unwrap();
+    html.select(&selector).map(|e| e.attr("content").unwrap().to_string()).next()
+}
+
+pub fn find_schema_content_from_itemprop(html: &Html, prop: &str) -> Option<String> {
+    let selector = Selector::parse(&format!("meta[itemprop=\"{}\"]", prop)).unwrap();
+    html.select(&selector).map(|e| e.attr("content").unwrap().to_string()).next()
+}
+
+pub fn parse_page_subtitle(html: &Html) -> Option<String> {
+    if let Some(subtitle) = find_opengraph_content_from_property(html, "description") {
+        return Some(subtitle);
+    }
+    if let Some(subtitle) = find_twitter_content_from_name(html, "description") {
+        return Some(subtitle)
+    }
+    None
+}
+
+pub fn parse_page_image_url(html: &Html) -> Option<String> {
+    let selector = Selector::parse("img").unwrap();
+    html.select(&selector).map(|e| e.attr("src").unwrap().to_string()).next()
+}
+
+pub fn find_raw_html_image_url(html: &Html) -> Option<String> {
+    let selector = Selector::parse("img").unwrap();
+    html.select(&selector).map(|e| e.attr("src").unwrap().to_string()).next()
+}
+
+pub fn parse_content(html: &Html) -> Option<String> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use tokio::test;
+
+    fn get_structured_data_html() -> Html {
+        Html::parse_document(&fs::read_to_string("test_data/structured_html.html").unwrap())
+    }
+    fn get_opengraph_data_html() -> Html {
+        Html::parse_document(&fs::read_to_string("test_data/open_graph.html").unwrap())
+    }
+    fn get_twitter_data_html() -> Html {
+        Html::parse_document(&fs::read_to_string("test_data/twitter.html").unwrap())
+    }
+    fn get_schema_data_html() -> Html {
+        Html::parse_document(&fs::read_to_string("test_data/schema.html").unwrap())
+    }
+
+    #[test]
+    async fn test_parse_page_title() {
+        let example_html = get_structured_data_html();
+        let parse_result = parse_page_title(&example_html).unwrap();
+        assert_eq!(parse_result, "og_title".to_string())
+    }
+
+    #[test]
+    async fn test_parse_page_title_opengraph() {
+        let opengraph_html = get_opengraph_data_html();
+        let parse_result = parse_page_title(&opengraph_html).unwrap();
+        assert_eq!(parse_result, "og_title".to_string())
+    }
+    #[test]
+    async fn test_parse_page_title_twitter() {
+        let twitter_html = get_twitter_data_html();
+        let parse_result = parse_page_title(&twitter_html).unwrap();
+        assert_eq!(parse_result, "twitter_title".to_string())
+    }
+    #[test]
+    async fn test_parse_page_title_schema() {
+        let schema_html = get_schema_data_html();
+        let parse_result = parse_page_title(&schema_html).unwrap();
+        assert_eq!(parse_result, "schema_title".to_string())
+    }
+
+    #[test]
+    async fn test_find_raw_html_title() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_raw_html_title(&example_html).unwrap();
+        assert_eq!(parse_result, "raw_html_title".to_string())
+    }
+
+    #[test]
+    async fn test_find_opengraph_title() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_opengraph_content_from_property(&example_html, "title").unwrap();
+        assert_eq!(parse_result, "og_title".to_string())
+    }
+
+    #[test]
+    async fn test_find_twitter_title() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_twitter_content_from_name(&example_html, "title").unwrap();
+        assert_eq!(parse_result, "twitter_title".to_string())
+    }
+
+    #[test]
+    async fn test_find_schema_title() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_schema_content_from_itemprop(&example_html, "name").unwrap();
+        assert_eq!(parse_result, "schema_title".to_string())
+    }
+
+    #[test]
+    async fn test_parse_page_subtitle_opengraph() {
+        let example_html = get_opengraph_data_html();
+        let parse_result = parse_page_subtitle(&example_html).unwrap();
+        assert_eq!(parse_result, "og_description".to_string());
+    }
+    #[test]
+    async fn test_parse_page_subtitle_twitter() {
+        let example_html = get_twitter_data_html();
+        let parse_result = parse_page_subtitle(&example_html).unwrap();
+        assert_eq!(parse_result, "twitter_description".to_string());
+    }
+
+    #[test]
+    async fn test_find_opengraph_description() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_opengraph_content_from_property(&example_html, "description").unwrap();
+        assert_eq!(parse_result, "og_description".to_string())
+    }
+
+    #[test]
+    async fn test_find_twitter_description() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_twitter_content_from_name(&example_html, "description").unwrap();
+        assert_eq!(parse_result, "twitter_description".to_string())
+    }
+
+    #[test]
+    async fn test_find_schema_description() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_schema_content_from_itemprop(&example_html, "description").unwrap();
+        assert_eq!(parse_result, "schema_description".to_string())
+    }
+
+    #[test]
+    async fn test_find_raw_html_image_url() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_raw_html_image_url(&example_html).unwrap();
+        assert_eq!(parse_result, "raw_html_image".to_string())
+    }
+
+    #[test]
+    async fn test_find_opengraph_image_url() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_opengraph_content_from_property(&example_html, "image").unwrap();
+        assert_eq!(parse_result, "og_image".to_string())
+    }
+
+    #[test]
+    async fn test_find_twitter_image_url() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_twitter_content_from_name(&example_html, "image").unwrap();
+        assert_eq!(parse_result, "twitter_image".to_string())
+    }
+
+    #[test]
+    async fn test_find_schema_image_url() {
+        let example_html = get_structured_data_html();
+        let parse_result = find_schema_content_from_itemprop(&example_html, "image").unwrap();
+        assert_eq!(parse_result, "schema_image".to_string())
+    }
+}

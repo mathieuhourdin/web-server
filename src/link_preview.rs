@@ -5,6 +5,8 @@ use reqwest;
 use std::fs;
 use scraper::{Html,Selector};
 
+mod html_parser;
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct NewLinkPreview {
     pub external_content_url: String
@@ -20,12 +22,10 @@ pub struct LinkPreview {
 }
 
 pub async fn post_preview_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    println!("link_preview");
     let decoded_request = decode_request_body(&request.body[..]).unwrap();
     let response = generate_link_preview(decoded_request.external_content_url).await.unwrap();
     HttpResponse::ok()
         .json(&response)
-
 }
 
 pub fn decode_request_body(request_body: &str) -> Result<NewLinkPreview, PpdcError> {
@@ -38,37 +38,6 @@ pub async fn generate_link_preview(link: String) -> Result<LinkPreview, PpdcErro
     Ok(generate_preview_from_html(parsed_html, link))
 }
 
-pub fn parse_html(html_file: String) -> Html {
-    Html::parse_document(&html_file[..])
-}
-
-pub fn generate_preview_from_html(html: Html, external_content_url: String) -> LinkPreview {
-    LinkPreview {
-        title: parse_page_title(&html),
-        subtitle: parse_page_subtitle(&html),
-        external_content_url,
-        image_url: parse_page_image_url(&html),
-        content: parse_content(&html)
-    }
-}
-
-pub fn parse_page_title(html: &Html) -> Option<String> {
-    let selector = Selector::parse("title").unwrap();
-    html.select(&selector).map(|e| e.inner_html()).next()
-}
-
-pub fn parse_page_image_url(html: &Html) -> Option<String> {
-    None
-}
-
-pub fn parse_page_subtitle(html: &Html) -> Option<String> {
-    None
-}
-
-pub fn parse_content(html: &Html) -> Option<String> {
-    None
-}
-
 pub async fn fetch_external_resource_html_body(external_resource_url: &str) -> Result<String, PpdcError> {
     println!("{}", external_resource_url);
     let response = reqwest::get(external_resource_url).await.unwrap();
@@ -77,6 +46,19 @@ pub async fn fetch_external_resource_html_body(external_resource_url: &str) -> R
     Ok(response)
 }
 
+pub fn parse_html(html_file: String) -> Html {
+    Html::parse_document(&html_file[..])
+}
+
+pub fn generate_preview_from_html(html: Html, external_content_url: String) -> LinkPreview {
+    LinkPreview {
+        title: html_parser::parse_page_title(&html),
+        subtitle: html_parser::parse_page_subtitle(&html),
+        external_content_url,
+        image_url: html_parser::parse_page_image_url(&html),
+        content: html_parser::parse_content(&html)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -92,6 +74,10 @@ mod tests {
         let expected_response = HttpResponse::new(StatusCode::Ok, "{\"title\":\"Example Domain\",\"subtitle\":null,\"external_content_url\":\"https://example.com\",\"image_url\":null,\"content\":null}".to_string());
         let response = post_preview_route(&request).await.unwrap();
         assert_eq!(expected_response, response);
+    }
+
+    async fn test_request_localhost() {
+        let result = reqwest::get("http://localhost:8080").await.unwrap();
     }
 
     #[test]
@@ -120,13 +106,6 @@ mod tests {
     }
 
     #[test]
-    async fn test_parse_page_title() {
-        let example_page = fs::read_to_string("test_data/example.html").unwrap();
-        let parse_result = parse_page_title(&Html::parse_document(&example_page)).unwrap();
-        assert_eq!(parse_result, "Example Domain".to_string())
-    }
-
-    #[test]
     async fn test_generate_link_preview() {
         let expected_response: LinkPreview = LinkPreview {
             title: Some("Example Domain".to_string()),
@@ -134,10 +113,9 @@ mod tests {
             external_content_url: "https://example.com".to_string(),
             image_url: None,
             content: None
-        };;
+        };
         let response = generate_link_preview("https://example.com".to_string()).await.unwrap();
         assert_eq!(response, expected_response);
-
     }
 
     #[tokio::test]

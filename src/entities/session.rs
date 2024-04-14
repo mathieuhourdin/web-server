@@ -34,7 +34,7 @@ impl NewSession {
             user_id: None,
             token: None,
             authenticated: false,
-            expires_at: Utc::now().naive_utc().checked_add_signed(Duration::hours(10)).unwrap()
+            expires_at: Utc::now().naive_utc().checked_add_signed(Duration::days(90)).unwrap()
         }
     }
 }
