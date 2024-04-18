@@ -1,9 +1,8 @@
-use crate::http::{HttpRequest, HttpResponse, StatusCode};
+use crate::http::{HttpRequest, HttpResponse};
 use serde::{Serialize, Deserialize};
 use crate::entities::error::PpdcError;
-use reqwest;
-use std::fs;
-use scraper::{Html,Selector};
+use reqwest::{Client, header};
+use scraper::Html;
 
 mod html_parser;
 
@@ -40,7 +39,14 @@ pub async fn generate_link_preview(link: String) -> Result<LinkPreview, PpdcErro
 
 pub async fn fetch_external_resource_html_body(external_resource_url: &str) -> Result<String, PpdcError> {
     println!("{}", external_resource_url);
-    let response = reqwest::get(external_resource_url).await.unwrap();
+    let client = Client::new();
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert(header::ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8".parse().unwrap());
+    let response = client
+        .get(external_resource_url)
+        .headers(headers)
+        .send().await.unwrap();
     let response = response.text().await.unwrap();
     println!("{}", response);
     Ok(response)
@@ -65,6 +71,8 @@ mod tests {
 
     use super::*;
     use tokio::test;
+    use std::fs;
+    use crate::http::StatusCode;
 
     #[test]
     async fn test_post_review_route_works() {
@@ -74,10 +82,6 @@ mod tests {
         let expected_response = HttpResponse::new(StatusCode::Ok, "{\"title\":\"Example Domain\",\"subtitle\":null,\"external_content_url\":\"https://example.com\",\"image_url\":null,\"content\":null}".to_string());
         let response = post_preview_route(&request).await.unwrap();
         assert_eq!(expected_response, response);
-    }
-
-    async fn test_request_localhost() {
-        let result = reqwest::get("http://localhost:8080").await.unwrap();
     }
 
     #[test]

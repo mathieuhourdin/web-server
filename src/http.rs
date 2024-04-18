@@ -180,7 +180,7 @@ impl HttpResponse {
         let html_body = html_body.replace("<Header />", &header_code);
 
         let user_management_code = fs::read_to_string("public/user-datas.html").unwrap();
-        let html_body = html_body + &user_management_code;
+        let html_body = html_body + user_management_code.as_str();
 
         let html_body = html_body.replace("process.env.API_URL", format!("'{}'", get_api_url()).as_str());
         Ok(HttpResponse::new(status_code, html_body))
