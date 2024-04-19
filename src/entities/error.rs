@@ -3,7 +3,7 @@ use diesel::result::Error as DieselError;
 use serde_json::Error as SerdeError;
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(PartialEq, Serialize, Deserialize)]
 pub struct PpdcError {
     pub status_code: u32,
     #[serde(skip_serializing)]
@@ -11,7 +11,7 @@ pub struct PpdcError {
     pub message: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub enum ErrorType {
     InternalError,
     DatabaseError,

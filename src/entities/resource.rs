@@ -8,6 +8,8 @@ use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 
+pub mod resource_type;
+
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=resources)]
 pub struct Resource {

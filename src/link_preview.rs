@@ -17,7 +17,8 @@ pub struct LinkPreview {
     pub subtitle: Option<String>,
     pub external_content_url: String,
     pub image_url: Option<String>,
-    pub content: Option<String>
+    pub content: Option<String>,
+    pub resource_type: Option<String>
 }
 
 pub async fn post_preview_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -62,7 +63,8 @@ pub fn generate_preview_from_html(html: Html, external_content_url: String) -> L
         subtitle: html_parser::parse_page_subtitle(&html),
         external_content_url,
         image_url: html_parser::parse_page_image_url(&html),
-        content: html_parser::parse_content(&html)
+        content: html_parser::parse_content(&html),
+        resource_type: html_parser::parse_resource_type(&html)
     }
 }
 
@@ -79,7 +81,7 @@ mod tests {
         let request = HttpRequest::new("POST", "/link_preview", "{
             \"external_content_url\": \"https://example.com\"
         }");
-        let expected_response = HttpResponse::new(StatusCode::Ok, "{\"title\":\"Example Domain\",\"subtitle\":null,\"external_content_url\":\"https://example.com\",\"image_url\":null,\"content\":null}".to_string());
+        let expected_response = HttpResponse::new(StatusCode::Ok, "{\"title\":\"Example Domain\",\"subtitle\":null,\"external_content_url\":\"https://example.com\",\"image_url\":null,\"content\":null,\"resource_type\":null}".to_string());
         let response = post_preview_route(&request).await.unwrap();
         assert_eq!(expected_response, response);
     }
@@ -104,7 +106,8 @@ mod tests {
             subtitle: None,
             external_content_url: "https://example.com".to_string(),
             image_url: None,
-            content: None
+            content: None,
+            resource_type: None
         };
         assert_eq!(generate_preview_from_html(parse_result, "https://example.com".to_string()), link_preview);
     }
@@ -116,7 +119,8 @@ mod tests {
             subtitle: None,
             external_content_url: "https://example.com".to_string(),
             image_url: None,
-            content: None
+            content: None,
+            resource_type: None
         };
         let response = generate_link_preview("https://example.com".to_string()).await.unwrap();
         assert_eq!(response, expected_response);

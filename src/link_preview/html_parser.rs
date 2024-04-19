@@ -1,4 +1,5 @@
 use scraper::{Html,Selector};
+use crate::entities::resource::resource_type::ResourceType;
 
 pub fn parse_page_title(html: &Html) -> Option<String> {
     if let Some(title) = find_opengraph_content_from_property(html, "title") {
@@ -75,6 +76,17 @@ pub fn find_raw_html_image_url(html: &Html) -> Option<String> {
 }
 
 pub fn parse_content(_html: &Html) -> Option<String> {
+    None
+}
+
+pub fn parse_resource_type(html: &Html) -> Option<String> {
+    if let Some(resource_type) = find_opengraph_content_from_property(html, "type") {
+        if let Some(resource_type_enum) = ResourceType::from_opengraph_code(resource_type.as_str()) {
+            return Some(resource_type_enum.to_code().to_string());
+        } else {
+            return Some(resource_type);
+        }
+    }
     None
 }
 
