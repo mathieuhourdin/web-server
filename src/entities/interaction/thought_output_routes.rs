@@ -13,6 +13,14 @@ pub fn get_thought_output_route(uuid: &str) -> Result<HttpResponse, PpdcError> {
 
 pub fn get_thought_outputs_for_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let user_id = HttpRequest::parse_uuid(user_id)?;
+    let drafts = request.query.get("drafts").map(|value| &value[..]).unwrap_or("false");
+    let draft_value;
+    if drafts == "true" {
+        draft_value = "drft";
+    } else {
+        draft_value = "pbsh";
+    }
+    println!("DraftValue : {}", draft_value);
     let (offset, limit) = request.get_pagination();
     let thought_inputs = Interaction::load_paginated(
         offset,
@@ -20,8 +28,8 @@ pub fn get_thought_outputs_for_user(user_id: &str, request: &HttpRequest) -> Res
         interactions::table
             .filter(interactions::interaction_type.eq("outp"))
             .filter(interactions::interaction_user_id.eq(user_id)).into_boxed(),
-        "pbsh",
-        "atcl"
+        draft_value,
+        "all"
 
     )?;
     HttpResponse::ok()
