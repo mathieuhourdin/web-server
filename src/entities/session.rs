@@ -7,7 +7,7 @@ use crate::schema::sessions;
 use diesel;
 use crate::entities::error::{PpdcError};
 
-#[derive(Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset)]
+#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::sessions)]
 pub struct Session {
     pub id: Uuid,

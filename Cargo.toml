@@ -19,6 +19,8 @@ regex = "1.9.1"
 diesel = { version = "2.1.1", features = ["postgres", "uuid", "chrono"] }
 diesel_migrations = { version = "2.1.0", features = ["postgres"] }
 scraper = "0.19.0"
+encoding = "0.2.33"
+encoding_rs = "0.8.34"
 
 [dev-dependencies]
 tokio-test = "*"

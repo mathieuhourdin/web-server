@@ -18,6 +18,7 @@ pub mod legacy;
 pub mod router;
 pub mod middlewares;
 pub mod link_preview;
+pub mod file_converter;
 
 pub async fn handle_connection(mut stream: TcpStream) {
 

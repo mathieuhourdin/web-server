@@ -32,6 +32,13 @@ impl ServerUrl {
     }
 }
 
+#[derive(Debug)]
+pub enum ContentType {
+    ApplicationJson,
+    FormData
+}
+
+#[derive(Debug)]
 pub struct HttpRequest {
     pub method: String,
     pub path: String,
@@ -39,7 +46,9 @@ pub struct HttpRequest {
     pub query: HashMap<String, String>,
     pub body: String,
     pub cookies: Cookie,
-    pub session: Option<Session>
+    pub session: Option<Session>,
+    pub content_type: Option<ContentType>,
+    pub delimiter: Option<String>
 }
 
 fn decode_query_string(query_string: &str) -> HashMap<String, String> {
@@ -65,54 +74,72 @@ impl HttpRequest {
             query: HashMap::new(),
             body: body.to_string(),
             cookies: Cookie { data: HashMap::new() },
-            session: None
+            session: None,
+            content_type: None,
+            delimiter: None
         }
+    }
+
+    pub fn parse_request_first_line(&mut self, request_first_line: &str) -> Result<(), PpdcError> {
+        let mut method_line = request_first_line.split(" ");
+        let method = method_line.next().ok_or_else(|| {
+            return PpdcError::new(500, ErrorType::InternalError, format!("First line is empty : {:#?}", request_first_line));
+        })?.to_string();
+        self.method = method;
+        let mut uri = method_line.next().ok_or_else(|| {
+            return PpdcError::new(500, ErrorType::InternalError, format!("Request has no uri : {:#?}", request_first_line));
+            })?
+            .to_string();
+        let mut uri = uri.split("?");
+        println!("Method line : {:?}", method_line);
+        let path = uri.next().ok_or_else(|| {
+            return PpdcError::new(500, ErrorType::InternalError, format!("Request has no path : {:#?}", request_first_line));
+        })?.to_string();
+        self.path = path;
+        if let Some(query) = uri.next() {
+            self.query = decode_query_string(query);
+        }
+
+        Ok(())
     }
 
     pub fn from(request_string: &String) -> Result<HttpRequest, PpdcError> {
 
-        let request_array = request_string.split("\r\n\r\n").collect::<Vec<&str>>();
+        let mut request_lines_iterator = request_string.split("\r\n");
+        let mut request = HttpRequest::new("", "", "");
+        
 
-        if request_array.len() < 2 {
-            return Err(PpdcError::new(500, ErrorType::InternalError, format!("Not enouth lines in request : {:#?}", request_string)));
+        let method_line = request_lines_iterator.next().ok_or_else(|| {
+            return PpdcError::new(500, ErrorType::InternalError, format!("Request is empty : {:#?}", request_string));
+        })?;
+
+        request.parse_request_first_line(method_line)?;
+
+
+        for row in &mut request_lines_iterator {
+            if row == "" {
+                break;
+            }
+            let row = row.split(": ").collect::<Vec<&str>>();
+            request.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
         }
 
-        let first_part = &request_array[0].split("\r\n").collect::<Vec<&str>>();
-
-        let first_row = first_part[0].split(" ").collect::<Vec<&str>>();
-        let method = String::from(first_row[0]);
-
-        let uri = first_row[1];
-
-        let path = uri.split("?").collect::<Vec<&str>>().get(0).expect("Should have a uri").to_string();
-        let query = if let Some(query_string) = uri.split("?").collect::<Vec<&str>>().get(1) {
-            decode_query_string(query_string)
-        } else {
-            HashMap::new()
-        };
-
-        println!("Method : {method}");
-
-        let mut headers = HashMap::new();
-        for row in &first_part[1..] {
-            let parsed_header = row.split(": ").collect::<Vec<&str>>();
-            headers.insert(
-                parsed_header[0]
-                    .to_string()
-                    .to_lowercase(), // convert header keys to lowercase. Compatible with http2
-                parsed_header[1]
-                    .to_string()); 
-            println!("Header : {row}");
-        }
-        let body = String::from(request_array[1]);
-
-        for line in request_array {
-            println!("Line : {line}");
+        if let Some(content_type) = request.headers.get("content-type") {
+            if *&content_type.len() > 19 && &content_type[..19] == "multipart/form-data" {
+                request.content_type = Some(ContentType::FormData);
+                request.delimiter = Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
+            } else {
+                request.content_type = Some(ContentType::ApplicationJson);
+            }
         }
 
-        let cookies = Cookie { data: HashMap::new() };
+        for row in request_lines_iterator {
+            request.body = request.body + row + "\r\n"
+        }
 
-        Ok(HttpRequest { method, path, query, headers, body, cookies, session: None })
+        println!("Request : {:?}", request);
+
+        Ok(request)
     }
 
     pub fn parsed_path(&self) -> Vec<&str> {
@@ -224,6 +251,7 @@ impl StatusCode {
     }
 }
 
+#[derive(Debug)]
 pub struct Cookie {
     pub data: HashMap<String, String>
 }
