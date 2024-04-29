@@ -6,6 +6,7 @@ use crate::entities::{user::self,
     resource
 };
 use crate::sessions_service;
+use crate::file_converter;
 use crate::entities::resource_relation;
 use crate::entities::category;
 use crate::link_preview;
@@ -39,6 +40,7 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
         ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         ("POST", ["resources"]) => resource::post_resource_route(&request),
+        ("POST", ["file_conversion"]) => file_converter::post_file_conversion_route(&request),
         ("GET", ["articles", id]) => thought_output::get_thought_output_route(id),
         ("POST", ["articles"]) => thought_output::post_thought_outputs_route(&request),
         ("GET", ["categories"]) => category::get_categories_route(&request),

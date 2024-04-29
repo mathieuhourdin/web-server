@@ -32,7 +32,7 @@ impl ServerUrl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ContentType {
     ApplicationJson,
     FormData
@@ -125,13 +125,15 @@ impl HttpRequest {
         }
 
         if let Some(content_type) = request.headers.get("content-type") {
-            if *&content_type.len() > 19 && &content_type[..19] == "multipart/form-data" {
+            if *&content_type.len() >= 19 && &content_type[..19] == "multipart/form-data" {
                 request.content_type = Some(ContentType::FormData);
                 request.delimiter = Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
             } else {
                 request.content_type = Some(ContentType::ApplicationJson);
             }
         }
+
+        println!("Continue script");
 
         for row in request_lines_iterator {
             request.body = request.body + row + "\r\n"
