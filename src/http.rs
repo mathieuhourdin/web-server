@@ -86,7 +86,7 @@ impl HttpRequest {
             return PpdcError::new(500, ErrorType::InternalError, format!("First line is empty : {:#?}", request_first_line));
         })?.to_string();
         self.method = method;
-        let mut uri = method_line.next().ok_or_else(|| {
+        let uri = method_line.next().ok_or_else(|| {
             return PpdcError::new(500, ErrorType::InternalError, format!("Request has no uri : {:#?}", request_first_line));
             })?
             .to_string();

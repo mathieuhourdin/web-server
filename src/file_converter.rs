@@ -1,12 +1,12 @@
 use crate::entities::error::{self, PpdcError};
 use std::collections::HashMap;
 use regex::Regex;
-use encoding_rs::WINDOWS_1252;
 use crate::http::{self, HttpRequest, HttpResponse};
-use std::fmt;
 use serde::{Serialize, Deserialize};
 
+#[derive(Debug)]
 pub struct File {
+    name: String,
     headers: HashMap<String, String>,
     file_type: Option<String>,
     content: String
@@ -14,20 +14,21 @@ pub struct File {
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct FileConversion {
-    file_name: String,
+    name: String,
     file_type: Option<String>,
     content: Option<String>
 }
 
 impl FileConversion {
-    pub fn new(file_name: String, file_type: Option<String>, content: Option<String>) -> FileConversion {
-        FileConversion { file_name, file_type, content }
+    pub fn new(name: String, file_type: Option<String>, content: Option<String>) -> FileConversion {
+        FileConversion { name, file_type, content }
     }
 }
 
 impl File {
     pub fn new() -> File {
         File {
+            name: String::new(),
             headers: HashMap::new(),
             file_type: None,
             content: String::new()
@@ -46,6 +47,21 @@ impl File {
             self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
         }
 
+        if let Some(content_type) = self.headers.get("content-type") {
+            self.file_type = Some(content_type.to_string());
+        }
+        if let Some(content_disposition) = self.headers.get("content-disposition") {
+            for subheader in content_disposition.split("; ") {
+                let mut splitted_subheader = subheader.split("=");
+                if let Some(key) = splitted_subheader.next() {
+                    if key == "name" {
+                        let name = splitted_subheader.next().unwrap();
+                        let name = &name[1..name.len() -1];
+                        self.name = name.to_string();
+                    }
+                }
+            }
+        }
         for row in splitted_content {
             self.content += row;
             self.content += "\r\n";
@@ -98,7 +114,7 @@ pub fn convert_tex_file(tex_file: String) -> Result<String, PpdcError> {
     Ok(document_content)
 }
 
-pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<String, PpdcError> {
+pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<File, PpdcError> {
     if request.content_type.as_ref().unwrap() != &http::ContentType::FormData {
         return Err(PpdcError::new(404, error::ErrorType::ApiError, "Not multipart/form-data content type".to_string()));
     }
@@ -106,13 +122,16 @@ pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<S
     println!("Parts array : {:?}", parts_array);
     let mut file = File::new();
     file.decode_file(parts_array[1]).unwrap();
+
+    println!("{:?}", file);
     
-    convert_tex_file(file.content)
+    file.content = convert_tex_file(file.content).unwrap();
+    Ok(file)
 }
 
 pub fn post_file_conversion_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let file = parse_multipart_form_data_request_body(request)?;
-    let response = FileConversion::new("title".to_string(), None, Some(file));
+    let response = FileConversion::new(file.name, file.file_type, Some(file.content));
     HttpResponse::ok()
         .json(&response)
 }
@@ -139,8 +158,8 @@ pub fn parse_form_data_request(request: &HttpRequest) -> Result<String, PpdcErro
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
-    use std::io::{self, Read, BufReader};
+    use std::io::{Read, BufReader};
+    use encoding_rs::WINDOWS_1252;
 
     fn decode_form_data() {
         let request_txt = fs::read_to_string("test_data/form_data_request.txt").unwrap();
