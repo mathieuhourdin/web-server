@@ -2,7 +2,7 @@ use crate::router::route_request;
 use crate::entities::error::PpdcError;
 use regex::Regex;
 use crate::sessions_service;
-use crate::http::{HttpRequest, HttpResponse, StatusCode, Cookie};
+use crate::http::{HttpRequest, HttpResponse, StatusCode, cookies::Cookie};
 use crate::environment;
 
 pub async fn cors_middleware(request: &mut HttpRequest) -> HttpResponse {

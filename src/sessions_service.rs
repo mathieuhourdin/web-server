@@ -2,7 +2,7 @@ use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use serde::{Serialize, Deserialize};
 use serde_json;
 use crate::entities::{user::User, session::Session, session::NewSession, error::PpdcError};
-use crate::http::{CookieValue};
+use crate::http::cookies::CookieValue;
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
