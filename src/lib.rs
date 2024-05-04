@@ -5,8 +5,6 @@ use http::{HttpRequest, HttpResponse, StatusCode};
 use std::time::{Duration};
 use chrono::{Utc};
 use middlewares::cors_middleware;
-use encoding_rs::WINDOWS_1252;
-
 
 pub mod threadpool;
 pub mod entities;
@@ -57,28 +55,8 @@ pub async fn handle_connection(mut stream: TcpStream) {
             break;
         }
     }
-    let string_request = String::from_utf8(encoded_vector.clone());
 
-    let string_request = match string_request {
-        Err(err) => {
-            println!("Error during request utf8 decoding : {:#?}", err);
-            let (cow, _, had_errors) = WINDOWS_1252.decode(&encoded_vector);
-            if had_errors {
-                let response = HttpResponse::new(
-                    StatusCode::BadRequest,
-                    "handle_connection from_utf8 error : Unable to decode request".to_string());
-                stream.write_all(response.to_stream().as_bytes()).unwrap();
-                return;
-            } else {
-                cow.into_owned()
-            }
-        },
-        Ok(value) => value
-    };
-
-    println!("Request is : {string_request}");
-
-    let mut http_request = match HttpRequest::from(&string_request) {
+    let mut http_request = match HttpRequest::from_bytes(encoded_vector) {
         Ok(value) => value,
         Err(_) => {
             let response = HttpResponse::new(StatusCode::BadRequest, "invalid request".to_string());

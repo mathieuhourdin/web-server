@@ -75,11 +75,53 @@ impl HttpRequest {
         Ok(())
     }
 
-//    pub fn from_bytes(request_data: &[u8]) -> Result<HttpRequest, PpdcError> {
-//        let line_break_delimiter = b"\r\n";
-//        let line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter).unwrap();
-//        let first_line = request_data[..line_break_index];
-//    }
+    pub fn parse_headers(&mut self, headers_lines: String) -> Result<(), PpdcError> {
+
+        let mut headers_lines_iterator = headers_lines.split("\r\n");
+        dbg!(&headers_lines_iterator);
+        for row in &mut headers_lines_iterator {
+            let row = row.split(": ").collect::<Vec<&str>>();
+            self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+        }
+
+        if let Some(content_type) = self.headers.get("content-type") {
+            if *&content_type.len() >= 19 && &content_type[..19] == "multipart/form-data" {
+                self.content_type = Some(ContentType::FormData);
+                self.delimiter = Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
+            } else {
+                self.content_type = Some(ContentType::ApplicationJson);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn from_bytes(request_data: Vec<u8>) -> Result<HttpRequest, PpdcError> {
+        let mut request = HttpRequest::new("", "", "");
+        let line_break_delimiter = b"\r\n";
+        let first_line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter).unwrap();
+        let first_line = &request_data[..first_line_break_index];
+        let first_line = String::from_utf8(first_line.to_vec()).unwrap();
+        request.parse_request_first_line(first_line.as_str())?;
+        
+        let headers_end_delimiter = b"\r\n\r\n";
+        let header_end_index = request_data.windows(4).position(|w| w == headers_end_delimiter).unwrap();
+        let header_lines = &request_data[first_line_break_index+2..header_end_index];
+        let header_lines = String::from_utf8(header_lines.to_vec()).unwrap();
+        request.parse_headers(header_lines)?;
+
+        // TODO need to implement FormData case
+        if request.content_type == Some(ContentType::ApplicationJson) || true {
+            let body_string_result = String::from_utf8(request_data[header_end_index+4..].to_vec());
+            request.body = match body_string_result {
+                Err(_) => {
+                    return Err(PpdcError::new(404, ErrorType::ApiError, "handle_connection from_utf8 error : Unable to decode request".to_string()));
+                },
+                Ok(body) => body
+            }
+        }
+
+        Ok(request)
+    }
 
     pub fn from(request_string: &String) -> Result<HttpRequest, PpdcError> {
 
@@ -137,3 +179,35 @@ impl HttpRequest {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const request_string: &str = "POST /users HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nOrigin: http://localhost:5173\r\n\r\n{\"name\":\"mathieu\"}";
+    fn create_example_hashmap() -> HashMap<String, String> {
+        let mut hashmap = HashMap::new();
+        hashmap.insert("host".to_string(), "127.0.0.1:8080".to_string());
+        hashmap.insert("origin".to_string(), "http://localhost:5173".to_string());
+        hashmap
+    }
+
+    #[test]
+    fn test_request_encoding() {
+        let request_bytes = request_string.as_bytes();
+        let request = HttpRequest::from_bytes(request_bytes.to_vec()).unwrap();
+
+        let expected_headers = create_example_hashmap();
+        assert_eq!(request.method, "POST".to_string());
+        assert_eq!(request.path, "/users".to_string());
+        assert_eq!(request.headers, expected_headers);
+    }
+
+    #[test]
+    fn parse_header_from_string() {
+        let header_string = "Host: 127.0.0.1:8080\r\nOrigin: http://localhost:5173".to_string();
+        let expected_headers = create_example_hashmap();
+        let mut request = HttpRequest::new("", "", "");
+        request.parse_headers(header_string).unwrap();
+        assert_eq!(request.headers, expected_headers);
+    }
+}
