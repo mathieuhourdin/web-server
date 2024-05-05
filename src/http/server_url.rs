@@ -15,6 +15,7 @@ impl ServerUrl {
         ServerUrl { protocol, host, port }
     }
 
+    #[allow(dead_code)]
     pub fn to_string_url(&self) -> String {
         match &self.port {
             Some(value) => format!("{}://{}:{}", self.protocol, self.host, value),
