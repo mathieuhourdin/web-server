@@ -1,7 +1,7 @@
 use crate::entities::error::{self, PpdcError};
 use crate::http::{self, HttpRequest, HttpResponse};
 use serde::{Serialize, Deserialize};
-use crate::http::File;
+use crate::http::{File, FileType};
 
 mod tex;
 mod docx_to_spip;
@@ -23,20 +23,19 @@ pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<F
     if request.content_type.as_ref().unwrap() != &http::ContentType::FormData {
         return Err(PpdcError::new(404, error::ErrorType::ApiError, "Not multipart/form-data content type".to_string()));
     }
-    let parts_array = request.body.split(request.delimiter.as_ref().unwrap().as_str()).collect::<Vec<&str>>();
-    println!("Parts array : {:?}", parts_array);
-    let mut file = File::new();
-    file.decode_file(parts_array[1]).unwrap();
+    let mut file = request.files[0].clone();
 
-    println!("{:?}", file);
+    if file.file_type != Some(FileType::Tex) {
+        return Err(PpdcError::new(404, error::ErrorType::ApiError, "Not a tex file".to_string()));
+    }
     
-    file.content = tex::convert_tex_file(file.content).unwrap();
+    file.content = tex::convert_tex_file(file.content)?;
     Ok(file)
 }
 
 pub fn post_file_conversion_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let file = parse_multipart_form_data_request_body(request)?;
-    let response = FileConversion::new(file.name, file.file_type, Some(file.content));
+    let response = FileConversion::new(file.name, Some(file.file_type.unwrap().to_string()), Some(file.content));
     HttpResponse::ok()
         .json(&response)
 }

@@ -20,7 +20,8 @@ pub struct HttpRequest {
     pub cookies: Cookie,
     pub session: Option<Session>,
     pub content_type: Option<ContentType>,
-    pub delimiter: Option<String>
+    pub delimiter: Option<String>,
+    pub files: Vec<File>
 }
 
 fn decode_query_string(query_string: &str) -> HashMap<String, String> {
@@ -48,7 +49,8 @@ impl HttpRequest {
             cookies: Cookie { data: HashMap::new() },
             session: None,
             content_type: None,
-            delimiter: None
+            delimiter: None,
+            files: Vec::new()
         }
     }
 
@@ -97,6 +99,8 @@ impl HttpRequest {
 
     pub fn from_bytes(request_data: Vec<u8>) -> Result<HttpRequest, PpdcError> {
         let mut request = HttpRequest::new("", "", "");
+        let request_string = String::from_utf8(request_data.clone()).unwrap();
+        dbg!(request_string);
         let line_break_delimiter = b"\r\n";
         let first_line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter).unwrap();
         let first_line = &request_data[..first_line_break_index];
@@ -107,17 +111,58 @@ impl HttpRequest {
         let header_end_index = request_data.windows(4).position(|w| w == headers_end_delimiter).unwrap();
         let header_lines = &request_data[first_line_break_index+2..header_end_index];
         let header_lines = String::from_utf8(header_lines.to_vec()).unwrap();
+        dbg!(&header_lines);
         request.parse_headers(header_lines)?;
 
+        dbg!(header_end_index);
+        dbg!(request_data.len());
+        let body_bytes = request_data[header_end_index +4..].to_vec();
+
         // TODO need to implement FormData case
-        if request.content_type == Some(ContentType::ApplicationJson) || true {
-            let body_string_result = String::from_utf8(request_data[header_end_index+4..].to_vec());
+        if request.content_type == Some(ContentType::ApplicationJson) {
+            let body_string_result = String::from_utf8(body_bytes.to_vec());
             request.body = match body_string_result {
                 Err(_) => {
                     return Err(PpdcError::new(404, ErrorType::ApiError, "handle_connection from_utf8 error : Unable to decode request".to_string()));
                 },
                 Ok(body) => body
             }
+        } else if request.method.as_str() != "OPTIONS" && request.content_type == Some(ContentType::FormData) {
+            let multipart_delimiter_string = request.delimiter.as_ref().expect("Delimiter should be defined");
+
+            dbg!(&multipart_delimiter_string);
+
+            let multipart_delimiter = &multipart_delimiter_string.as_bytes();
+
+            dbg!(&multipart_delimiter);
+            dbg!(&body_bytes);
+            //dbg!(&request_data);
+
+            let multipart_end_delimiter = multipart_delimiter_string.to_owned() + "--";
+            let multipart_end_delimiter = multipart_end_delimiter.as_bytes();
+            let multipart_length = multipart_delimiter.len();
+
+            let multipart_content_start_index = body_bytes.windows(multipart_length)
+                .position(|w| w == *multipart_delimiter).expect("Should have at least one delimiter");
+            let multipart_content_end_index = body_bytes.windows(multipart_length +2)
+            .position(|w| w == multipart_end_delimiter).expect("Should have a end delimiter");
+            let mut multipart = &body_bytes[multipart_content_start_index + multipart_length..multipart_content_end_index];
+
+            loop {
+                let mut new_file = File::new();
+                if let Some(next_form_data_start_index) = multipart.windows(multipart_length).position(|w| &w == multipart_delimiter) {
+                    let form_data_binaries = &multipart[..next_form_data_start_index];
+                    new_file.decode_from_bytes(form_data_binaries.to_vec())?;
+                    request.files.push(new_file);
+                    multipart = &multipart[next_form_data_start_index + multipart_length..];
+                } else {
+                    let form_data_binaries = &multipart;
+                    new_file.decode_from_bytes(form_data_binaries.to_vec())?;
+                    request.files.push(new_file);
+                    break;
+                }
+            }
+            dbg!(&request);
         }
 
         Ok(request)
