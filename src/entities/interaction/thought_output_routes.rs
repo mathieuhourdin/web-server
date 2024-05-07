@@ -29,6 +29,7 @@ pub fn get_thought_outputs_for_user(user_id: &str, request: &HttpRequest) -> Res
             .filter(interactions::interaction_type.eq("outp"))
             .filter(interactions::interaction_user_id.eq(user_id)).into_boxed(),
         draft_value,
+        "fnsh",
         "all"
 
     )?;

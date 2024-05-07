@@ -15,6 +15,7 @@ pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Resu
             .filter(interactions::interaction_user_id.eq(user_id))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
         "pbsh",
+        "fnsh",
         "all"
 
     )?;
@@ -31,6 +32,7 @@ pub fn get_thought_inputs(request: &HttpRequest) -> Result<HttpResponse, PpdcErr
             .filter(interactions::interaction_type.eq("inpt"))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
         "pbsh",
+        "fnsh",
         "all"
     )?;
     HttpResponse::ok()

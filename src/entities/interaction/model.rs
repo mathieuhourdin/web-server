@@ -7,6 +7,23 @@ use crate::schema::*;
 use diesel;
 use crate::entities::{error::{PpdcError}, user::User, resource::{Resource, NewResource}};
 
+//TODO integrate in interaction
+pub enum InteractionType {
+    Output,
+    Input,
+    Review
+}
+
+impl InteractionType {
+    pub fn to_string(self) -> String {
+        match self {
+            InteractionType::Output => "outp",
+            InteractionType::Input => "inpt",
+            InteractionType::Review => "rvew",
+        }.to_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=interactions)]
 pub struct Interaction {
@@ -65,7 +82,7 @@ pub struct NewInteraction {
 
 impl Interaction {
 
-    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>, resource_publishing_state: &str, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
+    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>, resource_publishing_state: &str, resource_maturing_state: &str, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
         let mut conn = db::establish_connection();
 
@@ -73,7 +90,8 @@ impl Interaction {
             .offset(offset)
             .limit(limit)
             .inner_join(resources::table)
-            .filter(resources::publishing_state.eq(resource_publishing_state));
+            .filter(resources::publishing_state.eq(resource_publishing_state))
+            .filter(resources::maturing_state.eq(resource_maturing_state));
         if resource_type != "all" {
             query = query
             .filter(resources::resource_type.eq(resource_type));
@@ -100,6 +118,7 @@ impl Interaction {
             limit,
             Interaction::filter_outputs(),
             "pbsh",
+            "fnsh",
             resource_type
         )
     }
@@ -110,6 +129,7 @@ impl Interaction {
             Interaction::filter_outputs()
                 .filter(interactions::interaction_user_id.eq(user_id)),
             "drft",
+            "fnsh",
             resource_type
             )
     }

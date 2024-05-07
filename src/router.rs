@@ -37,6 +37,7 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
         ("POST", ["resources", id, "interactions"]) => interaction::post_interaction_for_resource(id, &request),
         ("GET", ["resources", id, "interactions"]) => interaction::get_interactions_for_resource_route(id, &request),
+        ("GET", ["interactions"]) => interaction::get_interactions(&request),
         ("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
         ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         ("POST", ["resources"]) => resource::post_resource_route(&request),

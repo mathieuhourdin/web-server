@@ -20,6 +20,40 @@ pub fn post_interaction_for_resource(resource_id: &str, request: &HttpRequest) -
     HttpResponse::ok()
         .json(&interaction.create()?)
 }
+
+pub fn get_interactions(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let user_id = request.session.as_ref().unwrap().user_id;
+    if user_id.is_none() {
+        return Ok(HttpResponse::unauthorized());
+    }
+    let interaction_type = request.query.get("interaction_type").map(|value| &value[..]).unwrap_or("inpt");
+    let mut maturing_state = "fnsh";
+    let interactions_filtered;
+    if interaction_type == "rvew" {
+        maturing_state = "rvew";
+        interactions_filtered = interactions::table
+            .filter(interactions::interaction_type.eq(interaction_type))
+            .filter(interactions::interaction_is_public.eq(true))
+            .filter(interactions::interaction_user_id.eq(user_id.unwrap())).into_boxed();
+    } else {
+        interactions_filtered = interactions::table
+            .filter(interactions::interaction_type.eq(interaction_type))
+            .filter(interactions::interaction_is_public.eq(true)).into_boxed();
+    }
+    let (offset, limit) = request.get_pagination();
+    let interactions = Interaction::load_paginated(
+        offset,
+        limit, 
+        interactions_filtered,
+        "pbsh",
+        maturing_state,
+        "all"
+
+    )?;
+    HttpResponse::ok()
+        .json(&interactions)
+
+}
     
 pub fn put_interaction_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
@@ -43,6 +77,7 @@ pub fn get_interactions_for_resource_route(resource_id: &str, request: &HttpRequ
             .filter(interactions::resource_id.eq(resource_id))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
         "pbsh",
+        "fnsh",
         "all"
     )?;
     HttpResponse::ok()
