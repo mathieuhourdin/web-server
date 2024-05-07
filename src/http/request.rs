@@ -99,8 +99,6 @@ impl HttpRequest {
 
     pub fn from_bytes(request_data: Vec<u8>) -> Result<HttpRequest, PpdcError> {
         let mut request = HttpRequest::new("", "", "");
-        let request_string = String::from_utf8(request_data.clone()).unwrap();
-        dbg!(request_string);
         let line_break_delimiter = b"\r\n";
         let first_line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter).unwrap();
         let first_line = &request_data[..first_line_break_index];
