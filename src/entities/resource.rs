@@ -7,6 +7,7 @@ use diesel;
 use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
+use resource_type::ResourceType;
 
 pub mod resource_type;
 
@@ -20,7 +21,7 @@ pub struct Resource {
     pub external_content_url: Option<String>,
     pub comment: Option<String>,
     pub image_url: Option<String>,
-    pub resource_type: String,
+    pub resource_type: ResourceType,
     pub maturing_state: String,
     pub publishing_state: String,
     pub category_id: Option<Uuid>,
@@ -38,7 +39,7 @@ pub struct NewResource {
     pub external_content_url: Option<String>,
     pub comment: Option<String>,
     pub image_url: Option<String>,
-    pub resource_type: Option<String>,
+    pub resource_type: Option<ResourceType>,
     pub maturing_state: Option<String>,
     pub publishing_state: Option<String>,
     pub category_id: Option<Uuid>,

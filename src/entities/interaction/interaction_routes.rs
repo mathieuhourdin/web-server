@@ -27,10 +27,10 @@ pub fn get_interactions(request: &HttpRequest) -> Result<HttpResponse, PpdcError
         return Ok(HttpResponse::unauthorized());
     }
     let interaction_type = request.query.get("interaction_type").map(|value| &value[..]).unwrap_or("inpt");
-    let mut maturing_state = "fnsh";
+    let maturing_state = request.query.get("maturing_state").map(|value| &value[..]).unwrap_or("fnsh");
+    //let mut maturing_state = "fnsh";
     let interactions_filtered;
-    if interaction_type == "rvew" {
-        maturing_state = "rvew";
+    if interaction_type == "rvew" || interaction_type == "outp" && maturing_state == "idea" {
         interactions_filtered = interactions::table
             .filter(interactions::interaction_type.eq(interaction_type))
             .filter(interactions::interaction_is_public.eq(true))

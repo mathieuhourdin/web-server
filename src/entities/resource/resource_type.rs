@@ -1,32 +1,50 @@
 use serde::{Serialize, Serializer, Deserialize};
 use serde::de::{self, Deserializer};
 use crate::entities::error::{PpdcError, ErrorType};
+use diesel::deserialize::{self, FromSql};
+use diesel::serialize::{self, Output, ToSql};
+use diesel::backend::Backend;
+use diesel::pg::Pg;
+use diesel::sql_types::Text;
+use diesel::pg::PgValue;
+use diesel::FromSqlRow;
+use diesel::AsExpression;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Copy, AsExpression, PartialEq, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
 pub enum ResourceType {
     Book,
     ReadingNote,
     ResourceList,
+    Problem,
     ResearchArticle,
     NewsArticle,
+    OpinionArticle,
     Movie,
     Video,
     Podcast,
-    Song
+    Song,
+    Course,
+    Idea
 }
 
 impl ResourceType {
     pub fn from_code(code: &str) -> Result<ResourceType, PpdcError> {
+        dbg!(code);
         match code {
             "book" => Ok(ResourceType::Book),
             "rdnt" => Ok(ResourceType::ReadingNote),
             "list" => Ok(ResourceType::ResourceList),
+            "pblm" => Ok(ResourceType::Problem),
             "ratc" => Ok(ResourceType::ResearchArticle),
             "natc" => Ok(ResourceType::NewsArticle),
+            "oatc" => Ok(ResourceType::OpinionArticle),
             "movi" => Ok(ResourceType::Movie),
             "vide" => Ok(ResourceType::Video),
             "pcst" => Ok(ResourceType::Podcast),
             "song" => Ok(ResourceType::Song),
+            "curs" => Ok(ResourceType::Course),
+            "idea" => Ok(ResourceType::Idea),
             &_ => return Err(PpdcError::new(404, ErrorType::ApiError, "resource_type not found".to_string()))
         }
     }
@@ -35,12 +53,16 @@ impl ResourceType {
             ResourceType::Book => "book",
             ResourceType::ReadingNote => "rdnt",
             ResourceType::ResourceList => "list",
+            ResourceType::Problem => "pblm",
             ResourceType::ResearchArticle => "ratc",
             ResourceType::NewsArticle => "natc",
+            ResourceType::OpinionArticle => "oatc",
             ResourceType::Movie => "movi",
             ResourceType::Video => "vide",
             ResourceType::Podcast => "pcst",
-            ResourceType::Song => "song"
+            ResourceType::Song => "song",
+            ResourceType::Course => "curs",
+            ResourceType::Idea => "idea"
         }
     }
     pub fn from_opengraph_code(og_code: &str) -> Option<ResourceType> {
@@ -69,6 +91,23 @@ impl<'de> Deserialize<'de> for ResourceType {
         let s = String::deserialize(deserializer)?;
         ResourceType::from_code(&s)
             .map_err(|_err| de::Error::custom("unknown resource_type"))
+    }
+}
+
+impl ToSql<Text, Pg> for ResourceType {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
+    }
+}
+
+impl<DB> FromSql<Text, DB> for ResourceType 
+where
+    DB: for<'b> Backend<RawValue<'b> = PgValue<'b>>,
+    String: ToSql<Text, diesel::pg::Pg>,
+{
+    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> 
+    {
+        Ok(ResourceType::from_code(String::from_sql(bytes)?.as_str()).unwrap())
     }
 }
 
