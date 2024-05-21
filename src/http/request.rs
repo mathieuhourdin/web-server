@@ -83,7 +83,9 @@ impl HttpRequest {
         dbg!(&headers_lines_iterator);
         for row in &mut headers_lines_iterator {
             let row = row.split(": ").collect::<Vec<&str>>();
-            self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+            if row.len() > 1 {
+                self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+            }
         }
 
         if let Some(content_type) = self.headers.get("content-type") {
@@ -114,7 +116,12 @@ impl HttpRequest {
         
         let headers_end_delimiter = b"\r\n\r\n";
         let header_end_index = request_data.windows(4).position(|w| w == headers_end_delimiter).unwrap();
-        let header_lines = &request_data[first_line_break_index+2..header_end_index];
+        let header_lines: &[u8];
+        if first_line_break_index == header_end_index {
+            header_lines = &[];
+        } else {
+            header_lines = &request_data[first_line_break_index+2..header_end_index];
+        }
         let header_lines = String::from_utf8(header_lines.to_vec()).unwrap();
         dbg!(&header_lines);
         request.parse_headers(header_lines)?;
@@ -259,5 +266,22 @@ mod tests {
         let mut request = HttpRequest::new("", "", "");
         request.parse_headers(header_string).unwrap();
         assert_eq!(request.headers, expected_headers);
+    }
+
+    #[test]
+    fn parse_empty_request() {
+        let empty_request_string = "";
+        let request_bytes = empty_request_string.as_bytes();
+        let request = HttpRequest::from_bytes(request_bytes.to_vec());
+        match request {
+            PpdcError => (),
+            HttpRequest => panic!("should be an error")
+        }
+    }
+
+    #[test]
+    fn parse_request_with_no_body() {
+        let no_body_request_string: &str = "POST /users HTTP/1.1\r\n\r\n";
+        let request = HttpRequest::from_bytes(no_body_request_string.as_bytes().to_vec()).unwrap();
     }
 }
