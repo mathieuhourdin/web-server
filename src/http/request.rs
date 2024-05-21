@@ -100,7 +100,14 @@ impl HttpRequest {
     pub fn from_bytes(request_data: Vec<u8>) -> Result<HttpRequest, PpdcError> {
         let mut request = HttpRequest::new("", "", "");
         let line_break_delimiter = b"\r\n";
-        let first_line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter).unwrap();
+        let first_line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter);
+
+        if first_line_break_index.is_none() {
+            return Err(PpdcError::new(404, ErrorType::ApiError, "Not enougth lines in request".to_string()));
+        }
+
+        let first_line_break_index = first_line_break_index.unwrap();
+
         let first_line = &request_data[..first_line_break_index];
         let first_line = String::from_utf8(first_line.to_vec()).unwrap();
         request.parse_request_first_line(first_line.as_str())?;
