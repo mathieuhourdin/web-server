@@ -3,6 +3,7 @@ use diesel::prelude::*;
 use super::model::*;
 use crate::entities::{error::{PpdcError}};
 use crate::http::{HttpRequest, HttpResponse};
+use crate::entities::resource::MaturingState;
 
 pub fn get_thought_inputs_for_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let user_id = HttpRequest::parse_uuid(user_id)?;
@@ -52,7 +53,7 @@ pub fn post_thought_input_route(request: &HttpRequest) -> Result<HttpResponse, P
     }
     let NewInteractionWithNewResource { mut interaction, mut resource } = serde_json::from_str::<NewInteractionWithNewResource>(&request.body[..])?;
 
-    resource.maturing_state = Some("fnsh".to_string());
+    resource.maturing_state = Some(MaturingState::Finished);
     resource.publishing_state = Some("pbsh".to_string());
     resource.is_external = Some(true);
 

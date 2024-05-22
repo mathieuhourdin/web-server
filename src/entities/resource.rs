@@ -8,8 +8,10 @@ use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 use resource_type::ResourceType;
+pub use maturing_state::MaturingState;
 
 pub mod resource_type;
+pub mod maturing_state;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name=resources)]
@@ -22,7 +24,7 @@ pub struct Resource {
     pub comment: Option<String>,
     pub image_url: Option<String>,
     pub resource_type: ResourceType,
-    pub maturing_state: String,
+    pub maturing_state: MaturingState,
     pub publishing_state: String,
     pub category_id: Option<Uuid>,
     pub is_external: bool,
@@ -40,7 +42,7 @@ pub struct NewResource {
     pub comment: Option<String>,
     pub image_url: Option<String>,
     pub resource_type: Option<ResourceType>,
-    pub maturing_state: Option<String>,
+    pub maturing_state: Option<MaturingState>,
     pub publishing_state: Option<String>,
     pub category_id: Option<Uuid>,
     pub is_external: Option<bool>,

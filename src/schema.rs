@@ -97,7 +97,7 @@ diesel::table! {
         profile_picture_url -> Nullable<Text>,
         is_platform_user -> Bool,
         biography -> Nullable<Text>,
-        pseudonym -> Nullable<Text>,
+        pseudonym -> Text,
         pseudonymized -> Bool,
     }
 }

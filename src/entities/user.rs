@@ -26,8 +26,72 @@ pub struct User {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
-    pub pseudonym: Option<String>,
+    pub pseudonym: String,
+    pub pseudonymized: bool
+}
+
+#[derive(Serialize)]
+pub struct UserPseudonymizedAuthentifiedResponse {
+    pub id: Uuid,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub handle: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: Option<NaiveDateTime>,
+    pub profile_picture_url: Option<String>,
+    pub is_platform_user: bool,
+    pub biography: Option<String>,
     pub pseudonymized: bool,
+    pub display_name: String
+}
+
+impl From<&User> for UserPseudonymizedAuthentifiedResponse {
+    fn from(user: &User) -> Self {
+        UserPseudonymizedAuthentifiedResponse { 
+            id: user.id.clone(),
+            email: user.email.clone(),
+            first_name: user.first_name.clone(),
+            last_name: user.last_name.clone(),
+            handle: user.handle.clone(),
+            created_at: user.created_at.clone(),
+            updated_at: user.updated_at.clone(),
+            profile_picture_url: user.profile_picture_url.clone(),
+            is_platform_user: user.is_platform_user.clone(),
+            biography: user.biography.clone(),
+            pseudonymized: user.pseudonymized.clone(),
+            display_name: if user.pseudonymized { user.pseudonym.clone() } else { user.first_name.clone() + " " + user.last_name.as_str() }
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct UserPseudonymizedResponse {
+    pub id: Uuid,
+    pub handle: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: Option<NaiveDateTime>,
+    pub profile_picture_url: Option<String>,
+    pub is_platform_user: bool,
+    pub biography: Option<String>,
+    pub pseudonymized: bool,
+    pub display_name: String
+}
+
+impl From<&User> for UserPseudonymizedResponse {
+    fn from(user: &User) -> Self {
+        UserPseudonymizedResponse {
+            id: user.id.clone(),
+            handle: user.handle.clone(),
+            created_at: user.created_at.clone(),
+            updated_at: user.updated_at.clone(),
+            profile_picture_url: user.profile_picture_url.clone(),
+            is_platform_user: user.is_platform_user.clone(),
+            biography: user.biography.clone(),
+            pseudonymized: user.pseudonymized.clone(),
+            display_name: if user.pseudonymized { user.pseudonym.clone() } else { user.first_name.clone() + " " + user.last_name.as_str() }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Insertable, AsChangeset)]
@@ -120,10 +184,13 @@ pub fn get_users(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let (offset, limit) = request.get_pagination();
     let mut conn = db::establish_connection();
 
-    let results = users::table.into_boxed()
+    let results: Vec<UserPseudonymizedResponse> = users::table.into_boxed()
         .offset(offset)
         .limit(limit)
-        .load::<User>(&mut conn)?;
+        .load::<User>(&mut conn)?
+        .iter()
+        .map(UserPseudonymizedResponse::from)
+        .collect();
     HttpResponse::ok()
         .json(&results)
 }
@@ -151,14 +218,23 @@ pub fn put_user_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, P
         .json(&new_user.update(&id)?)
 }
 
-pub fn get_user(user_uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+pub fn get_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     if request.session.as_ref().unwrap().user_id.is_none() {
         println!("get_user_by_uuid invalid session, session id : {:#?}", request.session.as_ref().unwrap().id);
         return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
     }
     println!("get_user_by_uuid valid session id : {:#?}", request.session.as_ref().unwrap().id);
-    HttpResponse::ok()
-        .json(&User::find(&HttpRequest::parse_uuid(user_uuid)?)?)
+    let user_id = HttpRequest::parse_uuid(user_id)?;
+    let user = User::find(&user_id)?;
+    if request.session.as_ref().unwrap().user_id.unwrap() == user_id {
+        let user_response = UserPseudonymizedAuthentifiedResponse::from(&user);
+        HttpResponse::ok()
+            .json(&user_response)
+    } else {
+        let user_response = UserPseudonymizedResponse::from(&user);
+        HttpResponse::ok()
+            .json(&user_response)
+    }
 }
 
 #[cfg(test)]
