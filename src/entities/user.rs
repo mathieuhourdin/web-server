@@ -25,7 +25,9 @@ pub struct User {
     pub updated_at: Option<NaiveDateTime>,
     pub profile_picture_url: Option<String>,
     pub is_platform_user: bool,
-    pub biography: Option<String>
+    pub biography: Option<String>,
+    pub pseudonym: Option<String>,
+    pub pseudonymized: bool,
 }
 
 #[derive(Serialize, Deserialize, Insertable, AsChangeset)]
@@ -38,7 +40,9 @@ pub struct NewUser {
     pub password: Option<String>,
     pub profile_picture_url: Option<String>,
     pub is_platform_user: Option<bool>,
-    pub biography: Option<String>
+    pub biography: Option<String>,
+    pub pseudonym: Option<String>,
+    pub pseudonymized: Option<bool>
 }
 
 impl NewUser {
@@ -171,7 +175,9 @@ mod tests {
             password: Some(String::from("password")),
             profile_picture_url: None,
             is_platform_user: None,
-            biography: None
+            biography: None,
+            pseudonym: None,
+            pseudonymized: Some(false)
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

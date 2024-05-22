@@ -1,4 +1,4 @@
-use docx_rs::{Docx, Document, DocumentChild, ParagraphChild, RunChild};
+use docx_rs::{Docx, DocumentChild, ParagraphChild, RunChild};
 use crate::http::File;
 
 pub fn docx_to_spip(docx: Docx) -> String {
