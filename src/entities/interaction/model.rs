@@ -82,7 +82,7 @@ pub struct NewInteraction {
 
 impl Interaction {
 
-    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>, resource_publishing_state: &str, resource_maturing_state: &str, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
+    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>, resource_maturing_state: &str, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
         let mut conn = db::establish_connection();
 
@@ -90,7 +90,6 @@ impl Interaction {
             .offset(offset)
             .limit(limit)
             .inner_join(resources::table)
-            .filter(resources::publishing_state.eq(resource_publishing_state))
             .filter(resources::maturing_state.eq(resource_maturing_state));
         if resource_type != "all" {
             query = query
@@ -117,7 +116,6 @@ impl Interaction {
             offset,
             limit,
             Interaction::filter_outputs(),
-            "pbsh",
             "fnsh",
             resource_type
         )
@@ -129,7 +127,6 @@ impl Interaction {
             Interaction::filter_outputs()
                 .filter(interactions::interaction_user_id.eq(user_id)),
             "drft",
-            "fnsh",
             resource_type
             )
     }

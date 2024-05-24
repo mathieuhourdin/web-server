@@ -28,9 +28,10 @@ pub fn get_interactions(request: &HttpRequest) -> Result<HttpResponse, PpdcError
     }
     let interaction_type = request.query.get("interaction_type").map(|value| &value[..]).unwrap_or("inpt");
     let maturing_state = request.query.get("maturing_state").map(|value| &value[..]).unwrap_or("fnsh");
-    //let mut maturing_state = "fnsh";
-    let interactions_filtered;
-    if interaction_type == "rvew" || interaction_type == "outp" && maturing_state == "idea" {
+    let interaction_user_id = request.query.get("interaction_user_id");
+
+    let mut interactions_filtered;
+    if interaction_type == "rvew" || interaction_type == "outp" && maturing_state == "drft" {
         interactions_filtered = interactions::table
             .filter(interactions::interaction_type.eq(interaction_type))
             .filter(interactions::interaction_is_public.eq(true))
@@ -40,12 +41,15 @@ pub fn get_interactions(request: &HttpRequest) -> Result<HttpResponse, PpdcError
             .filter(interactions::interaction_type.eq(interaction_type))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed();
     }
+    if let Some(interaction_user_id) = interaction_user_id {
+        let interaction_user_id = HttpRequest::parse_uuid(interaction_user_id)?;
+        interactions_filtered = interactions_filtered.filter(interactions::interaction_user_id.eq(interaction_user_id));
+    }
     let (offset, limit) = request.get_pagination();
     let interactions = Interaction::load_paginated(
         offset,
         limit, 
         interactions_filtered,
-        "pbsh",
         maturing_state,
         "all"
 
@@ -76,7 +80,6 @@ pub fn get_interactions_for_resource_route(resource_id: &str, request: &HttpRequ
         interactions::table
             .filter(interactions::resource_id.eq(resource_id))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
-        "pbsh",
         "fnsh",
         "all"
     )?;

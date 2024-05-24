@@ -136,33 +136,30 @@ pub fn get_resource_route(id: &str, _request: &HttpRequest) -> Result<HttpRespon
     HttpResponse::ok().json(&Resource::find(id)?)
 }
 
-pub fn get_external_resources_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+pub fn get_resources_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+    let is_external = request.query.get("is_external").map(|value| &value[..]).unwrap_or("false");
+    let resource_type = request.query.get("resource_type").map(|value| &value[..]).unwrap_or("all");
     let (offset, limit) = request.get_pagination();
 
     let mut conn = db::establish_connection();
 
-    let results = resources::table.into_boxed()
-        .filter(resources::is_external.eq(true))
+    let mut query = resources::table
         .offset(offset)
         .limit(limit)
-        .load::<Resource>(&mut conn)?;
-    HttpResponse::ok()
-        .json(&results)
-}
-
-pub fn get_internal_resources_route(request: &HttpRequest, filter: &str) -> Result<HttpResponse, PpdcError> {
-    let (offset, limit) = request.get_pagination();
-
-    let mut conn = db::establish_connection();
-
-    let results = resources::table.into_boxed()
-        .filter(resources::is_external.eq(false))
-        .filter(resources::resource_type.eq(filter))
-        .filter(resources::publishing_state.eq("pbsh"))
         .order(resources::updated_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .load::<Resource>(&mut conn)?;
+        .filter(resources::maturing_state.eq("fnsh"))
+        .into_boxed();
+
+    if is_external == "false" {
+        query = query.filter(resources::is_external.eq(false));
+    } else {
+        query = query.filter(resources::is_external.eq(true));
+    }
+    if resource_type == "pblm" {
+        query = query.filter(resources::resource_type.eq("pblm"));
+    }
+    let results = query.load::<Resource>(&mut conn)?;
+
     HttpResponse::ok()
         .json(&results)
 }
