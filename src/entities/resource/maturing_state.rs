@@ -15,7 +15,8 @@ use diesel::AsExpression;
 pub enum MaturingState {
     Draft,
     Review,
-    Finished
+    Finished,
+    Trashed
 }
 
 impl MaturingState {
@@ -25,6 +26,7 @@ impl MaturingState {
             "drft" => Ok(MaturingState::Draft),
             "rvew" => Ok(MaturingState::Review),
             "fnsh" => Ok(MaturingState::Finished),
+            "trsh" => Ok(MaturingState::Trashed),
             &_ => return Err(PpdcError::new(404, ErrorType::ApiError, "maturing_state not found".to_string()))
         }
     }
@@ -33,6 +35,7 @@ impl MaturingState {
             MaturingState::Draft => "drft",
             MaturingState::Review => "rvew",
             MaturingState::Finished => "fnsh",
+            MaturingState::Trashed => "trsh"
         }
     }
 }
