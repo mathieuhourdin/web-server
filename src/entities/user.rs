@@ -226,7 +226,7 @@ pub fn get_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, Pp
     println!("get_user_by_uuid valid session id : {:#?}", request.session.as_ref().unwrap().id);
     let user_id = HttpRequest::parse_uuid(user_id)?;
     let user = User::find(&user_id)?;
-    if request.session.as_ref().unwrap().user_id.unwrap() == user_id {
+    if !user.is_platform_user || request.session.as_ref().unwrap().user_id.unwrap() == user_id {
         let user_response = UserPseudonymizedAuthentifiedResponse::from(&user);
         HttpResponse::ok()
             .json(&user_response)
