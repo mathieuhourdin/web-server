@@ -24,6 +24,11 @@ pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<F
         return Err(PpdcError::new(404, error::ErrorType::ApiError, "Not multipart/form-data content type".to_string()));
     }
     let target_format: String = request.query.get("target_format").unwrap_or(&"ppdc".to_string()).to_string();
+    let remove_line_breaks: bool = match request.query.get("remove_line_breaks").unwrap_or(&"true".to_string()).as_str() {
+        "false" => false,
+        "true" => true,
+        _ => false
+    };
     let mut file = request.files[0].clone();
 
     if file.file_type == Some(FileType::Docx) {
@@ -32,7 +37,7 @@ pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<F
     if &target_format == "ppdc" && file.file_type == Some(FileType::Tex) {
         file.content = tex::convert_tex_file(file.content)?;
     } else if &target_format == "spip" && file.file_type == Some(FileType::Docx) {
-        file.content = docx_to_spip::handle_file_conversion(&file);
+        file.content = docx_to_spip::handle_file_conversion(&file, remove_line_breaks);
     }
     Ok(file)
 }
