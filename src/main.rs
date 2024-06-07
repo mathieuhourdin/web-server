@@ -9,7 +9,7 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 #[tokio::main]
 async fn main() {
     let listener = TcpListener::bind("0.0.0.0:8080").unwrap();
-    let pool = ThreadPool::new(4);
+    let pool = ThreadPool::new(8);
 
     let mut connection = db::establish_connection();
     connection.run_pending_migrations(MIGRATIONS).expect("should run migrations if any");

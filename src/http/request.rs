@@ -3,6 +3,7 @@ use crate::entities::error::{PpdcError, ErrorType};
 use uuid::Uuid;
 use super::*;
 use crate::entities::session::Session;
+use chrono::{Utc, NaiveDateTime};
 
 #[derive(Debug, PartialEq)]
 pub enum ContentType {
@@ -21,7 +22,9 @@ pub struct HttpRequest {
     pub session: Option<Session>,
     pub content_type: Option<ContentType>,
     pub delimiter: Option<String>,
-    pub files: Vec<File>
+    pub files: Vec<File>,
+    pub created_at: NaiveDateTime,
+    pub received_at: Option<NaiveDateTime>
 }
 
 fn decode_query_string(query_string: &str) -> HashMap<String, String> {
@@ -50,7 +53,9 @@ impl HttpRequest {
             session: None,
             content_type: None,
             delimiter: None,
-            files: Vec::new()
+            files: Vec::new(),
+            created_at: Utc::now().naive_utc(),
+            received_at: None
         }
     }
 
@@ -219,6 +224,10 @@ impl HttpRequest {
         println!("Request : {:?}", request);
 
         Ok(request)
+    }
+
+    pub fn set_received_at(&mut self, received_at: NaiveDateTime) -> () {
+        self.received_at = Some(received_at);
     }
 
     pub fn parsed_path(&self) -> Vec<&str> {

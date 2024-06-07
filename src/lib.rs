@@ -34,8 +34,6 @@ pub async fn handle_connection(mut stream: TcpStream) {
     loop {
         let mut buffer = [0; 1024];
 
-        thread::sleep(Duration::from_millis(10));
-
         let read_bytes = stream.read(&mut buffer);
 
         let read_bytes = match read_bytes {
@@ -53,6 +51,8 @@ pub async fn handle_connection(mut stream: TcpStream) {
 
         if read_bytes < 1024 {
             break;
+        } else {
+            thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -66,8 +66,19 @@ pub async fn handle_connection(mut stream: TcpStream) {
         },
     };
 
+    http_request.set_received_at(current_time);
 
-    let http_response: HttpResponse = cors_middleware(&mut http_request).await;
+    let request_created_at = http_request.created_at;
+    let request_received_at = http_request.received_at.unwrap();
+
+    let http_response: &mut HttpResponse = &mut cors_middleware(&mut http_request).await;
+
+    let end_time = Utc::now().naive_utc();
+
+    http_response.headers.insert("time_from_reception".to_string(), (end_time - request_received_at).num_milliseconds().to_string() + "ms");
+    http_response.headers.insert("time_from_request_creation".to_string(), (end_time - request_created_at).num_milliseconds().to_string() + "ms");
+
+
 
     let response = http_response.to_stream(); 
     stream.write_all(response.as_bytes()).unwrap();
