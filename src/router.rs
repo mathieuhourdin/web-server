@@ -1,3 +1,10 @@
+use axum::{
+    response::IntoResponse,
+    routing::{get, post, Router},
+    extract::{Query, Json},
+    debug_handler,
+};
+
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use crate::entities::{user::self,
     interaction::{thought_output_routes as thought_output, thought_input_routes as thought_input, interaction_routes as interaction},
@@ -10,6 +17,21 @@ use crate::file_converter;
 use crate::entities::resource_relation;
 use crate::entities::category;
 use crate::link_preview;
+
+
+pub fn create_router() -> Router {
+    let resources_router = Router::new()
+        .route("/", get(root_route));
+    Router::new()
+        .route("/", get(root_route))
+        .nest("/resources", resources_router)
+}
+
+// Handler for the root path
+async fn root_route() -> &'static str {
+    println!("Error");
+    "Welcome to the Axum server!"
+}
 
 pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
     let session_id = &request.session.as_ref().unwrap().id;

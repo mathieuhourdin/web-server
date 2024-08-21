@@ -18,18 +18,11 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 #[tokio::main]
 async fn main() {
 
-    let app = Router::new()
-        .route("/", get(root_route));
+    let app = web_server::router::create_router();
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
     let mut connection = db::establish_connection();
     connection.run_pending_migrations(MIGRATIONS).expect("should run migrations if any");
-}
-
-// Handler for the root path
-async fn root_route() -> &'static str {
-    println!("Error");
-    "Welcome to the Axum server!"
 }
