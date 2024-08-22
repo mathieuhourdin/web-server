@@ -20,12 +20,12 @@ use crate::link_preview;
 
 
 pub fn create_router() -> Router {
-    let resources_router = Router::new()
-        .route("/", get(root_route));
+    let users_router = Router::new()
+        .route("/", get(user::get_users));
 
     Router::new()
         .route("/", get(root_route))
-        .nest("/resources", resources_router)
+        .nest("/users", users_router)
 }
 
 // Handler for the root path
@@ -39,9 +39,8 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
     println!("Request with session id : {session_id}");
     match (&request.method[..], &request.parsed_path()[..]) {
         ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
-        ("GET", ["mathilde"]) => HttpResponse::from_file(StatusCode::Ok, "mathilde.html"),
         ("GET", ["users", id]) => user::get_user(id, &request),
-        ("GET", ["users"]) => user::get_users(&request),
+        //("GET", ["users"]) => user::get_users(&request),
         ("POST", ["users"]) => user::post_user(&request),
         ("GET", ["users", id, "thought_inputs"]) => thought_input::get_thought_inputs_for_user(id, &request),
         ("GET", ["users", id, "thought_outputs"]) => thought_output::get_thought_outputs_for_user(id, &request),
@@ -76,7 +75,6 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("GET", ["thought_inputs"]) => thought_input::get_thought_inputs(&request),
         ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
         ("POST", ["link_preview"]) => link_preview::post_preview_route(&request).await,
-        ("GET", ["create-article"]) => HttpResponse::from_file(StatusCode::Ok, "create-article.html"),
         ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("POST", ["file_conversion"]) => file_converter::post_file_conversion_route(&request),
         _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")

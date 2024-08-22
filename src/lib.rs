@@ -11,3 +11,4 @@ pub mod middlewares;
 pub mod link_preview;
 pub mod file_converter;
 pub mod handle_connexion;
+pub mod pagination;

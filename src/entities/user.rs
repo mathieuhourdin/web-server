@@ -1,7 +1,9 @@
 use serde::{Serialize, Deserialize};
+use axum::{debug_handler, extract::{Query, Json}, http::StatusCode as AxumStatusCode, response::IntoResponse};
 use argon2::{Config};
 use rand::Rng;
 use crate::entities::error::{PpdcError, ErrorType};
+use crate::pagination::PaginationParams;
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use diesel::prelude::*;
 use uuid::Uuid;
@@ -180,19 +182,20 @@ impl User {
     }
 }
 
-pub fn get_users(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let (offset, limit) = request.get_pagination();
+#[debug_handler]
+pub async fn get_users(Query(params): Query<PaginationParams>) -> impl IntoResponse {
+
     let mut conn = db::establish_connection();
 
     let results: Vec<UserPseudonymizedResponse> = users::table.into_boxed()
-        .offset(offset)
-        .limit(limit)
-        .load::<User>(&mut conn)?
+        .offset(params.offset())
+        .limit(params.limit())
+        .load::<User>(&mut conn)
+        .unwrap()
         .iter()
         .map(UserPseudonymizedResponse::from)
         .collect();
-    HttpResponse::ok()
-        .json(&results)
+    (AxumStatusCode::OK, Json(results))
 }
 
 pub fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
