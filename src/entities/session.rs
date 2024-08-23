@@ -8,7 +8,7 @@ use diesel;
 use crate::entities::error::{PpdcError};
 use axum::{async_trait, http::{StatusCode, request::Parts}, extract::{FromRequestParts}};
 
-#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset)]
+#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset, Clone)]
 #[diesel(table_name = crate::schema::sessions)]
 pub struct Session {
     pub id: Uuid,

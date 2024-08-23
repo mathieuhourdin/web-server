@@ -28,6 +28,7 @@ pub fn create_router() -> Router {
     Router::new()
         .route("/", get(root_route))
         .nest("/users", users_router)
+        .layer(from_fn(sessions_service::add_session_to_request))
 }
 
 // Handler for the root path

@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use crate::entities::{user::User, session::Session, session::NewSession, error::PpdcError};
 use crate::http::CookieValue;
-use axum::{body::Body, middleware::{self, Next}, http::{Request, StatusCode as AxumStatusCode}, response::IntoResponse};
+use axum::{extract::Extension, body::Body, middleware::{self, Next}, http::{Request, StatusCode as AxumStatusCode}, response::IntoResponse};
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
@@ -11,8 +11,17 @@ struct LoginCheck {
     password: String,
 }
 
-pub async fn auth_middleware_custom(
+pub async fn add_session_to_request(
     session: Session,
+    mut req: Request<Body>,
+    next: Next,
+) -> impl IntoResponse {
+    req.extensions_mut().insert(session.clone());
+    next.run(req).await
+}
+
+pub async fn auth_middleware_custom(
+    Extension(session): Extension<Session>,
     req: Request<Body>,
     next: Next,
 ) -> impl IntoResponse {
