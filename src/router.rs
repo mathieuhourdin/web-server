@@ -3,6 +3,7 @@ use axum::{
     routing::{get, post, Router},
     extract::{Query, Json},
     debug_handler,
+    middleware::from_fn,
 };
 
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
@@ -21,7 +22,8 @@ use crate::link_preview;
 
 pub fn create_router() -> Router {
     let users_router = Router::new()
-        .route("/", get(user::get_users));
+        .route("/", get(user::get_users))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
         .route("/", get(root_route))

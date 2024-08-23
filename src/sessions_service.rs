@@ -3,11 +3,23 @@ use serde::{Serialize, Deserialize};
 use serde_json;
 use crate::entities::{user::User, session::Session, session::NewSession, error::PpdcError};
 use crate::http::CookieValue;
+use axum::{body::Body, middleware::{self, Next}, http::{Request, StatusCode as AxumStatusCode}, response::IntoResponse};
 
 #[derive(Serialize, Deserialize)]
 struct LoginCheck {
     username: String,
     password: String,
+}
+
+pub async fn auth_middleware_custom(
+    session: Session,
+    req: Request<Body>,
+    next: Next,
+) -> impl IntoResponse {
+    if session.user_id.is_none() {
+        return (AxumStatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+    next.run(req).await
 }
 
 pub async fn post_session_route(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> { 
