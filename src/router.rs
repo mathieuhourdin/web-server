@@ -1,6 +1,6 @@
 use axum::{
     response::IntoResponse,
-    routing::{get, post, Router},
+    routing::{get, post, put, Router},
     extract::{Query, Json},
     debug_handler,
     middleware::from_fn,
@@ -22,7 +22,8 @@ use crate::link_preview;
 
 pub fn create_router() -> Router {
     let users_router = Router::new()
-        .route("/", get(user::get_users))
+        .route("/", get(user::get_users).post(user::post_user))
+        .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
@@ -42,12 +43,12 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
     println!("Request with session id : {session_id}");
     match (&request.method[..], &request.parsed_path()[..]) {
         ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
-        ("GET", ["users", id]) => user::get_user(id, &request),
+        //("GET", ["users", id]) => user::get_user(id, &request),
+        //("PUT", ["users", id]) => user::put_user_route(id, &request),
         //("GET", ["users"]) => user::get_users(&request),
-        ("POST", ["users"]) => user::post_user(&request),
+        //("POST", ["users"]) => user::post_user(&request),
         ("GET", ["users", id, "thought_inputs"]) => thought_input::get_thought_inputs_for_user(id, &request),
         ("GET", ["users", id, "thought_outputs"]) => thought_output::get_thought_outputs_for_user(id, &request),
-        ("PUT", ["users", id]) => user::put_user_route(id, &request),
         ("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,

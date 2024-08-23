@@ -2,6 +2,8 @@ use std::fmt;
 use diesel::result::Error as DieselError;
 use serde_json::Error as SerdeError;
 use serde::{Serialize, Deserialize};
+use axum::response::{IntoResponse, Response};
+use axum::http::StatusCode;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct PpdcError {
@@ -22,6 +24,10 @@ impl PpdcError {
     pub fn new(status_code: u32, error_type: ErrorType, message: String) -> PpdcError {
         println!("status code: {status_code}; message : {message}");
         PpdcError { status_code, error_type, message }
+    }
+
+    pub fn unauthorized() -> PpdcError {
+        Self::new(401, ErrorType::ApiError, "Unauthorized".into())
     }
 }
 
@@ -57,6 +63,18 @@ impl From<SerdeError> for PpdcError {
         PpdcError::new(400, ErrorType::ApiError, format!("serde error : {}", error))
     }
 }
+
+impl IntoResponse for PpdcError {
+    fn into_response(self) -> Response {
+        let (status, body) = match self.error_type {
+            ErrorType::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, self.message),
+            ErrorType::ApiError => (StatusCode::NOT_FOUND, self.message),
+            ErrorType::DatabaseError => (StatusCode::INTERNAL_SERVER_ERROR, self.message)
+        };
+        (status, body).into_response()
+    }
+}
+
 
 /*impl From<std::error::Error> for PpdcError {
     fn from(error: std::error::Error) -> PpdcError {

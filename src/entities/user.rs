@@ -1,8 +1,8 @@
 use serde::{Serialize, Deserialize};
-use axum::{debug_handler, extract::{Query, Json}, http::StatusCode as AxumStatusCode, response::IntoResponse};
+use axum::{debug_handler, extract::{Path, Extension, Query, Json}, http::StatusCode as AxumStatusCode, response::IntoResponse};
 use argon2::{Config};
 use rand::Rng;
-use crate::entities::error::{PpdcError, ErrorType};
+use crate::entities::{session::Session, error::{PpdcError, ErrorType}};
 use crate::pagination::PaginationParams;
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use diesel::prelude::*;
@@ -31,6 +31,23 @@ pub struct User {
     pub pseudonym: String,
     pub pseudonymized: bool
 }
+
+pub enum UserResponse {
+    Pseudonymized(UserPseudonymizedResponse),
+    PseudonymizedAuthentified(UserPseudonymizedAuthentifiedResponse),
+    Full(User)
+}
+
+impl IntoResponse for UserResponse {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            UserResponse::Pseudonymized(user) => (AxumStatusCode::OK, Json(user)).into_response(),
+            UserResponse::PseudonymizedAuthentified(user) => (AxumStatusCode::OK, Json(user)).into_response(),
+            UserResponse::Full(user) => (AxumStatusCode::OK, Json(user)).into_response(),
+        }
+    }
+}
+
 
 #[derive(Serialize)]
 pub struct UserPseudonymizedAuthentifiedResponse {
@@ -183,60 +200,56 @@ impl User {
 }
 
 #[debug_handler]
-pub async fn get_users(Query(params): Query<PaginationParams>) -> impl IntoResponse {
+pub async fn get_users(Query(params): Query<PaginationParams>) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
 
     let mut conn = db::establish_connection();
 
     let results: Vec<UserPseudonymizedResponse> = users::table.into_boxed()
         .offset(params.offset())
         .limit(params.limit())
-        .load::<User>(&mut conn)
-        .unwrap()
+        .load::<User>(&mut conn)?
         .iter()
         .map(UserPseudonymizedResponse::from)
         .collect();
-    (AxumStatusCode::OK, Json(results))
+    Ok(Json(results))
 }
 
-pub fn post_user(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let mut user_message = serde_json::from_str::<NewUser>(&request.body[..])?;
-    user_message.hash_password().unwrap();
-    let created_user = user_message.create()?;
-    HttpResponse::created()
-        .json(&created_user)
+#[debug_handler]
+pub async fn post_user(Json(mut payload): Json<NewUser>) -> Result<Json<User>, PpdcError> {
+    payload.hash_password().unwrap();
+    let created_user = payload.create()?;
+    Ok(Json(created_user))
 }
 
-pub fn put_user_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let id = HttpRequest::parse_uuid(id)?;
-    if let Some(user_id) = request.session.as_ref().unwrap().user_id {
-        let existing_user = User::find(&id)?;
-        if user_id != id && existing_user.is_platform_user {
-            return Ok(HttpResponse::unauthorized());
-        }
-    } else {
-        return Ok(HttpResponse::unauthorized());
+#[debug_handler]
+pub async fn put_user_route(
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<NewUser>
+) -> Result<Json<User>, PpdcError> {
+
+    let session_user_id = session.user_id.unwrap();
+    let existing_user = User::find(&id)?;
+
+    if &session_user_id != &id && existing_user.is_platform_user {
+        return Err(PpdcError::unauthorized())
     }
-    let new_user = serde_json::from_str::<NewUser>(&request.body[..])?;
-    HttpResponse::ok()
-        .json(&new_user.update(&id)?)
+    Ok(Json(payload.update(&id)?))
 }
 
-pub fn get_user(user_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        println!("get_user_by_uuid invalid session, session id : {:#?}", request.session.as_ref().unwrap().id);
-        return Ok(HttpResponse::new(StatusCode::Unauthorized, "user should be authentified".to_string()));
-    }
-    println!("get_user_by_uuid valid session id : {:#?}", request.session.as_ref().unwrap().id);
-    let user_id = HttpRequest::parse_uuid(user_id)?;
-    let user = User::find(&user_id)?;
-    if !user.is_platform_user || request.session.as_ref().unwrap().user_id.unwrap() == user_id {
+#[debug_handler]
+pub async fn get_user_route(
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    ) -> Result<impl IntoResponse, PpdcError> {
+
+    let user = User::find(&id)?;
+    if !user.is_platform_user || session.user_id.unwrap() == id {
         let user_response = UserPseudonymizedAuthentifiedResponse::from(&user);
-        HttpResponse::ok()
-            .json(&user_response)
+        Ok(UserResponse::PseudonymizedAuthentified(user_response))
     } else {
         let user_response = UserPseudonymizedResponse::from(&user);
-        HttpResponse::ok()
-            .json(&user_response)
+        Ok(UserResponse::Pseudonymized(user_response))
     }
 }
 
