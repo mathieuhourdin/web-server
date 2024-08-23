@@ -6,6 +6,7 @@ use crate::db;
 use crate::schema::sessions;
 use diesel;
 use crate::entities::error::{PpdcError};
+use axum::{async_trait, http::{StatusCode, request::Parts}, extract::{FromRequestParts}};
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::sessions)]
@@ -87,5 +88,46 @@ impl Session {
             .get_result(&mut conn)?;
         Ok(session)
     }
+
+    pub fn get_valid_session_from_id(id: &str) -> Result<Session, PpdcError> {
+
+        println!("generate_valid_session_from_id id : {id}");
+        let decoded_session_id = Uuid::parse_str(id)?;
+        let found_session = match Session::find(&decoded_session_id) {
+            Err(err) => {
+                println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
+                let new_session = NewSession::new();
+                Session::create(&new_session)?
+            },
+            Ok(session) => {
+                    if session.is_valid() {
+                        session
+                    } else {
+                        println!("Session {} not valid anymore", session.id);
+                        let new_session = NewSession::new();
+                        Session::create(&new_session)?
+                    }
+                }
+        };
+        println!("generate_valid_session_from_id found_session id {:#?}", found_session.id);
+        Ok(found_session)
+    }
 }
 
+#[async_trait]
+impl<B> FromRequestParts<B> for Session
+where
+    B: Send,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, state: &B) -> Result<Self, Self::Rejection> {
+        if let Some(auth_header) = parts.headers.get("Authorization") {
+            if let Ok(auth_str) = auth_header.to_str() {
+                Ok::<Session, B>(Session::get_valid_session_from_id(auth_str).unwrap());
+            }
+        }
+
+        Err((StatusCode::UNAUTHORIZED, "Unauthorized"))
+    }
+}

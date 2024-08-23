@@ -37,6 +37,12 @@ impl fmt::Debug for PpdcError {
     }
 }
 
+impl From<uuid::Error> for PpdcError {
+    fn from(error: uuid::Error) -> PpdcError {
+        PpdcError::new(400, ErrorType::ApiError, format!("Incorrect uuid for ressource : {:#?}", error))
+    }
+}
+
 impl From<DieselError> for PpdcError {
     fn from(error: DieselError) -> PpdcError {
         match error {
