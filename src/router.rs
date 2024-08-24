@@ -35,9 +35,14 @@ pub fn create_router() -> Router {
         .route("/", get(resource::get_resources_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let interactions_router = Router::new()
+        .route("/", get(interaction::get_interactions_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     Router::new()
         .nest("/users", users_router)
         .nest("/resources", resources_router)
+        .nest("/interactions", interactions_router)
         .layer(from_fn(sessions_service::add_session_to_request))
         .layer(cors)
 }
@@ -68,7 +73,7 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("GET", ["resource", id, "usages"]) => resource_relation::get_targets_for_resource_route(id, &request),
         ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         ("POST", ["resources"]) => resource::post_resource_route(&request),
-        ("GET", ["interactions"]) => interaction::get_interactions(&request),
+        //("GET", ["interactions"]) => interaction::get_interactions(&request),
         ("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
         ("GET", ["categories"]) => category::get_categories_route(&request),
         ("POST", ["categories"]) => category::post_category_route(&request),

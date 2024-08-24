@@ -3,7 +3,11 @@ use diesel::prelude::*;
 use crate::schema::*;
 use serde_json;
 use super::model::*;
-use crate::entities::{error::PpdcError};
+use uuid::Uuid;
+use crate::entities::{session::Session, error::PpdcError};
+use crate::pagination::PaginationParams;
+use axum::{debug_handler, extract::{Extension, Query, Json}};
+use serde::{Deserialize};
 
 pub fn post_interaction_for_resource(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     if request.session.as_ref().unwrap().user_id.is_none() {
@@ -21,42 +25,61 @@ pub fn post_interaction_for_resource(resource_id: &str, request: &HttpRequest) -
         .json(&interaction.create()?)
 }
 
-pub fn get_interactions(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let user_id = request.session.as_ref().unwrap().user_id;
-    if user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
+#[derive(Deserialize)]
+pub struct InteractionFilters {
+    interaction_type: Option<String>,
+    maturing_state: Option<String>,
+    interaction_user_id: Option<Uuid>
+}
+
+impl InteractionFilters {
+    pub fn interaction_type(&self) -> String {
+        self.interaction_type.clone().unwrap_or_else(|| "inpt".into())
     }
-    let interaction_type = request.query.get("interaction_type").map(|value| &value[..]).unwrap_or("inpt");
-    let maturing_state = request.query.get("maturing_state").map(|value| &value[..]).unwrap_or("fnsh");
-    let interaction_user_id = request.query.get("interaction_user_id");
+    pub fn maturing_state(&self) -> String {
+        self.maturing_state.clone().unwrap_or_else(|| "fnsh".into())
+    }
+}
+
+#[debug_handler]
+pub async fn get_interactions_route(
+    Extension(session): Extension<Session>,
+    Query(filters): Query<InteractionFilters>,
+    Query(pagination): Query<PaginationParams>
+) -> Result<Json<Vec<InteractionWithResource>>, PpdcError> {
+
+    let user_id = session.user_id.unwrap();
+
+    let interaction_type = filters.interaction_type();
 
     let mut interactions_filtered;
-    if interaction_type == "rvew" || interaction_type == "outp" && maturing_state == "drft" {
-        interactions_filtered = interactions::table
-            .filter(interactions::interaction_type.eq(interaction_type))
-            .filter(interactions::interaction_is_public.eq(true))
-            .filter(interactions::interaction_user_id.eq(user_id.unwrap())).into_boxed();
-    } else {
-        interactions_filtered = interactions::table
-            .filter(interactions::interaction_type.eq(interaction_type))
-            .filter(interactions::interaction_is_public.eq(true)).into_boxed();
+    interactions_filtered = interactions::table
+        .filter(interactions::interaction_is_public.eq(true))
+        .filter(interactions::interaction_type.eq(interaction_type.as_str()))
+        .into_boxed();
+
+    if 
+        filters.interaction_type() == "rvew".to_string() ||
+        filters.interaction_type() == "outp".to_string() &&
+        filters.maturing_state() == "drft".to_string()
+    {
+        interactions_filtered = interactions_filtered
+            .filter(interactions::interaction_user_id.eq(user_id));
     }
-    if let Some(interaction_user_id) = interaction_user_id {
-        let interaction_user_id = HttpRequest::parse_uuid(interaction_user_id)?;
-        interactions_filtered = interactions_filtered.filter(interactions::interaction_user_id.eq(interaction_user_id));
+    if let Some(interaction_user_id) = filters.interaction_user_id {
+        interactions_filtered = interactions_filtered
+            .filter(interactions::interaction_user_id.eq(interaction_user_id));
     }
-    let (offset, limit) = request.get_pagination();
+    //let (offset, limit) = request.get_pagination();
     let interactions = Interaction::load_paginated(
-        offset,
-        limit, 
+        pagination.offset(),
+        pagination.limit(), 
         interactions_filtered,
-        maturing_state,
+        filters.maturing_state().as_str(),
         "all"
 
     )?;
-    HttpResponse::ok()
-        .json(&interactions)
-
+    Ok(Json(interactions))
 }
     
 pub fn put_interaction_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
