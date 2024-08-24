@@ -6,7 +6,7 @@ use super::model::*;
 use uuid::Uuid;
 use crate::entities::{session::Session, error::PpdcError};
 use crate::pagination::PaginationParams;
-use axum::{debug_handler, extract::{Extension, Query, Json}};
+use axum::{debug_handler, extract::{Extension, Path, Query, Json}};
 use serde::{Deserialize};
 
 pub fn post_interaction_for_resource(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
@@ -70,7 +70,7 @@ pub async fn get_interactions_route(
         interactions_filtered = interactions_filtered
             .filter(interactions::interaction_user_id.eq(interaction_user_id));
     }
-    //let (offset, limit) = request.get_pagination();
+
     let interactions = Interaction::load_paginated(
         pagination.offset(),
         pagination.limit(), 
@@ -82,15 +82,12 @@ pub async fn get_interactions_route(
     Ok(Json(interactions))
 }
     
-pub fn put_interaction_route(uuid: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    let uuid = &HttpRequest::parse_uuid(uuid)?;
-    let thought_output = serde_json::from_str::<NewInteraction>(&request.body[..])?;
-    HttpResponse::ok()
-        .json(&thought_output.update(uuid)?)
+#[debug_handler]
+pub async fn put_interaction_route(
+    Path(id): Path<Uuid>,
+    Json(payload): Json<NewInteraction>
+) -> Result<Json<Interaction>, PpdcError> {
+    Ok(Json(payload.update(&id)?))
 }
 
 pub fn get_interactions_for_resource_route(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {

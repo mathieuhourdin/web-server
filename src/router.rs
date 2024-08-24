@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, Router},
+    routing::{get, put, Router},
     middleware::from_fn,
     http::Method,
 };
@@ -37,6 +37,7 @@ pub fn create_router() -> Router {
 
     let interactions_router = Router::new()
         .route("/", get(interaction::get_interactions_route))
+        .route("/:id", put(interaction::put_interaction_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
@@ -74,7 +75,7 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         ("POST", ["resources"]) => resource::post_resource_route(&request),
         //("GET", ["interactions"]) => interaction::get_interactions(&request),
-        ("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
+        //("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
         ("GET", ["categories"]) => category::get_categories_route(&request),
         ("POST", ["categories"]) => category::post_category_route(&request),
         //("GET", ["thought_outputs"]) => thought_output::get_thought_outputs_route(&request, "all"),
