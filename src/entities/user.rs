@@ -4,12 +4,10 @@ use argon2::{Config};
 use rand::Rng;
 use crate::entities::{session::Session, error::{PpdcError, ErrorType}};
 use crate::pagination::PaginationParams;
-use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use diesel::prelude::*;
 use uuid::Uuid;
 use crate::db;
 use crate::schema::users;
-use serde_json;
 use diesel;
 use chrono::NaiveDateTime;
 
@@ -225,7 +223,7 @@ pub async fn post_user(Json(mut payload): Json<NewUser>) -> Result<Json<User>, P
 pub async fn put_user_route(
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    Json(mut payload): Json<NewUser>
+    Json(payload): Json<NewUser>
 ) -> Result<Json<User>, PpdcError> {
 
     let session_user_id = session.user_id.unwrap();

@@ -8,7 +8,8 @@ use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 use resource_type::ResourceType;
-use axum::{debug_handler, extract::{Path, Extension, Query, Json}, http::StatusCode as AxumStatusCode, response::IntoResponse};
+use axum::{debug_handler, extract::{Query, Json}};
+use crate::pagination::PaginationParams;
 pub use maturing_state::MaturingState;
 
 pub mod resource_type;
@@ -154,14 +155,16 @@ impl GetResourcesParams {
 }
 
 #[debug_handler]
-pub async fn get_resources_route(Query(filter_params): Query<GetResourcesParams>) -> Result<Json<Vec<Resource>>, PpdcError> {
-    //let (offset, limit) = request.get_pagination();
+pub async fn get_resources_route(
+    Query(filter_params): Query<GetResourcesParams>,
+    Query(pagination): Query<PaginationParams>
+) -> Result<Json<Vec<Resource>>, PpdcError> {
 
     let mut conn = db::establish_connection();
 
     let mut query = resources::table
-        //.offset(offset)
-        //.limit(limit)
+        .offset(pagination.offset())
+        .limit(pagination.limit())
         .order(resources::updated_at.desc())
         .filter(resources::maturing_state.eq("fnsh"))
         .into_boxed();

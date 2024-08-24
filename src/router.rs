@@ -1,8 +1,5 @@
 use axum::{
-    response::IntoResponse,
-    routing::{get, post, put, Router},
-    extract::{Query, Json},
-    debug_handler,
+    routing::{get, Router},
     middleware::from_fn,
     http::Method,
 };
@@ -10,7 +7,7 @@ use tower_http::cors::{CorsLayer, Any};
 
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use crate::entities::{user::self,
-    interaction::{thought_output_routes as thought_output, thought_input_routes as thought_input, interaction_routes as interaction},
+    interaction::{interaction_routes as interaction},
     error::PpdcError,
     comment,
     resource
@@ -39,17 +36,10 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
-        .route("/", get(root_route))
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .layer(from_fn(sessions_service::add_session_to_request))
         .layer(cors)
-}
-
-// Handler for the root path
-async fn root_route() -> &'static str {
-    println!("Error");
-    "Welcome to the Axum server!"
 }
 
 pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
