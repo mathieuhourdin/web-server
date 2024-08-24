@@ -5,7 +5,8 @@ use crate::db;
 use chrono::NaiveDateTime;
 use crate::schema::{comments, users};
 use crate::http::{HttpRequest, HttpResponse};
-use crate::entities::{error::PpdcError, user::User};
+use crate::entities::{session::Session, error::PpdcError, user::User};
+use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
 use serde_json;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
@@ -99,43 +100,34 @@ impl Comment {
     }
 }
 
-pub fn get_comments_for_resource(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let resource_id = HttpRequest::parse_uuid(resource_id)?;
-    if request.query.contains_key("author") && request.query["author"] == "true" {
-        HttpResponse::ok()
-            .json(&Comment::find_all_for_resource_with_author(resource_id)?)
-    } else {
-        HttpResponse::ok()
-            .json(&Comment::find_all_for_resource(resource_id)?)
-    }
+#[debug_handler]
+pub async fn get_comments_for_resource(Path(id): Path<Uuid>) -> Result<Json<Vec<CommentWithAuthor>>, PpdcError> {
+    Ok(Json(Comment::find_all_for_resource_with_author(id)?))
 }
 
-pub fn post_comment_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+#[debug_handler]
+pub async fn post_comment_route(
+    Path(id): Path<Uuid>,
+    Extension(session): Extension<Session>,
+    Json(mut payload): Json<NewComment>,
+) -> Result<Json<Comment>, PpdcError> {
 
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    let id = HttpRequest::parse_uuid(id)?;
-    let mut comment = serde_json::from_str::<NewComment>(&request.body[..])?;
-    comment.author_id = request.session.as_ref().unwrap().user_id;
-    comment.resource_id = Some(id);
-    let comment = Comment::create(comment)?;
-    HttpResponse::ok()
-        .json(&comment)
+    payload.author_id = session.user_id;
+    payload.resource_id = Some(id);
+    Ok(Json(Comment::create(payload)?))
 }
 
-pub fn put_comment(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    let id = HttpRequest::parse_uuid(id)?;
+#[debug_handler]
+pub async fn put_comment(
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<NewComment>,
+) -> Result<Json<Comment>, PpdcError> {
     let db_comment = Comment::find(id)?;
-    let comment = serde_json::from_str::<NewComment>(&request.body[..])?;
-    if db_comment.author_id != request.session.as_ref().unwrap().user_id.unwrap() 
-        && &db_comment.content != comment.content.as_ref().unwrap_or(&"".to_string())
+    if db_comment.author_id != session.user_id.unwrap()
+        && &db_comment.content != payload.content.as_ref().unwrap_or(&"".to_string())
     {
-        return Ok(HttpResponse::unauthorized());
+        return Err(PpdcError::unauthorized());
     }
-    HttpResponse::ok()
-        .json(&Comment::update(&id, comment)?)
+    Ok(Json(Comment::update(&id, payload)?))
 }

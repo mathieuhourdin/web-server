@@ -39,6 +39,7 @@ pub fn create_router() -> Router {
             .post(interaction::post_interaction_for_resource))
         .route("/:id/bibliography", get(resource_relation::get_resource_relations_for_resource_route))
         .route("/:id/usages", get(resource_relation::get_targets_for_resource_route))
+        .route("/:id/comments", get(comment::get_comments_for_resource).post(comment::post_comment_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let interactions_router = Router::new()
@@ -50,11 +51,16 @@ pub fn create_router() -> Router {
         .route("/thought_input_usages", post(resource_relation::post_resource_relation_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let comments_router = Router::new()
+        .route("/:id", put(comment::put_comment))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     Router::new()
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/interactions", interactions_router)
         .nest("/", relations_router)
+        .nest("/comments", comments_router)
         .layer(from_fn(sessions_service::add_session_to_request))
         .layer(cors)
 }
@@ -73,9 +79,9 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         //("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
         ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
         ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
-        ("PUT", ["comments", id]) => comment::put_comment(id, &request),
-        ("GET", ["resources", id, "comments"]) => comment::get_comments_for_resource(id, &request),
-        ("POST", ["resources", id, "comments"]) => comment::post_comment_route(id, &request),
+        //("PUT", ["comments", id]) => comment::put_comment(id, &request),
+        //("GET", ["resources", id, "comments"]) => comment::get_comments_for_resource(id, &request),
+        //("POST", ["resources", id, "comments"]) => comment::post_comment_route(id, &request),
         //("GET", ["resources"]) => resource::get_resources_route(&request),
         //("GET", ["resources", id]) => resource::get_resource_route(id, &request),
         //("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
