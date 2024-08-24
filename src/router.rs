@@ -55,12 +55,16 @@ pub fn create_router() -> Router {
         .route("/:id", put(comment::put_comment))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let sessions_router = Router::new()
+        .route("/", get(sessions_service::get_session_route).post(sessions_service::post_session_route));
+
     Router::new()
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/interactions", interactions_router)
         .nest("/", relations_router)
         .nest("/comments", comments_router)
+        .nest("/sessions", sessions_router)
         .layer(from_fn(sessions_service::add_session_to_request))
         .layer(cors)
 }
@@ -77,8 +81,8 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         //("GET", ["users", id, "thought_inputs"]) => thought_input::get_thought_inputs_for_user(id, &request),
         //("GET", ["users", id, "thought_outputs"]) => thought_output::get_thought_outputs_for_user(id, &request),
         //("GET", ["login"]) => HttpResponse::from_file(StatusCode::Ok, "login.html"),
-        ("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
-        ("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
+        //("POST", ["sessions"]) => sessions_service::post_session_route(request).await,
+        //("GET", ["sessions"]) => sessions_service::get_session_route(request).await,
         //("PUT", ["comments", id]) => comment::put_comment(id, &request),
         //("GET", ["resources", id, "comments"]) => comment::get_comments_for_resource(id, &request),
         //("POST", ["resources", id, "comments"]) => comment::post_comment_route(id, &request),

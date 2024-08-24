@@ -1,10 +1,11 @@
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use serde::{Serialize, Deserialize};
 use serde_json;
-use crate::entities::{user::User, session::Session, session::NewSession, error::PpdcError};
+use crate::entities::{user::User, session::Session, session::NewSession, error::{ErrorType, PpdcError}};
 use crate::http::CookieValue;
 use axum::{
-    extract::Extension,
+    debug_handler,
+    extract::{Json, Extension},
     body::Body,
     middleware::Next,
     http::{Request, StatusCode as AxumStatusCode},
@@ -12,7 +13,7 @@ use axum::{
 };
 
 #[derive(Serialize, Deserialize)]
-struct LoginCheck {
+pub struct LoginCheck {
     username: String,
     password: String,
 }
@@ -37,37 +38,35 @@ pub async fn auth_middleware_custom(
     next.run(req).await
 }
 
-pub async fn post_session_route(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> { 
-    let login_check = serde_json::from_str::<LoginCheck>(&request.body[..])?;
 
-    let existing_user = User::find_by_username(&login_check.username)?;
+#[debug_handler]
+pub async fn post_session_route(
+    Extension(mut session): Extension<Session>,
+    Json(payload): Json<LoginCheck>,
+) -> Result<Json<Session>, PpdcError> { 
 
-    let is_valid_password = existing_user.verify_password(&login_check.password.as_bytes())?;
+    let existing_user = User::find_by_username(&payload.username)?;
+
+    let is_valid_password = existing_user.verify_password(&payload.password.as_bytes())?;
 
     if is_valid_password {
         println!("Password is valid. Let's authenticate session");
-        request
-            .session
-            .as_mut()
-            .expect("request should have a session")
-            .set_authenticated_and_user_id(existing_user.id);
+        session.set_authenticated_and_user_id(existing_user.id);
 
-        Session::update(request.session.as_ref().unwrap())?;
+        let session = Session::update(&session)?;
 
-        let mut response = HttpResponse::new(StatusCode::Ok, serde_json::to_string(request.session.as_ref().unwrap()).unwrap());
-        response.headers.insert("Set-Cookie".to_string(), format!("user_id={}", existing_user.id.clone()));
-        return Ok(response);
+        return Ok(Json(session));
         
     } else {
-        return Ok(HttpResponse::new(StatusCode::BadRequest, String::from("Invalid password")));
+        return Err(PpdcError::new(401, ErrorType::ApiError, String::from("Invalid password")));
     }
 }
 
-pub async fn get_session_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    Ok(HttpResponse::new(
-        StatusCode::Ok,
-        serde_json::to_string(request.session.as_ref().unwrap()).unwrap()
-    ))
+#[debug_handler]
+pub async fn get_session_route(
+    Extension(session): Extension<Session>
+) -> Result<Json<Session>, PpdcError> {
+    Ok(Json(session))
 }
 
 pub fn decode_session_id(session_id: &String) -> String {
