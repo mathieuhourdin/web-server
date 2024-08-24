@@ -4,8 +4,9 @@ use uuid::Uuid;
 use crate::db;
 use crate::schema::*;
 use diesel::prelude::*;
-use crate::entities::{error::{PpdcError}, resource::Resource};
+use crate::entities::{session::Session, error::{PpdcError}, resource::Resource};
 use crate::http::{HttpRequest, HttpResponse};
+use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name=resource_relations)]
@@ -85,25 +86,26 @@ impl ResourceRelation {
     }
 }
 
-pub fn post_resource_relation_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    let mut resource_relation = serde_json::from_str::<NewResourceRelation>(&request.body[..])?;
-    resource_relation.user_id = request.session.as_ref().unwrap().user_id;
-    HttpResponse::ok()
-        .json(&resource_relation.create()?)
+#[debug_handler]
+pub async fn post_resource_relation_route(
+    Extension(session): Extension<Session>,
+    Json(mut payload): Json<NewResourceRelation>
+) -> Result<Json<ResourceRelation>, PpdcError> {
+    payload.user_id = session.user_id;
+    Ok(Json(payload.create()?))
 }
 
-pub fn get_resource_relations_for_resource_route(target_resource_id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let target_resource_id = HttpRequest::parse_uuid(target_resource_id)?;
-
-    HttpResponse::ok()
-        .json(&ResourceRelation::find_origin_for_resource(target_resource_id)?)
+#[debug_handler]
+pub async fn get_resource_relations_for_resource_route(
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<ResourceRelationWithOriginResource>>, PpdcError> {
+    Ok(Json(ResourceRelation::find_origin_for_resource(id)?))
 }
 
-pub fn get_targets_for_resource_route(origin_resource_id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let origin_resource_id = HttpRequest::parse_uuid(origin_resource_id)?;
+#[debug_handler]
+pub async fn get_targets_for_resource_route(
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<ResourceRelationWithTargetResource>>, PpdcError> {
 
-    HttpResponse::ok().json(&ResourceRelation::find_target_for_resource(origin_resource_id)?)
+    Ok(Json(ResourceRelation::find_target_for_resource(id)?))
 }

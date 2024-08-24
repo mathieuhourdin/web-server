@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, put, Router},
+    routing::{post, get, put, Router},
     middleware::from_fn,
     http::Method,
 };
@@ -35,6 +35,10 @@ pub fn create_router() -> Router {
         .route("/", get(resource::get_resources_route).post(resource::post_resource_route))
         .route("/:id", get(resource::get_resource_route).put(resource::put_resource_route))
         .route("/:id/author_interaction", get(resource::get_resource_author_interaction_route))
+        .route("/:id/interactions", get(interaction::get_interactions_for_resource_route)
+            .post(interaction::post_interaction_for_resource))
+        .route("/:id/bibliography", get(resource_relation::get_resource_relations_for_resource_route))
+        .route("/:id/usages", get(resource_relation::get_targets_for_resource_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let interactions_router = Router::new()
@@ -42,10 +46,15 @@ pub fn create_router() -> Router {
         .route("/:id", put(interaction::put_interaction_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let relations_router = Router::new()
+        .route("/thought_input_usages", post(resource_relation::post_resource_relation_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     Router::new()
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/interactions", interactions_router)
+        .nest("/", relations_router)
         .layer(from_fn(sessions_service::add_session_to_request))
         .layer(cors)
 }
@@ -70,10 +79,11 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         //("GET", ["resources"]) => resource::get_resources_route(&request),
         //("GET", ["resources", id]) => resource::get_resource_route(id, &request),
         //("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
-        ("POST", ["resources", id, "interactions"]) => interaction::post_interaction_for_resource(id, &request),
-        ("GET", ["resources", id, "interactions"]) => interaction::get_interactions_for_resource_route(id, &request),
-        ("GET", ["resource", id, "bibliography"]) => resource_relation::get_resource_relations_for_resource_route(id, &request),
-        ("GET", ["resource", id, "usages"]) => resource_relation::get_targets_for_resource_route(id, &request),
+        //("POST", ["resources", id, "interactions"]) => interaction::post_interaction_for_resource(id, &request),
+        //("GET", ["resources", id, "interactions"]) => interaction::get_interactions_for_resource_route(id, &request),
+        //("GET", ["resource", id, "bibliography"]) => resource_relation::get_resource_relations_for_resource_route(id, &request),
+        //("GET", ["resource", id, "usages"]) => resource_relation::get_targets_for_resource_route(id, &request),
+        //("POST", ["thought_input_usages"]) => resource_relation::post_resource_relation_route(&request),
         //("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
         //("POST", ["resources"]) => resource::post_resource_route(&request),
         //("GET", ["interactions"]) => interaction::get_interactions(&request),
@@ -84,7 +94,6 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         //("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
         //("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),
         //("PUT", ["thought_outputs", uuid]) => thought_output::put_thought_output_route(uuid, &request),
-        ("POST", ["thought_input_usages"]) => resource_relation::post_resource_relation_route(&request),
         //("POST", ["thought_inputs"]) => thought_input::post_thought_input_route(&request),
         //("PUT", ["thought_inputs", id]) => thought_input::put_thought_input_route(id, &request),
         //("GET", ["thought_inputs", id]) => thought_input::get_one_thought_input_route(id, &request),

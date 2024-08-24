@@ -127,6 +127,8 @@ pub async fn post_resource_route(
 pub async fn get_resource_author_interaction_route(
     Path(id): Path<Uuid>
 ) -> Result<Json<Interaction>, PpdcError> {
+
+    println!("get_resource_author_interaction_route");
     let resource = Resource::find(id)?;
     let author_interaction = resource.find_resource_author_interaction()?;
     Ok(Json(author_interaction))

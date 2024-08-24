@@ -9,20 +9,17 @@ use crate::pagination::PaginationParams;
 use axum::{debug_handler, extract::{Extension, Path, Query, Json}};
 use serde::{Deserialize};
 
-pub fn post_interaction_for_resource(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
+#[debug_handler]
+pub async fn post_interaction_for_resource(
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<NewInteraction>,
+) -> Result<Json<Interaction>, PpdcError> {
 
-    let resource_id = HttpRequest::parse_uuid(resource_id)?;
-
-    let mut interaction = serde_json::from_str::<NewInteraction>(&request.body[..])?;
-
-    interaction.interaction_user_id = Some(interaction.interaction_user_id.unwrap_or(request.session.as_ref().unwrap().user_id.unwrap()));
-    interaction.resource_id = Some(resource_id);
-    interaction.interaction_type = Some(interaction.interaction_type.unwrap_or("outp".to_string()));
-    HttpResponse::ok()
-        .json(&interaction.create()?)
+    payload.interaction_user_id = Some(payload.interaction_user_id.unwrap_or(session.user_id.unwrap()));
+    payload.resource_id = Some(id);
+    payload.interaction_type = Some(payload.interaction_type.unwrap_or("outp".to_string()));
+    Ok(Json(payload.create()?))
 }
 
 #[derive(Deserialize)]
@@ -90,19 +87,19 @@ pub async fn put_interaction_route(
     Ok(Json(payload.update(&id)?))
 }
 
-pub fn get_interactions_for_resource_route(resource_id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let resource_id = HttpRequest::parse_uuid(resource_id)?;
-    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
-    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
+#[debug_handler]
+pub async fn get_interactions_for_resource_route(
+    Query(pagination): Query<PaginationParams>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<InteractionWithResource>>, PpdcError> {
     let interactions = Interaction::load_paginated(
-        offset,
-        limit, 
+        pagination.offset(),
+        pagination.limit(), 
         interactions::table
-            .filter(interactions::resource_id.eq(resource_id))
+            .filter(interactions::resource_id.eq(id))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
         "fnsh",
         "all"
     )?;
-    HttpResponse::ok()
-        .json(&interactions)
+    Ok(Json(interactions))
 }
