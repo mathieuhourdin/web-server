@@ -13,7 +13,7 @@ pub fn edit_article(uuid: &str, _request: &HttpRequest) -> Result<HttpResponse, 
     Ok(response)
 }
 
-pub fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
+/*pub fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
 
     match &request.session.as_ref().unwrap().user_id {
         Some(user_id) => {
@@ -24,4 +24,4 @@ pub fn post_mathilde_route(request: &HttpRequest) -> Result<HttpResponse, PpdcEr
         None => Ok(HttpResponse::unauthorized()),
     }
     
-}
+}*/

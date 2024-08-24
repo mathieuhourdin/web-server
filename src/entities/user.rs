@@ -6,7 +6,7 @@ use crate::entities::{session::Session, error::{PpdcError, ErrorType}};
 use crate::pagination::PaginationParams;
 use diesel::prelude::*;
 use uuid::Uuid;
-use crate::db;
+use crate::db::{self, DbPool};
 use crate::schema::users;
 use diesel;
 use chrono::NaiveDateTime;
@@ -198,9 +198,12 @@ impl User {
 }
 
 #[debug_handler]
-pub async fn get_users(Query(params): Query<PaginationParams>) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
+pub async fn get_users(
+    Query(params): Query<PaginationParams>,
+    Extension(pool): Extension<DbPool>
+) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
 
-    let mut conn = db::establish_connection();
+    let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
     let results: Vec<UserPseudonymizedResponse> = users::table.into_boxed()
         .offset(params.offset())
