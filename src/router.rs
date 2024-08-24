@@ -4,7 +4,9 @@ use axum::{
     extract::{Query, Json},
     debug_handler,
     middleware::from_fn,
+    http::Method,
 };
+use tower_http::cors::{CorsLayer, Any};
 
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use crate::entities::{user::self,
@@ -21,6 +23,12 @@ use crate::link_preview;
 
 
 pub fn create_router() -> Router {
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(vec![Method::GET, Method::POST, Method::PUT])
+        .allow_headers(Any);
+
     let users_router = Router::new()
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
@@ -30,6 +38,7 @@ pub fn create_router() -> Router {
         .route("/", get(root_route))
         .nest("/users", users_router)
         .layer(from_fn(sessions_service::add_session_to_request))
+        .layer(cors)
 }
 
 // Handler for the root path
