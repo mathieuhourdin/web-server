@@ -32,7 +32,9 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()
-        .route("/", get(resource::get_resources_route))
+        .route("/", get(resource::get_resources_route).post(resource::post_resource_route))
+        .route("/:id", get(resource::get_resource_route).put(resource::put_resource_route))
+        .route("/:id/author_interaction", get(resource::get_resource_author_interaction_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let interactions_router = Router::new()
@@ -66,18 +68,18 @@ pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, Pp
         ("GET", ["resources", id, "comments"]) => comment::get_comments_for_resource(id, &request),
         ("POST", ["resources", id, "comments"]) => comment::post_comment_route(id, &request),
         //("GET", ["resources"]) => resource::get_resources_route(&request),
-        ("GET", ["resources", id]) => resource::get_resource_route(id, &request),
-        ("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
+        //("GET", ["resources", id]) => resource::get_resource_route(id, &request),
+        //("GET", ["resources", id, "author_interaction"]) => resource::get_resource_author_interaction_route(id, &request),
         ("POST", ["resources", id, "interactions"]) => interaction::post_interaction_for_resource(id, &request),
         ("GET", ["resources", id, "interactions"]) => interaction::get_interactions_for_resource_route(id, &request),
         ("GET", ["resource", id, "bibliography"]) => resource_relation::get_resource_relations_for_resource_route(id, &request),
         ("GET", ["resource", id, "usages"]) => resource_relation::get_targets_for_resource_route(id, &request),
-        ("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
-        ("POST", ["resources"]) => resource::post_resource_route(&request),
+        //("PUT", ["resources", id]) => resource::put_resource_route(id, &request),
+        //("POST", ["resources"]) => resource::post_resource_route(&request),
         //("GET", ["interactions"]) => interaction::get_interactions(&request),
         //("PUT", ["interactions", id]) => interaction::put_interaction_route(id, &request),
-        ("GET", ["categories"]) => category::get_categories_route(&request),
-        ("POST", ["categories"]) => category::post_category_route(&request),
+        //("GET", ["categories"]) => category::get_categories_route(&request),
+        //("POST", ["categories"]) => category::post_category_route(&request),
         //("GET", ["thought_outputs"]) => thought_output::get_thought_outputs_route(&request, "all"),
         //("GET", ["thought_outputs", uuid]) => thought_output::get_thought_output_route(uuid),
         //("POST", ["thought_outputs"]) => thought_output::post_thought_outputs_route(&request),

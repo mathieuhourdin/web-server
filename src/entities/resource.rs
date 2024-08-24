@@ -5,10 +5,10 @@ use crate::db::{self, DbPool};
 use crate::schema::*;
 use diesel;
 use diesel::prelude::*;
-use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
+use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 use resource_type::ResourceType;
-use axum::{debug_handler, extract::{Query, Json, Extension}};
+use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
 use crate::pagination::PaginationParams;
 pub use maturing_state::MaturingState;
 
@@ -92,50 +92,51 @@ impl NewResource {
     }
 }
 
-pub fn put_resource_route(id: &str, request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
-    let id = HttpRequest::parse_uuid(id)?;
+#[debug_handler]
+pub async fn put_resource_route(
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<NewResource>,
+) -> Result<Json<Resource>, PpdcError> {
+
     let db_resource = Resource::find(id)?;
-    let resource = serde_json::from_str::<NewResource>(&request.body[..])?;
     let author_interaction = db_resource.find_resource_author_interaction();
     if author_interaction.is_ok() {
         let author_id = author_interaction.unwrap().interaction_user_id;
-        if author_id != request.session.as_ref().unwrap().user_id.unwrap() 
+        if author_id != session.user_id.unwrap()
         {
             let author_user = User::find(&author_id)?;
             if author_user.is_platform_user {
-                return Ok(HttpResponse::unauthorized());
+                return Err(PpdcError::unauthorized());
             }
         }
     }
-    HttpResponse::ok()
-        .json(&resource.update(&id)?)
+    Ok(Json(payload.update(&id)?))
 }
 
-pub fn post_resource_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    if request.session.as_ref().unwrap().user_id.is_none() {
-        return Ok(HttpResponse::unauthorized());
-    }
+#[debug_handler]
+pub async fn post_resource_route(
+    Json(mut payload): Json<NewResource>,
+) -> Result<Json<Resource>, PpdcError> {
+    payload.publishing_state = Some("drft".to_string());
 
-    let mut resource = serde_json::from_str::<NewResource>(&request.body[..])?;
-    resource.publishing_state = Some("drft".to_string());
-
-    HttpResponse::ok().json(&resource.create()?)
+    Ok(Json(payload.create()?))
 }
 
-
-pub fn get_resource_author_interaction_route(id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let id = HttpRequest::parse_uuid(id)?;
+#[debug_handler]
+pub async fn get_resource_author_interaction_route(
+    Path(id): Path<Uuid>
+) -> Result<Json<Interaction>, PpdcError> {
     let resource = Resource::find(id)?;
-    let author_interaction = resource.find_resource_author_interaction().ok();
-    HttpResponse::ok().json(&author_interaction)
+    let author_interaction = resource.find_resource_author_interaction()?;
+    Ok(Json(author_interaction))
 }
 
-pub fn get_resource_route(id: &str, _request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let id = HttpRequest::parse_uuid(id)?;
-    HttpResponse::ok().json(&Resource::find(id)?)
+#[debug_handler]
+pub async fn get_resource_route(
+    Path(id): Path<Uuid>
+) -> Result<Json<Resource>, PpdcError> {
+    Ok(Json(Resource::find(id)?))
 }
 
 #[derive(Deserialize)]
