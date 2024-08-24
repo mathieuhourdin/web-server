@@ -8,6 +8,7 @@ use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 use resource_type::ResourceType;
+use axum::{debug_handler, extract::{Path, Extension, Query, Json}, http::StatusCode as AxumStatusCode, response::IntoResponse};
 pub use maturing_state::MaturingState;
 
 pub mod resource_type;
@@ -136,30 +137,42 @@ pub fn get_resource_route(id: &str, _request: &HttpRequest) -> Result<HttpRespon
     HttpResponse::ok().json(&Resource::find(id)?)
 }
 
-pub fn get_resources_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let is_external = request.query.get("is_external").map(|value| &value[..]).unwrap_or("false");
-    let resource_type = request.query.get("resource_type").map(|value| &value[..]).unwrap_or("all");
-    let (offset, limit) = request.get_pagination();
+#[derive(Deserialize)]
+pub struct GetResourcesParams {
+    is_external: Option<bool>,
+    resource_type: Option<String>,
+}
+
+impl GetResourcesParams {
+    pub fn is_external(&self) -> Option<bool> { 
+        self.is_external
+    }
+
+    pub fn resource_type(&self) -> String {
+        self.resource_type.clone().unwrap_or("all".into())
+    }
+}
+
+#[debug_handler]
+pub async fn get_resources_route(Query(filter_params): Query<GetResourcesParams>) -> Result<Json<Vec<Resource>>, PpdcError> {
+    //let (offset, limit) = request.get_pagination();
 
     let mut conn = db::establish_connection();
 
     let mut query = resources::table
-        .offset(offset)
-        .limit(limit)
+        //.offset(offset)
+        //.limit(limit)
         .order(resources::updated_at.desc())
         .filter(resources::maturing_state.eq("fnsh"))
         .into_boxed();
 
-    if is_external == "false" {
-        query = query.filter(resources::is_external.eq(false));
-    } else {
-        query = query.filter(resources::is_external.eq(true));
-    }
-    if resource_type == "pblm" {
+    if let Some(is_external) = filter_params.is_external {
+        query = query.filter(resources::is_external.eq(is_external));
+    } 
+    if filter_params.resource_type().as_str() == "pblm" {
         query = query.filter(resources::resource_type.eq("pblm"));
     }
     let results = query.load::<Resource>(&mut conn)?;
 
-    HttpResponse::ok()
-        .json(&results)
+    Ok(Json(results))
 }
