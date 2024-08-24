@@ -1,14 +1,14 @@
 use serde::{Serialize, Deserialize};
 use chrono::NaiveDateTime;
 use uuid::Uuid;
-use crate::db;
+use crate::db::{self, DbPool};
 use crate::schema::*;
 use diesel;
 use diesel::prelude::*;
 use crate::entities::{error::{PpdcError}, user::User, interaction::model::Interaction};
 use crate::http::{HttpRequest, HttpResponse};
 use resource_type::ResourceType;
-use axum::{debug_handler, extract::{Query, Json}};
+use axum::{debug_handler, extract::{Query, Json, Extension}};
 use crate::pagination::PaginationParams;
 pub use maturing_state::MaturingState;
 
@@ -157,10 +157,11 @@ impl GetResourcesParams {
 #[debug_handler]
 pub async fn get_resources_route(
     Query(filter_params): Query<GetResourcesParams>,
-    Query(pagination): Query<PaginationParams>
+    Query(pagination): Query<PaginationParams>,
+    Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<Resource>>, PpdcError> {
 
-    let mut conn = db::establish_connection();
+    let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
     let mut query = resources::table
         .offset(pagination.offset())
