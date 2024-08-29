@@ -5,7 +5,6 @@ use web_server::db;
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 use diesel::r2d2::{self, ConnectionManager};
 use axum::Extension;
-use web_server::environment::get_database_url;
 
 type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
 

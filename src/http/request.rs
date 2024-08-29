@@ -283,8 +283,8 @@ mod tests {
         let request_bytes = empty_request_string.as_bytes();
         let request = HttpRequest::from_bytes(request_bytes.to_vec());
         match request {
-            PpdcError => (),
-            HttpRequest => panic!("should be an error")
+            Err(_) => (),
+            Ok(_) => panic!("should be an error")
         }
     }
 

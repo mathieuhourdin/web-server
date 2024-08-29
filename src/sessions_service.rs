@@ -1,6 +1,5 @@
 use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use serde::{Serialize, Deserialize};
-use serde_json;
 use crate::entities::{user::User, session::Session, session::NewSession, error::{ErrorType, PpdcError}};
 use crate::http::CookieValue;
 use axum::{
@@ -11,6 +10,7 @@ use axum::{
     http::{Request, StatusCode as AxumStatusCode},
     response::IntoResponse
 };
+use crate::db::{self, DbPool};
 
 #[derive(Serialize, Deserialize)]
 pub struct LoginCheck {
@@ -41,11 +41,12 @@ pub async fn auth_middleware_custom(
 
 #[debug_handler]
 pub async fn post_session_route(
+    Extension(pool): Extension<DbPool>,
     Extension(mut session): Extension<Session>,
     Json(payload): Json<LoginCheck>,
 ) -> Result<Json<Session>, PpdcError> { 
 
-    let existing_user = User::find_by_username(&payload.username)?;
+    let existing_user = User::find_by_username(&payload.username, &pool)?;
 
     let is_valid_password = existing_user.verify_password(&payload.password.as_bytes())?;
 

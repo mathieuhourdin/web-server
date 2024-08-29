@@ -94,6 +94,7 @@ impl NewResource {
 
 #[debug_handler]
 pub async fn put_resource_route(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Json(payload): Json<NewResource>,
@@ -105,7 +106,7 @@ pub async fn put_resource_route(
         let author_id = author_interaction.unwrap().interaction_user_id;
         if author_id != session.user_id.unwrap()
         {
-            let author_user = User::find(&author_id)?;
+            let author_user = User::find(&author_id, &pool)?;
             if author_user.is_platform_user {
                 return Err(PpdcError::unauthorized());
             }

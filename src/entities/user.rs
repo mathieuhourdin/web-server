@@ -127,17 +127,17 @@ pub struct NewUser {
 }
 
 impl NewUser {
-    pub fn create(self) -> Result<User, PpdcError> {
-        let mut conn = db::establish_connection();
-        //let user = User::from(user);
+    pub fn create(self, pool: &DbPool) -> Result<User, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+
         let user = diesel::insert_into(users::table)
             .values(&self)
             .get_result(&mut conn)?;
         Ok(user)
     }
 
-    pub fn update(self, id: &Uuid) -> Result<User, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result = diesel::update(users::table)
             .filter(users::id.eq(id))
@@ -179,8 +179,8 @@ impl User {
                 format!("Unable to decode password: {:#?}", err)))
     }
 
-    pub fn find(id: &Uuid) -> Result<User, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find(id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let user = users::table
             .filter(users::id.eq(id))
@@ -188,8 +188,8 @@ impl User {
         Ok(user)
     }
 
-    pub fn find_by_username(email: &String) -> Result<User, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find_by_username(email: &String, pool: &DbPool) -> Result<User, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
         let user = users::table
             .filter(users::email.eq(email))
             .first(&mut conn)?;
@@ -216,35 +216,40 @@ pub async fn get_users(
 }
 
 #[debug_handler]
-pub async fn post_user(Json(mut payload): Json<NewUser>) -> Result<Json<User>, PpdcError> {
+pub async fn post_user(
+    Extension(pool): Extension<DbPool>,
+    Json(mut payload): Json<NewUser>
+) -> Result<Json<User>, PpdcError> {
     payload.hash_password().unwrap();
-    let created_user = payload.create()?;
+    let created_user = payload.create(&pool)?;
     Ok(Json(created_user))
 }
 
 #[debug_handler]
 pub async fn put_user_route(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Json(payload): Json<NewUser>
 ) -> Result<Json<User>, PpdcError> {
 
     let session_user_id = session.user_id.unwrap();
-    let existing_user = User::find(&id)?;
+    let existing_user = User::find(&id, &pool)?;
 
     if &session_user_id != &id && existing_user.is_platform_user {
         return Err(PpdcError::unauthorized())
     }
-    Ok(Json(payload.update(&id)?))
+    Ok(Json(payload.update(&id, &pool)?))
 }
 
 #[debug_handler]
 pub async fn get_user_route(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     ) -> Result<impl IntoResponse, PpdcError> {
 
-    let user = User::find(&id)?;
+    let user = User::find(&id, &pool)?;
     if !user.is_platform_user || session.user_id.unwrap() == id {
         let user_response = UserPseudonymizedAuthentifiedResponse::from(&user);
         Ok(UserResponse::PseudonymizedAuthentified(user_response))
