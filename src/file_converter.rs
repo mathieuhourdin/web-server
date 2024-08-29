@@ -2,6 +2,7 @@ use crate::entities::error::{self, PpdcError};
 use crate::http::{self, HttpRequest, HttpResponse};
 use serde::{Serialize, Deserialize};
 use crate::http::{File, FileType};
+use axum::{debug_handler, extract::{Json, Query, Multipart}};
 
 mod tex;
 mod docx_to_spip;
@@ -19,34 +20,42 @@ impl FileConversion {
     }
 }
 
-pub fn parse_multipart_form_data_request_body(request: &HttpRequest) -> Result<File, PpdcError> {
-    if request.content_type.as_ref().unwrap() != &http::ContentType::FormData {
-        return Err(PpdcError::new(404, error::ErrorType::ApiError, "Not multipart/form-data content type".to_string()));
+#[derive(Deserialize)]
+pub struct FileConversionParams {
+    target_format: Option<String>,
+    remove_line_breaks: Option<bool>
+}
+
+impl FileConversionParams {
+    pub fn target_format(&self) -> String {
+        self.target_format.clone().unwrap_or("ppdc".to_string())
     }
-    let target_format: String = request.query.get("target_format").unwrap_or(&"ppdc".to_string()).to_string();
-    let remove_line_breaks: bool = match request.query.get("remove_line_breaks").unwrap_or(&"true".to_string()).as_str() {
-        "false" => false,
-        "true" => true,
-        _ => false
-    };
-    let mut file = request.files[0].clone();
+
+    pub fn remove_line_breaks(&self) -> bool {
+        self.remove_line_breaks.clone().unwrap_or(true)
+    }
+}
+
+#[debug_handler]
+pub async fn post_file_conversion_route(
+    Query(params): Query<FileConversionParams>,
+    mut multipart: Multipart
+) -> Result<Json<FileConversion>, PpdcError> {
+
+    let field = multipart.next_field().await.unwrap().unwrap();
+    let mut file = File::new();
+    file.from_axum_field(field).await;
 
     if file.file_type == Some(FileType::Docx) {
         println!("This is a docx file");
     }
-    if &target_format == "ppdc" && file.file_type == Some(FileType::Tex) {
+    if params.target_format() == "ppdc" && file.file_type == Some(FileType::Tex) {
         file.content = tex::convert_tex_file(file.content)?;
-    } else if &target_format == "spip" && file.file_type == Some(FileType::Docx) {
-        file.content = docx_to_spip::handle_file_conversion(&file, remove_line_breaks);
+    } else if params.target_format() == "spip" && file.file_type == Some(FileType::Docx) {
+        file.content = docx_to_spip::handle_file_conversion(&file, params.remove_line_breaks());
     }
-    Ok(file)
-}
-
-pub fn post_file_conversion_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let file = parse_multipart_form_data_request_body(request)?;
     let response = FileConversion::new(file.name, None, Some(file.content));
-    HttpResponse::ok()
-        .json(&response)
+    Ok(Json(response))
 }
 
 #[cfg(test)]

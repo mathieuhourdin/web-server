@@ -1,5 +1,6 @@
 use crate::entities::error::PpdcError;
 use std::collections::HashMap;
+use axum::extract::multipart::Field;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum FileType {
@@ -45,6 +46,13 @@ impl File {
             content: String::new(),
             content_bytes: vec![]
         }
+    }
+
+    pub async fn from_axum_field(&mut self, field: Field<'_>) -> Result<(), PpdcError> {
+        self.name = field.name().unwrap().to_string();
+        self.file_type = self.name.split(".").last().map(|x| FileType::from_str(x)).unwrap();
+        self.content_bytes = field.bytes().await.unwrap().to_vec();
+        Ok(())
     }
 
     pub fn decode_from_bytes(&mut self, file_bytes: Vec<u8>) -> Result<(), PpdcError> {

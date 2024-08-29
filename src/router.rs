@@ -66,6 +66,7 @@ pub fn create_router() -> Router {
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
         .route("/link_preview", post(link_preview::post_preview_route))
+        .route("/file_conversion", post(file_converter::post_file_conversion_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))
         .layer(from_fn(sessions_service::add_session_to_request))
@@ -79,15 +80,3 @@ async fn fallback_handler() -> impl IntoResponse {
 async fn root_handler() -> impl IntoResponse {
     (StatusCode::OK, "Ok")
 }
-
-//TODO integrate remaning routes
-/*pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let session_id = &request.session.as_ref().unwrap().id;
-    println!("Request with session id : {session_id}");
-    match (&request.method[..], &request.parsed_path()[..]) {
-        //("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
-        ("POST", ["link_preview"]) => link_preview::post_preview_route(&request).await,
-        ("POST", ["file_conversion"]) => file_converter::post_file_conversion_route(&request),
-        //_ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
-    }
-}*/
