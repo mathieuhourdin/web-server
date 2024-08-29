@@ -52,7 +52,7 @@ pub async fn post_session_route(
         println!("Password is valid. Let's authenticate session");
         session.set_authenticated_and_user_id(existing_user.id);
 
-        let session = Session::update(&session)?;
+        let session = Session::update(&session, &pool)?;
 
         return Ok(Json(session));
         

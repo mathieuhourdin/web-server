@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use chrono::{NaiveDateTime, Utc, Duration};
 use uuid::Uuid;
 use diesel::prelude::*;
-use crate::db;
+use crate::db::DbPool;
 use crate::schema::sessions;
 use diesel;
 use crate::entities::error::{PpdcError};
@@ -57,13 +57,13 @@ impl Session {
         self.expires_at > Utc::now().naive_utc()
     }
 
-    pub fn set_authenticated_and_user_id(&mut self, user_id: Uuid) {
+    pub fn set_authenticated_and_user_id(&mut self, user_id: Uuid,) {
         self.user_id = Some(user_id);
         self.authenticated = true;
     }
 
-    pub fn find(id: &Uuid) -> Result<Session, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find(id: &Uuid, pool: &DbPool) -> Result<Session, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let session = sessions::table
             .filter(sessions::id.eq(id))
@@ -71,8 +71,8 @@ impl Session {
         Ok(session)
     }
 
-    pub fn update(session: &Session) -> Result<Session, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn update(session: &Session, pool: &DbPool) -> Result<Session, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let session = diesel::update(sessions::table)
             .filter(sessions::id.eq(session.id))
@@ -81,23 +81,23 @@ impl Session {
         Ok(session)
     }
 
-    pub fn create(session: &NewSession) -> Result<Session, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn create(session: &NewSession, pool: &DbPool) -> Result<Session, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
         let session = diesel::insert_into(sessions::table)
             .values(session)
             .get_result(&mut conn)?;
         Ok(session)
     }
 
-    pub fn get_valid_session_from_id(id: &str) -> Result<Session, PpdcError> {
+    pub fn get_valid_session_from_id(id: &str, pool: &DbPool) -> Result<Session, PpdcError> {
 
         println!("generate_valid_session_from_id id : {id}");
         let decoded_session_id = Uuid::parse_str(id)?;
-        let found_session = match Session::find(&decoded_session_id) {
+        let found_session = match Session::find(&decoded_session_id, pool) {
             Err(err) => {
                 println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
                 let new_session = NewSession::new();
-                Session::create(&new_session)?
+                Session::create(&new_session, pool)?
             },
             Ok(session) => {
                     if session.is_valid() {
@@ -105,7 +105,7 @@ impl Session {
                     } else {
                         println!("Session {} not valid anymore", session.id);
                         let new_session = NewSession::new();
-                        Session::create(&new_session)?
+                        Session::create(&new_session, pool)?
                     }
                 }
         };
@@ -122,9 +122,10 @@ where
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, _state: &B) -> Result<Self, Self::Rejection> {
+        let pool = parts.extensions.get::<DbPool>().expect("Extension DbPool should be set");
         if let Some(auth_header) = parts.headers.get("Authorization") {
             if let Ok(auth_str) = auth_header.to_str() {
-                return Ok(Session::get_valid_session_from_id(auth_str).unwrap());
+                return Ok(Session::get_valid_session_from_id(auth_str, &pool).unwrap());
             }
         }
 

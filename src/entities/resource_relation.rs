@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use chrono::NaiveDateTime;
 use uuid::Uuid;
-use crate::db;
+use crate::db::DbPool;
 use crate::schema::*;
 use diesel::prelude::*;
 use crate::entities::{session::Session, error::{PpdcError}, resource::Resource};
@@ -45,8 +45,8 @@ pub struct NewResourceRelation {
 }
 
 impl NewResourceRelation {
-    pub fn create(self) -> Result<ResourceRelation, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn create(self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let resource_relation = diesel::insert_into(resource_relations::table)
             .values(&self)
@@ -56,8 +56,8 @@ impl NewResourceRelation {
 }
 
 impl ResourceRelation {
-    pub fn find_origin_for_resource(target_resource_id: Uuid) -> Result<Vec<ResourceRelationWithOriginResource>, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find_origin_for_resource(target_resource_id: Uuid, pool: &DbPool) -> Result<Vec<ResourceRelationWithOriginResource>, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let resource_relations = resource_relations::table
             .inner_join(resources::table.on(resource_relations::origin_resource_id.eq(resources::id)))
@@ -70,8 +70,8 @@ impl ResourceRelation {
         Ok(resource_relations)
     }
 
-    pub fn find_target_for_resource(origin_resource_id: Uuid) -> Result<Vec<ResourceRelationWithTargetResource>, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find_target_for_resource(origin_resource_id: Uuid, pool: &DbPool) -> Result<Vec<ResourceRelationWithTargetResource>, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let resource_relations = resource_relations::table
             .inner_join(resources::table.on(resource_relations::target_resource_id.eq(resources::id)))
@@ -87,24 +87,27 @@ impl ResourceRelation {
 
 #[debug_handler]
 pub async fn post_resource_relation_route(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Json(mut payload): Json<NewResourceRelation>
 ) -> Result<Json<ResourceRelation>, PpdcError> {
     payload.user_id = session.user_id;
-    Ok(Json(payload.create()?))
+    Ok(Json(payload.create(&pool)?))
 }
 
 #[debug_handler]
 pub async fn get_resource_relations_for_resource_route(
+    Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ResourceRelationWithOriginResource>>, PpdcError> {
-    Ok(Json(ResourceRelation::find_origin_for_resource(id)?))
+    Ok(Json(ResourceRelation::find_origin_for_resource(id, &pool)?))
 }
 
 #[debug_handler]
 pub async fn get_targets_for_resource_route(
+    Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ResourceRelationWithTargetResource>>, PpdcError> {
 
-    Ok(Json(ResourceRelation::find_target_for_resource(id)?))
+    Ok(Json(ResourceRelation::find_target_for_resource(id, &pool)?))
 }
