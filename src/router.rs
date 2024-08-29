@@ -1,11 +1,12 @@
 use axum::{
     routing::{post, get, put, Router},
     middleware::from_fn,
-    http::Method,
+    http::{StatusCode, Method},
+    response::{IntoResponse},
 };
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::{services::ServeDir, cors::{CorsLayer, Any}};
 
-use crate::http::{HttpRequest, HttpResponse, StatusCode};
+use crate::http::{HttpRequest, HttpResponse};
 use crate::entities::{user::self,
     interaction::{interaction_routes as interaction},
     error::PpdcError,
@@ -64,20 +65,28 @@ pub fn create_router() -> Router {
         .nest("/", relations_router)
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
+        .fallback(fallback_handler)
+        .route("/", get(root_handler))
         .layer(from_fn(sessions_service::add_session_to_request))
+        .nest_service("/public", ServeDir::new("public"))
         .layer(cors)
 }
 
+async fn fallback_handler() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, "404 Not Found")
+}
+async fn root_handler() -> impl IntoResponse {
+    (StatusCode::OK, "Ok")
+}
+
 //TODO integrate remaning routes
-pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
+/*pub async fn route_request(request: &mut HttpRequest) -> Result<HttpResponse, PpdcError> {
     let session_id = &request.session.as_ref().unwrap().id;
     println!("Request with session id : {session_id}");
     match (&request.method[..], &request.parsed_path()[..]) {
-        ("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
-        ("GET", ["public", file_name]) => HttpResponse::from_file(StatusCode::Ok, file_name),
+        //("GET", [""]) => HttpResponse::from_file(StatusCode::Ok, "hello.html"),
         ("POST", ["link_preview"]) => link_preview::post_preview_route(&request).await,
-        ("GET", ["list-article"]) => HttpResponse::from_file(StatusCode::Ok, "list-article.html"),
         ("POST", ["file_conversion"]) => file_converter::post_file_conversion_route(&request),
-        _ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
+        //_ => HttpResponse::from_file(StatusCode::NotFound, "404.html")
     }
-}
+}*/
