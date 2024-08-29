@@ -4,10 +4,8 @@ use diesel::prelude::*;
 use crate::db;
 use chrono::NaiveDateTime;
 use crate::schema::{comments, users};
-use crate::http::{HttpRequest, HttpResponse};
 use crate::entities::{session::Session, error::PpdcError, user::User};
-use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
-use serde_json;
+use axum::{debug_handler, extract::{Json, Path, Extension}};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name=comments)]

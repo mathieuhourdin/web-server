@@ -249,7 +249,7 @@ impl HttpRequest {
 mod tests {
     use super::*;
 
-    const request_string: &str = "POST /users HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nOrigin: http://localhost:5173\r\n\r\n{\"name\":\"mathieu\"}";
+    const REQUEST_STRING: &str = "POST /users HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nOrigin: http://localhost:5173\r\n\r\n{\"name\":\"mathieu\"}";
     fn create_example_hashmap() -> HashMap<String, String> {
         let mut hashmap = HashMap::new();
         hashmap.insert("host".to_string(), "127.0.0.1:8080".to_string());
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_request_encoding() {
-        let request_bytes = request_string.as_bytes();
+        let request_bytes = REQUEST_STRING.as_bytes();
         let request = HttpRequest::from_bytes(request_bytes.to_vec()).unwrap();
 
         let expected_headers = create_example_hashmap();
@@ -291,6 +291,6 @@ mod tests {
     #[test]
     fn parse_request_with_no_body() {
         let no_body_request_string: &str = "POST /users HTTP/1.1\r\n\r\n";
-        let request = HttpRequest::from_bytes(no_body_request_string.as_bytes().to_vec()).unwrap();
+        let _request = HttpRequest::from_bytes(no_body_request_string.as_bytes().to_vec()).unwrap();
     }
 }

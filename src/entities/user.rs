@@ -6,7 +6,7 @@ use crate::entities::{session::Session, error::{PpdcError, ErrorType}};
 use crate::pagination::PaginationParams;
 use diesel::prelude::*;
 use uuid::Uuid;
-use crate::db::{self, DbPool};
+use crate::db::DbPool;
 use crate::schema::users;
 use diesel;
 use chrono::NaiveDateTime;

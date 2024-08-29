@@ -6,7 +6,6 @@ use crate::schema::*;
 use diesel;
 use diesel::prelude::*;
 use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::Interaction};
-use crate::http::{HttpRequest, HttpResponse};
 use resource_type::ResourceType;
 use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
 use crate::pagination::PaginationParams;

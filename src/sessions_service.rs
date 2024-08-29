@@ -1,7 +1,5 @@
-use crate::http::{HttpRequest, HttpResponse, StatusCode};
 use serde::{Serialize, Deserialize};
-use crate::entities::{user::User, session::Session, session::NewSession, error::{ErrorType, PpdcError}};
-use crate::http::CookieValue;
+use crate::entities::{user::User, session::Session, error::{ErrorType, PpdcError}};
 use axum::{
     debug_handler,
     extract::{Json, Extension},
@@ -10,7 +8,7 @@ use axum::{
     http::{Request, StatusCode as AxumStatusCode},
     response::IntoResponse
 };
-use crate::db::{self, DbPool};
+use crate::db::DbPool;
 
 #[derive(Serialize, Deserialize)]
 pub struct LoginCheck {
@@ -72,53 +70,4 @@ pub async fn get_session_route(
 
 pub fn decode_session_id(session_id: &String) -> String {
     String::from(&session_id[..])
-}
-
-fn generate_valid_session_from_id(id: &str, request: &mut HttpRequest) -> Result<String, PpdcError> {
-
-    println!("generate_valid_session_from_id id : {id}");
-    let decoded_session_id = HttpRequest::parse_uuid(id)?;
-    let found_session = match Session::find(&decoded_session_id) {
-        Err(err) => {
-            println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
-            let new_session = NewSession::new();
-            Session::create(&new_session)?
-        },
-        Ok(session) => {
-                if session.is_valid() {
-                    session
-                } else {
-                    println!("Session {} not valid anymore", session.id);
-                    let new_session = NewSession::new();
-                    Session::create(&new_session)?
-                }
-            }
-    };
-    println!("generate_valid_session_from_id found_session id {:#?}", found_session.id);
-    let session_uuid = format!("{}", found_session.id);
-    let response = CookieValue::new("session_id".to_string(), session_uuid, found_session.expires_at).format();
-    request.session = Some(found_session);
-    Ok(response)
-}
-
-pub async fn create_or_attach_session(request: &mut HttpRequest) -> Result<String, PpdcError> {
-
-    if request.cookies.data.contains_key("session_id") {
-        let session_id = request.cookies.data["session_id"].clone();
-        generate_valid_session_from_id(&session_id[..], request)
-    } else {
-        if request.headers.contains_key("authorization") && (request.headers["authorization"] != "null".to_string()) {
-            let session_id = request.headers.get("authorization").unwrap().clone();
-            let coming_response = generate_valid_session_from_id(&session_id[..], request);
-            println!("create_or_attach_session finished generating");
-            coming_response
-        } else {
-            let new_session = NewSession::new();
-            let new_session = Session::create(&new_session)?;
-            let session_id = format!("{}", new_session.id);
-            let response = CookieValue::new("session_id".to_string(), session_id, new_session.expires_at).format();
-            request.session = Some(new_session);
-            Ok(response)
-        }
-    }
 }

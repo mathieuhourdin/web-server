@@ -5,8 +5,7 @@ use crate::db;
 use crate::schema::*;
 use diesel::prelude::*;
 use crate::entities::{session::Session, error::{PpdcError}, resource::Resource};
-use crate::http::{HttpRequest, HttpResponse};
-use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
+use axum::{debug_handler, extract::{Json, Path, Extension}};
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name=resource_relations)]
