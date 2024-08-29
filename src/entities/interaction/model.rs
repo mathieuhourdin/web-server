@@ -6,6 +6,7 @@ use crate::db;
 use crate::schema::*;
 use diesel;
 use crate::entities::{error::{PpdcError}, user::User, resource::{Resource, NewResource}};
+use crate::db::DbPool;
 
 //TODO integrate in interaction
 pub enum InteractionType {
@@ -82,9 +83,16 @@ pub struct NewInteraction {
 
 impl Interaction {
 
-    pub fn load_paginated(offset: i64, limit: i64, filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>, resource_maturing_state: &str, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
+    pub fn load_paginated(
+        offset: i64,
+        limit: i64,
+        filtered_interactions_query: interactions::BoxedQuery<diesel::pg::Pg>,
+        resource_maturing_state: &str,
+        resource_type: &str,
+        pool: &DbPool
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
-        let mut conn = db::establish_connection();
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let mut query = filtered_interactions_query
             .offset(offset)
@@ -110,29 +118,42 @@ impl Interaction {
             .filter(interactions::interaction_type.eq("outp"))
     }
 
-    pub fn find_paginated_outputs_published(offset: i64, limit: i64, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
+    pub fn find_paginated_outputs_published(
+        offset: i64,
+        limit: i64,
+        resource_type: &str,
+        pool: &DbPool
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
 
         Interaction::load_paginated(
             offset,
             limit,
             Interaction::filter_outputs(),
             "fnsh",
-            resource_type
+            resource_type,
+            pool
         )
     }
-    pub fn find_paginated_outputs_drafts(offset: i64, limit: i64, user_id: Uuid, resource_type: &str) -> Result<Vec<InteractionWithResource>, PpdcError> {
+    pub fn find_paginated_outputs_drafts(
+        offset: i64,
+        limit: i64,
+        user_id: Uuid,
+        resource_type: &str,
+        pool: &DbPool
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
         Interaction::load_paginated(
             offset,
             limit,
             Interaction::filter_outputs()
                 .filter(interactions::interaction_user_id.eq(user_id)),
             "drft",
-            resource_type
+            resource_type,
+            pool
             )
     }
 
-    pub fn find(id: Uuid) -> Result<Interaction, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find(id: Uuid, pool: &DbPool) -> Result<Interaction, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let thought_output = interactions::table
             .filter(interactions::id.eq(id))
@@ -143,8 +164,8 @@ impl Interaction {
 }
 
 impl NewInteraction {
-    pub fn create(self) -> Result<Interaction, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn create(self, pool: &DbPool) -> Result<Interaction, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result = diesel::insert_into(interactions::table)
             .values(&self)
@@ -152,8 +173,8 @@ impl NewInteraction {
         Ok(result)
     }
     
-    pub fn update(self, id: &Uuid) -> Result<Interaction, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<Interaction, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result = diesel::update(interactions::table)
             .filter(interactions::id.eq(id))

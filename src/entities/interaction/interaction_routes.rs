@@ -6,9 +6,11 @@ use crate::entities::{session::Session, error::PpdcError};
 use crate::pagination::PaginationParams;
 use axum::{debug_handler, extract::{Extension, Path, Query, Json}};
 use serde::{Deserialize};
+use crate::db::DbPool;
 
 #[debug_handler]
 pub async fn post_interaction_for_resource(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<NewInteraction>,
@@ -17,7 +19,7 @@ pub async fn post_interaction_for_resource(
     payload.interaction_user_id = Some(payload.interaction_user_id.unwrap_or(session.user_id.unwrap()));
     payload.resource_id = Some(id);
     payload.interaction_type = Some(payload.interaction_type.unwrap_or("outp".to_string()));
-    Ok(Json(payload.create()?))
+    Ok(Json(payload.create(&pool)?))
 }
 
 #[derive(Deserialize)]
@@ -38,6 +40,7 @@ impl InteractionFilters {
 
 #[debug_handler]
 pub async fn get_interactions_route(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Query(filters): Query<InteractionFilters>,
     Query(pagination): Query<PaginationParams>
@@ -71,7 +74,8 @@ pub async fn get_interactions_route(
         pagination.limit(), 
         interactions_filtered,
         filters.maturing_state().as_str(),
-        "all"
+        "all",
+        &pool
 
     )?;
     Ok(Json(interactions))
@@ -79,14 +83,16 @@ pub async fn get_interactions_route(
     
 #[debug_handler]
 pub async fn put_interaction_route(
+    Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>,
     Json(payload): Json<NewInteraction>
 ) -> Result<Json<Interaction>, PpdcError> {
-    Ok(Json(payload.update(&id)?))
+    Ok(Json(payload.update(&id, &pool)?))
 }
 
 #[debug_handler]
 pub async fn get_interactions_for_resource_route(
+    Extension(pool): Extension<DbPool>,
     Query(pagination): Query<PaginationParams>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<InteractionWithResource>>, PpdcError> {
@@ -97,7 +103,8 @@ pub async fn get_interactions_for_resource_route(
             .filter(interactions::resource_id.eq(id))
             .filter(interactions::interaction_is_public.eq(true)).into_boxed(),
         "fnsh",
-        "all"
+        "all",
+        &pool
     )?;
     Ok(Json(interactions))
 }
