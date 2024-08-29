@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use chrono::NaiveDateTime;
 use uuid::Uuid;
-use crate::db::{self, DbPool};
+use crate::db::DbPool;
 use crate::schema::*;
 use diesel;
 use diesel::prelude::*;
@@ -50,8 +50,8 @@ pub struct NewResource {
 }
 
 impl Resource {
-    pub fn find(id: Uuid) -> Result<Resource, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find(id: Uuid, pool: &DbPool) -> Result<Resource, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result = resources::table
             .filter(resources::id.eq(id))
@@ -59,8 +59,8 @@ impl Resource {
         Ok(result)
     }
 
-    pub fn find_resource_author_interaction(self) -> Result<Interaction, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn find_resource_author_interaction(self, pool: &DbPool) -> Result<Interaction, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result: Interaction = interactions::table
             .filter(interactions::interaction_type.eq("outp"))
@@ -71,8 +71,8 @@ impl Resource {
 }
 
 impl NewResource {
-    pub fn create(self) -> Result<Resource, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn create(self, pool: &DbPool) -> Result<Resource, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result = diesel::insert_into(resources::table)
             .values(&self)
@@ -80,8 +80,8 @@ impl NewResource {
         Ok(result)
     }
     
-    pub fn update(self, id: &Uuid) -> Result<Resource, PpdcError> {
-        let mut conn = db::establish_connection();
+    pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<Resource, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
         let result = diesel::update(resources::table)
             .filter(resources::id.eq(id))
@@ -99,8 +99,8 @@ pub async fn put_resource_route(
     Json(payload): Json<NewResource>,
 ) -> Result<Json<Resource>, PpdcError> {
 
-    let db_resource = Resource::find(id)?;
-    let author_interaction = db_resource.find_resource_author_interaction();
+    let db_resource = Resource::find(id, &pool)?;
+    let author_interaction = db_resource.find_resource_author_interaction(&pool);
     if author_interaction.is_ok() {
         let author_id = author_interaction.unwrap().interaction_user_id;
         if author_id != session.user_id.unwrap()
@@ -111,34 +111,37 @@ pub async fn put_resource_route(
             }
         }
     }
-    Ok(Json(payload.update(&id)?))
+    Ok(Json(payload.update(&id, &pool)?))
 }
 
 #[debug_handler]
 pub async fn post_resource_route(
+    Extension(pool): Extension<DbPool>,
     Json(mut payload): Json<NewResource>,
 ) -> Result<Json<Resource>, PpdcError> {
     payload.publishing_state = Some("drft".to_string());
 
-    Ok(Json(payload.create()?))
+    Ok(Json(payload.create(&pool)?))
 }
 
 #[debug_handler]
 pub async fn get_resource_author_interaction_route(
+    Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>
 ) -> Result<Json<Interaction>, PpdcError> {
 
     println!("get_resource_author_interaction_route");
-    let resource = Resource::find(id)?;
-    let author_interaction = resource.find_resource_author_interaction()?;
+    let resource = Resource::find(id, &pool)?;
+    let author_interaction = resource.find_resource_author_interaction(&pool)?;
     Ok(Json(author_interaction))
 }
 
 #[debug_handler]
 pub async fn get_resource_route(
+    Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>
 ) -> Result<Json<Resource>, PpdcError> {
-    Ok(Json(Resource::find(id)?))
+    Ok(Json(Resource::find(id, &pool)?))
 }
 
 #[derive(Deserialize)]
@@ -159,9 +162,9 @@ impl GetResourcesParams {
 
 #[debug_handler]
 pub async fn get_resources_route(
+    Extension(pool): Extension<DbPool>,
     Query(filter_params): Query<GetResourcesParams>,
     Query(pagination): Query<PaginationParams>,
-    Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<Resource>>, PpdcError> {
 
     let mut conn = pool.get().expect("Failed to get a connection from the pool");

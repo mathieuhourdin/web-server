@@ -2,7 +2,6 @@ use serde::{Serialize, Deserialize};
 use diesel::prelude::*;
 use uuid::Uuid;
 use chrono::NaiveDateTime;
-use crate::db;
 use crate::schema::*;
 use diesel;
 use crate::entities::{error::{PpdcError}, user::User, resource::{Resource, NewResource}};
