@@ -65,6 +65,7 @@ pub fn create_router() -> Router {
         .nest("/", relations_router)
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
+        .route("/link_preview", post(link_preview::post_preview_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))
         .layer(from_fn(sessions_service::add_session_to_request))
