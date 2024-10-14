@@ -14,7 +14,7 @@ pub async fn post_interaction_for_resource(
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Json(mut payload): Json<NewInteraction>,
-) -> Result<Json<Interaction>, PpdcError> {
+                  ) -> Result<Json<Interaction>, PpdcError> {
 
     payload.interaction_user_id = Some(payload.interaction_user_id.unwrap_or(session.user_id.unwrap()));
     payload.resource_id = Some(id);

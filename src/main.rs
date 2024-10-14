@@ -16,6 +16,6 @@ async fn main() {
     let app = web_server::router::create_router()
         .layer(Extension(pool));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
