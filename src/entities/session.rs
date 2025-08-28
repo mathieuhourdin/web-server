@@ -92,7 +92,13 @@ impl Session {
     pub fn get_valid_session_from_id(id: &str, pool: &DbPool) -> Result<Session, PpdcError> {
 
         println!("generate_valid_session_from_id id : {id}");
-        let decoded_session_id = Uuid::parse_str(id)?;
+        let decoded_session_id = Uuid::parse_str(id);
+        if decoded_session_id.is_err() {
+            println!("Error when decoding session_id: {id}");
+            let new_session = NewSession::new();
+            return Ok(Session::create(&new_session, pool).unwrap());
+        }
+        let decoded_session_id = decoded_session_id.unwrap();
         let found_session = match Session::find(&decoded_session_id, pool) {
             Err(err) => {
                 println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
@@ -122,13 +128,15 @@ where
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, _state: &B) -> Result<Self, Self::Rejection> {
+        println!("from_request_parts");
         let pool = parts.extensions.get::<DbPool>().expect("Extension DbPool should be set");
+        println!("from_request_parts pool");
         if let Some(auth_header) = parts.headers.get("Authorization") {
             if let Ok(auth_str) = auth_header.to_str() {
+                println!("from_request_parts auth_str {:#?}", auth_str);
                 return Ok(Session::get_valid_session_from_id(auth_str, &pool).unwrap());
             }
         }
-
-        Err((StatusCode::UNAUTHORIZED, "Unauthorized logic"))
+        Session::create(&NewSession::new(), &pool).map_err(|_| (StatusCode::UNAUTHORIZED, "Unauthorized"))
     }
 }

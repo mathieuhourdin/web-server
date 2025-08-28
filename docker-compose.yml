@@ -15,8 +15,8 @@ services:
       - "5432:5432"
     restart: always
     environment:
-      POSTGRES_PASSWORD: "password"
-      POSTGRES_USER: "admin"
+      POSTGRES_PASSWORD: "mysecretpassword"
+      POSTGRES_USER: "postgres"
       POSTGRES_DB: "ppdc"
   nginx:
     build: ./nginx

@@ -43,6 +43,7 @@ pub async fn post_session_route(
     Extension(mut session): Extension<Session>,
     Json(payload): Json<LoginCheck>,
 ) -> Result<Json<Session>, PpdcError> { 
+    println!("Post session route");
 
     let existing_user = User::find_by_username(&payload.username, &pool)?;
 

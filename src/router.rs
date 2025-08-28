@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse},
 };
 use tower_http::{services::ServeDir, cors::{CorsLayer, Any}};
+use http::header::{CONTENT_TYPE, AUTHORIZATION, ACCEPT};
 
 use crate::http::{HttpRequest, HttpResponse};
 use crate::entities::{user::self,
@@ -17,6 +18,7 @@ use crate::sessions_service;
 use crate::file_converter;
 use crate::entities::resource_relation;
 use crate::link_preview;
+use crate::entities::process_audio::process_audio_routes as process_audio;
 
 
 pub fn create_router() -> Router {
@@ -24,7 +26,7 @@ pub fn create_router() -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(vec![Method::GET, Method::POST, Method::PUT])
-        .allow_headers(Any);
+        .allow_headers([CONTENT_TYPE, ACCEPT, AUTHORIZATION]);
 
     let users_router = Router::new()
         .route("/", get(user::get_users).post(user::post_user))
@@ -55,6 +57,10 @@ pub fn create_router() -> Router {
         .route("/:id", put(comment::put_comment))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let process_audio_router = Router::new()
+        .route("/", post(process_audio::post_process_audio_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     let sessions_router = Router::new()
         .route("/", get(sessions_service::get_session_route).post(sessions_service::post_session_route));
 
@@ -62,6 +68,7 @@ pub fn create_router() -> Router {
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/interactions", interactions_router)
+        .nest("/process_audio", process_audio_router)
         .nest("/", relations_router)
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)

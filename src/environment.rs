@@ -21,3 +21,23 @@ pub fn get_allow_origin() -> String {
     dotenv().ok();
     std::env::var("ALLOW_ORIGIN").expect("Allow origin shoud be provided")
 }
+
+pub fn get_openai_api_key() -> String {
+    dotenv().ok();
+    std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY should be provided")
+}
+
+pub fn get_openai_api_base_url() -> String {
+    dotenv().ok();
+    std::env::var("OPENAI_API_BASE_URL").unwrap_or_else(|_| "https://api.openai.com".to_string())
+}
+
+pub fn get_search_api_key() -> String {
+    dotenv().ok();
+    std::env::var("SEARCH_API_KEY").unwrap_or_else(|_| "".to_string())
+}
+
+pub fn get_search_engine_id() -> String {
+    dotenv().ok();
+    std::env::var("SEARCH_ENGINE_ID").unwrap_or_else(|_| "".to_string())
+}
