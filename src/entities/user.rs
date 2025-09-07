@@ -8,8 +8,9 @@ use diesel::prelude::*;
 use uuid::Uuid;
 use crate::db::DbPool;
 use crate::schema::users;
-use diesel;
 use chrono::NaiveDateTime;
+use diesel::sql_types::{Text, Float, Uuid as SqlUuid};
+use diesel::sql_query;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::users)]
@@ -195,7 +196,72 @@ impl User {
             .first(&mut conn)?;
         Ok(user)
     }
+
+    pub fn display_name(&self) -> String {
+        if self.pseudonymized {
+            self.pseudonym.clone()
+        } else {
+            format!("{} {}", self.first_name, self.last_name)
+        }
+    }
 }
+
+#[derive(QueryableByName)]
+struct Row {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = Text)]
+    first_name: String,
+    #[diesel(sql_type = Text)]
+    last_name: String,
+    #[diesel(sql_type = Float)]
+    score: f32,
+}
+
+#[derive(Debug)]
+pub struct UserMatch {
+    pub id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub score: f32,
+}
+
+pub fn find_similar_users(
+    pool: &DbPool,
+    input: &str,
+    limit: i64,
+) -> Result<Vec<UserMatch>, PpdcError> {
+    let mut conn = pool.get().expect("Failed to get a connection from the pool");
+    
+    let query = format!(
+        "
+        SELECT id, first_name, last_name,
+               similarity(first_name || ' ' || last_name, $1) AS score
+        FROM users
+        WHERE (first_name || ' ' || last_name) % $1
+        ORDER BY score DESC
+        LIMIT {}
+        ",
+        limit
+    );
+
+    let rows: Vec<Row> = sql_query(query)
+        .bind::<Text, _>(input)
+        .load(&mut conn)
+        .map_err(|e| PpdcError::new(500, ErrorType::InternalError, format!("Database error: {}", e)))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| UserMatch {
+            id: r.id,
+            first_name: r.first_name,
+            last_name: r.last_name,
+            score: r.score,
+        })
+        .collect())
+}
+
+
 
 #[debug_handler]
 pub async fn get_users(
@@ -262,7 +328,7 @@ pub async fn get_user_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_hash_password() {
         let mut user = NewUser {
@@ -279,5 +345,17 @@ mod tests {
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));
+    }
+
+    #[test]
+    fn test_find_similar_users() {
+        use crate::environment::get_database_url;
+        let database_url = get_database_url();
+        let manager = diesel::r2d2::ConnectionManager::new(database_url);
+        let pool = DbPool::new(manager).expect("Failed to create connection pool");
+        
+        let results = find_similar_users(&pool, "Hourdin Matthieu", 3).unwrap();
+        assert!(!results.is_empty());
+        println!("Résultats: {:?}", results);
     }
 }
