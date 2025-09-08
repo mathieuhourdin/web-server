@@ -18,7 +18,7 @@ use crate::sessions_service;
 use crate::file_converter;
 use crate::entities::resource_relation;
 use crate::link_preview;
-use crate::entities::process_audio::process_audio_routes as process_audio;
+use crate::entities::process_audio::routes as process_audio;
 
 
 pub fn create_router() -> Router {
