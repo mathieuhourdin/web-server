@@ -25,7 +25,9 @@ pub enum ResourceType {
     Podcast,
     Song,
     Course,
-    Idea
+    Idea,
+    Journal,
+    JournalItem
 }
 
 impl ResourceType {
@@ -45,6 +47,8 @@ impl ResourceType {
             "song" => Ok(ResourceType::Song),
             "curs" => Ok(ResourceType::Course),
             "idea" => Ok(ResourceType::Idea),
+            "jrnl" => Ok(ResourceType::Journal),
+            "jrit" => Ok(ResourceType::JournalItem),
             &_ => return Err(PpdcError::new(404, ErrorType::ApiError, "resource_type not found".to_string()))
         }
     }
@@ -62,7 +66,28 @@ impl ResourceType {
             ResourceType::Podcast => "pcst",
             ResourceType::Song => "song",
             ResourceType::Course => "curs",
-            ResourceType::Idea => "idea"
+            ResourceType::Idea => "idea",
+            ResourceType::Journal => "jrnl",
+            ResourceType::JournalItem => "jrit"
+        }
+    }
+    pub fn to_full_text(&self) -> &str {
+        match self {
+            ResourceType::Book => "Book",
+            ResourceType::ReadingNote => "Reading Note",
+            ResourceType::ResourceList => "List",
+            ResourceType::Problem => "Problem",
+            ResourceType::ResearchArticle => "Research Article",
+            ResourceType::NewsArticle => "News Article",
+            ResourceType::OpinionArticle => "Opinion Article",
+            ResourceType::Movie => "Movie",
+            ResourceType::Video => "Video",
+            ResourceType::Podcast => "Podcast",
+            ResourceType::Song => "Song",
+            ResourceType::Course => "Course",
+            ResourceType::Idea => "Idea",
+            ResourceType::Journal => "Journal",
+            ResourceType::JournalItem => "Journal Item"
         }
     }
     pub fn from_opengraph_code(og_code: &str) -> Option<ResourceType> {

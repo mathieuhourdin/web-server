@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use diesel::prelude::*;
 use uuid::Uuid;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use crate::schema::*;
 use diesel;
 use crate::entities::{error::{PpdcError}, user::User, resource::{Resource, NewResource}};
@@ -197,6 +197,19 @@ impl NewInteraction {
             .set(&self)
             .get_result(&mut conn)?;
         Ok(result)
+    }
+
+    pub fn create_instant(user_id: Uuid, resource_id: Uuid, pool: &DbPool) -> Result<Interaction, PpdcError> {
+        let new_resource = Self {
+            interaction_user_id: Some(user_id),
+            interaction_progress: 100,
+            interaction_comment: None,
+            interaction_date: Some(Utc::now().naive_utc()),
+            interaction_type: Some("outp".to_string()),
+            interaction_is_public: Some(true),
+            resource_id: Some(resource_id)
+        };
+        new_resource.create(pool)
     }
 }
 

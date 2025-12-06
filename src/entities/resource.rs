@@ -5,10 +5,11 @@ use crate::db::DbPool;
 use crate::schema::*;
 use diesel;
 use diesel::prelude::*;
-use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::Interaction};
+use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::{Interaction, NewInteraction}};
 use resource_type::ResourceType;
 use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
 use crate::pagination::PaginationParams;
+use crate::entities::process_audio::qualify_user_input;
 pub use maturing_state::MaturingState;
 
 pub mod resource_type;
@@ -38,6 +39,22 @@ pub struct Resource {
 pub struct NewResource {
     pub title: String,
     pub subtitle: String,
+    pub content: Option<String>,
+    pub external_content_url: Option<String>,
+    pub comment: Option<String>,
+    pub image_url: Option<String>,
+    pub resource_type: Option<ResourceType>,
+    pub maturing_state: Option<MaturingState>,
+    pub publishing_state: Option<String>,
+    pub category_id: Option<Uuid>,
+    pub is_external: Option<bool>,
+}
+
+#[derive(Deserialize, Insertable, Queryable, AsChangeset)]
+#[diesel(table_name=resources)]
+pub struct NewResourceDto {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
     pub content: Option<String>,
     pub external_content_url: Option<String>,
     pub comment: Option<String>,
@@ -89,6 +106,46 @@ impl NewResource {
             .get_result(&mut conn)?;
         Ok(result)
     }
+
+    async fn from_dto_qualified(dto: NewResourceDto) -> Self {
+        let NewResourceDto {
+            title,
+            subtitle,
+            content,
+            external_content_url,
+            comment,
+            image_url,
+            resource_type,
+            maturing_state,
+            publishing_state,
+            category_id,
+            is_external
+        } = dto;
+        let mut end_title;
+        let mut end_subtitle;
+        if (title.is_none() || title.as_ref().unwrap() == "" && !content.is_none() && content.as_ref().unwrap() != "") {
+            let content = Some(content.clone());
+            let resource_properties = qualify_user_input::extract_user_input_resource_info_with_gpt(content.unwrap().unwrap().as_str()).await.unwrap(); 
+            end_title = resource_properties.title;
+            end_subtitle = resource_properties.subtitle;
+        } else {
+            end_title = title.unwrap_or("".to_string());
+            end_subtitle = subtitle.unwrap_or("".to_string());
+        }
+        Self {
+            title: end_title,
+            subtitle: end_subtitle,
+            content,
+            external_content_url,
+            comment,
+            image_url,
+            resource_type,
+            maturing_state: Some(MaturingState::Finished),
+            publishing_state: Some("pbsh".to_string()),
+            category_id,
+            is_external
+        }
+    }
 }
 
 #[debug_handler]
@@ -117,11 +174,15 @@ pub async fn put_resource_route(
 #[debug_handler]
 pub async fn post_resource_route(
     Extension(pool): Extension<DbPool>,
-    Json(mut payload): Json<NewResource>,
+    Extension(session): Extension<Session>,
+    Json(mut payload): Json<NewResourceDto>,
 ) -> Result<Json<Resource>, PpdcError> {
-    payload.publishing_state = Some("drft".to_string());
+    let new_resource = NewResource::from_dto_qualified(payload).await;
+    //new_resource.publishing_state = Some("drft".to_string());
+    let resource = new_resource.create(&pool)?;
+    let interaction = NewInteraction::create_instant(session.user_id.unwrap(), resource.id, &pool);
 
-    Ok(Json(payload.create(&pool)?))
+    Ok(Json(resource))
 }
 
 #[debug_handler]
