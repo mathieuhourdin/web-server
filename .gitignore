@@ -2,3 +2,7 @@
 *.swp
 *.swo
 *.swn
+prod-docker-compose.yml
+prod/*
+
+*.env
