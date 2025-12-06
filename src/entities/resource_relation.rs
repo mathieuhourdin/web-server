@@ -7,7 +7,7 @@ use diesel::prelude::*;
 use crate::entities::{session::Session, error::{PpdcError}, resource::Resource};
 use axum::{debug_handler, extract::{Json, Path, Extension}};
 
-#[derive(Serialize, Deserialize, Queryable, Selectable)]
+#[derive(Serialize, Deserialize, Queryable, Selectable, Debug)]
 #[diesel(table_name=resource_relations)]
 pub struct ResourceRelation {
     id: Uuid,
@@ -20,14 +20,14 @@ pub struct ResourceRelation {
     relation_type: String,
 }
 
-#[derive(Serialize, Queryable)]
+#[derive(Serialize, Queryable, Debug)]
 pub struct ResourceRelationWithOriginResource {
     #[serde(flatten)]
     resource_relation: ResourceRelation,
     origin_resource: Resource,
 }
 
-#[derive(Serialize, Queryable)]
+#[derive(Serialize, Queryable, Debug)]
 pub struct ResourceRelationWithTargetResource {
     #[serde(flatten)]
     resource_relation: ResourceRelation,
@@ -37,11 +37,11 @@ pub struct ResourceRelationWithTargetResource {
 #[derive(Deserialize, Insertable, AsChangeset)]
 #[diesel(table_name=resource_relations)]
 pub struct NewResourceRelation {
-    origin_resource_id: Uuid,
-    target_resource_id: Uuid,
-    relation_comment: String,
-    user_id: Option<Uuid>,
-    relation_type: Option<String>,
+    pub origin_resource_id: Uuid,
+    pub target_resource_id: Uuid,
+    pub relation_comment: String,
+    pub user_id: Option<Uuid>,
+    pub relation_type: Option<String>,
 }
 
 impl NewResourceRelation {
@@ -110,4 +110,22 @@ pub async fn get_targets_for_resource_route(
 ) -> Result<Json<Vec<ResourceRelationWithTargetResource>>, PpdcError> {
 
     Ok(Json(ResourceRelation::find_target_for_resource(id, &pool)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_target_for_resource() {
+        use crate::environment::get_database_url;
+        let database_url = get_database_url();
+        let manager = diesel::r2d2::ConnectionManager::new(database_url);
+        let pool = DbPool::new(manager).expect("Failed to create connection pool");
+        let string_uuid = "744b085e-347f-410d-b395-48a4642f19d4";
+        let uuid = Uuid::parse_str(string_uuid).unwrap();
+        let resource_relations = ResourceRelation::find_target_for_resource(uuid, &pool).unwrap();
+        println!("Resource relations: {:?}", resource_relations);
+        assert_eq!(resource_relations.len(), 0);
+    }
 }

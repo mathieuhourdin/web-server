@@ -4,6 +4,7 @@ use serde_json::Error as SerdeError;
 use serde::{Serialize, Deserialize};
 use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
+use axum::Json;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct PpdcError {
@@ -66,12 +67,20 @@ impl From<SerdeError> for PpdcError {
 
 impl IntoResponse for PpdcError {
     fn into_response(self) -> Response {
-        let (status, body) = match self.error_type {
-            ErrorType::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, self.message),
-            ErrorType::ApiError => (StatusCode::NOT_FOUND, self.message),
-            ErrorType::DatabaseError => (StatusCode::INTERNAL_SERVER_ERROR, self.message)
+        let status = match self.error_type {
+            ErrorType::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            ErrorType::ApiError => StatusCode::from_u16(self.status_code as u16).unwrap_or(StatusCode::BAD_REQUEST),
+            ErrorType::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        (status, body).into_response()
+        
+        let error_json = serde_json::json!({
+            "error": {
+                "status_code": self.status_code,
+                "message": self.message
+            }
+        });
+        
+        (status, Json(error_json)).into_response()
     }
 }
 

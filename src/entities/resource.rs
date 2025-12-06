@@ -14,7 +14,7 @@ pub use maturing_state::MaturingState;
 pub mod resource_type;
 pub mod maturing_state;
 
-#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
+#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
 #[diesel(table_name=resources)]
 pub struct Resource {
     pub id: Uuid,

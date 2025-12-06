@@ -24,7 +24,7 @@ impl InteractionType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset)]
+#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
 #[diesel(table_name=interactions)]
 pub struct Interaction {
     pub id: Uuid,
@@ -39,7 +39,7 @@ pub struct Interaction {
     pub resource_id: Option<Uuid>,
 }
 
-#[derive(Serialize, Deserialize, Queryable)]
+#[derive(Serialize, Deserialize, Queryable, Debug)]
 pub struct InteractionWithResource {
     #[serde(flatten)]
     pub interaction: Interaction,
@@ -151,6 +151,23 @@ impl Interaction {
             )
     }
 
+    pub fn find_paginated_outputs_problems(
+        offset: i64,
+        limit: i64,
+        user_id: Uuid,
+        pool: &DbPool
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        Interaction::load_paginated(
+            offset,
+            limit,
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id)),
+            "fnsh",
+            "pblm",
+            pool
+        )
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Interaction, PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
@@ -180,5 +197,24 @@ impl NewInteraction {
             .set(&self)
             .get_result(&mut conn)?;
         Ok(result)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_paginated_outputs_problems() {
+        use crate::environment::get_database_url;
+        let database_url = get_database_url();
+        let manager = diesel::r2d2::ConnectionManager::new(database_url);
+        let pool = DbPool::new(manager).expect("Failed to create connection pool");
+        let string_uuid = "2d01ac77-eeec-4b47-bf8c-c58862f57b63";
+        let uuid = Uuid::parse_str(string_uuid).unwrap();
+        let interactions = Interaction::find_paginated_outputs_problems(0, 10, uuid, &pool).unwrap();
+        println!("Interactions: {:?}", interactions);
+        assert_eq!(interactions.len(), 0);
     }
 }

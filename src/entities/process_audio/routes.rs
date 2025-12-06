@@ -17,9 +17,11 @@ use crate::entities::resource::maturing_state::MaturingState;
 use crate::entities::interaction::model::{Interaction, NewInteraction, InteractionWithResource};
 use crate::entities::user::{User, NewUser, find_similar_users};
 use diesel::RunQueryDsl;
-use crate::entities::process_audio::gpt_handler::generate_resource_info_with_gpt;
+use crate::entities::process_audio::gpt_handler::{generate_resource_info_with_gpt, select_problems_with_gpt};
 use crate::entities::process_audio::whisper_handler::transcribe_audio_with_openai;
 use crate::entities::process_audio::database::{create_resource_and_interaction, find_or_create_user_by_author_name};
+use crate::entities::process_audio::gpt_handler::SelectedProblems;
+use crate::entities::resource_relation::NewResourceRelation;
 
 
 #[derive(Serialize)]
@@ -28,7 +30,7 @@ pub struct ProcessAudio {
     pub filename: Option<String>,
     pub transcription: Option<String>,
     pub resource_info: Option<ResourceInfo>,
-    pub created_interaction: Option<InteractionWithResource>,
+    pub created_interaction: InteractionWithResource,
     pub error: Option<String>,
 }
 
@@ -131,15 +133,46 @@ pub async fn post_process_audio_route(
     // Create new resource and interaction in the database if resource info is available
     let created_interaction = if let Some(info) = &resource_info {
         match create_resource_and_interaction(&pool, &session, info).await {
-            Ok(interaction_with_resource) => Some(interaction_with_resource),
+            Ok(interaction_with_resource) => interaction_with_resource,
             Err(e) => {
                 println!("Failed to create resource and interaction: {}", e);
-                None
+                return Err(PpdcError::new(500, ErrorType::InternalError, format!("Failed to create resource and interaction: {}", e)))
             }
         }
     } else {
-        None
+        return Err(PpdcError::new(500, ErrorType::InternalError, "Resource info is required".to_string()))
     };
+
+    let user_problems_resources: Vec<InteractionWithResource> = Interaction::find_paginated_outputs_problems(0, 100, session.user_id.unwrap(), &pool)?;
+
+    let selected_problems = select_problems_with_gpt(
+        &created_interaction.resource.title,
+        "auteur",
+        &created_interaction.resource.content, 
+        created_interaction.interaction.interaction_comment.as_deref().unwrap_or(""), 
+        &user_problems_resources
+    ).await;
+
+    let selected_problems = match selected_problems {
+        Ok(selected_problems) => selected_problems,
+        Err(e) => return Err(PpdcError::new(500, ErrorType::InternalError, format!("Error selecting problems: {}", e)))
+    };
+
+    for problem in selected_problems {
+        let problem_uuid = uuid::Uuid::parse_str(&problem.problem_id)
+            .map_err(|e| PpdcError::new(400, ErrorType::InternalError, format!("Invalid problem ID format: {}", e)))?;
+        
+        let new_resource_relation = NewResourceRelation {
+            origin_resource_id: created_interaction.resource.id.clone(),
+            target_resource_id: problem_uuid,
+            user_id: Some(session.user_id.unwrap()),
+            relation_type: Some("bibl".to_string()),
+            relation_comment: problem.relation_comment.clone(),
+        };
+        new_resource_relation.create(&pool)?;
+    }
+
+
 
     let process_audio = ProcessAudio {
         message: "Audio file received, transcribed, and resource information extracted".to_string(),
@@ -159,39 +192,3 @@ pub async fn post_process_audio_route(
 
 
 
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_find_or_create_user_by_author_name() {
-        use crate::environment::get_database_url;
-        let database_url = get_database_url();
-        let manager = diesel::r2d2::ConnectionManager::new(database_url);
-        let pool = DbPool::new(manager).expect("Failed to create connection pool");
-        
-        let author_name = "Hourdin Matthieu";
-        let threshold = 0.7;
-        let user = find_or_create_user_by_author_name(&pool, author_name, threshold);
-        
-        // Assert that we get a result (either success or error)
-        assert!(user.is_ok() || user.is_err());
-    }
-
-    #[tokio::test]
-    fn test_generate_resource_info_with_gpt_1() {
-        use crate::environment::get_database_url;
-        let database_url = get_database_url();
-        let manager = diesel::r2d2::ConnectionManager::new(database_url);
-        let pool = DbPool::new(manager).expect("Failed to create connection pool");
-        
-        let transcription = "L'animal, l'homme, la fonction symbolique de Raymond Ruyère.";
-        let gpt_response = generate_resource_info_with_gpt_1(&transcription);
-
-        println!("GPT response: {:?}", gpt_response.clone().unwrap());
-
-        assert!(gpt_response.is_ok());
-        assert!(gpt_response.clone().unwrap().choices.len() > 0);
-    }
-}
