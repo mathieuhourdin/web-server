@@ -14,6 +14,7 @@ pub use maturing_state::MaturingState;
 
 pub mod resource_type;
 pub mod maturing_state;
+pub mod trace;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
 #[diesel(table_name=resources)]
@@ -88,6 +89,24 @@ impl Resource {
 }
 
 impl NewResource {
+
+    pub fn new(title: String, subtitle: String, content: String, resource_type: ResourceType) -> NewResource {
+        println!("Vaule for resource type : {}", resource_type.to_code());
+        Self {
+            title,
+            subtitle,
+            content: Some(content),
+            external_content_url: None,
+            comment: None,
+            image_url: None,
+            resource_type: Some(resource_type),
+            maturing_state: Some(MaturingState::Finished),
+            publishing_state: Some("pbsh".to_string()),
+            category_id: None,
+            is_external: Some(false)
+        }
+    }
+
     pub fn create(self, pool: &DbPool) -> Result<Resource, PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
 
@@ -105,46 +124,6 @@ impl NewResource {
             .set(&self)
             .get_result(&mut conn)?;
         Ok(result)
-    }
-
-    async fn from_dto_qualified(dto: NewResourceDto) -> Self {
-        let NewResourceDto {
-            title,
-            subtitle,
-            content,
-            external_content_url,
-            comment,
-            image_url,
-            resource_type,
-            maturing_state,
-            publishing_state,
-            category_id,
-            is_external
-        } = dto;
-        let mut end_title;
-        let mut end_subtitle;
-        if (title.is_none() || title.as_ref().unwrap() == "" && !content.is_none() && content.as_ref().unwrap() != "") {
-            let content = Some(content.clone());
-            let resource_properties = qualify_user_input::extract_user_input_resource_info_with_gpt(content.unwrap().unwrap().as_str()).await.unwrap(); 
-            end_title = resource_properties.title;
-            end_subtitle = resource_properties.subtitle;
-        } else {
-            end_title = title.unwrap_or("".to_string());
-            end_subtitle = subtitle.unwrap_or("".to_string());
-        }
-        Self {
-            title: end_title,
-            subtitle: end_subtitle,
-            content,
-            external_content_url,
-            comment,
-            image_url,
-            resource_type,
-            maturing_state: Some(MaturingState::Finished),
-            publishing_state: Some("pbsh".to_string()),
-            category_id,
-            is_external
-        }
     }
 }
 
@@ -174,15 +153,9 @@ pub async fn put_resource_route(
 #[debug_handler]
 pub async fn post_resource_route(
     Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Json(mut payload): Json<NewResourceDto>,
+    Json(mut payload): Json<NewResource>,
 ) -> Result<Json<Resource>, PpdcError> {
-    let new_resource = NewResource::from_dto_qualified(payload).await;
-    //new_resource.publishing_state = Some("drft".to_string());
-    let resource = new_resource.create(&pool)?;
-    let interaction = NewInteraction::create_instant(session.user_id.unwrap(), resource.id, &pool);
-
-    Ok(Json(resource))
+    Ok(Json(payload.create(&pool)?))
 }
 
 #[debug_handler]

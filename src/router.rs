@@ -44,6 +44,11 @@ pub fn create_router() -> Router {
         .route("/:id/comments", get(comment::get_comments_for_resource).post(comment::post_comment_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let traces_router = Router::new()
+        .route("/", post(resource::trace::post_trace_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+
     let interactions_router = Router::new()
         .route("/", get(interaction::get_interactions_route))
         .route("/:id", put(interaction::put_interaction_route))
@@ -67,6 +72,7 @@ pub fn create_router() -> Router {
     Router::new()
         .nest("/users", users_router)
         .nest("/resources", resources_router)
+        .nest("/traces", traces_router)
         .nest("/interactions", interactions_router)
         .nest("/process_audio", process_audio_router)
         .nest("/", relations_router)
