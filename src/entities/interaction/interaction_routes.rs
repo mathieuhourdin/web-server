@@ -26,7 +26,8 @@ pub async fn post_interaction_for_resource(
 pub struct InteractionFilters {
     interaction_type: Option<String>,
     maturing_state: Option<String>,
-    interaction_user_id: Option<Uuid>
+    interaction_user_id: Option<Uuid>,
+    resource_type: Option<String>
 }
 
 impl InteractionFilters {
@@ -34,7 +35,10 @@ impl InteractionFilters {
         self.interaction_type.clone().unwrap_or_else(|| "inpt".into())
     }
     pub fn maturing_state(&self) -> String {
-        self.maturing_state.clone().unwrap_or_else(|| "fnsh".into())
+        self.maturing_state.clone().unwrap_or_else(|| "all".into())
+    }
+    pub fn resource_type(&self) -> String {
+        self.resource_type.clone().unwrap_or_else(|| "all".into())
     }
 }
 
@@ -52,7 +56,6 @@ pub async fn get_interactions_route(
 
     let mut interactions_filtered;
     interactions_filtered = interactions::table
-        .filter(interactions::interaction_is_public.eq(true))
         .filter(interactions::interaction_type.eq(interaction_type.as_str()))
         .into_boxed();
 
@@ -67,14 +70,23 @@ pub async fn get_interactions_route(
     if let Some(interaction_user_id) = filters.interaction_user_id {
         interactions_filtered = interactions_filtered
             .filter(interactions::interaction_user_id.eq(interaction_user_id));
+        if interaction_user_id != user_id {
+            interactions_filtered = interactions_filtered
+                .filter(interactions::interaction_is_public.eq(true));
+        }
+    } else {
+       interactions_filtered = interactions_filtered
+           .filter(interactions::interaction_is_public.eq(true));
     }
+
+    println!("Resource type : {}", filters.resource_type());
 
     let interactions = Interaction::load_paginated(
         pagination.offset(),
         pagination.limit(), 
         interactions_filtered,
         filters.maturing_state().as_str(),
-        "all",
+        filters.resource_type().as_str(),
         &pool
 
     )?;

@@ -17,14 +17,14 @@ pub struct ResourceRelation {
     created_at: NaiveDateTime,
     updated_at: NaiveDateTime,
     user_id: Uuid,
-    relation_type: String,
+    pub relation_type: String,
 }
 
 #[derive(Serialize, Queryable, Debug)]
 pub struct ResourceRelationWithOriginResource {
     #[serde(flatten)]
-    resource_relation: ResourceRelation,
-    origin_resource: Resource,
+    pub resource_relation: ResourceRelation,
+    pub origin_resource: Resource,
 }
 
 #[derive(Serialize, Queryable, Debug)]
@@ -45,6 +45,16 @@ pub struct NewResourceRelation {
 }
 
 impl NewResourceRelation {
+    pub fn new(origin_resource_id: Uuid, target_resource_id: Uuid) -> NewResourceRelation {
+        Self {
+            origin_resource_id,
+            target_resource_id,
+            relation_comment: "".to_string(),
+            user_id: None,
+            relation_type: None
+        }
+    }
+
     pub fn create(self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
 

@@ -28,7 +28,15 @@ pub enum ResourceType {
     Idea,
     Journal,
     JournalItem,
-    Trace
+    Trace,
+    Mission,
+    Element,
+    Task,
+    Question,
+    Deliverable,
+    Process,
+    Resource,
+    Analysis
 }
 
 impl ResourceType {
@@ -52,6 +60,14 @@ impl ResourceType {
             "jrit" => Ok(ResourceType::JournalItem),
             "trce" => Ok(ResourceType::Trace),
             "atcl" => Ok(ResourceType::OpinionArticle),
+            "miss" => Ok(ResourceType::Mission),
+            "elmt" => Ok(ResourceType::Element),
+            "task" => Ok(ResourceType::Task),
+            "qest" => Ok(ResourceType::Question),
+            "dlvr" => Ok(ResourceType::Deliverable),
+            "proc" => Ok(ResourceType::Process),
+            "anly" => Ok(ResourceType::Analysis),
+            "rsrc" => Ok(ResourceType::Resource),
             &_ => return Err(PpdcError::new(404, ErrorType::ApiError, "resource_type not found".to_string()))
         }
     }
@@ -72,7 +88,15 @@ impl ResourceType {
             ResourceType::Idea => "idea",
             ResourceType::Journal => "jrnl",
             ResourceType::JournalItem => "jrit",
-            ResourceType::Trace => "trce"
+            ResourceType::Trace => "trce",
+            ResourceType::Mission => "miss",
+            ResourceType::Element => "elmt",
+            ResourceType::Task => "task",
+            ResourceType::Question => "qest",
+            ResourceType::Deliverable => "dlvr",
+            ResourceType::Process => "proc",
+            ResourceType::Analysis => "anly",
+            ResourceType::Resource => "rsrc"
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -92,7 +116,15 @@ impl ResourceType {
             ResourceType::Idea => "Idea",
             ResourceType::Journal => "Journal",
             ResourceType::JournalItem => "Journal Item",
-            ResourceType::Trace => "Trace"
+            ResourceType::Trace => "Trace",
+            ResourceType::Mission => "Mission",
+            ResourceType::Element => "Element",
+            ResourceType::Task => "Task",
+            ResourceType::Question => "Question",
+            ResourceType::Deliverable => "Deliverable",
+            ResourceType::Process => "Process",
+            ResourceType::Analysis => "Analysis",
+            ResourceType::Resource => "Resource"
         }
     }
     pub fn from_opengraph_code(og_code: &str) -> Option<ResourceType> {

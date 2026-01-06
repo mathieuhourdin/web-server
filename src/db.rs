@@ -2,8 +2,19 @@ use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use crate::environment::get_database_url;
 use diesel::r2d2::{self, ConnectionManager};
+use std::sync::OnceLock;
 
 pub type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
+
+static GLOBAL_POOL: OnceLock<DbPool> = OnceLock::new();
+
+pub fn init_global_pool(pool: DbPool) {
+    GLOBAL_POOL.set(pool).expect("Pool already initialized");
+}
+
+pub fn get_global_pool() -> &'static DbPool {
+    GLOBAL_POOL.get().expect("Global pool not initialized")
+}
 
 pub fn create_pool() -> DbPool {
     let database_url = get_database_url();

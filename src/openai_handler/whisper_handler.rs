@@ -1,6 +1,5 @@
 use crate::environment;
 use reqwest::Client;
-use serde::{Serialize, Deserialize};
 
 
 pub async fn transcribe_audio_with_openai(file_path: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {

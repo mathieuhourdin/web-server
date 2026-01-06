@@ -7,5 +7,6 @@ pub mod db;
 pub mod schema;
 pub mod router;
 pub mod link_preview;
-pub mod file_converter;
 pub mod pagination;
+pub mod openai_handler;
+pub mod work_analyzer;

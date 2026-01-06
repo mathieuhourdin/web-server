@@ -6,4 +6,5 @@ pub mod comment;
 pub mod resource_relation;
 pub mod category;
 pub mod resource;
-pub mod process_audio;
+pub mod transcription;
+pub mod analysis;

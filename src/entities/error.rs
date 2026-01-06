@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
 use axum::Json;
+use std::error::Error as StdError;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct PpdcError {
@@ -62,6 +63,12 @@ impl From<DieselError> for PpdcError {
 impl From<SerdeError> for PpdcError {
     fn from(error: SerdeError) -> PpdcError {
         PpdcError::new(400, ErrorType::ApiError, format!("serde error : {}", error))
+    }
+}
+
+impl From<Box<dyn StdError + Send + Sync>> for PpdcError {
+    fn from(error: Box<dyn StdError + Send + Sync>) -> PpdcError {
+        PpdcError::new(500, ErrorType::InternalError, error.to_string())
     }
 }
 

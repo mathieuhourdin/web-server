@@ -1,5 +1,5 @@
 use axum::{
-    routing::{post, get, put, Router},
+    routing::{post, get, put, delete, Router},
     middleware::from_fn,
     http::{StatusCode, Method},
     response::{IntoResponse},
@@ -7,30 +7,29 @@ use axum::{
 use tower_http::{services::ServeDir, cors::{CorsLayer, Any}};
 use http::header::{CONTENT_TYPE, AUTHORIZATION, ACCEPT};
 
-use crate::http::{HttpRequest, HttpResponse};
 use crate::entities::{user::self,
     interaction::{interaction_routes as interaction},
-    error::PpdcError,
     comment,
-    resource
+    resource,
+    analysis
 };
 use crate::sessions_service;
-use crate::file_converter;
 use crate::entities::resource_relation;
 use crate::link_preview;
-use crate::entities::process_audio::routes as process_audio;
+use crate::entities::transcription as transcription;
 
 
 pub fn create_router() -> Router {
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods(vec![Method::GET, Method::POST, Method::PUT])
+        .allow_methods(vec![Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([CONTENT_TYPE, ACCEPT, AUTHORIZATION]);
 
     let users_router = Router::new()
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
+        .route("/:id/analysis", post(analysis::post_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()
@@ -62,8 +61,13 @@ pub fn create_router() -> Router {
         .route("/:id", put(comment::put_comment))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
-    let process_audio_router = Router::new()
-        .route("/", post(process_audio::post_process_audio_route))
+    let transcriptions_router = Router::new()
+        .route("/", post(transcription::post_transcription_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let analysis_router = Router::new()
+        .route("/", post(analysis::post_analysis_route))
+        .route("/:id", delete(analysis::delete_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let sessions_router = Router::new()
@@ -74,12 +78,12 @@ pub fn create_router() -> Router {
         .nest("/resources", resources_router)
         .nest("/traces", traces_router)
         .nest("/interactions", interactions_router)
-        .nest("/process_audio", process_audio_router)
+        .nest("/transcriptions", transcriptions_router)
         .nest("/", relations_router)
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
+        .nest("/analysis", analysis_router)
         .route("/link_preview", post(link_preview::post_preview_route))
-        .route("/file_conversion", post(file_converter::post_file_conversion_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))
         .layer(from_fn(sessions_service::add_session_to_request))

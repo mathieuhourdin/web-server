@@ -5,11 +5,10 @@ use crate::db::DbPool;
 use crate::schema::*;
 use diesel;
 use diesel::prelude::*;
-use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::{Interaction, NewInteraction}};
+use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::{Interaction}};
 use resource_type::ResourceType;
 use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
 use crate::pagination::PaginationParams;
-use crate::entities::process_audio::qualify_user_input;
 pub use maturing_state::MaturingState;
 
 pub mod resource_type;
@@ -86,6 +85,20 @@ impl Resource {
             .first(&mut conn)?;
         Ok(result)
     }
+
+    pub fn update(self, pool: &DbPool) -> Result<Resource, PpdcError> {
+        let id = self.id;
+        let new_resource = NewResource::from(self);
+        new_resource.update(&id, pool)
+    }
+
+    pub fn delete(self, pool: &DbPool) -> Result<Resource, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        diesel::delete(resources::table)
+            .filter(resources::id.eq(self.id))
+            .execute(&mut conn)?;
+        Ok(self)
+    }
 }
 
 impl NewResource {
@@ -100,7 +113,7 @@ impl NewResource {
             comment: None,
             image_url: None,
             resource_type: Some(resource_type),
-            maturing_state: Some(MaturingState::Finished),
+            maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("pbsh".to_string()),
             category_id: None,
             is_external: Some(false)
@@ -124,6 +137,24 @@ impl NewResource {
             .set(&self)
             .get_result(&mut conn)?;
         Ok(result)
+    }
+}
+
+impl From<Resource> for NewResource {
+    fn from(resource: Resource) -> Self {
+        Self {
+            title: resource.title,
+            subtitle: resource.subtitle,
+            content: Some(resource.content),
+            external_content_url: resource.external_content_url,
+            comment: resource.comment,
+            image_url: resource.image_url,
+            resource_type: Some(resource.resource_type),
+            maturing_state: Some(resource.maturing_state),
+            publishing_state: Some(resource.publishing_state),
+            category_id: resource.category_id,
+            is_external: Some(resource.is_external),
+        }
     }
 }
 
@@ -153,7 +184,7 @@ pub async fn put_resource_route(
 #[debug_handler]
 pub async fn post_resource_route(
     Extension(pool): Extension<DbPool>,
-    Json(mut payload): Json<NewResource>,
+    Json(payload): Json<NewResource>,
 ) -> Result<Json<Resource>, PpdcError> {
     Ok(Json(payload.create(&pool)?))
 }
@@ -215,6 +246,9 @@ pub async fn get_resources_route(
     } 
     if filter_params.resource_type().as_str() == "pblm" {
         query = query.filter(resources::resource_type.eq("pblm"));
+    }
+    if filter_params.resource_type().as_str() == "miss" {
+        query = query.filter(resources::resource_type.eq("miss"));
     }
     let results = query.load::<Resource>(&mut conn)?;
 

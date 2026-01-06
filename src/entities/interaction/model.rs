@@ -1,17 +1,21 @@
 use serde::{Serialize, Deserialize};
 use diesel::prelude::*;
 use uuid::Uuid;
-use chrono::{NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, Utc, NaiveDate};
 use crate::schema::*;
 use diesel;
 use crate::entities::{error::{PpdcError}, user::User, resource::{Resource, NewResource}};
 use crate::db::DbPool;
+use diesel::debug_query;
+use diesel::pg::Pg;
 
 //TODO integrate in interaction
 pub enum InteractionType {
     Output,
     Input,
-    Review
+    Review,
+    Auto,
+    Analysis
 }
 
 impl InteractionType {
@@ -20,6 +24,8 @@ impl InteractionType {
             InteractionType::Output => "outp",
             InteractionType::Input => "inpt",
             InteractionType::Review => "rvew",
+            InteractionType::Auto => "auto",
+            InteractionType::Analysis => "anly",
         }.to_string()
     }
 }
@@ -96,12 +102,16 @@ impl Interaction {
         let mut query = filtered_interactions_query
             .offset(offset)
             .limit(limit)
-            .inner_join(resources::table)
-            .filter(resources::maturing_state.eq(resource_maturing_state));
+            .inner_join(resources::table);
+        if resource_maturing_state != "all" {
+            query = query
+                .filter(resources::maturing_state.eq(resource_maturing_state));
+        }
         if resource_type != "all" {
             query = query
             .filter(resources::resource_type.eq(resource_type));
         }
+        println!("{}", debug_query::<Pg, _>(&query));
         let thought_outputs = query
             .select((Interaction::as_select(), Resource::as_select()))
             .load::<(Interaction, Resource)>(&mut conn)?
@@ -151,6 +161,35 @@ impl Interaction {
             )
     }
 
+    pub fn find_all_draft_traces_for_user_before_date(user_id: Uuid, date: NaiveDate, pool: &DbPool) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        Interaction::load_paginated(
+            0,
+            200,
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .filter(interactions::interaction_date.lt(date.and_hms_opt(12, 0, 0).unwrap())),
+            "drft",
+            "trce",
+            pool
+        )
+    }
+
+    pub fn find_last_analysis_for_user(user_id: Uuid, pool: &DbPool) -> Result<Option<InteractionWithResource>, PpdcError> {
+        let interactions = Interaction::load_paginated(
+            0,
+            1,
+            interactions::table
+                .into_boxed()
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .filter(interactions::interaction_type.eq("anly"))
+                .order(interactions::interaction_date.desc()),
+            "fnsh",
+            "anly",
+            pool
+        )?;
+        Ok(interactions.into_iter().next())
+    }
+
     pub fn find_paginated_outputs_problems(
         offset: i64,
         limit: i64,
@@ -177,9 +216,32 @@ impl Interaction {
         Ok(thought_output)
     }
 
+    pub fn find_user_journal(user_id: Uuid, journal_id: Uuid, pool: &DbPool) -> Result<Interaction, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let (journal_interaction, _resource) : (Interaction, Resource) = interactions::table
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .inner_join(resources::table)
+            .filter(resources::resource_type.eq("jrnl"))
+            .filter(resources::id.eq(journal_id))                                               
+            .first::<(Interaction, Resource)>(&mut conn)?;
+        Ok(journal_interaction)
+    }
 }
 
 impl NewInteraction {
+    pub fn new(user_id: Uuid, resource_id: Uuid) -> Self {
+        Self {
+            interaction_user_id: Some(user_id),
+            interaction_progress: 100,
+            interaction_comment: None,
+            interaction_date: Some(Utc::now().naive_utc()),
+            interaction_type: Some("outp".to_string()),
+            interaction_is_public: Some(true),
+            resource_id: Some(resource_id)
+        }
+    }
+
     pub fn create(self, pool: &DbPool) -> Result<Interaction, PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
 

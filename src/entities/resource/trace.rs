@@ -1,37 +1,49 @@
-use serde::{Serialize, Deserialize};
-use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
-use crate::entities::process_audio::qualify_user_input;
+use serde::Deserialize;
+use axum::{debug_handler, extract::{Json, Extension}};
 use crate::db::DbPool;
-use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::{Interaction, NewInteraction}, resource::{NewResource, Resource, ResourceType}};
+use crate::entities::{
+    session::Session, 
+    error::{PpdcError}, 
+    interaction::model::{Interaction, NewInteraction}, 
+    resource::{Resource},
+    resource_relation::{NewResourceRelation}
+};
+use uuid::Uuid;
+use crate::work_analyzer::trace_broker::qualify_trace;
+use crate::work_analyzer::trace_broker::create_element_resources_from_trace;
 
 
 #[derive(Deserialize)]
 pub struct NewTraceDto {
-    pub content: String
+    pub content: String,
+    pub journal_id: Uuid
 }
-
-impl NewTraceDto {
-    async fn to_new_resource(self) -> NewResource {
-        let Self {
-            content,
-        } = self;
-        let resource_properties = qualify_user_input::extract_user_input_resource_info_with_gpt(content.as_str()).await.unwrap(); 
-        let title = resource_properties.title;
-        let subtitle = resource_properties.subtitle;
-        NewResource::new(title, subtitle, content, ResourceType::Trace)
-    }
-}
-
 
 #[debug_handler]
 pub async fn post_trace_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-    Json(mut payload): Json<NewTraceDto>,
+    Json(payload): Json<NewTraceDto>,
 ) -> Result<Json<Resource>, PpdcError> {
-    let new_resource = payload.to_new_resource().await;
+
+    let journal_interaction = Interaction::find_user_journal(session.user_id.unwrap(), payload.journal_id, &pool)?;
+
+    let (new_resource, interaction_date) = qualify_trace(payload.content.as_str()).await?;
+
     let resource = new_resource.create(&pool)?;
-    let interaction = NewInteraction::create_instant(session.user_id.unwrap(), resource.id, &pool);
+    let mut new_interaction = NewInteraction::new(session.user_id.unwrap(), resource.id);
+
+    if let Some(interaction_date) = interaction_date {
+        new_interaction.interaction_date = Some(interaction_date.and_hms_opt(12, 0, 0).unwrap());
+    }
+    new_interaction.create(&pool)?;
+
+    let mut new_resource_relation = NewResourceRelation::new(resource.id, journal_interaction.resource_id.unwrap());
+    new_resource_relation.user_id = session.user_id;
+    new_resource_relation.relation_type = Some("jrit".to_string());
+    new_resource_relation.create(&pool)?;
+
+    //let element_resources = create_element_resources_from_trace(resource.clone(), session.user_id.unwrap(), &pool).await?;
 
     Ok(Json(resource))
 }
