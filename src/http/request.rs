@@ -1,14 +1,14 @@
-use std::collections::HashMap;
-use crate::entities::error::{PpdcError, ErrorType};
-use uuid::Uuid;
 use super::*;
+use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities::session::Session;
-use chrono::{Utc, NaiveDateTime};
+use chrono::{NaiveDateTime, Utc};
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, PartialEq)]
 pub enum ContentType {
     ApplicationJson,
-    FormData
+    FormData,
 }
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub struct HttpRequest {
     pub delimiter: Option<String>,
     pub files: Vec<File>,
     pub created_at: NaiveDateTime,
-    pub received_at: Option<NaiveDateTime>
+    pub received_at: Option<NaiveDateTime>,
 }
 
 fn decode_query_string(query_string: &str) -> HashMap<String, String> {
@@ -49,31 +49,53 @@ impl HttpRequest {
             headers: HashMap::new(),
             query: HashMap::new(),
             body: body.to_string(),
-            cookies: Cookie { data: HashMap::new() },
+            cookies: Cookie {
+                data: HashMap::new(),
+            },
             session: None,
             content_type: None,
             delimiter: None,
             files: Vec::new(),
             created_at: Utc::now().naive_utc(),
-            received_at: None
+            received_at: None,
         }
     }
 
     pub fn parse_request_first_line(&mut self, request_first_line: &str) -> Result<(), PpdcError> {
         let mut method_line = request_first_line.split(" ");
-        let method = method_line.next().ok_or_else(|| {
-            return PpdcError::new(500, ErrorType::InternalError, format!("First line is empty : {:#?}", request_first_line));
-        })?.to_string();
+        let method = method_line
+            .next()
+            .ok_or_else(|| {
+                return PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("First line is empty : {:#?}", request_first_line),
+                );
+            })?
+            .to_string();
         self.method = method;
-        let uri = method_line.next().ok_or_else(|| {
-            return PpdcError::new(500, ErrorType::InternalError, format!("Request has no uri : {:#?}", request_first_line));
+        let uri = method_line
+            .next()
+            .ok_or_else(|| {
+                return PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Request has no uri : {:#?}", request_first_line),
+                );
             })?
             .to_string();
         let mut uri = uri.split("?");
         println!("Method line : {:?}", method_line);
-        let path = uri.next().ok_or_else(|| {
-            return PpdcError::new(500, ErrorType::InternalError, format!("Request has no path : {:#?}", request_first_line));
-        })?.to_string();
+        let path = uri
+            .next()
+            .ok_or_else(|| {
+                return PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Request has no path : {:#?}", request_first_line),
+                );
+            })?
+            .to_string();
         self.path = path;
         if let Some(query) = uri.next() {
             self.query = decode_query_string(query);
@@ -83,20 +105,21 @@ impl HttpRequest {
     }
 
     pub fn parse_headers(&mut self, headers_lines: String) -> Result<(), PpdcError> {
-
         let mut headers_lines_iterator = headers_lines.split("\r\n");
         dbg!(&headers_lines_iterator);
         for row in &mut headers_lines_iterator {
             let row = row.split(": ").collect::<Vec<&str>>();
             if row.len() > 1 {
-                self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+                self.headers
+                    .insert(row[0].to_string().to_lowercase(), row[1].to_string());
             }
         }
 
         if let Some(content_type) = self.headers.get("content-type") {
             if *&content_type.len() >= 19 && &content_type[..19] == "multipart/form-data" {
                 self.content_type = Some(ContentType::FormData);
-                self.delimiter = Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
+                self.delimiter =
+                    Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
             } else {
                 self.content_type = Some(ContentType::ApplicationJson);
             }
@@ -107,10 +130,16 @@ impl HttpRequest {
     pub fn from_bytes(request_data: Vec<u8>) -> Result<HttpRequest, PpdcError> {
         let mut request = HttpRequest::new("", "", "");
         let line_break_delimiter = b"\r\n";
-        let first_line_break_index = request_data.windows(2).position(|w| w == line_break_delimiter);
+        let first_line_break_index = request_data
+            .windows(2)
+            .position(|w| w == line_break_delimiter);
 
         if first_line_break_index.is_none() {
-            return Err(PpdcError::new(404, ErrorType::ApiError, "Not enougth lines in request".to_string()));
+            return Err(PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Not enougth lines in request".to_string(),
+            ));
         }
 
         let first_line_break_index = first_line_break_index.unwrap();
@@ -118,14 +147,17 @@ impl HttpRequest {
         let first_line = &request_data[..first_line_break_index];
         let first_line = String::from_utf8(first_line.to_vec()).unwrap();
         request.parse_request_first_line(first_line.as_str())?;
-        
+
         let headers_end_delimiter = b"\r\n\r\n";
-        let header_end_index = request_data.windows(4).position(|w| w == headers_end_delimiter).unwrap();
+        let header_end_index = request_data
+            .windows(4)
+            .position(|w| w == headers_end_delimiter)
+            .unwrap();
         let header_lines: &[u8];
         if first_line_break_index == header_end_index {
             header_lines = &[];
         } else {
-            header_lines = &request_data[first_line_break_index+2..header_end_index];
+            header_lines = &request_data[first_line_break_index + 2..header_end_index];
         }
         let header_lines = String::from_utf8(header_lines.to_vec()).unwrap();
         dbg!(&header_lines);
@@ -133,19 +165,28 @@ impl HttpRequest {
 
         dbg!(header_end_index);
         dbg!(request_data.len());
-        let body_bytes = request_data[header_end_index +4..].to_vec();
+        let body_bytes = request_data[header_end_index + 4..].to_vec();
 
         // TODO need to implement FormData case
         if request.content_type == Some(ContentType::ApplicationJson) {
             let body_string_result = String::from_utf8(body_bytes.to_vec());
             request.body = match body_string_result {
                 Err(_) => {
-                    return Err(PpdcError::new(404, ErrorType::ApiError, "handle_connection from_utf8 error : Unable to decode request".to_string()));
-                },
-                Ok(body) => body
+                    return Err(PpdcError::new(
+                        404,
+                        ErrorType::ApiError,
+                        "handle_connection from_utf8 error : Unable to decode request".to_string(),
+                    ));
+                }
+                Ok(body) => body,
             }
-        } else if request.method.as_str() != "OPTIONS" && request.content_type == Some(ContentType::FormData) {
-            let multipart_delimiter_string = request.delimiter.as_ref().expect("Delimiter should be defined");
+        } else if request.method.as_str() != "OPTIONS"
+            && request.content_type == Some(ContentType::FormData)
+        {
+            let multipart_delimiter_string = request
+                .delimiter
+                .as_ref()
+                .expect("Delimiter should be defined");
 
             dbg!(&multipart_delimiter_string);
 
@@ -159,15 +200,23 @@ impl HttpRequest {
             let multipart_end_delimiter = multipart_end_delimiter.as_bytes();
             let multipart_length = multipart_delimiter.len();
 
-            let multipart_content_start_index = body_bytes.windows(multipart_length)
-                .position(|w| w == *multipart_delimiter).expect("Should have at least one delimiter");
-            let multipart_content_end_index = body_bytes.windows(multipart_length +2)
-            .position(|w| w == multipart_end_delimiter).expect("Should have a end delimiter");
-            let mut multipart = &body_bytes[multipart_content_start_index + multipart_length..multipart_content_end_index];
+            let multipart_content_start_index = body_bytes
+                .windows(multipart_length)
+                .position(|w| w == *multipart_delimiter)
+                .expect("Should have at least one delimiter");
+            let multipart_content_end_index = body_bytes
+                .windows(multipart_length + 2)
+                .position(|w| w == multipart_end_delimiter)
+                .expect("Should have a end delimiter");
+            let mut multipart = &body_bytes
+                [multipart_content_start_index + multipart_length..multipart_content_end_index];
 
             loop {
                 let mut new_file = File::new();
-                if let Some(next_form_data_start_index) = multipart.windows(multipart_length).position(|w| &w == multipart_delimiter) {
+                if let Some(next_form_data_start_index) = multipart
+                    .windows(multipart_length)
+                    .position(|w| &w == multipart_delimiter)
+                {
                     let form_data_binaries = &multipart[..next_form_data_start_index];
                     new_file.decode_from_bytes(form_data_binaries.to_vec())?;
                     request.files.push(new_file);
@@ -186,30 +235,34 @@ impl HttpRequest {
     }
 
     pub fn from(request_string: &String) -> Result<HttpRequest, PpdcError> {
-
         let mut request_lines_iterator = request_string.split("\r\n");
         let mut request = HttpRequest::new("", "", "");
-        
 
         let method_line = request_lines_iterator.next().ok_or_else(|| {
-            return PpdcError::new(500, ErrorType::InternalError, format!("Request is empty : {:#?}", request_string));
+            return PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Request is empty : {:#?}", request_string),
+            );
         })?;
 
         request.parse_request_first_line(method_line)?;
-
 
         for row in &mut request_lines_iterator {
             if row == "" {
                 break;
             }
             let row = row.split(": ").collect::<Vec<&str>>();
-            request.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+            request
+                .headers
+                .insert(row[0].to_string().to_lowercase(), row[1].to_string());
         }
 
         if let Some(content_type) = request.headers.get("content-type") {
             if *&content_type.len() >= 19 && &content_type[..19] == "multipart/form-data" {
                 request.content_type = Some(ContentType::FormData);
-                request.delimiter = Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
+                request.delimiter =
+                    Some(content_type.split("boundary=").collect::<Vec<&str>>()[1].to_string());
             } else {
                 request.content_type = Some(ContentType::ApplicationJson);
             }
@@ -235,12 +288,28 @@ impl HttpRequest {
     }
 
     pub fn parse_uuid(uuid: &str) -> Result<Uuid, PpdcError> {
-        Uuid::parse_str(uuid).map_err(|err| PpdcError::new(400, ErrorType::ApiError, format!("Incorrect uuid for ressource : {:#?}", err)))
+        Uuid::parse_str(uuid).map_err(|err| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Incorrect uuid for ressource : {:#?}", err),
+            )
+        })
     }
 
     pub fn get_pagination(&self) -> (i64, i64) {
-        let offset: i64 = self.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
-        let limit: i64 = self.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
+        let offset: i64 = self
+            .query
+            .get("offset")
+            .unwrap_or(&"0".to_string())
+            .parse()
+            .unwrap();
+        let limit: i64 = self
+            .query
+            .get("limit")
+            .unwrap_or(&"20".to_string())
+            .parse()
+            .unwrap();
         (offset, limit)
     }
 }
@@ -284,7 +353,7 @@ mod tests {
         let request = HttpRequest::from_bytes(request_bytes.to_vec());
         match request {
             Err(_) => (),
-            Ok(_) => panic!("should be an error")
+            Ok(_) => panic!("should be an error"),
         }
     }
 

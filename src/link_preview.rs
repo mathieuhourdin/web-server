@@ -1,14 +1,14 @@
-use serde::{Serialize, Deserialize};
 use crate::entities::error::PpdcError;
-use reqwest::{Client, header};
+use axum::{debug_handler, extract::Json};
+use reqwest::{header, Client};
 use scraper::Html;
-use axum::{debug_handler, extract::{Json}};
+use serde::{Deserialize, Serialize};
 
 mod html_parser;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct NewLinkPreview {
-    pub external_content_url: String
+    pub external_content_url: String,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -18,11 +18,13 @@ pub struct LinkPreview {
     pub external_content_url: String,
     pub image_url: Option<String>,
     pub content: Option<String>,
-    pub resource_type: Option<String>
+    pub resource_type: Option<String>,
 }
 
 #[debug_handler]
-pub async fn post_preview_route(Json(payload): Json<NewLinkPreview>) -> Result<Json<LinkPreview>, PpdcError> {
+pub async fn post_preview_route(
+    Json(payload): Json<NewLinkPreview>,
+) -> Result<Json<LinkPreview>, PpdcError> {
     let response = generate_link_preview(payload.external_content_url).await?;
     Ok(Json(response))
 }
@@ -37,16 +39,25 @@ pub async fn generate_link_preview(link: String) -> Result<LinkPreview, PpdcErro
     Ok(generate_preview_from_html(parsed_html, link))
 }
 
-pub async fn fetch_external_resource_html_body(external_resource_url: &str) -> Result<String, PpdcError> {
+pub async fn fetch_external_resource_html_body(
+    external_resource_url: &str,
+) -> Result<String, PpdcError> {
     println!("{}", external_resource_url);
     let client = Client::new();
 
     let mut headers = header::HeaderMap::new();
-    headers.insert(header::ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8".parse().unwrap());
+    headers.insert(
+        header::ACCEPT,
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            .parse()
+            .unwrap(),
+    );
     let response = client
         .get(external_resource_url)
         .headers(headers)
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     let response = response.text().await.unwrap();
     println!("{}", response);
     Ok(response)
@@ -63,7 +74,7 @@ pub fn generate_preview_from_html(html: Html, external_content_url: String) -> L
         external_content_url,
         image_url: html_parser::parse_page_image_url(&html),
         content: html_parser::parse_content(&html),
-        resource_type: html_parser::parse_resource_type(&html)
+        resource_type: html_parser::parse_resource_type(&html),
     }
 }
 

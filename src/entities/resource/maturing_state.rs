@@ -1,14 +1,14 @@
-use serde::{Serialize, Serializer, Deserialize};
-use serde::de::{self, Deserializer};
-use crate::entities::error::{PpdcError, ErrorType};
-use diesel::deserialize::{self, FromSql};
-use diesel::serialize::{self, Output, ToSql};
+use crate::entities::error::{ErrorType, PpdcError};
 use diesel::backend::Backend;
+use diesel::deserialize::{self, FromSql};
 use diesel::pg::Pg;
-use diesel::sql_types::Text;
 use diesel::pg::PgValue;
-use diesel::FromSqlRow;
+use diesel::serialize::{self, Output, ToSql};
+use diesel::sql_types::Text;
 use diesel::AsExpression;
+use diesel::FromSqlRow;
+use serde::de::{self, Deserializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Clone, Debug, Copy, AsExpression, PartialEq, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Text)]
@@ -16,7 +16,7 @@ pub enum MaturingState {
     Draft,
     Review,
     Finished,
-    Trashed
+    Trashed,
 }
 
 impl MaturingState {
@@ -27,7 +27,13 @@ impl MaturingState {
             "rvew" => Ok(MaturingState::Review),
             "fnsh" => Ok(MaturingState::Finished),
             "trsh" => Ok(MaturingState::Trashed),
-            &_ => return Err(PpdcError::new(404, ErrorType::ApiError, "maturing_state not found".to_string()))
+            &_ => {
+                return Err(PpdcError::new(
+                    404,
+                    ErrorType::ApiError,
+                    "maturing_state not found".to_string(),
+                ))
+            }
         }
     }
     pub fn to_code(&self) -> &str {
@@ -35,15 +41,15 @@ impl MaturingState {
             MaturingState::Draft => "drft",
             MaturingState::Review => "rvew",
             MaturingState::Finished => "fnsh",
-            MaturingState::Trashed => "trsh"
+            MaturingState::Trashed => "trsh",
         }
     }
 }
 
 impl Serialize for MaturingState {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         serializer.serialize_str(self.to_code())
     }
@@ -51,11 +57,11 @@ impl Serialize for MaturingState {
 
 impl<'de> Deserialize<'de> for MaturingState {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        MaturingState::from_code(&s)
-            .map_err(|_err| de::Error::custom("unknown maturing_state"))
+        MaturingState::from_code(&s).map_err(|_err| de::Error::custom("unknown maturing_state"))
     }
 }
 
@@ -65,13 +71,12 @@ impl ToSql<Text, Pg> for MaturingState {
     }
 }
 
-impl<DB> FromSql<Text, DB> for MaturingState 
+impl<DB> FromSql<Text, DB> for MaturingState
 where
     DB: for<'b> Backend<RawValue<'b> = PgValue<'b>>,
     String: ToSql<Text, diesel::pg::Pg>,
 {
-    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> 
-    {
+    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> {
         Ok(MaturingState::from_code(String::from_sql(bytes)?.as_str()).unwrap())
     }
 }
@@ -91,7 +96,14 @@ mod tests {
     fn test_unknown_code() {
         let from_code_result = MaturingState::from_code("i_dont_exist");
         let error = from_code_result.expect_err("Code should not be found");
-        assert_eq!(error, PpdcError::new(404, ErrorType::ApiError, "maturing_state not found".to_string()))
+        assert_eq!(
+            error,
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "maturing_state not found".to_string()
+            )
+        )
     }
 
     #[test]

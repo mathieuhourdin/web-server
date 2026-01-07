@@ -1,11 +1,11 @@
-use std::fmt;
-use diesel::result::Error as DieselError;
-use serde_json::Error as SerdeError;
-use serde::{Serialize, Deserialize};
-use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
+use diesel::result::Error as DieselError;
+use serde::{Deserialize, Serialize};
+use serde_json::Error as SerdeError;
 use std::error::Error as StdError;
+use std::fmt;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 pub struct PpdcError {
@@ -25,7 +25,11 @@ pub enum ErrorType {
 impl PpdcError {
     pub fn new(status_code: u32, error_type: ErrorType, message: String) -> PpdcError {
         println!("status code: {status_code}; message : {message}");
-        PpdcError { status_code, error_type, message }
+        PpdcError {
+            status_code,
+            error_type,
+            message,
+        }
     }
 
     pub fn unauthorized() -> PpdcError {
@@ -47,16 +51,28 @@ impl fmt::Debug for PpdcError {
 
 impl From<uuid::Error> for PpdcError {
     fn from(error: uuid::Error) -> PpdcError {
-        PpdcError::new(400, ErrorType::ApiError, format!("Incorrect uuid for ressource : {:#?}", error))
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!("Incorrect uuid for ressource : {:#?}", error),
+        )
     }
 }
 
 impl From<DieselError> for PpdcError {
     fn from(error: DieselError) -> PpdcError {
         match error {
-            DieselError::DatabaseError(_, err) => PpdcError::new(409, ErrorType::DatabaseError, err.message().to_string()),
-            DieselError::NotFound => PpdcError::new(404, ErrorType::ApiError, "Record not found".to_string()),
-            err => PpdcError::new(500, ErrorType::DatabaseError, format!("Diesel error: {}", err)),
+            DieselError::DatabaseError(_, err) => {
+                PpdcError::new(409, ErrorType::DatabaseError, err.message().to_string())
+            }
+            DieselError::NotFound => {
+                PpdcError::new(404, ErrorType::ApiError, "Record not found".to_string())
+            }
+            err => PpdcError::new(
+                500,
+                ErrorType::DatabaseError,
+                format!("Diesel error: {}", err),
+            ),
         }
     }
 }
@@ -76,21 +92,22 @@ impl IntoResponse for PpdcError {
     fn into_response(self) -> Response {
         let status = match self.error_type {
             ErrorType::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            ErrorType::ApiError => StatusCode::from_u16(self.status_code as u16).unwrap_or(StatusCode::BAD_REQUEST),
+            ErrorType::ApiError => {
+                StatusCode::from_u16(self.status_code as u16).unwrap_or(StatusCode::BAD_REQUEST)
+            }
             ErrorType::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        
+
         let error_json = serde_json::json!({
             "error": {
                 "status_code": self.status_code,
                 "message": self.message
             }
         });
-        
+
         (status, Json(error_json)).into_response()
     }
 }
-
 
 /*impl From<std::error::Error> for PpdcError {
     fn from(error: std::error::Error) -> PpdcError {

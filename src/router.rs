@@ -1,26 +1,24 @@
 use axum::{
-    routing::{post, get, put, delete, Router},
+    http::{Method, StatusCode},
     middleware::from_fn,
-    http::{StatusCode, Method},
-    response::{IntoResponse},
+    response::IntoResponse,
+    routing::{delete, get, post, put, Router},
 };
-use tower_http::{services::ServeDir, cors::{CorsLayer, Any}};
-use http::header::{CONTENT_TYPE, AUTHORIZATION, ACCEPT};
+use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    services::ServeDir,
+};
 
-use crate::entities::{user::self,
-    interaction::{interaction_routes as interaction},
-    comment,
-    resource,
-    analysis
-};
-use crate::sessions_service;
 use crate::entities::resource_relation;
+use crate::entities::transcription;
+use crate::entities::{
+    analysis, comment, interaction::interaction_routes as interaction, resource, user,
+};
 use crate::link_preview;
-use crate::entities::transcription as transcription;
-
+use crate::sessions_service;
 
 pub fn create_router() -> Router {
-
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(vec![Method::GET, Method::POST, Method::PUT, Method::DELETE])
@@ -33,20 +31,40 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()
-        .route("/", get(resource::get_resources_route).post(resource::post_resource_route))
-        .route("/:id", get(resource::get_resource_route).put(resource::put_resource_route))
-        .route("/:id/author_interaction", get(resource::get_resource_author_interaction_route))
-        .route("/:id/interactions", get(interaction::get_interactions_for_resource_route)
-            .post(interaction::post_interaction_for_resource))
-        .route("/:id/bibliography", get(resource_relation::get_resource_relations_for_resource_route))
-        .route("/:id/usages", get(resource_relation::get_targets_for_resource_route))
-        .route("/:id/comments", get(comment::get_comments_for_resource).post(comment::post_comment_route))
+        .route(
+            "/",
+            get(resource::get_resources_route).post(resource::post_resource_route),
+        )
+        .route(
+            "/:id",
+            get(resource::get_resource_route).put(resource::put_resource_route),
+        )
+        .route(
+            "/:id/author_interaction",
+            get(resource::get_resource_author_interaction_route),
+        )
+        .route(
+            "/:id/interactions",
+            get(interaction::get_interactions_for_resource_route)
+                .post(interaction::post_interaction_for_resource),
+        )
+        .route(
+            "/:id/bibliography",
+            get(resource_relation::get_resource_relations_for_resource_route),
+        )
+        .route(
+            "/:id/usages",
+            get(resource_relation::get_targets_for_resource_route),
+        )
+        .route(
+            "/:id/comments",
+            get(comment::get_comments_for_resource).post(comment::post_comment_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
         .route("/", post(resource::trace::post_trace_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
-
 
     let interactions_router = Router::new()
         .route("/", get(interaction::get_interactions_route))
@@ -54,7 +72,10 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let relations_router = Router::new()
-        .route("/thought_input_usages", post(resource_relation::post_resource_relation_route))
+        .route(
+            "/thought_input_usages",
+            post(resource_relation::post_resource_relation_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let comments_router = Router::new()
@@ -70,8 +91,10 @@ pub fn create_router() -> Router {
         .route("/:id", delete(analysis::delete_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
-    let sessions_router = Router::new()
-        .route("/", get(sessions_service::get_session_route).post(sessions_service::post_session_route));
+    let sessions_router = Router::new().route(
+        "/",
+        get(sessions_service::get_session_route).post(sessions_service::post_session_route),
+    );
 
     Router::new()
         .nest("/users", users_router)

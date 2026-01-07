@@ -1,11 +1,14 @@
-use uuid::Uuid;
-use serde::{Serialize, Deserialize};
-use diesel::prelude::*;
 use crate::db;
-use chrono::NaiveDateTime;
+use crate::entities::{error::PpdcError, session::Session, user::User};
 use crate::schema::{comments, users};
-use crate::entities::{session::Session, error::PpdcError, user::User};
-use axum::{debug_handler, extract::{Json, Path, Extension}};
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path},
+};
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name=comments)]
@@ -43,9 +46,7 @@ pub struct NewComment {
     pub author_id: Option<Uuid>,
 }
 
-
 impl Comment {
-
     pub fn find_all_for_resource(resource_id: Uuid) -> Result<Vec<Comment>, PpdcError> {
         let mut conn = db::establish_connection();
 
@@ -55,7 +56,9 @@ impl Comment {
         Ok(comments)
     }
 
-    pub fn find_all_for_resource_with_author(resource_id: Uuid) -> Result<Vec<CommentWithAuthor>, PpdcError> {
+    pub fn find_all_for_resource_with_author(
+        resource_id: Uuid,
+    ) -> Result<Vec<CommentWithAuthor>, PpdcError> {
         let mut conn = db::establish_connection();
 
         let comments = comments::table
@@ -68,7 +71,7 @@ impl Comment {
             .collect();
         Ok(comments)
     }
-    
+
     pub fn find(id: Uuid) -> Result<Comment, PpdcError> {
         let mut conn = db::establish_connection();
 
@@ -99,7 +102,9 @@ impl Comment {
 }
 
 #[debug_handler]
-pub async fn get_comments_for_resource(Path(id): Path<Uuid>) -> Result<Json<Vec<CommentWithAuthor>>, PpdcError> {
+pub async fn get_comments_for_resource(
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<CommentWithAuthor>>, PpdcError> {
     Ok(Json(Comment::find_all_for_resource_with_author(id)?))
 }
 
@@ -109,7 +114,6 @@ pub async fn post_comment_route(
     Extension(session): Extension<Session>,
     Json(mut payload): Json<NewComment>,
 ) -> Result<Json<Comment>, PpdcError> {
-
     payload.author_id = session.user_id;
     payload.resource_id = Some(id);
     Ok(Json(Comment::create(payload)?))

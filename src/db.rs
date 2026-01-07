@@ -1,6 +1,6 @@
+use crate::environment::get_database_url;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use crate::environment::get_database_url;
 use diesel::r2d2::{self, ConnectionManager};
 use std::sync::OnceLock;
 

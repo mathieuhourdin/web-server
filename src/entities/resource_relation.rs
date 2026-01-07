@@ -1,11 +1,14 @@
-use serde::{Serialize, Deserialize};
-use chrono::NaiveDateTime;
-use uuid::Uuid;
 use crate::db::DbPool;
+use crate::entities::{error::PpdcError, resource::Resource, session::Session};
 use crate::schema::*;
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path},
+};
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use crate::entities::{session::Session, error::{PpdcError}, resource::Resource};
-use axum::{debug_handler, extract::{Json, Path, Extension}};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Queryable, Selectable, Debug)]
 #[diesel(table_name=resource_relations)]
@@ -51,12 +54,14 @@ impl NewResourceRelation {
             target_resource_id,
             relation_comment: "".to_string(),
             user_id: None,
-            relation_type: None
+            relation_type: None,
         }
     }
 
     pub fn create(self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let resource_relation = diesel::insert_into(resource_relations::table)
             .values(&self)
@@ -66,30 +71,54 @@ impl NewResourceRelation {
 }
 
 impl ResourceRelation {
-    pub fn find_origin_for_resource(target_resource_id: Uuid, pool: &DbPool) -> Result<Vec<ResourceRelationWithOriginResource>, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+    pub fn find_origin_for_resource(
+        target_resource_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<ResourceRelationWithOriginResource>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let resource_relations = resource_relations::table
-            .inner_join(resources::table.on(resource_relations::origin_resource_id.eq(resources::id)))
+            .inner_join(
+                resources::table.on(resource_relations::origin_resource_id.eq(resources::id)),
+            )
             .filter(resource_relations::target_resource_id.eq(target_resource_id))
             .select((ResourceRelation::as_select(), Resource::as_select()))
             .load::<(ResourceRelation, Resource)>(&mut conn)?
             .into_iter()
-            .map(|(resource_relation, origin_resource)| ResourceRelationWithOriginResource { resource_relation, origin_resource })
+            .map(
+                |(resource_relation, origin_resource)| ResourceRelationWithOriginResource {
+                    resource_relation,
+                    origin_resource,
+                },
+            )
             .collect();
         Ok(resource_relations)
     }
 
-    pub fn find_target_for_resource(origin_resource_id: Uuid, pool: &DbPool) -> Result<Vec<ResourceRelationWithTargetResource>, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+    pub fn find_target_for_resource(
+        origin_resource_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<ResourceRelationWithTargetResource>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let resource_relations = resource_relations::table
-            .inner_join(resources::table.on(resource_relations::target_resource_id.eq(resources::id)))
+            .inner_join(
+                resources::table.on(resource_relations::target_resource_id.eq(resources::id)),
+            )
             .filter(resource_relations::origin_resource_id.eq(origin_resource_id))
             .select((ResourceRelation::as_select(), Resource::as_select()))
             .load::<(ResourceRelation, Resource)>(&mut conn)?
             .into_iter()
-            .map(|(resource_relation, target_resource)| ResourceRelationWithTargetResource { resource_relation, target_resource })
+            .map(
+                |(resource_relation, target_resource)| ResourceRelationWithTargetResource {
+                    resource_relation,
+                    target_resource,
+                },
+            )
             .collect();
         Ok(resource_relations)
     }
@@ -99,7 +128,7 @@ impl ResourceRelation {
 pub async fn post_resource_relation_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-    Json(mut payload): Json<NewResourceRelation>
+    Json(mut payload): Json<NewResourceRelation>,
 ) -> Result<Json<ResourceRelation>, PpdcError> {
     payload.user_id = session.user_id;
     Ok(Json(payload.create(&pool)?))
@@ -118,7 +147,6 @@ pub async fn get_targets_for_resource_route(
     Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ResourceRelationWithTargetResource>>, PpdcError> {
-
     Ok(Json(ResourceRelation::find_target_for_resource(id, &pool)?))
 }
 

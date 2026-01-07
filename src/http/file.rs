@@ -1,12 +1,12 @@
 use crate::entities::error::PpdcError;
-use std::collections::HashMap;
 use axum::extract::multipart::Field;
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum FileType {
     Tex,
     Text,
-    Docx
+    Docx,
 }
 
 impl FileType {
@@ -15,7 +15,7 @@ impl FileType {
             "tex" => Some(FileType::Tex),
             "txt" => Some(FileType::Text),
             "docx" => Some(FileType::Docx),
-            _ => None
+            _ => None,
         }
     }
 
@@ -23,8 +23,9 @@ impl FileType {
         match self {
             FileType::Tex => "tex",
             FileType::Text => "txt",
-            FileType::Docx => "docx"
-        }.to_string()
+            FileType::Docx => "docx",
+        }
+        .to_string()
     }
 }
 
@@ -34,7 +35,7 @@ pub struct File {
     pub headers: HashMap<String, String>,
     pub file_type: Option<FileType>,
     pub content: String,
-    pub content_bytes: Vec<u8>
+    pub content_bytes: Vec<u8>,
 }
 
 impl File {
@@ -44,31 +45,38 @@ impl File {
             headers: HashMap::new(),
             file_type: None,
             content: String::new(),
-            content_bytes: vec![]
+            content_bytes: vec![],
         }
     }
 
     pub async fn from_axum_field(&mut self, field: Field<'_>) -> Result<(), PpdcError> {
         self.name = field.name().unwrap().to_string();
-        self.file_type = self.name.split(".").last().map(|x| FileType::from_str(x)).unwrap();
+        self.file_type = self
+            .name
+            .split(".")
+            .last()
+            .map(|x| FileType::from_str(x))
+            .unwrap();
         self.content_bytes = field.bytes().await.unwrap().to_vec();
         Ok(())
     }
 
     pub fn decode_from_bytes(&mut self, file_bytes: Vec<u8>) -> Result<(), PpdcError> {
-
         let content_delimiter = b"\r\n\r\n";
-        let content_start_index = file_bytes.windows(4).position(|w| w == content_delimiter).expect("Should have a content");
+        let content_start_index = file_bytes
+            .windows(4)
+            .position(|w| w == content_delimiter)
+            .expect("Should have a content");
         let headers_part = file_bytes[..content_start_index].to_vec();
         let headers_part = String::from_utf8(headers_part).unwrap();
         dbg!(&headers_part);
-
 
         let splitted_content = headers_part[2..].split("\r\n");
         for row in splitted_content {
             dbg!(row);
             let row = row.split(": ").collect::<Vec<&str>>();
-            self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+            self.headers
+                .insert(row[0].to_string().to_lowercase(), row[1].to_string());
         }
         if let Some(content_disposition) = self.headers.get("content-disposition") {
             for subheader in content_disposition.split("; ") {
@@ -76,23 +84,26 @@ impl File {
                 if let Some(key) = splitted_subheader.next() {
                     if key == "filename" {
                         let name = splitted_subheader.next().unwrap();
-                        let name = &name[1..name.len() -1];
+                        let name = &name[1..name.len() - 1];
                         self.name = name.to_string();
-                        self.file_type = name.split(".").last().map(|x| FileType::from_str(x)).unwrap();
+                        self.file_type = name
+                            .split(".")
+                            .last()
+                            .map(|x| FileType::from_str(x))
+                            .unwrap();
                     }
                 }
             }
         }
 
-        let content_part = &file_bytes[content_start_index +4..];
+        let content_part = &file_bytes[content_start_index + 4..];
         self.content = String::from_utf8_lossy(content_part).to_string();
         self.content_bytes = content_part.to_vec();
-         
+
         Ok(())
     }
 
     pub fn decode_file(&mut self, file_str: &str) -> Result<(), PpdcError> {
-
         let mut splitted_content = file_str.split("\r\n");
         splitted_content.next();
         for row in &mut splitted_content {
@@ -100,7 +111,8 @@ impl File {
                 break;
             }
             let row = row.split(": ").collect::<Vec<&str>>();
-            self.headers.insert(row[0].to_string().to_lowercase(), row[1].to_string());
+            self.headers
+                .insert(row[0].to_string().to_lowercase(), row[1].to_string());
         }
 
         if let Some(content_disposition) = self.headers.get("content-disposition") {
@@ -109,8 +121,12 @@ impl File {
                 if let Some(key) = splitted_subheader.next() {
                     if key == "name" {
                         let name = splitted_subheader.next().unwrap();
-                        let name = &name[1..name.len() -1];
-                        self.file_type = name.split(".").last().map(|x| FileType::from_str(x)).unwrap();
+                        let name = &name[1..name.len() - 1];
+                        self.file_type = name
+                            .split(".")
+                            .last()
+                            .map(|x| FileType::from_str(x))
+                            .unwrap();
                         self.name = name.to_string();
                     }
                 }
@@ -120,7 +136,7 @@ impl File {
             self.content += row;
             self.content += "\r\n";
         }
-        
+
         Ok(())
     }
 }
@@ -134,15 +150,20 @@ mod tests {
         let example_string = "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"example.txt\"\r\nContent-Type: text/plain\r\n\r\nContent of the file";
         let example_bytes = example_string.as_bytes();
 
-        let mut expected_file = File { 
+        let mut expected_file = File {
             name: "example.txt".to_string(),
             headers: HashMap::new(),
             file_type: Some(FileType::Text),
             content: "Content of the file".to_string(),
-            content_bytes: b"Content of the file".to_vec()
+            content_bytes: b"Content of the file".to_vec(),
         };
-        expected_file.headers.insert("content-disposition".to_string(), "form-data; name=\"file\"; filename=\"example.txt\"".to_string());
-        expected_file.headers.insert("content-type".to_string(), "text/plain".to_string());
+        expected_file.headers.insert(
+            "content-disposition".to_string(),
+            "form-data; name=\"file\"; filename=\"example.txt\"".to_string(),
+        );
+        expected_file
+            .headers
+            .insert("content-type".to_string(), "text/plain".to_string());
 
         let mut file = File::new();
         file.decode_from_bytes(example_bytes.to_vec());

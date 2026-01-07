@@ -1,10 +1,10 @@
-use crate::entities::{error::{PpdcError, ErrorType}};
+use crate::entities::error::{ErrorType, PpdcError};
 
 pub enum MaturingState {
     Idea,
     InProgress,
     Review,
-    Finished
+    Finished,
 }
 impl MaturingState {
     pub fn to_str(&self) -> &str {
@@ -12,7 +12,7 @@ impl MaturingState {
             MaturingState::Idea => "idea",
             MaturingState::InProgress => "prgs",
             MaturingState::Review => "rvew",
-            MaturingState::Finished => "fnsh"
+            MaturingState::Finished => "fnsh",
         }
     }
 
@@ -22,9 +22,14 @@ impl MaturingState {
             "prgs" => MaturingState::InProgress,
             "rvew" => MaturingState::Review,
             "fnsh" => MaturingState::Finished,
-            _ => return Err(PpdcError::new(400, ErrorType::ApiError, "maturing_state unknown value".to_string()))
+            _ => {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "maturing_state unknown value".to_string(),
+                ))
+            }
         };
         Ok(return_value)
     }
 }
-

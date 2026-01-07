@@ -1,18 +1,23 @@
-use serde::{Serialize, Deserialize};
-use chrono::NaiveDateTime;
-use uuid::Uuid;
 use crate::db::DbPool;
+use crate::entities::{
+    error::PpdcError, interaction::model::Interaction, session::Session, user::User,
+};
+use crate::pagination::PaginationParams;
 use crate::schema::*;
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path, Query},
+};
+use chrono::NaiveDateTime;
 use diesel;
 use diesel::prelude::*;
-use crate::entities::{session::Session, error::{PpdcError}, user::User, interaction::model::{Interaction}};
-use resource_type::ResourceType;
-use axum::{debug_handler, extract::{Query, Json, Path, Extension}};
-use crate::pagination::PaginationParams;
 pub use maturing_state::MaturingState;
+use resource_type::ResourceType;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-pub mod resource_type;
 pub mod maturing_state;
+pub mod resource_type;
 pub mod trace;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
@@ -68,7 +73,9 @@ pub struct NewResourceDto {
 
 impl Resource {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Resource, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let result = resources::table
             .filter(resources::id.eq(id))
@@ -76,8 +83,13 @@ impl Resource {
         Ok(result)
     }
 
-    pub fn find_resource_author_interaction(self, pool: &DbPool) -> Result<Interaction, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+    pub fn find_resource_author_interaction(
+        &self,
+        pool: &DbPool,
+    ) -> Result<Interaction, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let result: Interaction = interactions::table
             .filter(interactions::interaction_type.eq("outp"))
@@ -93,7 +105,9 @@ impl Resource {
     }
 
     pub fn delete(self, pool: &DbPool) -> Result<Resource, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         diesel::delete(resources::table)
             .filter(resources::id.eq(self.id))
             .execute(&mut conn)?;
@@ -102,8 +116,12 @@ impl Resource {
 }
 
 impl NewResource {
-
-    pub fn new(title: String, subtitle: String, content: String, resource_type: ResourceType) -> NewResource {
+    pub fn new(
+        title: String,
+        subtitle: String,
+        content: String,
+        resource_type: ResourceType,
+    ) -> NewResource {
         println!("Vaule for resource type : {}", resource_type.to_code());
         Self {
             title,
@@ -116,21 +134,25 @@ impl NewResource {
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("pbsh".to_string()),
             category_id: None,
-            is_external: Some(false)
+            is_external: Some(false),
         }
     }
 
     pub fn create(self, pool: &DbPool) -> Result<Resource, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let result = diesel::insert_into(resources::table)
             .values(&self)
             .get_result(&mut conn)?;
         Ok(result)
     }
-    
+
     pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<Resource, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let result = diesel::update(resources::table)
             .filter(resources::id.eq(id))
@@ -165,13 +187,11 @@ pub async fn put_resource_route(
     Path(id): Path<Uuid>,
     Json(payload): Json<NewResource>,
 ) -> Result<Json<Resource>, PpdcError> {
-
     let db_resource = Resource::find(id, &pool)?;
     let author_interaction = db_resource.find_resource_author_interaction(&pool);
     if author_interaction.is_ok() {
         let author_id = author_interaction.unwrap().interaction_user_id;
-        if author_id != session.user_id.unwrap()
-        {
+        if author_id != session.user_id.unwrap() {
             let author_user = User::find(&author_id, &pool)?;
             if author_user.is_platform_user {
                 return Err(PpdcError::unauthorized());
@@ -192,9 +212,8 @@ pub async fn post_resource_route(
 #[debug_handler]
 pub async fn get_resource_author_interaction_route(
     Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>
+    Path(id): Path<Uuid>,
 ) -> Result<Json<Interaction>, PpdcError> {
-
     println!("get_resource_author_interaction_route");
     let resource = Resource::find(id, &pool)?;
     let author_interaction = resource.find_resource_author_interaction(&pool)?;
@@ -204,7 +223,7 @@ pub async fn get_resource_author_interaction_route(
 #[debug_handler]
 pub async fn get_resource_route(
     Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>
+    Path(id): Path<Uuid>,
 ) -> Result<Json<Resource>, PpdcError> {
     Ok(Json(Resource::find(id, &pool)?))
 }
@@ -216,7 +235,7 @@ pub struct GetResourcesParams {
 }
 
 impl GetResourcesParams {
-    pub fn is_external(&self) -> Option<bool> { 
+    pub fn is_external(&self) -> Option<bool> {
         self.is_external
     }
 
@@ -231,8 +250,9 @@ pub async fn get_resources_route(
     Query(filter_params): Query<GetResourcesParams>,
     Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<Vec<Resource>>, PpdcError> {
-
-    let mut conn = pool.get().expect("Failed to get a connection from the pool");
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
 
     let mut query = resources::table
         .offset(pagination.offset())
@@ -243,7 +263,7 @@ pub async fn get_resources_route(
 
     if let Some(is_external) = filter_params.is_external {
         query = query.filter(resources::is_external.eq(is_external));
-    } 
+    }
     if filter_params.resource_type().as_str() == "pblm" {
         query = query.filter(resources::resource_type.eq("pblm"));
     }

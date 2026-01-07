@@ -33,7 +33,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         interaction_comment -> Nullable<Text>,
-        interaction_date -> Nullable<Timestamp>,
+        interaction_date -> Timestamp,
         interaction_type -> Nullable<Text>,
         interaction_is_public -> Bool,
         resource_id -> Nullable<Uuid>,

@@ -1,14 +1,14 @@
-use serde::{Serialize, Serializer, Deserialize};
-use serde::de::{self, Deserializer};
-use crate::entities::error::{PpdcError, ErrorType};
-use diesel::deserialize::{self, FromSql};
-use diesel::serialize::{self, Output, ToSql};
+use crate::entities::error::{ErrorType, PpdcError};
 use diesel::backend::Backend;
+use diesel::deserialize::{self, FromSql};
 use diesel::pg::Pg;
-use diesel::sql_types::Text;
 use diesel::pg::PgValue;
-use diesel::FromSqlRow;
+use diesel::serialize::{self, Output, ToSql};
+use diesel::sql_types::Text;
 use diesel::AsExpression;
+use diesel::FromSqlRow;
+use serde::de::{self, Deserializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Clone, Debug, Copy, AsExpression, PartialEq, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Text)]
@@ -36,7 +36,7 @@ pub enum ResourceType {
     Deliverable,
     Process,
     Resource,
-    Analysis
+    Analysis,
 }
 
 impl ResourceType {
@@ -68,7 +68,13 @@ impl ResourceType {
             "proc" => Ok(ResourceType::Process),
             "anly" => Ok(ResourceType::Analysis),
             "rsrc" => Ok(ResourceType::Resource),
-            &_ => return Err(PpdcError::new(404, ErrorType::ApiError, "resource_type not found".to_string()))
+            &_ => {
+                return Err(PpdcError::new(
+                    404,
+                    ErrorType::ApiError,
+                    "resource_type not found".to_string(),
+                ))
+            }
         }
     }
     pub fn to_code(&self) -> &str {
@@ -96,7 +102,7 @@ impl ResourceType {
             ResourceType::Deliverable => "dlvr",
             ResourceType::Process => "proc",
             ResourceType::Analysis => "anly",
-            ResourceType::Resource => "rsrc"
+            ResourceType::Resource => "rsrc",
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -124,7 +130,36 @@ impl ResourceType {
             ResourceType::Deliverable => "Deliverable",
             ResourceType::Process => "Process",
             ResourceType::Analysis => "Analysis",
-            ResourceType::Resource => "Resource"
+            ResourceType::Resource => "Resource",
+        }
+    }
+    pub fn from_full_text(full_text: &str) -> Option<ResourceType> {
+        match full_text {
+            "Book" => Some(ResourceType::Book),
+            "Reading Note" => Some(ResourceType::ReadingNote),
+            "List" => Some(ResourceType::ResourceList),
+            "Problem" => Some(ResourceType::Problem),
+            "Research Article" => Some(ResourceType::ResearchArticle),
+            "News Article" => Some(ResourceType::NewsArticle),
+            "Opinion Article" => Some(ResourceType::OpinionArticle),
+            "Movie" => Some(ResourceType::Movie),
+            "Video" => Some(ResourceType::Video),
+            "Podcast" => Some(ResourceType::Podcast),
+            "Song" => Some(ResourceType::Song),
+            "Course" => Some(ResourceType::Course),
+            "Idea" => Some(ResourceType::Idea),
+            "Journal" => Some(ResourceType::Journal),
+            "Journal Item" => Some(ResourceType::JournalItem),
+            "Trace" => Some(ResourceType::Trace),
+            "Mission" => Some(ResourceType::Mission),
+            "Element" => Some(ResourceType::Element),
+            "Task" => Some(ResourceType::Task),
+            "Question" => Some(ResourceType::Question),
+            "Deliverable" => Some(ResourceType::Deliverable),
+            "Process" => Some(ResourceType::Process),
+            "Analysis" => Some(ResourceType::Analysis),
+            "Resource" => Some(ResourceType::Resource),
+            &_ => None,
         }
     }
     pub fn from_opengraph_code(og_code: &str) -> Option<ResourceType> {
@@ -132,15 +167,15 @@ impl ResourceType {
             "book" => Some(ResourceType::Book),
             "article" => Some(ResourceType::NewsArticle),
             "music.song" => Some(ResourceType::Podcast),
-            &_ => None
+            &_ => None,
         }
     }
 }
 
 impl Serialize for ResourceType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         serializer.serialize_str(self.to_code())
     }
@@ -148,11 +183,11 @@ impl Serialize for ResourceType {
 
 impl<'de> Deserialize<'de> for ResourceType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        ResourceType::from_code(&s)
-            .map_err(|_err| de::Error::custom("unknown resource_type"))
+        ResourceType::from_code(&s).map_err(|_err| de::Error::custom("unknown resource_type"))
     }
 }
 
@@ -162,13 +197,12 @@ impl ToSql<Text, Pg> for ResourceType {
     }
 }
 
-impl<DB> FromSql<Text, DB> for ResourceType 
+impl<DB> FromSql<Text, DB> for ResourceType
 where
     DB: for<'b> Backend<RawValue<'b> = PgValue<'b>>,
     String: ToSql<Text, diesel::pg::Pg>,
 {
-    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> 
-    {
+    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> {
         Ok(ResourceType::from_code(String::from_sql(bytes)?.as_str()).unwrap())
     }
 }
@@ -188,7 +222,14 @@ mod tests {
     fn test_unknown_code() {
         let from_code_result = ResourceType::from_code("i_dont_exist");
         let error = from_code_result.expect_err("Code should not be found");
-        assert_eq!(error, PpdcError::new(404, ErrorType::ApiError, "resource_type not found".to_string()))
+        assert_eq!(
+            error,
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "resource_type not found".to_string()
+            )
+        )
     }
 
     #[test]

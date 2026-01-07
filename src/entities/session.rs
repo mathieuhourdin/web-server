@@ -1,12 +1,16 @@
-use serde::{Serialize, Deserialize};
-use chrono::{NaiveDateTime, Utc, Duration};
-use uuid::Uuid;
-use diesel::prelude::*;
 use crate::db::DbPool;
+use crate::entities::error::PpdcError;
 use crate::schema::sessions;
+use axum::{
+    async_trait,
+    extract::FromRequestParts,
+    http::{request::Parts, StatusCode},
+};
+use chrono::{Duration, NaiveDateTime, Utc};
 use diesel;
-use crate::entities::error::{PpdcError};
-use axum::{async_trait, http::{StatusCode, request::Parts}, extract::{FromRequestParts}};
+use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset, Clone)]
 #[diesel(table_name = crate::schema::sessions)]
@@ -35,7 +39,10 @@ impl NewSession {
             user_id: None,
             token: None,
             authenticated: false,
-            expires_at: Utc::now().naive_utc().checked_add_signed(Duration::days(90)).unwrap()
+            expires_at: Utc::now()
+                .naive_utc()
+                .checked_add_signed(Duration::days(90))
+                .unwrap(),
         }
     }
 }
@@ -48,7 +55,10 @@ impl Session {
             token: None,
             created_at: Utc::now().naive_utc(),
             updated_at: Utc::now().naive_utc(),
-            expires_at: Utc::now().naive_utc().checked_add_signed(Duration::hours(10)).unwrap(),
+            expires_at: Utc::now()
+                .naive_utc()
+                .checked_add_signed(Duration::hours(10))
+                .unwrap(),
             authenticated: false,
         }
     }
@@ -57,13 +67,15 @@ impl Session {
         self.expires_at > Utc::now().naive_utc()
     }
 
-    pub fn set_authenticated_and_user_id(&mut self, user_id: Uuid,) {
+    pub fn set_authenticated_and_user_id(&mut self, user_id: Uuid) {
         self.user_id = Some(user_id);
         self.authenticated = true;
     }
 
     pub fn find(id: &Uuid, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let session = sessions::table
             .filter(sessions::id.eq(id))
@@ -72,7 +84,9 @@ impl Session {
     }
 
     pub fn update(session: &Session, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let session = diesel::update(sessions::table)
             .filter(sessions::id.eq(session.id))
@@ -82,7 +96,9 @@ impl Session {
     }
 
     pub fn create(session: &NewSession, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let session = diesel::insert_into(sessions::table)
             .values(session)
             .get_result(&mut conn)?;
@@ -90,7 +106,6 @@ impl Session {
     }
 
     pub fn get_valid_session_from_id(id: &str, pool: &DbPool) -> Result<Session, PpdcError> {
-
         println!("generate_valid_session_from_id id : {id}");
         let decoded_session_id = Uuid::parse_str(id);
         if decoded_session_id.is_err() {
@@ -104,18 +119,21 @@ impl Session {
                 println!("Error when searching session for session_id: {decoded_session_id}, error : {:#?}", err);
                 let new_session = NewSession::new();
                 Session::create(&new_session, pool)?
-            },
+            }
             Ok(session) => {
-                    if session.is_valid() {
-                        session
-                    } else {
-                        println!("Session {} not valid anymore", session.id);
-                        let new_session = NewSession::new();
-                        Session::create(&new_session, pool)?
-                    }
+                if session.is_valid() {
+                    session
+                } else {
+                    println!("Session {} not valid anymore", session.id);
+                    let new_session = NewSession::new();
+                    Session::create(&new_session, pool)?
                 }
+            }
         };
-        println!("generate_valid_session_from_id found_session id {:#?}", found_session.id);
+        println!(
+            "generate_valid_session_from_id found_session id {:#?}",
+            found_session.id
+        );
         Ok(found_session)
     }
 }
@@ -129,7 +147,10 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &B) -> Result<Self, Self::Rejection> {
         println!("from_request_parts");
-        let pool = parts.extensions.get::<DbPool>().expect("Extension DbPool should be set");
+        let pool = parts
+            .extensions
+            .get::<DbPool>()
+            .expect("Extension DbPool should be set");
         println!("from_request_parts pool");
         if let Some(auth_header) = parts.headers.get("Authorization") {
             if let Ok(auth_str) = auth_header.to_str() {
@@ -137,6 +158,7 @@ where
                 return Ok(Session::get_valid_session_from_id(auth_str, &pool).unwrap());
             }
         }
-        Session::create(&NewSession::new(), &pool).map_err(|_| (StatusCode::UNAUTHORIZED, "Unauthorized"))
+        Session::create(&NewSession::new(), &pool)
+            .map_err(|_| (StatusCode::UNAUTHORIZED, "Unauthorized"))
     }
 }

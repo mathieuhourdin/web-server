@@ -1,5 +1,5 @@
-use scraper::{Html,Selector};
 use crate::entities::resource::resource_type::ResourceType;
+use scraper::{Html, Selector};
 
 pub fn parse_page_title(html: &Html) -> Option<String> {
     if let Some(title) = find_opengraph_content_from_property(html, "title") {
@@ -28,17 +28,23 @@ pub fn find_raw_html_title(html: &Html) -> Option<String> {
 
 pub fn find_opengraph_content_from_property(html: &Html, property: &str) -> Option<String> {
     let selector = Selector::parse(&format!("meta[property=\"og:{}\"]", property)).unwrap();
-    html.select(&selector).map(|e| e.attr("content").unwrap().to_string()).next()
+    html.select(&selector)
+        .map(|e| e.attr("content").unwrap().to_string())
+        .next()
 }
 
 pub fn find_twitter_content_from_name(html: &Html, name: &str) -> Option<String> {
     let selector = Selector::parse(&format!("meta[name=\"twitter:{}\"]", name)).unwrap();
-    html.select(&selector).map(|e| e.attr("content").unwrap().to_string()).next()
+    html.select(&selector)
+        .map(|e| e.attr("content").unwrap().to_string())
+        .next()
 }
 
 pub fn find_schema_content_from_itemprop(html: &Html, prop: &str) -> Option<String> {
     let selector = Selector::parse(&format!("meta[itemprop=\"{}\"]", prop)).unwrap();
-    html.select(&selector).map(|e| e.attr("content").unwrap().to_string()).next()
+    html.select(&selector)
+        .map(|e| e.attr("content").unwrap().to_string())
+        .next()
 }
 
 pub fn parse_page_subtitle(html: &Html) -> Option<String> {
@@ -46,10 +52,10 @@ pub fn parse_page_subtitle(html: &Html) -> Option<String> {
         return Some(subtitle);
     }
     if let Some(subtitle) = find_twitter_content_from_name(html, "description") {
-        return Some(subtitle)
+        return Some(subtitle);
     }
     if let Some(subtitle) = find_schema_content_from_itemprop(html, "description") {
-        return Some(subtitle)
+        return Some(subtitle);
     }
     None
 }
@@ -72,7 +78,9 @@ pub fn parse_page_image_url(html: &Html) -> Option<String> {
 
 pub fn find_raw_html_image_url(html: &Html) -> Option<String> {
     let selector = Selector::parse("img").unwrap();
-    html.select(&selector).map(|e| e.attr("src").unwrap().to_string()).next()
+    html.select(&selector)
+        .map(|e| e.attr("src").unwrap().to_string())
+        .next()
 }
 
 pub fn parse_content(_html: &Html) -> Option<String> {
@@ -81,7 +89,8 @@ pub fn parse_content(_html: &Html) -> Option<String> {
 
 pub fn parse_resource_type(html: &Html) -> Option<String> {
     if let Some(resource_type) = find_opengraph_content_from_property(html, "type") {
-        if let Some(resource_type_enum) = ResourceType::from_opengraph_code(resource_type.as_str()) {
+        if let Some(resource_type_enum) = ResourceType::from_opengraph_code(resource_type.as_str())
+        {
             return Some(resource_type_enum.to_code().to_string());
         } else {
             return Some(resource_type);
@@ -94,8 +103,8 @@ pub fn parse_resource_type(html: &Html) -> Option<String> {
 mod tests {
 
     use super::*;
-    use tokio::test;
     use std::fs;
+    use tokio::test;
 
     fn get_structured_data_html() -> Html {
         Html::parse_document(&fs::read_to_string("test_data/structured_html.html").unwrap())
@@ -112,7 +121,6 @@ mod tests {
     fn get_raw_html_data_html() -> Html {
         Html::parse_document(&fs::read_to_string("test_data/raw_html.html").unwrap())
     }
-
 
     #[test]
     async fn test_parse_page_title() {
@@ -191,7 +199,8 @@ mod tests {
     #[test]
     async fn test_find_opengraph_description() {
         let example_html = get_structured_data_html();
-        let parse_result = find_opengraph_content_from_property(&example_html, "description").unwrap();
+        let parse_result =
+            find_opengraph_content_from_property(&example_html, "description").unwrap();
         assert_eq!(parse_result, "og_description".to_string())
     }
 

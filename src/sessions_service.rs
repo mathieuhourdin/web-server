@@ -1,14 +1,18 @@
-use serde::{Serialize, Deserialize};
-use crate::entities::{user::User, session::Session, error::{ErrorType, PpdcError}};
-use axum::{
-    debug_handler,
-    extract::{Json, Extension},
-    body::Body,
-    middleware::Next,
-    http::{Request, StatusCode as AxumStatusCode},
-    response::IntoResponse
-};
 use crate::db::DbPool;
+use crate::entities::{
+    error::{ErrorType, PpdcError},
+    session::Session,
+    user::User,
+};
+use axum::{
+    body::Body,
+    debug_handler,
+    extract::{Extension, Json},
+    http::{Request, StatusCode as AxumStatusCode},
+    middleware::Next,
+    response::IntoResponse,
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct LoginCheck {
@@ -36,13 +40,12 @@ pub async fn auth_middleware_custom(
     next.run(req).await
 }
 
-
 #[debug_handler]
 pub async fn post_session_route(
     Extension(pool): Extension<DbPool>,
     Extension(mut session): Extension<Session>,
     Json(payload): Json<LoginCheck>,
-) -> Result<Json<Session>, PpdcError> { 
+) -> Result<Json<Session>, PpdcError> {
     println!("Post session route");
 
     let existing_user = User::find_by_username(&payload.username, &pool)?;
@@ -56,15 +59,18 @@ pub async fn post_session_route(
         let session = Session::update(&session, &pool)?;
 
         return Ok(Json(session));
-        
     } else {
-        return Err(PpdcError::new(401, ErrorType::ApiError, String::from("Invalid password")));
+        return Err(PpdcError::new(
+            401,
+            ErrorType::ApiError,
+            String::from("Invalid password"),
+        ));
     }
 }
 
 #[debug_handler]
 pub async fn get_session_route(
-    Extension(session): Extension<Session>
+    Extension(session): Extension<Session>,
 ) -> Result<Json<Session>, PpdcError> {
     Ok(Json(session))
 }

@@ -1,13 +1,13 @@
-use serde::{Serialize, Deserialize};
-use crate::entities::error::{PpdcError};
-use crate::http::{HttpRequest, HttpResponse};
-use diesel::prelude::*;
-use uuid::Uuid;
 use crate::db;
+use crate::entities::error::PpdcError;
+use crate::http::{HttpRequest, HttpResponse};
 use crate::schema::categories;
-use serde_json;
-use diesel;
 use chrono::NaiveDateTime;
+use diesel;
+use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde_json;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::categories)]
@@ -15,13 +15,13 @@ pub struct Category {
     pub id: Uuid,
     pub display_name: String,
     pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Serialize, Deserialize, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::categories)]
 pub struct NewCategory {
-    pub display_name: String
+    pub display_name: String,
 }
 impl NewCategory {
     pub fn create(self) -> Result<Category, PpdcError> {
@@ -57,14 +57,22 @@ impl Category {
 }
 
 pub fn get_categories_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
-    let limit: i64 = request.query.get("limit").unwrap_or(&"20".to_string()).parse().unwrap();
-    let offset: i64 = request.query.get("offset").unwrap_or(&"0".to_string()).parse().unwrap();
-    HttpResponse::ok()
-        .json(&Category::find_paginated(offset, limit)?)
+    let limit: i64 = request
+        .query
+        .get("limit")
+        .unwrap_or(&"20".to_string())
+        .parse()
+        .unwrap();
+    let offset: i64 = request
+        .query
+        .get("offset")
+        .unwrap_or(&"0".to_string())
+        .parse()
+        .unwrap();
+    HttpResponse::ok().json(&Category::find_paginated(offset, limit)?)
 }
 
 pub fn post_category_route(request: &HttpRequest) -> Result<HttpResponse, PpdcError> {
     let category = serde_json::from_str::<NewCategory>(&request.body[..])?;
-    HttpResponse::ok()
-        .json(&NewCategory::create(category)?)
+    HttpResponse::ok().json(&NewCategory::create(category)?)
 }

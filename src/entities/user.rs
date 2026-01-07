@@ -1,16 +1,24 @@
-use serde::{Serialize, Deserialize};
-use axum::{debug_handler, extract::{Path, Extension, Query, Json}, http::StatusCode as AxumStatusCode, response::IntoResponse};
-use argon2::{Config};
-use rand::Rng;
-use crate::entities::{session::Session, error::{PpdcError, ErrorType}};
-use crate::pagination::PaginationParams;
-use diesel::prelude::*;
-use uuid::Uuid;
 use crate::db::DbPool;
+use crate::entities::{
+    error::{ErrorType, PpdcError},
+    session::Session,
+};
+use crate::pagination::PaginationParams;
 use crate::schema::users;
+use argon2::Config;
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path, Query},
+    http::StatusCode as AxumStatusCode,
+    response::IntoResponse,
+};
 use chrono::NaiveDateTime;
-use diesel::sql_types::{Text, Float, Uuid as SqlUuid};
+use diesel::prelude::*;
 use diesel::sql_query;
+use diesel::sql_types::{Float, Text, Uuid as SqlUuid};
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::users)]
@@ -28,25 +36,26 @@ pub struct User {
     pub is_platform_user: bool,
     pub biography: Option<String>,
     pub pseudonym: String,
-    pub pseudonymized: bool
+    pub pseudonymized: bool,
 }
 
 pub enum UserResponse {
     Pseudonymized(UserPseudonymizedResponse),
     PseudonymizedAuthentified(UserPseudonymizedAuthentifiedResponse),
-    Full(User)
+    Full(User),
 }
 
 impl IntoResponse for UserResponse {
     fn into_response(self) -> axum::response::Response {
         match self {
             UserResponse::Pseudonymized(user) => (AxumStatusCode::OK, Json(user)).into_response(),
-            UserResponse::PseudonymizedAuthentified(user) => (AxumStatusCode::OK, Json(user)).into_response(),
+            UserResponse::PseudonymizedAuthentified(user) => {
+                (AxumStatusCode::OK, Json(user)).into_response()
+            }
             UserResponse::Full(user) => (AxumStatusCode::OK, Json(user)).into_response(),
         }
     }
 }
-
 
 #[derive(Serialize)]
 pub struct UserPseudonymizedAuthentifiedResponse {
@@ -61,12 +70,12 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub is_platform_user: bool,
     pub biography: Option<String>,
     pub pseudonymized: bool,
-    pub display_name: String
+    pub display_name: String,
 }
 
 impl From<&User> for UserPseudonymizedAuthentifiedResponse {
     fn from(user: &User) -> Self {
-        UserPseudonymizedAuthentifiedResponse { 
+        UserPseudonymizedAuthentifiedResponse {
             id: user.id.clone(),
             email: user.email.clone(),
             first_name: user.first_name.clone(),
@@ -78,7 +87,11 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             is_platform_user: user.is_platform_user.clone(),
             biography: user.biography.clone(),
             pseudonymized: user.pseudonymized.clone(),
-            display_name: if user.pseudonymized { user.pseudonym.clone() } else { user.first_name.clone() + " " + user.last_name.as_str() }
+            display_name: if user.pseudonymized {
+                user.pseudonym.clone()
+            } else {
+                user.first_name.clone() + " " + user.last_name.as_str()
+            },
         }
     }
 }
@@ -93,7 +106,7 @@ pub struct UserPseudonymizedResponse {
     pub is_platform_user: bool,
     pub biography: Option<String>,
     pub pseudonymized: bool,
-    pub display_name: String
+    pub display_name: String,
 }
 
 impl From<&User> for UserPseudonymizedResponse {
@@ -107,7 +120,11 @@ impl From<&User> for UserPseudonymizedResponse {
             is_platform_user: user.is_platform_user.clone(),
             biography: user.biography.clone(),
             pseudonymized: user.pseudonymized.clone(),
-            display_name: if user.pseudonymized { user.pseudonym.clone() } else { user.first_name.clone() + " " + user.last_name.as_str() }
+            display_name: if user.pseudonymized {
+                user.pseudonym.clone()
+            } else {
+                user.first_name.clone() + " " + user.last_name.as_str()
+            },
         }
     }
 }
@@ -124,12 +141,14 @@ pub struct NewUser {
     pub is_platform_user: Option<bool>,
     pub biography: Option<String>,
     pub pseudonym: Option<String>,
-    pub pseudonymized: Option<bool>
+    pub pseudonymized: Option<bool>,
 }
 
 impl NewUser {
     pub fn create(self, pool: &DbPool) -> Result<User, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let user = diesel::insert_into(users::table)
             .values(&self)
@@ -138,7 +157,9 @@ impl NewUser {
     }
 
     pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
         let result = diesel::update(users::table)
             .filter(users::id.eq(id))
@@ -152,12 +173,16 @@ impl NewUser {
         let config = Config::default();
 
         if let Some(password) = &self.password {
-        self.password = Some(argon2::hash_encoded(password.as_bytes(), &salt, &config)
-            .map_err(|err| PpdcError::new(
-                    500,
-                    ErrorType::InternalError,
-                    format!("Unable to encode password: {:#?}", err)))?);
-        Ok(())
+            self.password = Some(
+                argon2::hash_encoded(password.as_bytes(), &salt, &config).map_err(|err| {
+                    PpdcError::new(
+                        500,
+                        ErrorType::InternalError,
+                        format!("Unable to encode password: {:#?}", err),
+                    )
+                })?,
+            );
+            Ok(())
         } else {
             if self.is_platform_user.is_none() || self.is_platform_user.unwrap() == false {
                 self.password = Some(String::new());
@@ -166,7 +191,8 @@ impl NewUser {
                 Err(PpdcError::new(
                     500,
                     ErrorType::InternalError,
-                    format!("No password to encode")))
+                    format!("No password to encode"),
+                ))
             }
         }
     }
@@ -174,23 +200,28 @@ impl NewUser {
 
 impl User {
     pub fn verify_password(&self, tested_password_bytes: &[u8]) -> Result<bool, PpdcError> {
-        argon2::verify_encoded(&self.password, tested_password_bytes).map_err(|err| PpdcError::new(
+        argon2::verify_encoded(&self.password, tested_password_bytes).map_err(|err| {
+            PpdcError::new(
                 500,
                 ErrorType::InternalError,
-                format!("Unable to decode password: {:#?}", err)))
+                format!("Unable to decode password: {:#?}", err),
+            )
+        })
     }
 
     pub fn find(id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
-        let user = users::table
-            .filter(users::id.eq(id))
-            .first(&mut conn)?;
+        let user = users::table.filter(users::id.eq(id)).first(&mut conn)?;
         Ok(user)
     }
 
     pub fn find_by_username(email: &String, pool: &DbPool) -> Result<User, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let user = users::table
             .filter(users::email.eq(email))
             .first(&mut conn)?;
@@ -231,8 +262,10 @@ pub fn find_similar_users(
     input: &str,
     limit: i64,
 ) -> Result<Vec<UserMatch>, PpdcError> {
-    let mut conn = pool.get().expect("Failed to get a connection from the pool");
-    
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
     let query = format!(
         "
         SELECT id, first_name, last_name,
@@ -248,7 +281,13 @@ pub fn find_similar_users(
     let rows: Vec<Row> = sql_query(query)
         .bind::<Text, _>(input)
         .load(&mut conn)
-        .map_err(|e| PpdcError::new(500, ErrorType::InternalError, format!("Database error: {}", e)))?;
+        .map_err(|e| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Database error: {}", e),
+            )
+        })?;
 
     Ok(rows
         .into_iter()
@@ -261,17 +300,17 @@ pub fn find_similar_users(
         .collect())
 }
 
-
-
 #[debug_handler]
 pub async fn get_users(
     Query(params): Query<PaginationParams>,
-    Extension(pool): Extension<DbPool>
+    Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
 
-    let mut conn = pool.get().expect("Failed to get a connection from the pool");
-
-    let results: Vec<UserPseudonymizedResponse> = users::table.into_boxed()
+    let results: Vec<UserPseudonymizedResponse> = users::table
+        .into_boxed()
         .offset(params.offset())
         .limit(params.limit())
         .load::<User>(&mut conn)?
@@ -284,7 +323,7 @@ pub async fn get_users(
 #[debug_handler]
 pub async fn post_user(
     Extension(pool): Extension<DbPool>,
-    Json(mut payload): Json<NewUser>
+    Json(mut payload): Json<NewUser>,
 ) -> Result<Json<User>, PpdcError> {
     payload.hash_password().unwrap();
     let created_user = payload.create(&pool)?;
@@ -296,14 +335,13 @@ pub async fn put_user_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<NewUser>
+    Json(payload): Json<NewUser>,
 ) -> Result<Json<User>, PpdcError> {
-
     let session_user_id = session.user_id.unwrap();
     let existing_user = User::find(&id, &pool)?;
 
     if &session_user_id != &id && existing_user.is_platform_user {
-        return Err(PpdcError::unauthorized())
+        return Err(PpdcError::unauthorized());
     }
     Ok(Json(payload.update(&id, &pool)?))
 }
@@ -313,8 +351,7 @@ pub async fn get_user_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    ) -> Result<impl IntoResponse, PpdcError> {
-
+) -> Result<impl IntoResponse, PpdcError> {
     let user = User::find(&id, &pool)?;
     if !user.is_platform_user || session.user_id.unwrap() == id {
         let user_response = UserPseudonymizedAuthentifiedResponse::from(&user);
@@ -341,7 +378,7 @@ mod tests {
             is_platform_user: None,
             biography: None,
             pseudonym: None,
-            pseudonymized: Some(false)
+            pseudonymized: Some(false),
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));
@@ -353,7 +390,7 @@ mod tests {
         let database_url = get_database_url();
         let manager = diesel::r2d2::ConnectionManager::new(database_url);
         let pool = DbPool::new(manager).expect("Failed to create connection pool");
-        
+
         let results = find_similar_users(&pool, "Hourdin Matthieu", 3).unwrap();
         assert!(!results.is_empty());
         println!("Résultats: {:?}", results);

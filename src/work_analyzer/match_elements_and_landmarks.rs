@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use crate::entities::resource::Resource;
 use crate::entities::error::PpdcError;
+use crate::entities::resource::Resource;
 use crate::openai_handler::gpt_handler::make_gpt_request;
-use crate::work_analyzer::context_builder::get_user_biography;
+use crate::work_analyzer::context_builder::{get_ontology_context, get_user_biography};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchElementsAndLandmarksResult {
@@ -39,67 +39,110 @@ pub struct LandmarkPojectionWithElements {
     pub simple_element_ids: Vec<String>,
 }
 
-pub async fn match_elements_and_landmarks(simple_elements: &Vec<Resource>, existing_landmarks: &Vec<Resource>, full_context: &String) -> Result<Vec<LandmarkPojectionWithElements>, PpdcError> {
+pub async fn match_elements_and_landmarks(
+    simple_elements: &Vec<Resource>,
+    existing_landmarks: &Vec<Resource>,
+    full_context: &String,
+) -> Result<Vec<LandmarkPojectionWithElements>, PpdcError> {
+    let match_elements_and_landmarks_result =
+        get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_landmarks(
+            simple_elements,
+            existing_landmarks,
+            full_context,
+        )
+        .await?;
 
-    let match_elements_and_landmarks_result = get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_landmarks(simple_elements, existing_landmarks, full_context).await?;
-
-    let new_landmarks_projections = match_elements_and_landmarks_result.suggested_landmarks.iter().map(|suggested_landmark| LandmarkPojectionWithElements {
-        id: suggested_landmark.temporary_landmark_id.clone(),
-        title: suggested_landmark.title.clone(),
-        subtitle: suggested_landmark.subtitle.clone(),
-        content: suggested_landmark.content.clone(),
-        entity_type: suggested_landmark.entity_type.clone(),
-        is_new: true,
-        progress: None,
-        closed: false,
-        simple_element_ids: suggested_landmark.simple_element_ids.clone(),
-    }).collect::<Vec<_>>();
-
-    let existing_landmarks_projections = existing_landmarks.iter().map(|landmark| {
-        let mut landmark_projection = LandmarkPojectionWithElements {
-            id: landmark.id.to_string(),
-            title: landmark.title.clone(),
-            subtitle: landmark.subtitle.clone(),
-            content: landmark.content.clone(),
-            entity_type: landmark.resource_type.to_code().to_string(),
-            is_new: false,
-            progress: Some(0),
+    let new_landmarks_projections = match_elements_and_landmarks_result
+        .suggested_landmarks
+        .iter()
+        .map(|suggested_landmark| LandmarkPojectionWithElements {
+            id: suggested_landmark.temporary_landmark_id.clone(),
+            title: suggested_landmark.title.clone(),
+            subtitle: suggested_landmark.subtitle.clone(),
+            content: suggested_landmark.content.clone(),
+            entity_type: suggested_landmark.entity_type.clone(),
+            is_new: true,
+            progress: None,
             closed: false,
-            simple_element_ids: vec![],
-        };
-        let simple_element_ids = match_elements_and_landmarks_result.matched_elements
-            .iter()
-            .filter(|matched_element| matched_element.landmark_ids
-                .contains(&landmark.id.to_string()))
-            .map(|matched_element| matched_element.simple_element_id.clone())
-            .collect::<Vec<_>>();
-        landmark_projection.simple_element_ids = simple_element_ids;
-        landmark_projection
-    }).collect::<Vec<_>>();
+            simple_element_ids: suggested_landmark.simple_element_ids.clone(),
+        })
+        .collect::<Vec<_>>();
 
-    let full_landmarks: Vec<LandmarkPojectionWithElements> = new_landmarks_projections.into_iter().chain(existing_landmarks_projections.into_iter()).collect();
+    let existing_landmarks_projections = existing_landmarks
+        .iter()
+        .map(|landmark| {
+            let mut landmark_projection = LandmarkPojectionWithElements {
+                id: landmark.id.to_string(),
+                title: landmark.title.clone(),
+                subtitle: landmark.subtitle.clone(),
+                content: landmark.content.clone(),
+                entity_type: landmark.resource_type.to_code().to_string(),
+                is_new: false,
+                progress: Some(0),
+                closed: false,
+                simple_element_ids: vec![],
+            };
+            let simple_element_ids = match_elements_and_landmarks_result
+                .matched_elements
+                .iter()
+                .filter(|matched_element| {
+                    matched_element
+                        .landmark_ids
+                        .contains(&landmark.id.to_string())
+                })
+                .map(|matched_element| matched_element.simple_element_id.clone())
+                .collect::<Vec<_>>();
+            landmark_projection.simple_element_ids = simple_element_ids;
+            landmark_projection
+        })
+        .collect::<Vec<_>>();
+
+    let full_landmarks: Vec<LandmarkPojectionWithElements> = new_landmarks_projections
+        .into_iter()
+        .chain(existing_landmarks_projections.into_iter())
+        .collect();
     Ok(full_landmarks)
 }
 
-pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_landmarks(simple_elements: &Vec<Resource>, existing_landmarks: &Vec<Resource>, full_context: &String) -> Result<MatchElementsAndLandmarksResult, PpdcError> {
+pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_landmarks(
+    simple_elements: &Vec<Resource>,
+    existing_landmarks: &Vec<Resource>,
+    full_context: &String,
+) -> Result<MatchElementsAndLandmarksResult, PpdcError> {
     let string_simple_elements = simple_elements
-    .iter()
-    .map(|element| format!("Id : {}\nTitre : {}\nSous titre : {}\nContenu : {}", element.id.to_string(), element.title, element.subtitle, element.content))
-    .collect::<Vec<_>>()
-    .join("\n\n");
+        .iter()
+        .map(|element| {
+            format!(
+                "Id : {}\nTitre : {}\nSous titre : {}\nContenu : {}",
+                element.id.to_string(),
+                element.title,
+                element.subtitle,
+                element.content
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
 
     let string_existing_landmarks = existing_landmarks
-    .iter()
-    .map(|element| format!("Id : {}\nTitre : {}\nSous titre : {}\nContenu : {}", element.id.to_string(), element.title, element.subtitle, element.content))
-    .collect::<Vec<_>>()
-    .join("\n\n");
+        .iter()
+        .map(|element| {
+            format!(
+                "Id : {}\nTitre : {}\nSous titre : {}\nContenu : {}",
+                element.id.to_string(),
+                element.title,
+                element.subtitle,
+                element.content
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
 
+    let ontology_context = get_ontology_context();
     let system_prompt = format!("System:
+    Contexte de l'ontologie : {}\n\n
 
-    Tu es un moteur de matching d'éléments simples et de landmarks.
-    Les éléments simples sont des actions ou des idées unitaires identifiées dans les traces de l'utilisateur.
-    Les landmarks sont des entités stables du travail de l'utilisateur (Tâches, Questions, Livrables, Processus, Ressources).
-
+    Ici tu es dans l'étape 2 du pipeline de traitement des traces : le matching entre les éléments simples nouvellement créés et les landmarks existants.
+    
     Ton rôle :
 
     1. Pour chaque élément simple : 
@@ -112,14 +155,8 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
       - regroupe plusieurs éléments similaires sous un même nouveau landmark,
       - ne crée un nouveau landmark que si cela représente un repère utile et relativement stable, pas pour des détails ponctuels.
       - fais attention à ne pas dupliquer les landmarks, si un landmark proche existe déjà réutilise le plutôt.
-
-      Les landmarks existants sont : 
-      - task (Tâche, chose que l'utilisateur se donne à faire explicitement ou implicitement, souvent dans un horizon temporel défini),
-      - qest (Question, questionnement qui revient chez l'utilisateur), 
-      - dlvr (Livrable, livrables produits par l'utilisateur (ex : fiche sur une ressource, mémoire, projet)),
-      - proc (Processus, processus de travail que l'utilisateur essaie d'adopter),
-      - rsrc (Ressource, ressources avec lesquelles l'utilisateur interragit : livres, articles, etc)
-      utilise les codes donnés pour qualifier les landmarks.
+      - N'hésite pas à créer ou conserver un landmark task générique pour les éléments qui ont trait à la vie quotidienne de l'utilisateur.
+      - Utilise le code de l'entité pour qualifier le nouveau landmark.
 
      3. Chaque élément associé à un nouveau landmark temporaire doit apparaître à la fois :
       - dans 'matched_elements' (avec l'ID temporaire),
@@ -129,12 +166,15 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
     Ils te servent à mieux comprendre le contexte de travail de l'utilisateur, mais c'est bien les éléments simples que tu dois mapper.
 
     Réponds uniquement avec du JSON valide respectant le schéma donné.
-    ");
+    ", ontology_context);
 
-    let user_prompt = format!("User:
+    let user_prompt = format!(
+        "User:
     Contexte de l'utilisateur : {}\n\n
     Éléments simples : {}\n\n
-    Landmarks : {}\n\n", full_context, string_simple_elements, string_existing_landmarks);
+    Landmarks : {}\n\n",
+        full_context, string_simple_elements, string_existing_landmarks
+    );
 
     let schema = serde_json::json!({
         "type": "object",
@@ -167,6 +207,7 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
         "required": ["matched_elements", "suggested_landmarks"]
     });
 
-    let match_elements_and_landmarks_result: MatchElementsAndLandmarksResult = make_gpt_request(system_prompt, user_prompt, schema).await?;
+    let match_elements_and_landmarks_result: MatchElementsAndLandmarksResult =
+        make_gpt_request(system_prompt, user_prompt, schema).await?;
     Ok(match_elements_and_landmarks_result)
 }
