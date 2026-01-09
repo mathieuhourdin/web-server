@@ -8,16 +8,19 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
 };
 use crate::work_analyzer::{
-    context_builder::{build_context, get_landmarks_from_analysis},
+    context_builder::{build_context, create_work_context, get_landmarks_from_analysis},
     match_elements_and_landmarks::match_elements_and_landmarks,
-    trace_broker::create_element_resources_from_trace,
+    trace_broker::process_trace,
     update_landmarks::{create_landmarks_and_link_elements, AnalysisEntity},
+    high_level_analysis::get_high_level_analysis,
+    high_level_analysis::HighLevelAnalysis,
 };
 use chrono::Duration;
 use chrono::NaiveDate;
 use uuid::Uuid;
 
 pub async fn run_analysis_pipeline(analysis_id: Uuid) -> Result<Resource, PpdcError> {
+    println!("work_analyzer::analysis_processor::run_analysis_pipeline: Running analysis pipeline for analysis id: {}", analysis_id);
     let pool = get_global_pool();
 
     let analysis = Resource::find(analysis_id, &pool)?;
@@ -28,19 +31,39 @@ pub async fn run_analysis_pipeline(analysis_id: Uuid) -> Result<Resource, PpdcEr
         .interaction_date
         .date();
 
-    let last_analysis_option_id =
-        match find_last_analysis_resource(analysis_interaction.interaction_user_id, &pool)? {
-            Some(last_analysis) => Some(last_analysis.resource.id),
-            None => None,
-        };
+    let last_analysis = find_last_analysis_resource(analysis_interaction.interaction_user_id, &pool)?;
+    let last_analysis_option_id = last_analysis.as_ref().map(|last_analysis| last_analysis.resource.id).clone();
 
-    let resources = process_analysis(user_id, date, &analysis.id, last_analysis_option_id, &pool)
+    let high_level_analysis = process_analysis(user_id, date, &analysis.id, last_analysis_option_id, &pool)
         .await
         .map_err(|e| {
             let _ = delete_analysis_resources_and_clean_graph(analysis_id, &pool);
+            println!("Error: {:?}", e);
             e
         })?;
-    Ok(analysis)
+    let mut analysis = analysis;
+    analysis.title = high_level_analysis.title;
+    analysis.subtitle = high_level_analysis.subtitle;
+    analysis.content = high_level_analysis.content;
+    analysis.maturing_state = MaturingState::Finished;
+    let analysis = analysis.update(&pool)?;
+
+    match last_analysis {
+        Some(last_analysis) => {
+            let mut last_analysis_resource = last_analysis.resource;
+            last_analysis_resource.maturing_state = MaturingState::Trashed;
+            let last_analysis_resource = last_analysis_resource.update(&pool)?;
+            let mut new_parent_relation =
+                NewResourceRelation::new(analysis.id, last_analysis_resource.id);
+            new_parent_relation.user_id = Some(user_id);
+            new_parent_relation.relation_type = Some("prnt".to_string());
+            new_parent_relation.create(pool)?;
+            Ok(analysis)
+        }
+        None => {
+            Ok(analysis)
+        }
+    }
 }
 
 pub async fn analyse_to_date(
@@ -134,13 +157,18 @@ pub async fn process_analysis(
     analysis_resource_id: &Uuid,
     last_analysis_id_option: Option<Uuid>,
     pool: &DbPool,
-) -> Result<(Vec<Resource>, Vec<Resource>), PpdcError> {
+) -> Result<HighLevelAnalysis, PpdcError> {
+    println!("work_analyzer::analysis_processor::process_analysis: Processing analysis for user id: {}, date: {}, analysis resource id: {}, last analysis id option: {:?}", user_id, date, analysis_resource_id, last_analysis_id_option);
     let interactions =
         Interaction::find_all_draft_traces_for_user_before_date(user_id, date, pool)?;
 
     // if no new traces found, we dont process the analysis
     if interactions.is_empty() {
-        return Ok((vec![], vec![]));
+        return Ok(HighLevelAnalysis {
+            title: "Période sans activité".to_string(),
+            subtitle: "Aucune activité n'a été enregistrée pendant cette période".to_string(),
+            content: String::new(),
+        });
     }
     println!("Interactions: {:?}", interactions);
 
@@ -173,8 +201,10 @@ pub async fn process_traces(
     last_analysis_id_option: Option<Uuid>,
     user_id: Uuid,
     pool: &DbPool,
-) -> Result<(Vec<Resource>, Vec<Resource>), PpdcError> {
+) -> Result<HighLevelAnalysis, PpdcError> {
+    println!("work_analyzer::analysis_processor::process_traces: Processing traces for user id: {}, analysis resource id: {}, last analysis id option: {:?}", user_id, analysis_resource_id, last_analysis_id_option);
     // here we process the traces using the trace broker to identify simple elements that will be used to create analysis landmarks
+    let analysis_landmarks = get_landmarks_from_analysis(&last_analysis_id_option, &pool)?;
     let string_traces = traces
         .iter()
         .map(|interaction| {
@@ -195,13 +225,13 @@ pub async fn process_traces(
     let mut simple_elements: Vec<Resource> = vec![];
 
     // we create the simple elements from the traces and from the context.
-    let context = build_context(&user_id, last_analysis_id_option, &pool)?;
+    let context = build_context(&user_id, &last_analysis_id_option, &pool)?;
 
     for trace in traces {
-        let processed_elements = create_element_resources_from_trace(
-            trace.resource.clone(),
+        let processed_elements = process_trace(
+            &trace.resource,
             user_id,
-            context.clone(),
+            &analysis_landmarks,
             analysis_resource_id.clone(),
             pool,
         )
@@ -209,8 +239,9 @@ pub async fn process_traces(
         simple_elements.extend(processed_elements);
     }
 
+    /*
     // we match the simple elements to the analysis landmarks.
-    let analysis_landmarks = get_landmarks_from_analysis(last_analysis_id_option, &pool)?;
+    //let analysis_landmarks = get_landmarks_from_analysis(&last_analysis_id_option, &pool)?;
     let landmarks =
         match_elements_and_landmarks(&simple_elements, &analysis_landmarks, &context).await?;
 
@@ -223,9 +254,16 @@ pub async fn process_traces(
         pool,
     )
     .await?;
-    //let analysis_entities: Vec<AnalysisEntity> = create_landmarks_from_string_traces(string_traces).await?;
-    //let new_landmarks = create_resources_from_analysis(analysis_entities, user_id, analysis_resource_id).await?;
-    Ok((simple_elements, created_landmarks))
+
+    */
+    // we get the high level analysis from the gpt
+    let traces_resources = traces
+        .iter()
+        .map(|interaction| interaction.resource.clone())
+        .collect::<Vec<_>>();
+    let high_level_analysis = get_high_level_analysis(&traces_resources).await?;
+
+    Ok(high_level_analysis)
 }
 
 pub async fn match_simple_elements_to_analytic_landmarks(

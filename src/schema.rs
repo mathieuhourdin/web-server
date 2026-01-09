@@ -41,6 +41,27 @@ diesel::table! {
 }
 
 diesel::table! {
+    llm_calls (id) {
+        id -> Uuid,
+        status -> Text,
+        model -> Text,
+        prompt -> Text,
+        schema -> Text,
+        request -> Text,
+        request_url -> Text,
+        response -> Text,
+        output -> Text,
+        input_tokens_used -> Int4,
+        reasoning_tokens_used -> Int4,
+        output_tokens_used -> Int4,
+        price -> Float8,
+        currency -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     resource_relations (id) {
         id -> Uuid,
         origin_resource_id -> Uuid,
@@ -114,6 +135,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     categories,
     comments,
     interactions,
+    llm_calls,
     resource_relations,
     resources,
     sessions,

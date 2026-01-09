@@ -4,14 +4,14 @@ use crate::entities::{resource::Resource, resource_relation::ResourceRelation, u
 use uuid::Uuid;
 
 pub fn get_landmarks_from_analysis(
-    analysis_resource_id: Option<Uuid>,
+    analysis_resource_id: &Option<Uuid>,
     pool: &DbPool,
 ) -> Result<Vec<Resource>, PpdcError> {
     if analysis_resource_id.is_none() {
         return Ok(vec![]);
     }
     let landmarks =
-        ResourceRelation::find_origin_for_resource(analysis_resource_id.unwrap(), pool)?;
+        ResourceRelation::find_origin_for_resource(analysis_resource_id.unwrap().clone(), pool)?;
     let landmarks = landmarks
         .iter()
         .filter(|landmark| landmark.resource_relation.relation_type == "ownr".to_string())
@@ -24,6 +24,22 @@ pub fn get_user_biography(user_id: &Uuid, pool: &DbPool) -> Result<String, PpdcE
     let user = User::find(user_id, &pool)?;
     let biography = user.biography.unwrap_or_default();
     Ok(biography)
+}
+
+pub fn create_work_context(simple_elements: &Vec<Resource>) -> String {
+    let work_context = simple_elements
+        .iter()
+        .map(|element| {
+            format!(
+                "Titre : {}\nSous titre : {}\nContenu : {}",
+                element.title.clone(),
+                element.subtitle.clone(),
+                element.content.clone()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    work_context
 }
 
 pub fn get_ontology_context() -> String {
@@ -89,7 +105,7 @@ pub fn get_ontology_context() -> String {
 
 pub fn build_context(
     user_id: &Uuid,
-    last_analysis_id: Option<Uuid>,
+    last_analysis_id: &Option<Uuid>,
     pool: &DbPool,
 ) -> Result<String, PpdcError> {
     // user biography

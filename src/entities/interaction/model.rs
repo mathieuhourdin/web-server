@@ -174,7 +174,8 @@ impl Interaction {
             200,
             Interaction::filter_outputs()
                 .filter(interactions::interaction_user_id.eq(user_id))
-                .filter(interactions::interaction_date.lt(date.and_hms_opt(12, 0, 0).unwrap())),
+                .filter(interactions::interaction_date.lt(date.and_hms_opt(12, 0, 0).unwrap()))
+                .order(interactions::interaction_date.asc()),
             "drft",
             "trce",
             pool,

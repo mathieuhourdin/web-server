@@ -61,7 +61,7 @@ where
     );
 
     let gpt_request = GPTRequest {
-        model: "gpt-4o".to_string(),
+        model: "gpt-4.1-nano-2025-04-14".to_string(),
         messages: vec![
             GPTMessage {
                 role: "system".to_string(),
@@ -73,7 +73,7 @@ where
             },
         ],
         max_tokens: 1800,
-        temperature: 0.5,
+        temperature: 0.1,
         response_format: serde_json::json!({
             "type": "json_schema",
             "json_schema": {

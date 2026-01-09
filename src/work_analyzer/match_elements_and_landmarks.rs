@@ -1,6 +1,6 @@
 use crate::entities::error::PpdcError;
 use crate::entities::resource::Resource;
-use crate::openai_handler::gpt_handler::make_gpt_request;
+use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use crate::work_analyzer::context_builder::{get_ontology_context, get_user_biography};
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,7 @@ pub async fn match_elements_and_landmarks(
     existing_landmarks: &Vec<Resource>,
     full_context: &String,
 ) -> Result<Vec<LandmarkPojectionWithElements>, PpdcError> {
+    println!("work_analyzer::match_elements_and_landmarks::match_elements_and_landmarks: Matching elements and landmarks for simple elements: {:?}, existing landmarks: {:?}, full context: {}", simple_elements, existing_landmarks, full_context);
     let match_elements_and_landmarks_result =
         get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_landmarks(
             simple_elements,
@@ -109,6 +110,7 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
     existing_landmarks: &Vec<Resource>,
     full_context: &String,
 ) -> Result<MatchElementsAndLandmarksResult, PpdcError> {
+    println!("work_analyzer::match_elements_and_landmarks::get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_landmarks: Getting chatgpt suggestion for match elements and landmarks and new landmarks for simple elements: {:?}, existing landmarks: {:?}, full context: {}", simple_elements, existing_landmarks, full_context);
     let string_simple_elements = simple_elements
         .iter()
         .map(|element| {
@@ -155,8 +157,18 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
       - regroupe plusieurs éléments similaires sous un même nouveau landmark,
       - ne crée un nouveau landmark que si cela représente un repère utile et relativement stable, pas pour des détails ponctuels.
       - fais attention à ne pas dupliquer les landmarks, si un landmark proche existe déjà réutilise le plutôt.
+      - fais attention à ce que les landmarks soient bien distincts et bien différents les uns des autres.
       - N'hésite pas à créer ou conserver un landmark task générique pour les éléments qui ont trait à la vie quotidienne de l'utilisateur.
       - Utilise le code de l'entité pour qualifier le nouveau landmark.
+
+      Déifinis le type de landmark parmis les suivants : 
+          'Task',       // Tâche, chose plus ou moins générique que l'utilisateur se donne à faire explicitement ou implicitement
+          'Question',   // question de recherche / problématique ouverte
+          'Deliverable',// production attendue (chapitre, article, fiche de lecture, rapport…)
+          'Resource',   // ressource mobilisée (livre, article, film… ex : High Output Management par Andy Grove)
+          'Process'     // façon de travailler, routine, méthode
+
+      Ne crée pas que des landmarks de type 'Task'.
 
      3. Chaque élément associé à un nouveau landmark temporaire doit apparaître à la fois :
       - dans 'matched_elements' (avec l'ID temporaire),
@@ -187,6 +199,8 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
                         "simple_element_id": {"type": "string"},
                         "landmark_ids": {"type": "array", "items": {"type": "string"}},
                     },
+                    "required": ["simple_element_id", "landmark_ids"],
+                    "additionalProperties": false
                 }
             },
             "suggested_landmarks": {
@@ -198,13 +212,16 @@ pub async fn get_chatgpt_suggestion_for_match_elements_and_landmarks_and_new_lan
                         "title": {"type": "string"},
                         "subtitle": {"type": "string"},
                         "content": {"type": "string"},
-                        "entity_type": {"type": "string"},
+                        "entity_type": {"type": "string", "enum": ["Task", "Question", "Deliverable", "Process", "Resource"]},
                         "simple_element_ids": {"type": "array", "items": {"type": "string"}},
                     },
+                    "required": ["temporary_landmark_id", "title", "subtitle", "content", "entity_type", "simple_element_ids"],
+                    "additionalProperties": false
                 }
             }
         },
-        "required": ["matched_elements", "suggested_landmarks"]
+        "required": ["matched_elements", "suggested_landmarks"],
+        "additionalProperties": false
     });
 
     let match_elements_and_landmarks_result: MatchElementsAndLandmarksResult =

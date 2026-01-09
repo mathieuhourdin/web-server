@@ -37,6 +37,9 @@ pub enum ResourceType {
     Process,
     Resource,
     Analysis,
+    Event,
+    GeneralComment,
+    Feeling,
 }
 
 impl ResourceType {
@@ -68,6 +71,9 @@ impl ResourceType {
             "proc" => Ok(ResourceType::Process),
             "anly" => Ok(ResourceType::Analysis),
             "rsrc" => Ok(ResourceType::Resource),
+            "evnt" => Ok(ResourceType::Event),
+            "cmnt" => Ok(ResourceType::GeneralComment),
+            "feln" => Ok(ResourceType::Feeling),
             &_ => {
                 return Err(PpdcError::new(
                     404,
@@ -103,6 +109,9 @@ impl ResourceType {
             ResourceType::Process => "proc",
             ResourceType::Analysis => "anly",
             ResourceType::Resource => "rsrc",
+            ResourceType::Event => "evnt",
+            ResourceType::GeneralComment => "cmnt",
+            ResourceType::Feeling => "feln",
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -131,35 +140,45 @@ impl ResourceType {
             ResourceType::Process => "Process",
             ResourceType::Analysis => "Analysis",
             ResourceType::Resource => "Resource",
+            ResourceType::Event => "Event",
+            ResourceType::GeneralComment => "GeneralComment",
+            ResourceType::Feeling => "Feeling",
         }
     }
-    pub fn from_full_text(full_text: &str) -> Option<ResourceType> {
+    pub fn from_full_text(full_text: &str) -> Result<ResourceType, PpdcError> {
         match full_text {
-            "Book" => Some(ResourceType::Book),
-            "Reading Note" => Some(ResourceType::ReadingNote),
-            "List" => Some(ResourceType::ResourceList),
-            "Problem" => Some(ResourceType::Problem),
-            "Research Article" => Some(ResourceType::ResearchArticle),
-            "News Article" => Some(ResourceType::NewsArticle),
-            "Opinion Article" => Some(ResourceType::OpinionArticle),
-            "Movie" => Some(ResourceType::Movie),
-            "Video" => Some(ResourceType::Video),
-            "Podcast" => Some(ResourceType::Podcast),
-            "Song" => Some(ResourceType::Song),
-            "Course" => Some(ResourceType::Course),
-            "Idea" => Some(ResourceType::Idea),
-            "Journal" => Some(ResourceType::Journal),
-            "Journal Item" => Some(ResourceType::JournalItem),
-            "Trace" => Some(ResourceType::Trace),
-            "Mission" => Some(ResourceType::Mission),
-            "Element" => Some(ResourceType::Element),
-            "Task" => Some(ResourceType::Task),
-            "Question" => Some(ResourceType::Question),
-            "Deliverable" => Some(ResourceType::Deliverable),
-            "Process" => Some(ResourceType::Process),
-            "Analysis" => Some(ResourceType::Analysis),
-            "Resource" => Some(ResourceType::Resource),
-            &_ => None,
+            "Book" => Ok(ResourceType::Book),
+            "Reading Note" => Ok(ResourceType::ReadingNote),
+            "List" => Ok(ResourceType::ResourceList),
+            "Problem" => Ok(ResourceType::Problem),
+            "Research Article" => Ok(ResourceType::ResearchArticle),
+            "News Article" => Ok(ResourceType::NewsArticle),
+            "Opinion Article" => Ok(ResourceType::OpinionArticle),
+            "Movie" => Ok(ResourceType::Movie),
+            "Video" => Ok(ResourceType::Video),
+            "Podcast" => Ok(ResourceType::Podcast),
+            "Song" => Ok(ResourceType::Song),
+            "Course" => Ok(ResourceType::Course),
+            "Idea" => Ok(ResourceType::Idea),
+            "Journal" => Ok(ResourceType::Journal),
+            "Journal Item" => Ok(ResourceType::JournalItem),
+            "Trace" => Ok(ResourceType::Trace),
+            "Mission" => Ok(ResourceType::Mission),
+            "Element" => Ok(ResourceType::Element),
+            "Task" => Ok(ResourceType::Task),
+            "Question" => Ok(ResourceType::Question),
+            "Deliverable" => Ok(ResourceType::Deliverable),
+            "Process" => Ok(ResourceType::Process),
+            "Analysis" => Ok(ResourceType::Analysis),
+            "Resource" => Ok(ResourceType::Resource),
+            "Event" => Ok(ResourceType::Event),
+            "GeneralComment" => Ok(ResourceType::GeneralComment),
+            "Feeling" => Ok(ResourceType::Feeling),
+            &_ => Err(PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "resource_type not found".to_string(),
+            )),
         }
     }
     pub fn from_opengraph_code(og_code: &str) -> Option<ResourceType> {

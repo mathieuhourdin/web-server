@@ -13,7 +13,7 @@ use tower_http::{
 use crate::entities::resource_relation;
 use crate::entities::transcription;
 use crate::entities::{
-    analysis, comment, interaction::interaction_routes as interaction, resource, user,
+    analysis, comment, interaction::interaction_routes as interaction, llm_call, resource, user,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -27,7 +27,7 @@ pub fn create_router() -> Router {
     let users_router = Router::new()
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
-        .route("/:id/analysis", post(analysis::post_analysis_route))
+        .route("/:id/analysis", post(analysis::post_analysis_route).get(analysis::get_last_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()
@@ -91,6 +91,11 @@ pub fn create_router() -> Router {
         .route("/:id", delete(analysis::delete_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let llm_calls_router = Router::new()
+        .route("/", get(llm_call::get_llm_calls_route))
+        .route("/:id", get(llm_call::get_llm_call_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     let sessions_router = Router::new().route(
         "/",
         get(sessions_service::get_session_route).post(sessions_service::post_session_route),
@@ -106,6 +111,7 @@ pub fn create_router() -> Router {
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
         .nest("/analysis", analysis_router)
+        .nest("/llm_calls", llm_calls_router)
         .route("/link_preview", post(link_preview::post_preview_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))

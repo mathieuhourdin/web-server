@@ -3,7 +3,7 @@ use crate::entities::error::PpdcError;
 use crate::entities::interaction::model::NewInteraction;
 use crate::entities::resource::{resource_type::ResourceType, NewResource, Resource};
 use crate::entities::resource_relation::NewResourceRelation;
-use crate::openai_handler::gpt_handler::make_gpt_request;
+use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use crate::work_analyzer::context_builder::{get_ontology_context, get_user_biography};
 use crate::work_analyzer::match_elements_and_landmarks::LandmarkPojectionWithElements;
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,7 @@ pub struct ToUpdateLandmark {
     pub progress: i32,
     pub closed: bool,
     pub entity_type: String,
+    pub is_new: bool,
     pub simple_elements: Vec<Resource>,
 }
 
@@ -56,6 +57,7 @@ pub fn create_to_update_landmark(
     landmark: &LandmarkPojectionWithElements,
     simple_elements: &Vec<Resource>,
 ) -> ToUpdateLandmark {
+    println!("work_analyzer::update_landmarks::create_to_update_landmark: Creating to update landmark for landmark: {:?}, simple elements: {:?}", landmark, simple_elements);
     let mut to_update_landmark = ToUpdateLandmark {
         id: landmark.id.clone(),
         title: landmark.title.clone(),
@@ -64,6 +66,7 @@ pub fn create_to_update_landmark(
         progress: landmark.progress.unwrap_or(0),
         closed: landmark.closed,
         entity_type: landmark.entity_type.clone(),
+        is_new: landmark.is_new,
         simple_elements: vec![],
     };
     for simple_element in simple_elements {
@@ -83,6 +86,7 @@ pub fn create_all_to_update_landmarks(
     landmarks: &Vec<LandmarkPojectionWithElements>,
     simple_elements: &Vec<Resource>,
 ) -> Vec<ToUpdateLandmark> {
+    println!("work_analyzer::update_landmarks::create_all_to_update_landmarks: Creating all to update landmarks for landmarks: {:?}, simple elements: {:?}", landmarks, simple_elements);
     landmarks
         .iter()
         .map(|landmark| create_to_update_landmark(landmark, simple_elements))
@@ -96,8 +100,9 @@ pub async fn create_landmarks_and_link_elements(
     user_id: &Uuid,
     pool: &DbPool,
 ) -> Result<Vec<Resource>, PpdcError> {
+    println!("work_analyzer::update_landmarks::create_landmarks_and_link_elements: Creating landmarks and link elements for landmarks: {:?}, simple elements: {:?}, analysis resource id: {}, user id: {}", landmarks, simple_elements, analysis_resource_id, user_id);
     let to_update_landmarks = create_all_to_update_landmarks(landmarks, simple_elements);
-    let updated_landmarks = update_landmarks(&to_update_landmarks, user_id, pool).await?;
+    let updated_landmarks = get_updated_landmarks_from_gpt(&to_update_landmarks, user_id, pool).await?;
     let created_landmarks = landmarks
         .iter()
         .map(|landmark| -> Result<Resource, PpdcError> {
@@ -105,7 +110,7 @@ pub async fn create_landmarks_and_link_elements(
                 landmark.title.clone(),
                 landmark.subtitle.clone(),
                 landmark.content.clone(),
-                ResourceType::from_code(landmark.entity_type.as_str())?,
+                ResourceType::from_full_text(landmark.entity_type.as_str())?,
             );
             let created_landmark = new_landmark.create(pool)?;
             let mut new_interaction = NewInteraction::new(user_id.clone(), created_landmark.id);
@@ -139,11 +144,12 @@ pub async fn create_landmarks_and_link_elements(
     Ok(created_landmarks)
 }
 
-pub async fn update_landmarks(
+pub async fn get_updated_landmarks_from_gpt(
     to_update_landmarks: &Vec<ToUpdateLandmark>,
     user_id: &Uuid,
     pool: &DbPool,
 ) -> Result<Vec<AnalysisEntity>, PpdcError> {
+    println!("work_analyzer::update_landmarks::get_updated_landmarks_from_gpt: Getting updated landmarks from gpt for to update landmarks: {:?}, user id: {}", to_update_landmarks, user_id);
     let ontology_context = get_ontology_context();
     let user_biography = get_user_biography(&user_id, &pool)?;
     let system_prompt = format!("System:
@@ -153,22 +159,24 @@ pub async fn update_landmarks(
 
     Pour chaque landmark, tu dois : 
     - mettre à jour le contenu du landmark. Il doit être un résumé à jour du landmark, en tenant compte des éléments simples associés et de l'état précédent.
+    Idéalement il doit faire au moins 5 phrases.
     - déterminer si le landmark doit être fermé, dans le cas où l'utilisateur semble avoir terminé ou abandonné l'entité.
     - mettre à jour le progress du landmark, en pourcentage de la progression de l'entité.
     - conserver l'id fournie pour ce landmark.
     - si certaines informations te semblent erronnées, corrige-les (ex : landmark du mauvais type).
 
-    Pour chaque entité, tu dois fournir les champs suivants :
+    Pour chaque landmark, tu dois fournir les champs suivants :
     - id (string) : identifiant stable du landmark, à conserver.
     - title (string) : titre du landmark, à mettre à jour si besoin.
     - subtitle (string) : sous-titre du landmark, à mettre à jour si besoin.
     - content (string) : contenu du landmark, à mettre à jour si besoin.
     - progress (integer) : progression de l'entité (0 à 100). A quel point la tache a été réalisée, la ressource a été lue, le livrable a été produit, le processus a été adopté, la question a été résolue.
     - closed (boolean) : si l'entité est close (true) ou non (false). La tâche est closed si on considère que l'utilisateur ne reviendra plus dessus (fini ou choix de l'abandonner).
+    - is_new (boolean) : conserve la valeur fournie pour ce landmark.
     - landmark_type (string) : type du landmark, à mettre à jour si besoin.", 
     ontology_context);
 
-    let string_to_update_landmarks = serde_json::to_string(&to_update_landmarks).unwrap();
+    let string_to_update_landmarks = serde_json::to_string(&to_update_landmarks)?;
 
     let user_prompt = format!(
         "User:
@@ -199,7 +207,8 @@ pub async fn update_landmarks(
                         "content": {"type": "string"},
                         "progress": {"type": "integer"},
                         "closed": {"type": "boolean"},
-                        "landmark_type": {
+                        "is_new": {"type": "boolean"},
+                        "entity_type": {
                             "type": "string",
                             "enum": [
                                 "Task",
@@ -210,16 +219,18 @@ pub async fn update_landmarks(
                             ]
                         },
                     },
+                    "required": ["id", "title", "subtitle", "content", "progress", "closed", "is_new", "entity_type"],
+                    "additionalProperties": false
                 }
             }
         },
-        "required": ["entities"]
+        "required": ["landmarks"],
+        "additionalProperties": false
     });
 
     let update_landmarks_result: UpdateLandmarksResult =
         make_gpt_request(system_prompt, user_prompt, schema)
-            .await
-            .unwrap();
+            .await?;
     Ok(vec![])
 }
 
@@ -286,6 +297,6 @@ pub async fn create_landmarks_from_string_traces(
 
     let analysis_result: AnalysisResult = make_gpt_request(system_prompt, user_prompt, schema)
         .await
-        .unwrap();
+        ?;
     Ok(analysis_result.entities)
 }

@@ -107,6 +107,16 @@ pub async fn delete_analysis_route(
     Ok(Json(analysis))
 }
 
+#[debug_handler]    
+pub async fn get_last_analysis_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<InteractionWithResource>, PpdcError> {
+    println!("Getting last analysis for user: {:?}", session.user_id.unwrap());
+    let last_analysis = find_last_analysis_resource(session.user_id.unwrap(), &pool)?;
+    Ok(Json(last_analysis.expect("No last analysis found")))
+}
+
 pub fn delete_analysis_resources_and_clean_graph(
     id: Uuid,
     pool: &DbPool,
