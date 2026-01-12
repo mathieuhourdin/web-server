@@ -125,16 +125,43 @@ impl NewLandmark {
     }
 }
 
-pub fn create_landmark_with_parent(parent_landmark_id: Uuid, landmark: NewLandmark, user_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
+pub fn create_landmark_with_parent(parent_landmark_id: Uuid, landmark: NewLandmark, user_id: Uuid, analysis_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
     let mut parent_landmark = Landmark::find(parent_landmark_id, pool)?;
     let mut landmark = landmark;
     landmark.publishing_state = "pbsh".to_string();
-    let landmark = landmark.create(pool)?;
+    let landmark = create_landmark_for_analysis(landmark, user_id, analysis_id, pool)?;
     let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_landmark.id);
     new_resource_relation.relation_type = Some("prnt".to_string());
     new_resource_relation.user_id = Some(user_id);
     new_resource_relation.create(pool)?;
     parent_landmark.publishing_state = "drft".to_string();
     parent_landmark.update(pool)?;
+    Ok(landmark)
+}
+
+pub fn landmark_create_child_and_return(
+    parent_landmark_id: Uuid,
+    user_id: Uuid,
+    analysis_id: Uuid,
+    pool: &DbPool,
+) -> Result<Landmark, PpdcError> {
+    let parent_landmark = Landmark::find(parent_landmark_id, pool)?;
+    let landmark = NewLandmark::new(
+        parent_landmark.title, 
+        parent_landmark.subtitle, 
+        parent_landmark.content, 
+        parent_landmark.landmark_type, 
+        parent_landmark.maturing_state
+    );
+    let landmark = create_landmark_with_parent(parent_landmark_id, landmark, user_id, analysis_id, pool)?;
+    Ok(landmark)
+}
+
+pub fn create_landmark_for_analysis(landmark: NewLandmark, user_id: Uuid, analysis_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
+    let landmark = landmark.create(pool)?;
+    let mut new_resource_relation = NewResourceRelation::new(landmark.id, analysis_id);
+    new_resource_relation.relation_type = Some("ownr".to_string());
+    new_resource_relation.user_id = Some(user_id);
+    new_resource_relation.create(pool)?;
     Ok(landmark)
 }

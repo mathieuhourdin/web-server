@@ -2,7 +2,7 @@ use crate::entities::error::PpdcError;
 use crate::entities::resource::{NewResource, Resource, maturing_state::MaturingState};
 use crate::entities::resource_relation::NewResourceRelation;
 use crate::entities::resource::resource_type::ResourceType;
-use crate::entities::landmark::{Landmark, NewLandmark, create_landmark_with_parent};
+use crate::entities::landmark::{Landmark, NewLandmark, landmark_create_child_and_return, create_landmark_for_analysis};
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use crate::work_analyzer::trace_broker::{SimpleElement, SimpleElements};
 use uuid::Uuid;
@@ -43,6 +43,73 @@ pub struct NewResourceForExtractedElement {
     pub resource_type: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewLandmarkForExtractedElement {
+    pub title: String,
+    pub subtitle: String,
+    pub content: String,
+    pub identified: bool,
+    pub landmark_type: ResourceType,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MatchedExtractedElementForLandmark {
+    pub title: String,
+    pub subtitle: String,
+    pub extracted_content: String,
+    pub generated_context: String,
+    pub landmark_id: Option<String>,
+    pub landmark_type: ResourceType,
+}
+
+impl From<NewResourceForExtractedElement> for NewLandmarkForExtractedElement {
+    fn from(new_resource_for_extracted_element: NewResourceForExtractedElement) -> Self {
+        Self {
+            title: new_resource_for_extracted_element.title,
+            subtitle: format!("{} par {} - {}", new_resource_for_extracted_element.resource_type, new_resource_for_extracted_element.author, new_resource_for_extracted_element.subtitle),
+            content: new_resource_for_extracted_element.content,
+            identified: new_resource_for_extracted_element.identified,
+            landmark_type: ResourceType::Resource
+        }
+    }
+}
+
+impl From<NewLandmarkForExtractedElement> for NewLandmark {
+    fn from(new_landmark_for_extracted_element: NewLandmarkForExtractedElement) -> Self {
+        NewLandmark::new(
+            new_landmark_for_extracted_element.title,
+            new_landmark_for_extracted_element.subtitle,
+            new_landmark_for_extracted_element.content,
+            new_landmark_for_extracted_element.landmark_type,
+            if new_landmark_for_extracted_element.identified { MaturingState::Finished } else { MaturingState::Draft }
+        )
+    }
+}
+
+impl From<MatchedExtractedElementForResource> for MatchedExtractedElementForLandmark {
+    fn from(extracted_element_for_resource: MatchedExtractedElementForResource) -> Self {
+        Self {
+            title: format!("Mention de la ressource : {}", extracted_element_for_resource.resource),
+            subtitle: "".to_string(),
+            extracted_content: extracted_element_for_resource.extracted_content,
+            generated_context: extracted_element_for_resource.generated_context,
+            landmark_id: extracted_element_for_resource.resource_id,
+            landmark_type: ResourceType::Resource
+        }
+    }
+}
+
+impl From<&MatchedExtractedElementForLandmark> for NewResource {
+    fn from(matched_extracted_element_for_landmark: &MatchedExtractedElementForLandmark) -> Self {
+        NewResource::new(
+            matched_extracted_element_for_landmark.title.clone(),
+            matched_extracted_element_for_landmark.subtitle.clone(),
+            format!("{} \n\n Enrichi : {}", matched_extracted_element_for_landmark.extracted_content, matched_extracted_element_for_landmark.generated_context),
+            matched_extracted_element_for_landmark.landmark_type.clone()
+        )
+    }
+}
+
 // I will create a new function to split traces.
 // This function will split the trace regarding the landmarks types.
 // a first function will loop on each lanmark type.
@@ -60,24 +127,25 @@ pub struct NewResourceForExtractedElement {
 pub async fn split_trace_in_elements_for_resources_landmarks(
     user_id: Uuid,
     analysis_resource_id: Uuid,
-    trace: &str,
+    trace: &Resource,
     resources: &Vec<&Resource>,
     pool: &DbPool,
 ) -> Result<Vec<Resource>, PpdcError> {
     println!("work_analyzer::trace_broker::split_trace_in_elements_for_resources_landmarks");
-    let elements = split_trace_in_elements_gpt_request(trace, resources).await?;
+    let elements = split_trace_in_elements_gpt_request(trace.content.as_str(), resources).await?;
     if elements.is_empty() {
         return Ok(vec![]);
     }
     let matched_elements = match_elements_and_resources(&elements, resources).await?;
-    let new_resources = create_new_resources(&matched_elements, user_id, analysis_resource_id, pool).await?;
+    let new_resources = create_new_resources(matched_elements, user_id, trace.id.clone(), analysis_resource_id, pool).await?;
 
     Ok(new_resources)
 }
 
 pub async fn create_new_resources(
-    elements: &Vec<MatchedExtractedElementForResource>,
+    elements: Vec<MatchedExtractedElementForResource>,
     user_id: Uuid,
+    trace_id: Uuid,
     analysis_resource_id: Uuid,
     pool: &DbPool,
 ) -> Result<Vec<Resource>, PpdcError> {
@@ -85,51 +153,41 @@ pub async fn create_new_resources(
     for element in elements {
         let mut created_landmark;
         if element.resource_id.is_none() {
-            let new_landmark_proposition = get_new_resource_for_extracted_element_from_gpt_request(element).await?;
-            let new_landmark = NewLandmark::new(
-                new_landmark_proposition.title,
-                format!("By {} - {}", new_landmark_proposition.author, new_landmark_proposition.subtitle),
-                new_landmark_proposition.content,
-                ResourceType::Resource,
-                if new_landmark_proposition.identified { MaturingState::Finished } else { MaturingState::Draft },
-            );
-            created_landmark = new_landmark.create(pool)?;
-            let mut new_resource_relation = NewResourceRelation::new(created_landmark.id, analysis_resource_id);
-            new_resource_relation.user_id = Some(user_id);
-            new_resource_relation.relation_type = Some("ownr".to_string());
-            new_resource_relation.create(pool)?;
+            let new_resource_proposition = get_new_resource_for_extracted_element_from_gpt_request(&element).await?;
+            let new_landmark_proposition = NewLandmarkForExtractedElement::from(new_resource_proposition);
+            let new_landmark: NewLandmark = NewLandmark::from(new_landmark_proposition);
+            created_landmark = create_landmark_for_analysis(new_landmark, user_id, analysis_resource_id, pool)?;
         } else {
-            let landmark = Landmark::find(Uuid::parse_str(element.resource_id.clone().unwrap().as_str())?, pool)?;
-            let new_landmark = NewLandmark::new(
-                landmark.title,
-                landmark.subtitle,
-                landmark.content,
-                landmark.landmark_type,
-                landmark.maturing_state,
-            );
-            created_landmark = create_landmark_with_parent(landmark.id, new_landmark, user_id, pool)?;
-            let mut new_resource_relation = NewResourceRelation::new(created_landmark.id, analysis_resource_id);
-            new_resource_relation.user_id = Some(user_id);
-            new_resource_relation.relation_type = Some("ownr".to_string());
-            new_resource_relation.create(pool)?;
+            created_landmark = landmark_create_child_and_return(Uuid::parse_str(element.resource_id.clone().unwrap().as_str())?, user_id, analysis_resource_id, pool)?;
         }
-        let new_element = NewResource::new(
-            format!("Mention de la ressource : {}", created_landmark.title),
-            String::new(),
-            format!("{} \n\n Enrichi : {}", element.extracted_content, element.generated_context),
-            ResourceType::Event,
-        );
-        let created_element = new_element.create(pool)?;
-        let mut new_resource_relation = NewResourceRelation::new(created_element.id, created_landmark.id);
-        new_resource_relation.relation_type = Some("elmt".to_string());
-        new_resource_relation.user_id = Some(user_id);
-        new_resource_relation.create(pool)?;
-        let mut new_resource_relation = NewResourceRelation::new(created_element.id, analysis_resource_id);
-        new_resource_relation.user_id = Some(user_id);
-        new_resource_relation.relation_type = Some("ownr".to_string());
-        new_resource_relation.create(pool)?;
+        let element = MatchedExtractedElementForLandmark::from(element);
+        element_create_for_trace_landmark_and_analysis(element, trace_id, created_landmark, analysis_resource_id, user_id, pool);
     }
     Ok(vec![])
+}
+
+pub fn element_create_for_trace_landmark_and_analysis(
+    element: MatchedExtractedElementForLandmark,
+    trace_id: Uuid,
+    landmark: Landmark,
+    analysis_resource_id: Uuid,
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<Resource, PpdcError> {
+    let new_element = NewResource::from(&element);
+    let created_element = new_element.create(pool)?;
+    let mut new_resource_relation = NewResourceRelation::new(created_element.id, trace_id);
+    new_resource_relation.relation_type = Some("elmt".to_string());
+    new_resource_relation.user_id = Some(user_id);
+    new_resource_relation.create(pool)?;
+    let mut new_resource_relation = NewResourceRelation::new(created_element.id, landmark.id);
+    new_resource_relation.relation_type = Some("elmt".to_string());
+    new_resource_relation.user_id = Some(user_id);
+    let mut new_analysis_relation= NewResourceRelation::new(created_element.id, analysis_resource_id);
+    new_analysis_relation.relation_type = Some("ownr".to_string());
+    new_analysis_relation.user_id = Some(user_id);
+    new_analysis_relation.create(pool)?;
+    Ok(created_element)
 }
 
 pub async fn get_new_resource_for_extracted_element_from_gpt_request(

@@ -6,7 +6,7 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
     session::Session,
 };
-use crate::work_analyzer::trace_broker::qualify_trace;
+use crate::work_analyzer::trace_broker::trace_qualify::qualify_trace;
 use axum::{
     debug_handler,
     extract::{Extension, Json},
