@@ -1,9 +1,12 @@
 use crate::entities::{
     resource::{NewResource, Resource, resource_type::ResourceType, maturing_state::MaturingState},
+    resource_relation::NewResourceRelation,
     error::PpdcError,
     landmark::{
         Landmark,
         NewLandmark,
+        create_landmark_for_analysis,
+        landmark_create_child_and_return,
     }
 };
 use crate::openai_handler::GptRequestConfig;
@@ -87,19 +90,18 @@ pub trait LandmarkProcessor: Send + Sync {
     
     type ExtractedElement: ExtractedElementForLandmark + Send;
     type MatchedElement: MatchedExtractedElementForLandmark + Send;
+    type NewLandmark: NewLandmarkForExtractedElement + Send;
 
     fn new() -> Self;
 
     async fn extract_elements(
         &self,
-        existing_landmarks: &Vec<Landmark>,
         context: &ProcessorContext,
     ) -> Result<Vec<Self::ExtractedElement>, PpdcError>;
 
     async fn match_elements(
         &self,
         elements: &Vec<Self::ExtractedElement>,
-        existing_landmarks: &Vec<Landmark>,
         context: &ProcessorContext,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError>;
 
@@ -107,10 +109,58 @@ pub trait LandmarkProcessor: Send + Sync {
         &self,
         matched_elements: Vec<Self::MatchedElement>,
         context: &ProcessorContext,
-    ) -> Result<Vec<Landmark>, PpdcError>;
+    ) -> Result<Vec<Landmark>, PpdcError> {
+        println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements");
+        let mut new_landmarks: Vec<Landmark> = vec![];
+        for element in matched_elements {
+            let created_landmark;
+            if element.landmark_id().is_none() {
+                let new_resource_proposition = self.get_new_landmark_for_extracted_element(&element, context).await?;
+                let new_landmark = new_resource_proposition.to_new_landmark();
+                created_landmark = create_landmark_for_analysis(new_landmark, context.user_id, context.analysis_resource_id, &context.pool)?;
+            } else {
+                created_landmark = landmark_create_child_and_return(Uuid::parse_str(element.landmark_id().clone().unwrap().as_str())?, context.user_id, context.analysis_resource_id, &context.pool)?;
+            }
+            //let element = MatchedExtractedElementForLandmarkType::from(element);
+            let _ = Self::element_create_for_trace_landmark_and_analysis(element, context.trace.id, &created_landmark, context.analysis_resource_id, context.user_id, &context.pool);
+            new_landmarks.push(created_landmark);
+        }
+        Ok(new_landmarks)
+    }
+
+    async fn get_new_landmark_for_extracted_element(
+        &self,
+        elements: &Self::MatchedElement,
+        context: &ProcessorContext,
+    ) -> Result<Self::NewLandmark, PpdcError>;
 
     async fn process(
         &self,
         context: &ProcessorContext,
     ) -> Result<Vec<Landmark>, PpdcError>;
+
+
+    fn element_create_for_trace_landmark_and_analysis(
+        element: Self::MatchedElement,
+        trace_id: Uuid,
+        landmark: &Landmark,
+        analysis_resource_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Resource, PpdcError> {
+        let new_element = element.to_new_resource();
+        let created_element = new_element.create(pool)?;
+        let mut new_resource_relation = NewResourceRelation::new(created_element.id, trace_id);
+        new_resource_relation.relation_type = Some("elmt".to_string());
+        new_resource_relation.user_id = Some(user_id);
+        new_resource_relation.create(pool)?;
+        let mut new_resource_relation = NewResourceRelation::new(created_element.id, landmark.id);
+        new_resource_relation.relation_type = Some("elmt".to_string());
+        new_resource_relation.user_id = Some(user_id);
+        let mut new_analysis_relation= NewResourceRelation::new(created_element.id, analysis_resource_id);
+        new_analysis_relation.relation_type = Some("ownr".to_string());
+        new_analysis_relation.user_id = Some(user_id);
+        new_analysis_relation.create(pool)?;
+        Ok(created_element)
+    }
 }
