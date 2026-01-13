@@ -13,6 +13,7 @@ use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
 use crate::db::DbPool;
 use async_trait::async_trait;
+use serde_json::Value;
 
 pub trait NewLandmarkForExtractedElement {
     fn title(&self) -> String;
@@ -93,6 +94,13 @@ pub trait LandmarkProcessor: Send + Sync {
     type NewLandmark: NewLandmarkForExtractedElement + Send;
 
     fn new() -> Self;
+
+    fn extract_system_prompt(&self) -> String;
+    fn extract_schema(&self) -> serde_json::Value;
+    fn create_new_landmark_system_prompt(&self) -> String;
+    fn create_new_landmark_schema(&self) -> serde_json::Value;
+    fn match_elements_system_prompt(&self) -> String;
+    fn match_elements_schema(&self) -> serde_json::Value;
 
     async fn extract_elements(
         &self,
