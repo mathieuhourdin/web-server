@@ -13,7 +13,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use crate::db::DbPool;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Landmark {
     pub id: Uuid,
     pub title: String,
@@ -121,6 +121,12 @@ impl NewLandmark {
         let new_resource = self.to_new_resource();
         let created_resource = new_resource.create(pool)?;
         Ok(Landmark::from_resource(created_resource))
+    }
+}
+
+impl From<Resource> for Landmark {
+    fn from(resource: Resource) -> Self {
+        Landmark::from_resource(resource)
     }
 }
 

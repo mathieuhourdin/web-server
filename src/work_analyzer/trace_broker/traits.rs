@@ -1,7 +1,35 @@
-use crate::entities::resource::{Resource, resource_type::ResourceType};
+use crate::entities::{
+    resource::{Resource, resource_type::ResourceType},
+    error::PpdcError,
+    landmark::Landmark,
+};
 use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
 use crate::db::DbPool;
+use async_trait::async_trait;
+
+pub trait NewLandmarkForExtractedElement {
+    fn title(&self) -> String;
+    fn subtitle(&self) -> String;
+    fn content(&self) -> String;
+    fn identified(&self) -> bool;
+    fn landmark_type(&self) -> ResourceType;
+}
+
+pub trait MatchedExtractedElementForLandmark {
+    fn title(&self) -> String;
+    fn subtitle(&self) -> String;
+    fn extracted_content(&self) -> String;
+    fn generated_context(&self) -> String;
+    fn landmark_id(&self) -> Option<String>;
+    fn landmark_type(&self) -> ResourceType;
+}
+
+pub trait ExtractedElementForLandmark {
+    fn reference(&self) -> String;
+    fn extracted_content(&self) -> String;
+    fn generated_context(&self) -> String;
+}
 
 // I create a trait. 
 // Each processor will implement this trait.
@@ -11,7 +39,7 @@ use crate::db::DbPool;
 
 // Processor context is created at runtime with the data related to the current processing.
 pub struct ProcessorContext {
-    pub landmarks: Vec<Resource>,
+    pub landmarks: Vec<Landmark>,
     pub trace: Resource,
     pub user_id: Uuid,
     pub analysis_resource_id: Uuid,
@@ -32,5 +60,34 @@ pub struct ProcessorConfig {
     pub create_new_landmarks_gpt_config: GptRequestConfig,
 }
 
+#[async_trait]
 pub trait LandmarkProcessor: Send + Sync {
+    
+    type ExtractedElement: ExtractedElementForLandmark + Send;
+    type MatchedElement: MatchedExtractedElementForLandmark + Send;
+    type NewLandmark: NewLandmarkForExtractedElement + Send;
+
+    async fn extract_elements(
+        &self,
+        existing_landmarks: &Vec<Landmark>,
+        context: &ProcessorContext,
+    ) -> Result<Vec<Self::ExtractedElement>, PpdcError>;
+
+    async fn match_elements(
+        &self,
+        existing_landmarks: &Vec<Landmark>,
+        context: &ProcessorContext,
+    ) -> Result<Vec<Self::MatchedElement>, PpdcError>;
+
+    async fn create_new_landmarks(
+        &self,
+        matched_elements: &Vec<Self::MatchedElement>,
+        context: &ProcessorContext,
+    ) -> Result<Vec<Self::NewLandmark>, PpdcError>;
+
+    async fn process(
+        &self,
+        existing_landmarks: &Vec<Landmark>,
+        context: &ProcessorContext,
+    ) -> Result<Vec<Self::NewLandmark>, PpdcError>;
 }

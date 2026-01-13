@@ -26,10 +26,10 @@ impl GptRequestConfig {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        make_gpt_request(
+        Ok(make_gpt_request(
             self.system_prompt.clone(), 
             self.user_prompt.clone(), 
             self.schema.clone()
-        ).await?
+        ).await?)
     }
 }

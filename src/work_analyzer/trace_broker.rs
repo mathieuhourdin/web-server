@@ -2,8 +2,10 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{resource_type::ResourceType, Resource},
+    landmark::Landmark,
 };
-use crate::work_analyzer::trace_broker::broke_for_resource::split_trace_in_elements_for_resources_landmarks;
+use crate::work_analyzer::trace_broker::broke_for_resource::{ResourceProcessor, split_trace_in_elements_for_resources_landmarks};
+use crate::work_analyzer::trace_broker::traits::ProcessorContext;
 use chrono::NaiveDate;
 
 use serde::{Deserialize, Serialize};
@@ -52,6 +54,7 @@ pub struct SimpleElements {
     pub elements: Vec<SimpleElement>,
 }
 
+
 pub async fn process_trace(
     trace: &Resource,
     user_id: Uuid,
@@ -59,7 +62,15 @@ pub async fn process_trace(
     analysis_resource_id: Uuid,
     pool: &DbPool,
 ) -> Result<Vec<Resource>, PpdcError> {
-    let resources_landmarks = landmarks.into_iter().filter(|landmark| landmark.resource_type == ResourceType::Resource).collect::<Vec<&Resource>>();
-    let elements = split_trace_in_elements_for_resources_landmarks(user_id, analysis_resource_id, trace, &resources_landmarks, pool).await?;
-    Ok(elements)
+    let resource_processor = ResourceProcessor::new();
+    let context = ProcessorContext {
+        landmarks: landmarks.into_iter().map(|landmark| Landmark::from_resource((*landmark).clone())).collect::<Vec<Landmark>>(),
+        trace: trace.clone(),
+        user_id: user_id,
+        analysis_resource_id: analysis_resource_id,
+        pool: pool.clone(),
+    };
+    let new_landmarks = resource_processor.process(&context).await?;
+    let new_resources = new_landmarks.into_iter().map(|landmark| Landmark::to_resource(landmark.clone())).collect::<Vec<Resource>>();
+    Ok(new_resources)
 }

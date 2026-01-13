@@ -1,6 +1,6 @@
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError, interaction::model::Interaction, session::Session, user::User,
+    error::PpdcError, interaction::model::Interaction, session::Session, user::User, landmark::Landmark,
 };
 use crate::pagination::PaginationParams;
 use crate::schema::*;
@@ -177,6 +177,12 @@ impl From<Resource> for NewResource {
             category_id: resource.category_id,
             is_external: Some(resource.is_external),
         }
+    }
+}
+
+impl From<Landmark> for Resource {
+    fn from(landmark: Landmark) -> Self {
+        landmark.to_resource()
     }
 }
 
