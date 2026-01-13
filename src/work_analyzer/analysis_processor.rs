@@ -6,6 +6,7 @@ use crate::entities::{
     interaction::model::{Interaction, InteractionWithResource},
     resource::{maturing_state::MaturingState, Resource},
     resource_relation::NewResourceRelation,
+    landmark::Landmark,
 };
 use crate::work_analyzer::{
     context_builder::get_landmarks_from_analysis,
@@ -203,10 +204,11 @@ pub async fn process_traces(
 ) -> Result<HighLevelAnalysis, PpdcError> {
     println!("work_analyzer::analysis_processor::process_traces: Processing traces for user id: {}, analysis resource id: {}, last analysis id option: {:?}", user_id, analysis_resource_id, last_analysis_id_option);
     // here we process the traces using the trace broker to identify simple elements that will be used to create analysis landmarks
-    let analysis_landmarks = get_landmarks_from_analysis(&last_analysis_id_option, &pool)?;
     let mut simple_elements: Vec<Resource> = vec![];
 
     for trace in traces {
+        let analysis_landmarks = Landmark::find_all_up_to_date_for_user(user_id, pool)?;
+        println!("Processing trace: {:?}", trace.resource);
         let processed_elements = process_trace(
             &trace.resource,
             user_id,

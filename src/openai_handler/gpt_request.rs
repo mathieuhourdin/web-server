@@ -1,5 +1,5 @@
 use crate::entities::error::PpdcError;
-use crate::openai_handler::gpt_handler::make_gpt_request;
+use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 
 pub struct GptRequestConfig {
     pub model: String,

@@ -8,10 +8,13 @@ use crate::entities::{
         maturing_state::MaturingState,
     },
     resource_relation::NewResourceRelation,
+    interaction::model::{NewInteraction, Interaction},
 };
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+use axum::extract::{Extension, Json, Path};
 use crate::db::DbPool;
+use axum::debug_handler;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Landmark {
@@ -88,6 +91,20 @@ impl Landmark {
         let updated_resource = result.update(pool)?;
         Ok(Landmark::from_resource(updated_resource))
     }
+
+    pub fn find_all_up_to_date_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+        let landmarks_types = [
+            ResourceType::Resource,
+            ResourceType::Task
+        ];
+        let mut landmarks = vec![];
+        for landmark_type in landmarks_types {
+            let interactions = Interaction::find_landmarks_for_user_by_type(user_id, landmark_type, pool)?;
+            let landmarks_for_type = interactions.into_iter().map(|interaction| Landmark::from_resource(interaction.resource)).collect::<Vec<Landmark>>();
+            landmarks.extend(landmarks_for_type);
+        }
+        Ok(landmarks)
+    }
 }
 
 impl NewLandmark {
@@ -130,16 +147,27 @@ impl From<Resource> for Landmark {
     }
 }
 
+#[debug_handler]
+pub async fn get_landmarks_for_user_route(
+    Extension(pool): Extension<DbPool>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<Landmark>>, PpdcError> {
+    let landmarks = Landmark::find_all_up_to_date_for_user(user_id, &pool)?;
+    Ok(Json(landmarks))
+}
+
 pub fn create_landmark_with_parent(parent_landmark_id: Uuid, landmark: NewLandmark, user_id: Uuid, analysis_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
     let mut parent_landmark = Landmark::find(parent_landmark_id, pool)?;
     let mut landmark = landmark;
     landmark.publishing_state = "pbsh".to_string();
+    landmark.maturing_state = MaturingState::Finished;
     let landmark = create_landmark_for_analysis(landmark, user_id, analysis_id, pool)?;
     let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_landmark.id);
     new_resource_relation.relation_type = Some("prnt".to_string());
     new_resource_relation.user_id = Some(user_id);
     new_resource_relation.create(pool)?;
     parent_landmark.publishing_state = "drft".to_string();
+    parent_landmark.maturing_state = MaturingState::Draft;
     parent_landmark.update(pool)?;
     Ok(landmark)
 }
@@ -163,10 +191,15 @@ pub fn landmark_create_child_and_return(
 }
 
 pub fn create_landmark_for_analysis(landmark: NewLandmark, user_id: Uuid, analysis_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
+    let mut landmark = landmark;
+    landmark.maturing_state = MaturingState::Finished;
     let landmark = landmark.create(pool)?;
     let mut new_resource_relation = NewResourceRelation::new(landmark.id, analysis_id);
     new_resource_relation.relation_type = Some("ownr".to_string());
     new_resource_relation.user_id = Some(user_id);
     new_resource_relation.create(pool)?;
+    let mut new_interaction = NewInteraction::new(user_id, landmark.id);
+    new_interaction.interaction_type = Some("anly".to_string());
+    new_interaction.create(pool)?;
     Ok(landmark)
 }

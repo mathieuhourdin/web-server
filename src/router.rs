@@ -14,6 +14,7 @@ use crate::entities::resource_relation;
 use crate::entities::transcription;
 use crate::entities::{
     analysis, comment, interaction::interaction_routes as interaction, llm_call, resource, user,
+    landmark,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -28,6 +29,7 @@ pub fn create_router() -> Router {
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/analysis", post(analysis::post_analysis_route).get(analysis::get_last_analysis_route))
+        .route("/:id/landmarks", get(landmark::get_landmarks_for_user_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()

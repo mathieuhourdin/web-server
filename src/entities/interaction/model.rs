@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
-    resource::{NewResource, Resource},
+    resource::{NewResource, Resource, resource_type::ResourceType},
     user::User,
 };
 use crate::schema::*;
@@ -199,6 +199,25 @@ impl Interaction {
             pool,
         )?;
         Ok(interactions.into_iter().next())
+    }
+
+    pub fn find_landmarks_for_user_by_type(
+        user_id: Uuid,
+        landmark_type: ResourceType,
+        pool: &DbPool,
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        let interactions = Interaction::load_paginated(
+            0,
+            200,
+            interactions::table
+                .into_boxed()
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .filter(interactions::interaction_type.eq("anly")),
+            "fnsh",
+            landmark_type.to_code(),
+            pool,
+        )?;
+        Ok(interactions)
     }
 
     pub fn find_paginated_outputs_problems(

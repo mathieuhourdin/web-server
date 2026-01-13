@@ -46,7 +46,7 @@ pub trait MatchedExtractedElementForLandmark {
             self.title(),
             self.subtitle(),
             self.extracted_content(),
-            self.landmark_type()
+            ResourceType::Event
         )
     }
 }
@@ -165,6 +165,7 @@ pub trait LandmarkProcessor: Send + Sync {
         let mut new_resource_relation = NewResourceRelation::new(created_element.id, landmark.id);
         new_resource_relation.relation_type = Some("elmt".to_string());
         new_resource_relation.user_id = Some(user_id);
+        new_resource_relation.create(pool)?;
         let mut new_analysis_relation= NewResourceRelation::new(created_element.id, analysis_resource_id);
         new_analysis_relation.relation_type = Some("ownr".to_string());
         new_analysis_relation.user_id = Some(user_id);

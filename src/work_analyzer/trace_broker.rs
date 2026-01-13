@@ -58,13 +58,13 @@ pub struct SimpleElements {
 pub async fn process_trace(
     trace: &Resource,
     user_id: Uuid,
-    landmarks: &Vec<Resource>,
+    landmarks: &Vec<Landmark>,
     analysis_resource_id: Uuid,
     pool: &DbPool,
 ) -> Result<Vec<Resource>, PpdcError> {
     let resource_processor = ResourceProcessor::new();
     let context = ProcessorContext {
-        landmarks: landmarks.into_iter().map(|landmark| Landmark::from_resource((*landmark).clone())).collect::<Vec<Landmark>>(),
+        landmarks: landmarks.clone(),
         trace: trace.clone(),
         user_id: user_id,
         analysis_resource_id: analysis_resource_id,

@@ -111,7 +111,7 @@ impl LandmarkProcessor for ResourceProcessor {
     }
 
     fn extract_system_prompt(&self) -> String {
-        let system_prompt = format!("System:
+        let system_prompt = format!("
         Tu es un moteur de décomposition de traces en éléments simples pour une plateforme de suivi de travail.
         Dans cette trace, il est possible que l'utilisateur fasse référence à des ressources (livres, articles, films...).
         Identifie ces ressources, et extrais les parties de la trace qui parlent de ces ressources.
@@ -152,7 +152,7 @@ impl LandmarkProcessor for ResourceProcessor {
     }
 
     fn create_new_landmark_system_prompt(&self) -> String {
-        let system_prompt = format!("System:
+        let system_prompt = format!("
         Tu es un moteur de création de nouvelles ressources à partir d'éléments simples.
         Tu dois créer une nouvelle ressource à partir d'un élément simple.
         Si la ressource n'est pas totalement identifiée, indique le champ identified à false.
@@ -179,13 +179,14 @@ impl LandmarkProcessor for ResourceProcessor {
     }
 
     fn match_elements_system_prompt(&self) -> String {
-        let system_prompt = format!("System:
+        let system_prompt = format!("
         Tu es un moteur de correspondance entre éléments simples et ressources.
         Des éléments simples ont été extraits d'un texte utilisateur, et ils sont censés faire référence à des ressources.
         Les ressources actuellement explorées par l'utilisateur sont fournies.
         Pour chaque élément simple, tu dois chercher s'il correspond à une ressource.
         Si un élément simple correspond à une ressource, renvoie le avec l'ID de la ressource.
         Si un élément simple ne correspond à aucune ressource, renvoie le quand même, avec une valeur null pour le resource_id.
+        conserve les champs existants de l'élément simple.
         Renvoie tous les éléments simples fournis, même s'ils ne correspondent pas à une ressource.
         Réponds uniquement avec du JSON valide respectant le schéma donné.
         "
@@ -238,7 +239,7 @@ impl LandmarkProcessor for ResourceProcessor {
 
         println!("work_analyzer::trace_broker::split_trace_in_elements_gpt_request");
         let resources_string = context.landmarks.iter().map(|resource| format!(" Title: {}, Subtitle: {}, Content: {}", resource.title.clone(), resource.subtitle.clone(), resource.content.clone())).collect::<Vec<String>>().join("\n");
-        let user_prompt = format!("User:
+        let user_prompt = format!("
         Ressources déjà explorées : {}\n\n
         Trace à décomposer : {}\n\n",
         resources_string, context.trace.content.as_str());
@@ -262,7 +263,7 @@ impl LandmarkProcessor for ResourceProcessor {
         let elements_string = serde_json::to_string(&elements)?;
         let resources_string = serde_json::to_string(&context.landmarks)?;
 
-        let user_prompt = format!("User:
+        let user_prompt = format!("
         Éléments simples : {}\n\n
         Ressources : {}\n\n", elements_string, resources_string);
         let gpt_request_config = GptRequestConfig::new(
@@ -281,6 +282,7 @@ impl LandmarkProcessor for ResourceProcessor {
     ) -> Result<Self::NewLandmark, PpdcError> {
 
         println!("work_analyzer::trace_broker::get_new_resource_for_extracted_element_from_gpt_request");
+
         let extracted_element_string = serde_json::to_string(&element)?;
         let user_prompt = format!("User:
         Élément simple : {}\n\n", extracted_element_string);
