@@ -7,16 +7,18 @@ use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::trace_broker::traits::ProcessorConfig;
 use crate::work_analyzer::trace_broker::{
     types::{
-        NewLandmarkForExtractedElement, MatchedExtractedElementForLandmark
+        NewLandmarkForExtractedElementType, MatchedExtractedElementForLandmarkType
     },
     traits::{
         ProcessorContext,
-       // ExtractedElementForLandmark, MatchedExtractedElementForLandmark
+        LandmarkProcessor,
+        ExtractedElementForLandmark, MatchedExtractedElementForLandmark, NewLandmarkForExtractedElement
     }
 };
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use crate::db::DbPool;
+use async_trait::async_trait;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExtractedElementForResource {
@@ -25,7 +27,7 @@ pub struct ExtractedElementForResource {
     pub generated_context: String,
 }
 
-/*impl ExtractedElementForLandmark for ExtractedElementForResource {
+impl ExtractedElementForLandmark for ExtractedElementForResource {
     fn reference(&self) -> String {
         self.resource.clone()
     }
@@ -35,7 +37,7 @@ pub struct ExtractedElementForResource {
     fn generated_context(&self) -> String {
         self.generated_context.clone()
     }
-}*/
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchedExtractedElementForResource {
@@ -45,7 +47,7 @@ pub struct MatchedExtractedElementForResource {
     pub resource_id: Option<String>,
 }
 
-/*impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
+impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
     fn title(&self) -> String {
         self.resource.clone()
     }
@@ -64,7 +66,7 @@ pub struct MatchedExtractedElementForResource {
     fn landmark_type(&self) -> ResourceType {
         ResourceType::Resource
     }
-}*/
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchedElementsForResources {
     pub matched_elements: Vec<MatchedExtractedElementForResource>,
@@ -84,8 +86,24 @@ pub struct NewResourceForExtractedElement {
     pub resource_type: String,
 }
 
-
-impl From<NewResourceForExtractedElement> for NewLandmarkForExtractedElement {
+impl NewLandmarkForExtractedElement for NewResourceForExtractedElement {
+    fn title(&self) -> String {
+        self.title.clone()
+    }
+    fn subtitle(&self) -> String {
+        self.subtitle.clone()
+    }
+    fn content(&self) -> String {
+        self.content.clone()
+    }
+    fn identified(&self) -> bool {
+        self.identified
+    }
+    fn landmark_type(&self) -> ResourceType {
+        ResourceType::Resource
+    }
+}
+impl From<NewResourceForExtractedElement> for NewLandmarkForExtractedElementType {
     fn from(new_resource_for_extracted_element: NewResourceForExtractedElement) -> Self {
         Self {
             title: new_resource_for_extracted_element.title,
@@ -97,8 +115,8 @@ impl From<NewResourceForExtractedElement> for NewLandmarkForExtractedElement {
     }
 }
 
-impl From<NewLandmarkForExtractedElement> for NewLandmark {
-    fn from(new_landmark_for_extracted_element: NewLandmarkForExtractedElement) -> Self {
+impl From<NewLandmarkForExtractedElementType> for NewLandmark {
+    fn from(new_landmark_for_extracted_element: NewLandmarkForExtractedElementType) -> Self {
         NewLandmark::new(
             new_landmark_for_extracted_element.title,
             new_landmark_for_extracted_element.subtitle,
@@ -109,7 +127,7 @@ impl From<NewLandmarkForExtractedElement> for NewLandmark {
     }
 }
 
-impl From<MatchedExtractedElementForResource> for MatchedExtractedElementForLandmark {
+impl From<MatchedExtractedElementForResource> for MatchedExtractedElementForLandmarkType {
     fn from(extracted_element_for_resource: MatchedExtractedElementForResource) -> Self {
         Self {
             title: format!("Mention de la ressource : {}", extracted_element_for_resource.resource),
@@ -122,25 +140,31 @@ impl From<MatchedExtractedElementForResource> for MatchedExtractedElementForLand
     }
 }
 
-impl From<&MatchedExtractedElementForLandmark> for NewResource {
-    fn from(matched_extracted_element_for_landmark: &MatchedExtractedElementForLandmark) -> Self {
+impl From<&MatchedExtractedElementForLandmarkType> for NewResource {
+    fn from(matched_extracted_element_for_landmark: &MatchedExtractedElementForLandmarkType) -> Self {
         NewResource::new(
             matched_extracted_element_for_landmark.title.clone(),
             matched_extracted_element_for_landmark.subtitle.clone(),
             format!("{} \n\n Enrichi : {}", matched_extracted_element_for_landmark.extracted_content, matched_extracted_element_for_landmark.generated_context),
-            matched_extracted_element_for_landmark.landmark_type.clone()
+            ResourceType::Event
         )
     }
 }
 
 pub struct ResourceProcessor {
 }
-impl ResourceProcessor {
-    pub fn new() -> Self {
+
+#[async_trait]
+impl LandmarkProcessor for ResourceProcessor {
+    type ExtractedElement = ExtractedElementForResource;
+    type MatchedElement = MatchedExtractedElementForResource;
+
+    fn new() -> Self {
         Self {
         }
     }
-    pub async fn extract_elements(
+
+    async fn extract_elements(
         &self,
         existing_landmarks: &Vec<Landmark>,
         context: &ProcessorContext,
@@ -154,7 +178,7 @@ impl ResourceProcessor {
 
         Ok(elements)
     }
-    pub async fn match_elements(
+    async fn match_elements(
         &self,
         elements: &Vec<ExtractedElementForResource>,
         existing_landmarks: &Vec<Landmark>,
@@ -166,7 +190,7 @@ impl ResourceProcessor {
         ).await?;
         Ok(matched_elements)
     }
-    pub async fn create_new_landmarks(
+    async fn create_new_landmarks_and_elements(
         &self,
         matched_elements: Vec<MatchedExtractedElementForResource>,
         context: &ProcessorContext,
@@ -180,7 +204,7 @@ impl ResourceProcessor {
             .await?;
         Ok(new_landmarks)
     }
-    pub async fn process(
+    async fn process(
         &self,
         context: &ProcessorContext,
     ) -> Result<Vec<Landmark>, PpdcError> {
@@ -189,7 +213,7 @@ impl ResourceProcessor {
             return Ok(vec![]);
         }
         let matched_elements = self.match_elements(&elements, &context.landmarks, context).await?;
-        let new_landmarks = self.create_new_landmarks(matched_elements, context).await?;
+        let new_landmarks = self.create_new_landmarks_and_elements(matched_elements, context).await?;
         Ok(new_landmarks)
         
     }
@@ -208,24 +232,6 @@ impl ResourceProcessor {
 // Then for unmatched references, we ask to create a new resource.
 // Then we persist all the elements and all the resources.
 
-pub async fn split_trace_in_elements_for_resources_landmarks(
-    user_id: Uuid,
-    analysis_resource_id: Uuid,
-    trace: &Resource,
-    resources: &Vec<&Resource>,
-    pool: &DbPool,
-) -> Result<Vec<Resource>, PpdcError> {
-    println!("work_analyzer::trace_broker::split_trace_in_elements_for_resources_landmarks");
-    let landmarks = resources.iter().map(|resource| Landmark::from_resource((*resource).clone())).collect::<Vec<Landmark>>();
-    let elements = split_trace_in_elements_gpt_request(trace.content.as_str(), &landmarks).await?;
-    if elements.is_empty() {
-        return Ok(vec![]);
-    }
-    let matched_elements = match_elements_and_resources(&elements, &landmarks).await?;
-    let new_resources = create_new_landmarks(matched_elements, user_id, trace.id.clone(), analysis_resource_id, pool).await?;
-
-    Ok(new_resources.into_iter().map(|resource| resource.into()).collect())
-}
 
 pub async fn create_new_landmarks(
     elements: Vec<MatchedExtractedElementForResource>,
@@ -240,13 +246,12 @@ pub async fn create_new_landmarks(
         let created_landmark;
         if element.resource_id.is_none() {
             let new_resource_proposition = get_new_resource_for_extracted_element_from_gpt_request(&element).await?;
-            let new_landmark_proposition = NewLandmarkForExtractedElement::from(new_resource_proposition);
-            let new_landmark: NewLandmark = NewLandmark::from(new_landmark_proposition);
+            let new_landmark = new_resource_proposition.to_new_landmark();
             created_landmark = create_landmark_for_analysis(new_landmark, user_id, analysis_resource_id, pool)?;
         } else {
             created_landmark = landmark_create_child_and_return(Uuid::parse_str(element.resource_id.clone().unwrap().as_str())?, user_id, analysis_resource_id, pool)?;
         }
-        let element = MatchedExtractedElementForLandmark::from(element);
+        //let element = MatchedExtractedElementForLandmarkType::from(element);
         let _ = element_create_for_trace_landmark_and_analysis(element, trace_id, &created_landmark, analysis_resource_id, user_id, pool);
         new_landmarks.push(created_landmark);
     }
@@ -254,14 +259,14 @@ pub async fn create_new_landmarks(
 }
 
 pub fn element_create_for_trace_landmark_and_analysis(
-    element: MatchedExtractedElementForLandmark,
+    element: MatchedExtractedElementForResource,
     trace_id: Uuid,
     landmark: &Landmark,
     analysis_resource_id: Uuid,
     user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Resource, PpdcError> {
-    let new_element = NewResource::from(&element);
+    let new_element = element.to_new_resource();
     let created_element = new_element.create(pool)?;
     let mut new_resource_relation = NewResourceRelation::new(created_element.id, trace_id);
     new_resource_relation.relation_type = Some("elmt".to_string());

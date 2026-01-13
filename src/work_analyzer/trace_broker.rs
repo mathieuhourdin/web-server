@@ -4,8 +4,8 @@ use crate::entities::{
     resource::{resource_type::ResourceType, Resource},
     landmark::Landmark,
 };
-use crate::work_analyzer::trace_broker::broke_for_resource::{ResourceProcessor, split_trace_in_elements_for_resources_landmarks};
-use crate::work_analyzer::trace_broker::traits::ProcessorContext;
+use crate::work_analyzer::trace_broker::broke_for_resource::ResourceProcessor;
+use crate::work_analyzer::trace_broker::traits::{LandmarkProcessor, ProcessorContext};
 use chrono::NaiveDate;
 
 use serde::{Deserialize, Serialize};

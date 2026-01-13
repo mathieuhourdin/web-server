@@ -1,7 +1,10 @@
 use crate::entities::{
-    resource::{Resource, resource_type::ResourceType},
+    resource::{NewResource, Resource, resource_type::ResourceType, maturing_state::MaturingState},
     error::PpdcError,
-    landmark::Landmark,
+    landmark::{
+        Landmark,
+        NewLandmark,
+    }
 };
 use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
@@ -14,6 +17,16 @@ pub trait NewLandmarkForExtractedElement {
     fn content(&self) -> String;
     fn identified(&self) -> bool;
     fn landmark_type(&self) -> ResourceType;
+
+    fn to_new_landmark(&self) -> NewLandmark {
+        NewLandmark::new(
+            self.title(),
+            self.subtitle(),
+            self.content(),
+            self.landmark_type(),
+            if self.identified() { MaturingState::Finished } else { MaturingState::Draft }
+        )
+    }
 }
 
 pub trait MatchedExtractedElementForLandmark {
@@ -23,6 +36,15 @@ pub trait MatchedExtractedElementForLandmark {
     fn generated_context(&self) -> String;
     fn landmark_id(&self) -> Option<String>;
     fn landmark_type(&self) -> ResourceType;
+
+    fn to_new_resource(&self) -> NewResource {
+        NewResource::new(
+            self.title(),
+            self.subtitle(),
+            self.extracted_content(),
+            self.landmark_type()
+        )
+    }
 }
 
 pub trait ExtractedElementForLandmark {
@@ -65,7 +87,8 @@ pub trait LandmarkProcessor: Send + Sync {
     
     type ExtractedElement: ExtractedElementForLandmark + Send;
     type MatchedElement: MatchedExtractedElementForLandmark + Send;
-    type NewLandmark: NewLandmarkForExtractedElement + Send;
+
+    fn new() -> Self;
 
     async fn extract_elements(
         &self,
@@ -75,19 +98,19 @@ pub trait LandmarkProcessor: Send + Sync {
 
     async fn match_elements(
         &self,
+        elements: &Vec<Self::ExtractedElement>,
         existing_landmarks: &Vec<Landmark>,
         context: &ProcessorContext,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError>;
 
-    async fn create_new_landmarks(
+    async fn create_new_landmarks_and_elements(
         &self,
-        matched_elements: &Vec<Self::MatchedElement>,
+        matched_elements: Vec<Self::MatchedElement>,
         context: &ProcessorContext,
-    ) -> Result<Vec<Self::NewLandmark>, PpdcError>;
+    ) -> Result<Vec<Landmark>, PpdcError>;
 
     async fn process(
         &self,
-        existing_landmarks: &Vec<Landmark>,
         context: &ProcessorContext,
-    ) -> Result<Vec<Self::NewLandmark>, PpdcError>;
+    ) -> Result<Vec<Landmark>, PpdcError>;
 }
