@@ -53,11 +53,10 @@ where
     );
 
     let system_prompt_with_metadata = format!(
-        "System:
-    {}
-    Metadata:
-    {}",
-        system_prompt, metadata
+    "{}\n\n
+    Metadata:\n{}",
+    system_prompt,
+    metadata
     );
 
     let gpt_request = GPTRequest {
@@ -65,7 +64,7 @@ where
         messages: vec![
             GPTMessage {
                 role: "system".to_string(),
-                content: system_prompt,
+                content: system_prompt_with_metadata,
             },
             GPTMessage {
                 role: "user".to_string(),

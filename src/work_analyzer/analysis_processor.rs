@@ -2,20 +2,19 @@ use crate::db::get_global_pool;
 use crate::db::DbPool;
 use crate::entities::{
     analysis::{delete_analysis_resources_and_clean_graph, find_last_analysis_resource},
-    error::{ErrorType, PpdcError},
-    interaction::model::{Interaction, InteractionWithResource, NewInteraction},
-    resource::{maturing_state::MaturingState, resource_type::ResourceType, NewResource, Resource},
+    error::PpdcError,
+    interaction::model::{Interaction, InteractionWithResource},
+    resource::{maturing_state::MaturingState, Resource},
     resource_relation::NewResourceRelation,
 };
 use crate::work_analyzer::{
-    context_builder::{build_context, create_work_context, get_landmarks_from_analysis},
-    match_elements_and_landmarks::match_elements_and_landmarks,
+    context_builder::get_landmarks_from_analysis,
+    //match_elements_and_landmarks::match_elements_and_landmarks,
     trace_broker::process_trace,
-    update_landmarks::{create_landmarks_and_link_elements, AnalysisEntity},
+    //update_landmarks::{create_landmarks_and_link_elements, AnalysisEntity},
     high_level_analysis::get_high_level_analysis,
     high_level_analysis::HighLevelAnalysis,
 };
-use chrono::Duration;
 use chrono::NaiveDate;
 use uuid::Uuid;
 
@@ -66,7 +65,7 @@ pub async fn run_analysis_pipeline(analysis_id: Uuid) -> Result<Resource, PpdcEr
     }
 }
 
-pub async fn analyse_to_date(
+/*pub async fn analyse_to_date(
     user_id: Uuid,
     date: NaiveDate,
     pool: &DbPool,
@@ -149,7 +148,7 @@ pub async fn analyse_to_date(
     let result = analysis_resource.update(&pool)?;
 
     Ok(result)
-}
+}*/
 
 pub async fn process_analysis(
     user_id: Uuid,
@@ -172,7 +171,7 @@ pub async fn process_analysis(
     }
     println!("Interactions: {:?}", interactions);
 
-    let (analysis_result) = process_traces(
+    let analysis_result = process_traces(
         &interactions,
         analysis_resource_id,
         last_analysis_id_option,
@@ -205,27 +204,7 @@ pub async fn process_traces(
     println!("work_analyzer::analysis_processor::process_traces: Processing traces for user id: {}, analysis resource id: {}, last analysis id option: {:?}", user_id, analysis_resource_id, last_analysis_id_option);
     // here we process the traces using the trace broker to identify simple elements that will be used to create analysis landmarks
     let analysis_landmarks = get_landmarks_from_analysis(&last_analysis_id_option, &pool)?;
-    let string_traces = traces
-        .iter()
-        .map(|interaction| {
-            format!(
-                "Date : {}\nTitre : {}\nSous titre : {}\nContenu : {}",
-                interaction
-                    .interaction
-                    .interaction_date
-                    .format("%Y-%m-%d")
-                    .to_string(),
-                interaction.resource.title,
-                interaction.resource.subtitle,
-                interaction.resource.content
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
     let mut simple_elements: Vec<Resource> = vec![];
-
-    // we create the simple elements from the traces and from the context.
-    let context = build_context(&user_id, &last_analysis_id_option, &pool)?;
 
     for trace in traces {
         let processed_elements = process_trace(
@@ -266,24 +245,7 @@ pub async fn process_traces(
     Ok(high_level_analysis)
 }
 
-pub async fn match_simple_elements_to_analytic_landmarks(
-    simple_elements: Vec<Resource>,
-    analysis_resource_id: &Uuid,
-) -> Result<Vec<Resource>, PpdcError> {
-    let landmarks = vec![];
-    Ok(landmarks)
-}
-
-pub async fn create_new_analytic_landmarks(
-    string_traces: String,
-    existing_landmarks: Vec<Resource>,
-    user_id: Uuid,
-    analysis_resource_id: &Uuid,
-) -> Result<Vec<Resource>, PpdcError> {
-    Ok(existing_landmarks)
-}
-
-pub async fn create_resources_from_analysis(
+/*pub async fn create_resources_from_analysis(
     analysis_entities: Vec<AnalysisEntity>,
     user_id: Uuid,
     analysis_resource_id: &Uuid,
@@ -312,4 +274,4 @@ pub async fn create_resources_from_analysis(
         })
         .collect::<Result<Vec<Resource>, PpdcError>>()?;
     Ok(resources)
-}
+}*/

@@ -3,8 +3,8 @@ use crate::entities::resource::{NewResource, Resource, maturing_state::MaturingS
 use crate::entities::resource_relation::NewResourceRelation;
 use crate::entities::resource::resource_type::ResourceType;
 use crate::entities::landmark::{Landmark, NewLandmark, landmark_create_child_and_return, create_landmark_for_analysis};
-use crate::openai_handler::gpt_responses_handler::make_gpt_request;
-use crate::work_analyzer::trace_broker::{SimpleElement, SimpleElements};
+use crate::openai_handler::GptRequestConfig;
+use crate::work_analyzer::trace_broker::types::{NewLandmarkForExtractedElement, MatchedExtractedElementForLandmark};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use crate::db::DbPool;
@@ -43,24 +43,6 @@ pub struct NewResourceForExtractedElement {
     pub resource_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NewLandmarkForExtractedElement {
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub identified: bool,
-    pub landmark_type: ResourceType,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MatchedExtractedElementForLandmark {
-    pub title: String,
-    pub subtitle: String,
-    pub extracted_content: String,
-    pub generated_context: String,
-    pub landmark_id: Option<String>,
-    pub landmark_type: ResourceType,
-}
 
 impl From<NewResourceForExtractedElement> for NewLandmarkForExtractedElement {
     fn from(new_resource_for_extracted_element: NewResourceForExtractedElement) -> Self {
@@ -151,7 +133,7 @@ pub async fn create_new_resources(
 ) -> Result<Vec<Resource>, PpdcError> {
     println!("work_analyzer::trace_broker::create_new_resources");
     for element in elements {
-        let mut created_landmark;
+        let created_landmark;
         if element.resource_id.is_none() {
             let new_resource_proposition = get_new_resource_for_extracted_element_from_gpt_request(&element).await?;
             let new_landmark_proposition = NewLandmarkForExtractedElement::from(new_resource_proposition);
@@ -161,7 +143,7 @@ pub async fn create_new_resources(
             created_landmark = landmark_create_child_and_return(Uuid::parse_str(element.resource_id.clone().unwrap().as_str())?, user_id, analysis_resource_id, pool)?;
         }
         let element = MatchedExtractedElementForLandmark::from(element);
-        element_create_for_trace_landmark_and_analysis(element, trace_id, created_landmark, analysis_resource_id, user_id, pool);
+        let _ = element_create_for_trace_landmark_and_analysis(element, trace_id, created_landmark, analysis_resource_id, user_id, pool);
     }
     Ok(vec![])
 }
@@ -218,8 +200,13 @@ pub async fn get_new_resource_for_extracted_element_from_gpt_request(
         "required": ["title", "subtitle", "content", "author", "identified", "resource_type"],
         "additionalProperties": false
     });
-    let new_resource_for_extracted_element: NewResourceForExtractedElement = make_gpt_request(system_prompt, user_prompt, schema)
-        .await?;
+    let gpt_request_config = GptRequestConfig::new(
+        "gpt-4.1-nano".to_string(),
+        &system_prompt,
+        &user_prompt,
+        schema.clone()
+    );
+    let new_resource_for_extracted_element: NewResourceForExtractedElement = gpt_request_config.execute().await?;
     Ok(new_resource_for_extracted_element)
 }
 
@@ -282,8 +269,13 @@ pub async fn match_elements_and_resources(
         "required": ["matched_elements"],
         "additionalProperties": false
     });
-    let matched_elements: MatchedElementsForResources = make_gpt_request(system_prompt, user_prompt, schema)
-        .await?;
+    let gpt_request_config = GptRequestConfig::new(
+        "gpt-4.1-nano".to_string(),
+        &system_prompt,
+        &user_prompt,
+        schema.clone()
+    );
+    let matched_elements: MatchedElementsForResources = gpt_request_config.execute().await?;
     Ok(matched_elements.matched_elements)
 }
 
@@ -331,7 +323,12 @@ pub async fn split_trace_in_elements_gpt_request(
         "required": ["elements"],
         "additionalProperties": false
     });
-    let elements: ExtractedElementsForResources = make_gpt_request(system_prompt, user_prompt, schema)
-        .await?;
+    let gpt_request_config = GptRequestConfig::new(
+        "gpt-4.1-nano".to_string(),
+        &system_prompt,
+        &user_prompt,
+        schema.clone()
+    );
+    let elements: ExtractedElementsForResources = gpt_request_config.execute().await?;
     Ok(elements.elements)
 }

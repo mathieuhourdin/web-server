@@ -33,11 +33,8 @@ pub async fn post_analysis_route(
     // we find the last analysis for the user
     let last_analysis = find_last_analysis_resource(user_id, &pool)?;
 
-    let mut last_analysis_id_option = None;
-
     let analysis_title = match &last_analysis {
         Some(last_analysis) => {
-            last_analysis_id_option = Some(last_analysis.resource.id.clone());
             if last_analysis.interaction.interaction_date.clone()
                 > (date - Duration::days(1)).and_hms_opt(12, 0, 0).expect("Date should be valid")
             {

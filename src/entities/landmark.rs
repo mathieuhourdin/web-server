@@ -8,7 +8,6 @@ use crate::entities::{
         maturing_state::MaturingState,
     },
     resource_relation::NewResourceRelation,
-    user::User
 };
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,4 @@
 use crate::entities::error::{ErrorType, PpdcError};
-use diesel::backend::Backend;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::Pg;
 use diesel::pg::PgValue;
@@ -216,13 +215,10 @@ impl ToSql<Text, Pg> for ResourceType {
     }
 }
 
-impl<DB> FromSql<Text, DB> for ResourceType
-where
-    DB: for<'b> Backend<RawValue<'b> = PgValue<'b>>,
-    String: ToSql<Text, diesel::pg::Pg>,
-{
-    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> {
-        Ok(ResourceType::from_code(String::from_sql(bytes)?.as_str()).unwrap())
+impl FromSql<Text, Pg> for ResourceType {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let s = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        Ok(ResourceType::from_code(s.as_str()).unwrap())
     }
 }
 

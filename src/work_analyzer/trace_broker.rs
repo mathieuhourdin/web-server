@@ -1,13 +1,9 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
-    interaction::model::NewInteraction,
-    resource::{resource_type::ResourceType, NewResource, Resource},
-    resource_relation::NewResourceRelation,
+    resource::{resource_type::ResourceType, Resource},
 };
 use crate::work_analyzer::trace_broker::broke_for_resource::split_trace_in_elements_for_resources_landmarks;
-use crate::openai_handler::gpt_responses_handler::make_gpt_request;
-use crate::work_analyzer::context_builder::{get_ontology_context, get_user_biography};
 use chrono::NaiveDate;
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +11,8 @@ use uuid::Uuid;
 
 pub mod broke_for_resource;
 pub mod trace_qualify;
+pub mod types;
+pub mod traits;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResourceExtractionProperties {

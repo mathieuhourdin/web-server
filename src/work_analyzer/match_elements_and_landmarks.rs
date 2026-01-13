@@ -1,7 +1,7 @@
 use crate::entities::error::PpdcError;
 use crate::entities::resource::Resource;
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
-use crate::work_analyzer::context_builder::{get_ontology_context, get_user_biography};
+use crate::work_analyzer::context_builder::get_ontology_context;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

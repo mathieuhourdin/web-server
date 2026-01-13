@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use crate::db::DbPool;
 use crate::entities::error::PpdcError;
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use crate::entities::resource::Resource;

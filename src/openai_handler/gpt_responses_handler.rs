@@ -39,8 +39,6 @@ struct ContentItem {
     #[serde(rename = "type")]
     kind: String, // "output_text"
     text: String,
-    #[serde(default)]
-    annotations: Vec<serde_json::Value>,
 }
 
 pub async fn make_gpt_request<T>(
