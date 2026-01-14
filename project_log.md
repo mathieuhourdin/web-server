@@ -1,6 +1,25 @@
+
+### 2026-01-17 
+
+Today I will first work on the global execution of the pipline.
+I want to run analysis trace by trace to have a more atomic run.
+But we keep one call on analysis to trigger all the run on a given time window.
+The created analysis represents a run. It creates child analysis for each trace on the given time window.
+
+I have multiple design choices. I could allow multiple analysis_run for each user. 
+One user creates an analysis_run for a given date and the system produces an analysis linked_list from this analysis_run, with an analysis for each trace. This will allow multiple analysis_run to coexist at the same time (eg. if we want to test the pipeline with different model etc).
+Then we should be able to switch analysis_run view in the api to retrieve a different landmarks set depending on the analysis we request.
+The question then is how do we avoid running the analysis for every traces since the beginning each time we launch an analysis run (sometime we want to just pursue the current run, or to replay from a given point). I think the easier thing would be to be able to give a parent_analysis in the post analysis_run to indicate a previous state from which we want to replay the analysis. 
+One first thing to do in this direction must be to create an endpoint / a method to get the all context associated with an analysis. This way i could really have a function that takes a parent analysis and creates a new analysis from the previous state. At some point i would also want to create ways to visualize all of this in the API/Interface to inspect what has been created.
+
+For this method get_analysis_context, it seems that i should loop through the parent analysis and retrieve each time the related landmarks if they are not parents of a landmark of the previous landmarks.
+This is a more general problem : since i choosed a linked list pattern for many situations where I want to keep an historic of the entity, I should decide how i implement the reconstitution of the global and current state.
+
 ### 2026-01-13
 
 Today i want to finish the new pipeline so that i can test it.
+
+The new LandmarkProcessor was finished. It was tested against some traces and it works ok.
 
 ### 2026-01-12
 
