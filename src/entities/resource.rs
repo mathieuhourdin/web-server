@@ -11,14 +11,15 @@ use axum::{
 use chrono::NaiveDateTime;
 use diesel;
 use diesel::prelude::*;
-pub use maturing_state::MaturingState;
-use resource_type::ResourceType;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub mod maturing_state;
 pub mod resource_type;
 pub mod trace;
+
+pub use maturing_state::MaturingState;
+pub use resource_type::ResourceType;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
 #[diesel(table_name=resources)]
