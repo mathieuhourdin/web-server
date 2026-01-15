@@ -1,13 +1,13 @@
 use uuid::Uuid;
 use crate::entities::{
-    error::PpdcError,
+    error::{ErrorType, PpdcError},
     resource::{
         Resource,
         NewResource,
         resource_type::ResourceType,
         maturing_state::MaturingState,
     },
-    resource_relation::NewResourceRelation,
+    resource_relation::{NewResourceRelation, ResourceRelation},
     interaction::model::{NewInteraction, Interaction},
 };
 use chrono::NaiveDateTime;
@@ -42,6 +42,9 @@ pub struct NewLandmark {
     pub landmark_type: ResourceType,
     pub maturing_state: MaturingState,
     pub publishing_state: String,
+    pub analysis_id: Uuid,
+    pub user_id: Uuid,
+    pub parent_id: Option<Uuid>,
 }
 
 
@@ -92,6 +95,20 @@ impl Landmark {
         Ok(Landmark::from_resource(updated_resource))
     }
 
+    pub fn get_analysis(self, pool: &DbPool) -> Result<Resource, PpdcError> {
+        let resource_relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let analysis = resource_relations
+            .into_iter()
+            .find(|relation| {
+                relation.resource_relation.relation_type == "ownr".to_string()
+                && relation.target_resource.resource_type == ResourceType::Analysis
+            })
+            .map(|relation| relation.target_resource)
+            .ok_or(PpdcError::new(400, ErrorType::ApiError, "Analysis not found".to_string()))
+            ?;
+        Ok(analysis)
+    }
+
     pub fn find_all_up_to_date_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
         let landmarks_types = [
             ResourceType::Resource,
@@ -108,7 +125,16 @@ impl Landmark {
 }
 
 impl NewLandmark {
-    pub fn new(title: String, subtitle: String, content: String, landmark_type: ResourceType, maturing_state: MaturingState) -> NewLandmark {
+    pub fn new(
+        title: String, 
+        subtitle: String, 
+        content: String, 
+        landmark_type: ResourceType, 
+        maturing_state: MaturingState,
+        analysis_id: Uuid,
+        user_id: Uuid,
+        parent_id: Option<Uuid>,
+    ) -> NewLandmark {
         Self {
             title,
             subtitle,
@@ -116,6 +142,9 @@ impl NewLandmark {
             landmark_type,
             maturing_state,
             publishing_state: "pbsh".to_string(),
+            analysis_id,
+            user_id,
+            parent_id
         }
     }
 
@@ -135,9 +164,45 @@ impl NewLandmark {
         }
     }
     pub fn create(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let new_resource = self.to_new_resource();
+        let analysis_id = self.analysis_id;
+        let user_id = self.user_id;
+        let parent_id = self.parent_id;
+
+        // create the landmark with all positive flags
+        let mut landmark = self;
+        landmark.publishing_state = "fnsh".to_string();
+        landmark.maturing_state = MaturingState::Finished;
+        let new_resource = landmark.to_new_resource();
         let created_resource = new_resource.create(pool)?;
-        Ok(Landmark::from_resource(created_resource))
+        let landmark = Landmark::from_resource(created_resource);
+
+        // Create relation with analysis
+        let mut new_resource_relation = NewResourceRelation::new(landmark.id, analysis_id);
+        new_resource_relation.relation_type = Some("ownr".to_string());
+        new_resource_relation.user_id = Some(user_id);
+        new_resource_relation.create(pool)?;
+
+
+        if let Some(parent_id) = parent_id {
+
+            // create the parent relation to the parent landmark
+            let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_id);
+            new_resource_relation.relation_type = Some("prnt".to_string());
+            new_resource_relation.user_id = Some(user_id);
+            new_resource_relation.create(pool)?;
+
+            // update the parent landmark to the draft state
+            let mut parent_landmark = Landmark::find(parent_id, pool)?;
+            parent_landmark.publishing_state = "drft".to_string();
+            parent_landmark.maturing_state = MaturingState::Draft;
+            parent_landmark.update(pool)?;
+        }
+
+        // link the landmark to the user with the interaction
+        let mut new_interaction = NewInteraction::new(user_id, landmark.id);
+        new_interaction.interaction_type = Some("anly".to_string());
+        new_interaction.create(pool)?;
+        Ok(landmark)
     }
 }
 
@@ -161,7 +226,7 @@ pub fn create_landmark_with_parent(parent_landmark_id: Uuid, landmark: NewLandma
     let mut landmark = landmark;
     landmark.publishing_state = "pbsh".to_string();
     landmark.maturing_state = MaturingState::Finished;
-    let landmark = create_landmark_for_analysis(landmark, user_id, analysis_id, pool)?;
+    let landmark = landmark.create(pool)?;
     let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_landmark.id);
     new_resource_relation.relation_type = Some("prnt".to_string());
     new_resource_relation.user_id = Some(user_id);
@@ -172,7 +237,7 @@ pub fn create_landmark_with_parent(parent_landmark_id: Uuid, landmark: NewLandma
     Ok(landmark)
 }
 
-pub fn landmark_create_child_and_return(
+pub fn landmark_create_copy_child_and_return(
     parent_landmark_id: Uuid,
     user_id: Uuid,
     analysis_id: Uuid,
@@ -184,22 +249,12 @@ pub fn landmark_create_child_and_return(
         parent_landmark.subtitle, 
         parent_landmark.content, 
         parent_landmark.landmark_type, 
-        parent_landmark.maturing_state
-    );
-    let landmark = create_landmark_with_parent(parent_landmark_id, landmark, user_id, analysis_id, pool)?;
-    Ok(landmark)
-}
+        parent_landmark.maturing_state,
+        analysis_id,
+        user_id,
+        Some(parent_landmark_id)
 
-pub fn create_landmark_for_analysis(landmark: NewLandmark, user_id: Uuid, analysis_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
-    let mut landmark = landmark;
-    landmark.maturing_state = MaturingState::Finished;
+    );
     let landmark = landmark.create(pool)?;
-    let mut new_resource_relation = NewResourceRelation::new(landmark.id, analysis_id);
-    new_resource_relation.relation_type = Some("ownr".to_string());
-    new_resource_relation.user_id = Some(user_id);
-    new_resource_relation.create(pool)?;
-    let mut new_interaction = NewInteraction::new(user_id, landmark.id);
-    new_interaction.interaction_type = Some("anly".to_string());
-    new_interaction.create(pool)?;
     Ok(landmark)
 }

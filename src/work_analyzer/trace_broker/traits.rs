@@ -5,8 +5,7 @@ use crate::entities::{
     landmark::{
         Landmark,
         NewLandmark,
-        create_landmark_for_analysis,
-        landmark_create_child_and_return,
+        landmark_create_copy_child_and_return,
     }
 };
 use crate::openai_handler::GptRequestConfig;
@@ -22,13 +21,21 @@ pub trait NewLandmarkForExtractedElement {
     fn identified(&self) -> bool;
     fn landmark_type(&self) -> ResourceType;
 
-    fn to_new_landmark(&self) -> NewLandmark {
+    fn to_new_landmark(
+        &self,
+        analysis_id: Uuid,
+        user_id: Uuid,
+        parent_id: Option<Uuid>,
+    ) -> NewLandmark {
         NewLandmark::new(
             self.title(),
             self.subtitle(),
             self.content(),
             self.landmark_type(),
-            if self.identified() { MaturingState::Finished } else { MaturingState::Draft }
+            if self.identified() { MaturingState::Finished } else { MaturingState::Draft },
+            analysis_id,
+            user_id,
+            parent_id,
         )
     }
 }
@@ -124,10 +131,10 @@ pub trait LandmarkProcessor: Send + Sync {
             let created_landmark;
             if element.landmark_id().is_none() {
                 let new_resource_proposition = self.get_new_landmark_for_extracted_element(&element, context).await?;
-                let new_landmark = new_resource_proposition.to_new_landmark();
-                created_landmark = create_landmark_for_analysis(new_landmark, context.user_id, context.analysis_resource_id, &context.pool)?;
+                let new_landmark = new_resource_proposition.to_new_landmark(context.analysis_resource_id, context.user_id, None);
+                created_landmark = new_landmark.create(&context.pool)?;
             } else {
-                created_landmark = landmark_create_child_and_return(Uuid::parse_str(element.landmark_id().clone().unwrap().as_str())?, context.user_id, context.analysis_resource_id, &context.pool)?;
+                created_landmark = landmark_create_copy_child_and_return(Uuid::parse_str(element.landmark_id().clone().unwrap().as_str())?, context.user_id, context.analysis_resource_id, &context.pool)?;
             }
             //let element = MatchedExtractedElementForLandmarkType::from(element);
             let _ = Self::element_create_for_trace_landmark_and_analysis(element, context.trace.id, &created_landmark, context.analysis_resource_id, context.user_id, &context.pool);

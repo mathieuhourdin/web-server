@@ -33,8 +33,8 @@ pub struct ResourceRelationWithOriginResource {
 #[derive(Serialize, Queryable, Debug)]
 pub struct ResourceRelationWithTargetResource {
     #[serde(flatten)]
-    resource_relation: ResourceRelation,
-    target_resource: Resource,
+    pub resource_relation: ResourceRelation,
+    pub target_resource: Resource,
 }
 
 #[derive(Deserialize, Insertable, AsChangeset)]
