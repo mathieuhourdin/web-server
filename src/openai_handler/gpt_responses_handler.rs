@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use crate::db;
-use crate::entities::llm_call::NewLlmCall;
+use crate::entities_v2::llm_call::NewLlmCall;
 use crate::environment;
 
 #[derive(Debug, Serialize)]

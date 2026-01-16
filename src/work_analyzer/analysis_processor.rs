@@ -1,15 +1,16 @@
 use crate::db::get_global_pool;
 use crate::db::DbPool;
 use crate::entities::{
-    analysis::{delete_analysis_resources_and_clean_graph, find_last_analysis_resource},
     error::PpdcError,
     interaction::model::{Interaction, InteractionWithResource},
     resource::{maturing_state::MaturingState, Resource},
     resource_relation::NewResourceRelation,
+};
+use crate::entities_v2::{
+    analysis::{delete_analysis_resources_and_clean_graph, find_last_analysis_resource},
     landmark::Landmark,
 };
 use crate::work_analyzer::{
-    context_builder::get_landmarks_from_analysis,
     trace_broker::{ResourceProcessor, ProcessorContext, LandmarkProcessor},
     high_level_analysis::get_high_level_analysis,
     high_level_analysis::HighLevelAnalysis,

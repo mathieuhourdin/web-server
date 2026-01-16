@@ -13,7 +13,12 @@ use tower_http::{
 use crate::entities::resource_relation;
 use crate::entities::transcription;
 use crate::entities::{
-    analysis, comment, interaction::interaction_routes as interaction, llm_call, resource, user,
+    comment, interaction::interaction_routes as interaction, resource, user,
+};
+use crate::entities_v2::{
+    trace,
+    analysis,
+    llm_call,
     landmark,
 };
 use crate::link_preview;
@@ -65,7 +70,7 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
-        .route("/", post(resource::trace::post_trace_route))
+        .route("/", post(trace::post_trace_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let interactions_router = Router::new()

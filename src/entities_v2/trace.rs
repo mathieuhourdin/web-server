@@ -13,11 +13,24 @@ use axum::{
 };
 use serde::Deserialize;
 use uuid::Uuid;
+use chrono::NaiveDateTime;
 
 #[derive(Deserialize)]
 pub struct NewTraceDto {
     pub content: String,
     pub journal_id: Uuid,
+}
+
+pub struct Trace {
+    pub id: Uuid,
+    pub title: String,
+    pub subtitle: String,
+    pub interaction_date: Option<NaiveDateTime>,
+    pub content: String,
+    pub journal_id: Uuid,
+    pub user_id: Uuid,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[debug_handler]

@@ -1,6 +1,6 @@
 use crate::entities::error::PpdcError;
 use crate::entities::resource::resource_type::ResourceType;
-use crate::entities::landmark::Landmark;
+use crate::entities_v2::landmark::Landmark;
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::trace_broker::{
     traits::{

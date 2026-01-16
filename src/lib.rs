@@ -10,3 +10,4 @@ pub mod schema;
 pub mod sessions_service;
 pub mod threadpool;
 pub mod work_analyzer;
+pub mod entities_v2;

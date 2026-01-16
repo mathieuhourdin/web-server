@@ -11,9 +11,19 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path},
 };
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use serde::Deserialize;
 use uuid::Uuid;
+
+pub struct Analysis {
+    pub id: Uuid,
+    pub title: String,
+    pub subtitle: String,
+    pub interaction_date: Option<NaiveDateTime>,
+    pub user_id: Uuid,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
 
 #[derive(Deserialize)]
 pub struct NewAnalysisDto {

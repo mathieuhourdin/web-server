@@ -2,17 +2,16 @@ use crate::entities::{
     resource::{NewResource, Resource, resource_type::ResourceType, maturing_state::MaturingState},
     resource_relation::NewResourceRelation,
     error::PpdcError,
-    landmark::{
-        Landmark,
-        NewLandmark,
-        landmark_create_copy_child_and_return,
-    }
+};
+use crate::entities_v2::landmark::{
+    Landmark,
+    NewLandmark,
+    landmark_create_copy_child_and_return,
 };
 use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
 use crate::db::DbPool;
 use async_trait::async_trait;
-use serde_json::Value;
 
 pub trait NewLandmarkForExtractedElement {
     fn title(&self) -> String;
