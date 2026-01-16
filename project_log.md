@@ -1,5 +1,39 @@
+# Daily log file for the project
+Every day I work on this project, I take notes of : 
+- What i concretely do on the project
+- What choices I made
+- My choices if I make any
+- My thoughts, hesitations and considerations on the project
+- Some results of expermientations
 
-### 2026-01-17 
+### 2026-01-15
+
+I worked on the landmark entity. I added some fields on the NewLandmark entity to match the futur shape of the entity & db table : A landmark will have a n-1 relation with analysis, a n-1 relation with user and a n-0/1 relation with parent landmark, so I created 2 not nullable fields and one nullable on the struct.
+It will replace the current n-n relationships supported by resource_relation and interaction tables.
+
+Some thoughts about the data model.
+An analysis has a parent analysis (we continue the analysis from a certain point of analysis, which mush hold all the state of the analysis).
+However I see two models for the analysis to hold the state (the related landmarks).
+The elements are a easy entity : they are only related to the trace they are extracted from, and related to the analysis that produced them.
+On the opposit the landmarks are shared between analysis, because they must persist through time.
+The prefered method is to create a new analysis with reference to its parent each time the analysis is mentionned in an element. No need to duplicate a Landmark when it is not mentioned anywhere (or maybe by some kind of a garbage collector but this is out of current focus).
+But then how do we decide which landmark correspond to the current analysis context ?
+First option is to decide that an analysis context is all the landmarks belonging to its parents. 
+The other way is to say that an analysis holds references to all the landmarks of its context, even if the landmarks have been created by a previous analysis. The pros of this model is that it is immediat to retrieve all the landmarks of a given analysis, it avoid using some kind of recursive retrieval. The cons is some overhead of complexity in data model : we should have a n-n relationship between landmarks and analysis, and we should have strong logic on landmark deletion (only delete landmarks if no analysis point to it, or if the parent analysis (the one that created it) is deleted).
+I note that this is the git model (a commit stores references to all current files of the repo but only ownes files modified at this commit)
+I have no real preferences at this stage. Let's see.
+
+One strong invariant I have in any option is that an analysis and its owned landmarks cannot be modified / deleted if the analysis has children.
+
+After some LLM chat, it appears that the second option is the best.
+The argument that settles the question is that after a few analysis the recursive retrieval of the context will take a very long time, and based on the expected amount of recorded traces and related analysis, the size of branches will be very long.
+
+We will choose option 2 then.
+
+A landmark could have a owner_analysis_id, and the landmark is deleted only if this analysis is deleted. We could enforce other constraints like to check if other analysis reference it but the base invariant about no delete on analysis if it has childs should prevent that.
+
+
+### 2026-01-14
 
 Today I will first work on the global execution of the pipline.
 I want to run analysis trace by trace to have a more atomic run.
