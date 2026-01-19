@@ -39,6 +39,7 @@ pub enum ResourceType {
     Event,
     GeneralComment,
     Feeling,
+    Lens,
 }
 
 impl ResourceType {
@@ -73,6 +74,7 @@ impl ResourceType {
             "evnt" => Ok(ResourceType::Event),
             "cmnt" => Ok(ResourceType::GeneralComment),
             "feln" => Ok(ResourceType::Feeling),
+            "lens" => Ok(ResourceType::Lens),
             &_ => {
                 return Err(PpdcError::new(
                     404,
@@ -111,6 +113,7 @@ impl ResourceType {
             ResourceType::Event => "evnt",
             ResourceType::GeneralComment => "cmnt",
             ResourceType::Feeling => "feln",
+            ResourceType::Lens => "lens",
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -142,6 +145,7 @@ impl ResourceType {
             ResourceType::Event => "Event",
             ResourceType::GeneralComment => "GeneralComment",
             ResourceType::Feeling => "Feeling",
+            ResourceType::Lens => "Lens",
         }
     }
     pub fn from_full_text(full_text: &str) -> Result<ResourceType, PpdcError> {
@@ -173,6 +177,7 @@ impl ResourceType {
             "Event" => Ok(ResourceType::Event),
             "GeneralComment" => Ok(ResourceType::GeneralComment),
             "Feeling" => Ok(ResourceType::Feeling),
+            "Lens" => Ok(ResourceType::Lens),
             &_ => Err(PpdcError::new(
                 404,
                 ErrorType::ApiError,

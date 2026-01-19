@@ -12,17 +12,109 @@ use axum::{
     extract::{Extension, Json, Path},
 };
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub struct Analysis {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LandscapeAnalysis {
     pub id: Uuid,
     pub title: String,
     pub subtitle: String,
+    pub plain_text_state_summary: String,
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
+    pub parent_analysis_id: Option<Uuid>,
+    pub trace_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+impl LandscapeAnalysis {
+    /// Creates a LandscapeAnalysis from a Resource with default/placeholder values
+    /// for fields that need to be hydrated from relations.
+    pub fn from_resource(resource: Resource) -> LandscapeAnalysis {
+        LandscapeAnalysis {
+            id: resource.id,
+            title: resource.title,
+            subtitle: resource.subtitle,
+            plain_text_state_summary: resource.content,
+            interaction_date: None,
+            user_id: Uuid::nil(),
+            parent_analysis_id: None,
+            trace_id: None,
+            created_at: resource.created_at,
+            updated_at: resource.updated_at,
+        }
+    }
+
+    /// Converts the LandscapeAnalysis back to a Resource.
+    pub fn to_resource(&self) -> Resource {
+        Resource {
+            id: self.id,
+            title: self.title.clone(),
+            subtitle: self.subtitle.clone(),
+            content: self.plain_text_state_summary.clone(),
+            external_content_url: None,
+            comment: None,
+            image_url: None,
+            resource_type: ResourceType::Analysis,
+            maturing_state: MaturingState::Draft,
+            publishing_state: "drft".to_string(),
+            category_id: None,
+            is_external: false,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+
+    /// Hydrates user_id and interaction_date from the author interaction.
+    pub fn with_user_id(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let resource = self.to_resource();
+        let interaction = resource.find_resource_author_interaction(pool)?;
+        Ok(LandscapeAnalysis {
+            user_id: interaction.interaction_user_id,
+            interaction_date: Some(interaction.interaction_date),
+            ..self
+        })
+    }
+
+    /// Hydrates parent_analysis_id from resource relations.
+    /// Looks for a relation of type "prnt" (parent) pointing to another analysis.
+    pub fn with_parent_analysis(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let parent_analysis_id = targets
+            .into_iter()
+            .find(|target| target.resource_relation.relation_type == "prnt")
+            .map(|target| target.target_resource.id);
+        Ok(LandscapeAnalysis {
+            parent_analysis_id,
+            ..self
+        })
+    }
+
+    /// Hydrates trace_id from resource relations.
+    /// Looks for a relation of type "trce" (trace) pointing to a trace resource.
+    pub fn with_trace(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let trace_id = targets
+            .into_iter()
+            .find(|target| target.resource_relation.relation_type == "trce")
+            .map(|target| target.target_resource.id);
+        Ok(LandscapeAnalysis {
+            trace_id,
+            ..self
+        })
+    }
+
+    /// Finds a LandscapeAnalysis by id and fully hydrates it from the database.
+    pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let resource = Resource::find(id, pool)?;
+        let analysis = LandscapeAnalysis::from_resource(resource);
+        let analysis = analysis.with_user_id(pool)?;
+        let analysis = analysis.with_parent_analysis(pool)?;
+        let analysis = analysis.with_trace(pool)?;
+        Ok(analysis)
+    }
 }
 
 #[derive(Deserialize)]

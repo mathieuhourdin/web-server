@@ -7,7 +7,7 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
 };
 use crate::entities_v2::{
-    analysis::{delete_analysis_resources_and_clean_graph, find_last_analysis_resource},
+    landscape_analysis::{delete_analysis_resources_and_clean_graph, find_last_analysis_resource},
     landmark::Landmark,
 };
 use crate::work_analyzer::{

@@ -17,7 +17,7 @@ use crate::entities::{
 };
 use crate::entities_v2::{
     trace,
-    analysis,
+    landscape_analysis,
     llm_call,
     landmark,
 };
@@ -33,7 +33,7 @@ pub fn create_router() -> Router {
     let users_router = Router::new()
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
-        .route("/:id/analysis", post(analysis::post_analysis_route).get(analysis::get_last_analysis_route))
+        .route("/:id/analysis", post(landscape_analysis::post_analysis_route).get(landscape_analysis::get_last_analysis_route))
         .route("/:id/landmarks", get(landmark::get_landmarks_for_user_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
@@ -94,8 +94,8 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let analysis_router = Router::new()
-        .route("/", post(analysis::post_analysis_route))
-        .route("/:id", delete(analysis::delete_analysis_route))
+        .route("/", post(landscape_analysis::post_analysis_route))
+        .route("/:id", delete(landscape_analysis::delete_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let llm_calls_router = Router::new()
