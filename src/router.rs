@@ -20,6 +20,7 @@ use crate::entities_v2::{
     landscape_analysis,
     llm_call,
     landmark,
+    lens,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -98,6 +99,10 @@ pub fn create_router() -> Router {
         .route("/:id", delete(landscape_analysis::delete_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let lens_router = Router::new()
+        .route("/", post(lens::post_lens_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     let llm_calls_router = Router::new()
         .route("/", get(llm_call::get_llm_calls_route))
         .route("/:id", get(llm_call::get_llm_call_route))
@@ -118,6 +123,7 @@ pub fn create_router() -> Router {
         .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
         .nest("/analysis", analysis_router)
+        .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)
         .route("/link_preview", post(link_preview::post_preview_route))
         .fallback(fallback_handler)

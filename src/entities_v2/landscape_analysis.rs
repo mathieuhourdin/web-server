@@ -179,6 +179,18 @@ impl NewLandscapeAnalysis {
         }
     }
 
+    pub fn new_placeholder(user_id: Uuid, trace_id: Uuid, parent_landscape_analysis_id: Option<Uuid>) -> NewLandscapeAnalysis {
+        NewLandscapeAnalysis {
+            title: format!("Analyse de la trace {}", trace_id),
+            subtitle: "Analyse".to_string(),
+            plain_text_state_summary: "Analyse".to_string(),
+            interaction_date: Utc::now().naive_utc(),
+            user_id,
+            parent_analysis_id: parent_landscape_analysis_id,
+            analyzed_trace_id: Some(trace_id),
+        }
+    }
+
     /// Converts to a NewResource for database insertion.
     fn to_new_resource(&self) -> NewResource {
         NewResource {

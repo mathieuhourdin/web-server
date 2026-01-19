@@ -182,6 +182,42 @@ impl Interaction {
         )
     }
 
+    pub fn find_all_traces_for_user_between(
+        user_id: Uuid,
+        start_date: NaiveDateTime,
+        end_date: NaiveDateTime,
+        pool: &DbPool,
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        Interaction::load_paginated(
+            0,
+            200,
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .filter(interactions::interaction_date.lt(start_date))
+                .filter(interactions::interaction_date.gt(end_date))
+                .order(interactions::interaction_date.asc()),
+            "drft",
+            "trce",
+            pool,
+        )
+    }
+    pub fn find_all_traces_for_user_before_date(
+        user_id: Uuid,
+        date: NaiveDateTime,
+        pool: &DbPool,
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        Interaction::load_paginated(
+            0,
+            200,
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .filter(interactions::interaction_date.lt(date))
+                .order(interactions::interaction_date.asc()),
+            "all",
+            "trce",
+            pool,
+        )
+    }
     pub fn find_last_analysis_for_user(
         user_id: Uuid,
         pool: &DbPool,

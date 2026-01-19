@@ -18,6 +18,11 @@ use crate::entities::{
     },
 };
 use serde::{Serialize, Deserialize};
+use chrono::Utc;
+use crate::entities_v2::{
+    landscape_analysis::{LandscapeAnalysis, NewLandscapeAnalysis},
+    trace::Trace
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Lens {
@@ -42,22 +47,11 @@ pub struct NewLens {
     pub fork_landscape_id: Option<Uuid>,
     pub current_trace_id: Uuid,
     pub current_state_date: NaiveDateTime,
+    pub current_landscape_id: Uuid,
     pub model_version: String,
     pub autoplay: bool,
     pub is_primary: bool,
     pub user_id: Uuid,
-}
-
-#[derive(Deserialize)]
-pub struct NewLensDto {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub fork_landscape_id: Option<Uuid>,
-    pub current_trace_id: Uuid,
-    pub current_state_date: Option<NaiveDateTime>,
-    pub model_version: Option<String>,
-    pub autoplay: Option<bool>,
-    pub is_primary: Option<bool>,
 }
 
 impl Lens {
@@ -157,13 +151,14 @@ impl Lens {
 }
 
 impl NewLens {
-    pub fn new(payload: NewLensDto, user_id: Uuid) -> NewLens {
+    pub fn new(payload: NewLensDto, current_trace_id: Uuid, current_landscape_id: Uuid, user_id: Uuid) -> NewLens {
         NewLens {
             name: payload.name.unwrap_or_default(),
             description: payload.description.unwrap_or_default(),
             fork_landscape_id: payload.fork_landscape_id,
-            current_trace_id: payload.current_trace_id,
+            current_trace_id: current_trace_id,
             current_state_date: payload.current_state_date.unwrap_or_default(),
+            current_landscape_id: current_landscape_id,
             model_version: payload.model_version.unwrap_or_default(),
             autoplay: payload.autoplay.unwrap_or_default(),
             is_primary: payload.is_primary.unwrap_or_default(),
@@ -191,11 +186,12 @@ impl NewLens {
         let current_state_date = self.current_state_date;
         let current_trace_id = self.current_trace_id;
         let fork_landscape_id = self.fork_landscape_id;
+        let current_landscape_id = self.current_landscape_id;
 
         let new_resource = self.to_new_resource();
         let created_resource = new_resource.create(pool)?;
         let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
-        new_interaction.interaction_type = Some("lens".to_string());
+        new_interaction.interaction_type = Some("outp".to_string());
         new_interaction.interaction_date = Some(current_state_date);
         new_interaction.interaction_progress = 0;
         new_interaction.create(pool)?;
@@ -205,6 +201,10 @@ impl NewLens {
             new_fork_relation.user_id = Some(user_id);
             new_fork_relation.create(pool)?;
         }
+        let mut new_landscape_relation = NewResourceRelation::new(created_resource.id, current_landscape_id);
+        new_landscape_relation.relation_type = Some("head".to_string());
+        new_landscape_relation.user_id = Some(user_id);
+        new_landscape_relation.create(pool)?;
         let mut new_trace_relation = NewResourceRelation::new(created_resource.id, current_trace_id);
         new_trace_relation.relation_type = Some("trgt".to_string());
         new_trace_relation.user_id = Some(user_id);
@@ -214,15 +214,66 @@ impl NewLens {
     }
 }
 
+#[derive(Deserialize)]
+pub struct NewLensDto {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub fork_landscape_id: Option<Uuid>,
+    pub current_trace_id: Uuid,
+    pub current_state_date: Option<NaiveDateTime>,
+    pub model_version: Option<String>,
+    pub autoplay: Option<bool>,
+    pub is_primary: Option<bool>,
+}
+
 #[debug_handler]
 pub async fn post_lens_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
+    let mut start_landscape_id: Uuid;
+    let traces: Vec<Trace>;
     if let Some(fork_landscape_id) = payload.fork_landscape_id {
+        // we start analysis from a already existing landscape
+        // just create new landscapes from this one
+        start_landscape_id = fork_landscape_id;
+        let fork_landscape = LandscapeAnalysis::find_full_analysis(fork_landscape_id, &pool)?;
+        traces = Trace::get_between(session.user_id.unwrap(), fork_landscape.analyzed_trace_id.unwrap(), payload.current_trace_id, &pool)?;
+    } else {
+        // we start analysis from the first trace. We should first create a new landscape from user biography.
+        // It will have no landmarks, but will have a global context from the biography.
+        let initial_landscape = NewLandscapeAnalysis::new(
+            "Analyse de la biographie".to_string(),
+            "Analyse de la biographie".to_string(),
+            "Analyse de la biographie".to_string(),
+            session.user_id.unwrap(),
+            Utc::now().naive_utc(),
+            None,
+            None,
+        ).create(&pool)?;
+        start_landscape_id = initial_landscape.id;
+        traces = Trace::get_before(session.user_id.unwrap(), payload.current_trace_id, &pool)?;
     }
-    let lens = NewLens::new(payload, session.user_id.unwrap())
+    let current_trace_id = traces.last().unwrap().id;
+    let mut previous_landscape_analysis_id = start_landscape_id;
+    let mut landscape_analysis_ids: Vec<Uuid> = Vec::new();
+    for trace in traces {
+        let new_landscape_analysis = NewLandscapeAnalysis::new_placeholder(
+            session.user_id.unwrap(), 
+            trace.id, 
+            Some(previous_landscape_analysis_id)
+        ).create(&pool)?;
+        landscape_analysis_ids.push(new_landscape_analysis.id);
+        previous_landscape_analysis_id = new_landscape_analysis.id;
+    }
+
+    // after we have the first landscape, we can create the landscape placeholders from the first one using traces as diff.
+    let lens = NewLens::new(
+        payload, current_trace_id, 
+        previous_landscape_analysis_id, 
+        session.user_id.unwrap()
+    )
         .create(&pool)?;
     let lens = lens.with_user_id(&pool)?;
     let lens = lens.with_forked_landscape(&pool)?;
