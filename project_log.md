@@ -6,6 +6,81 @@ Every day I work on this project, I take notes of :
 - My thoughts, hesitations and considerations on the project
 - Some results of expermientations
 
+
+### 2026-01-16 next steps
+
+I have made some moves in the direction of the new model.
+
+I created the Lens entity (still not sure Lens is better than AnalaysiBranch)
+We will need a few routes for the lens entity :
+- Post : create and run a new lens between begining / fork landscape and target trace.
+- PUT : run the existing lens from its current landmark and the new target trace.
+- GET : get all the different lens to be able to switch
+- GET one : get the current landscape of the lens.
+
+The analysis entity should be modified too. I should rename it to Landscape (still not very happy to have state and command in the same entity without having the name indicating it. I may want to change that)
+- Renaming
+- Remove the logic that should now belong to lens (post analysis)
+- add some logic to retrieve a landscape from resource, and to hydrate with user_id, parent_landscape, analyzed_trace.
+- Use the analysis/landscape entity in the analysis processor instead of resource
+
+
+When i create / extend a lens, will want to plan some analysis jobs, landscape creation. What seems the best way to do it to me is : 
+- get the previous landscapeAnalysis
+- get all traces between current/fork/begining and target, ordered by date
+- from the current/fork/begining trace to the target, create a landscapeAnalysis, with the previous state at parent, and the processing state at notstarted. We return the response to the client at this stage.
+- then spawn some threads of analysis for each landscapeAnalysis. An analysis can only start if it parent processing state is completed. We loop / sleep(0.5s) until the parent state is completed, then proceed the analysis. We should catch every error to unsure that if something goes wrong we set every states to error and stop processing of child analysis.
+
+I wonder if anything can go wrong if i spawn too many threads for the different analsyis jobs.
+
+If the analysis is from the begining, we should first create a landscapeAnalaysis based on the user's biography
+
+Implementing a incremental id for traces by user should be usefull quite rapidly too.
+
+### 2026-01-16 About analysis api
+
+Other ideas on analysis.
+I think I should have two entities related to analysis.
+
+One is analysis and the other one is analysis_run, or analysis_play
+
+analysis_play records a request to play / replay analysis from a certain point in the system.
+It has a field analysis_start_id that points to a unit analysis or a unit landscape. 
+It also has a field date in case we dont want to play the analysis until present.
+
+When we create an analysis_play, we find the parent analysis, and we start running unit landscape analysis from this date.
+We get the previous landscape, and for each trace existing we create an analysis, then we process the analysis and create a new landscape based on the trace. We loop through traces until the given date (or today). 
+
+This rises some questions for me about how to ensure that every traces are fully processed when we process a new trace, to avoid race conditions on traces analysis. Maybe this is a usefull purpose for an analysis entity separated from landmarks. In this case we can create an analysis linked to its parent before to process any analysis, and then process analysis in the right order.
+
+Maybe we could need an analysis branch concept, just like in git. Is it different from a analysis_play ? maybe it could be the same, and if we want to just run more traces for a given branch we PUT/PATCH on its date.
+
+Another question is : do we have an ordered structure for the traces ? Should we only consider traces as independant events only indexed by their date, or should we think about it with some kind of causal structure, that should enforce things like consistent prefix reads ?
+While in git the commits, the events the system is based on, are the one that branch. However here we have a non branching list of traces. Traces are somehow how time is defined in the univers of the user work. Good question if we should refer to a certain point in time through a date or through a trace id. It also raise the question of cases where someone wants to add a trace in the past, at a date where further traces have been analysed already (eg. i want to import some traces from another system). Open question too.
+
+I think it is a good idea to have a analytic_branch concept. And the user should be able to switch branch to see different analysis branches. An anaysis cant have an analysis branch because it can belong to multiple branches, however the analysis_branch can have an analysis it points to. It could have global settings, such as autoplay or not (do i want to run analysis each time i create a trace or to be manually used), the type of model i use for this analysis...
+
+Actually we will call it lens to make it very clear that it is about how we see the objectiv nature of things that is contained in the traces.
+
+### 2026-01-16  About landscapes
+
+New thoughts about the object model.
+I think I should use the landscape word somewhere. It fits very well with the landmark word. A landscape is a collection of landmarks. They are found / built in the flux of elements that occurs during the environment exploration.
+In this view a landmark is quite similar to the current analysis entity.
+
+I view multiple options.
+
+A landscape could be the current analysis, and the analysis could be more an analytic content produced by the plateform (it could be included in the landscape as the high level analysis, or produced over a period of work, not just a trace).
+
+What we have now is landscape_n1 = landscape_n0 + trace or landscape_n1 = f(landscape_n0, trace).
+The landscape are naturally linked together. You can picture someone walking in the nature, and the landscape is evolving while the person moves. It is possible to think that landscape are linked together.
+
+However we still should have a kind of entity that refers to the analytic process of producing a landscape from previous landscape and new trace. This entity could hold some informations about the type of processing : the version of the pipeline used to process the trace, the cost, anything like that that helps observability (a little bit like llm_calls but for the whole pipeline). This could be the analysis. We could have an analysis type for the landscape_trace processor, but also for things like week analysis. The analysis is the operator and the landscapes are the before / after states. It needs more thoughts.
+We would also have an analysis created for analysis that run on a full week or a full day. It would be another type, corresponding to another pipline of data processing.
+
+As a result, we could have the analysis as the event command, and the landscape as the updated state from the trace event.
+Analysis plays the role of a job for the processing.
+
 ### 2026-01-15
 
 I worked on the landmark entity. I added some fields on the NewLandmark entity to match the futur shape of the entity & db table : A landmark will have a n-1 relation with analysis, a n-1 relation with user and a n-0/1 relation with parent landmark, so I created 2 not nullable fields and one nullable on the struct.
