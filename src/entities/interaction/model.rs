@@ -132,6 +132,24 @@ impl Interaction {
         query.filter(interactions::interaction_type.eq("outp"))
     }
 
+    pub fn find_paginated_outputs_for_user(
+        offset: i64,
+        limit: i64,
+        user_id: Uuid,
+        resource_type: &str,
+        pool: &DbPool,
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        Interaction::load_paginated(
+            offset,
+            limit,
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id)),
+            "all",
+            resource_type,
+            pool,
+        )
+    }
+
     pub fn find_paginated_outputs_published(
         offset: i64,
         limit: i64,

@@ -1,6 +1,6 @@
 use uuid::Uuid;
 use chrono::NaiveDateTime;
-use axum::{debug_handler, extract::{Extension, Json}};
+use axum::{debug_handler, extract::{Extension, Json, Path}};
 use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities::session::Session;
@@ -11,7 +11,10 @@ use crate::entities::{
         MaturingState, 
         Resource
     },
-    interaction::model::NewInteraction,
+    interaction::model::{
+        NewInteraction,
+        Interaction,
+    },
     resource_relation::{
         ResourceRelation,
         NewResourceRelation,
@@ -20,7 +23,7 @@ use crate::entities::{
 use serde::{Serialize, Deserialize};
 use chrono::Utc;
 use crate::entities_v2::{
-    landscape_analysis::{LandscapeAnalysis, NewLandscapeAnalysis},
+    landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
     trace::Trace
 };
 
@@ -148,6 +151,36 @@ impl Lens {
         let lens = lens.clone().with_current_trace(pool)?;
         Ok(lens)
     }
+    pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
+        let resource = self.to_resource();
+        let deleted_resource = resource.delete(pool)?;
+        Ok(Lens::from_resource(deleted_resource))
+    }
+
+    pub fn update_current_landscape(self, new_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
+        let current_landscape_relation = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let current_landscape_relation = current_landscape_relation.into_iter()
+            .find(|relation| relation.resource_relation.relation_type == "head".to_string())
+            .map(|relation| relation.resource_relation);
+        if current_landscape_relation.is_none() {
+            return Err(PpdcError::new(404, ErrorType::ApiError, "Current landscape not found".to_string()));
+        }
+        let current_landscape_relation = current_landscape_relation.unwrap();
+        current_landscape_relation.delete(pool)?;
+        let mut new_current_landscape_relation = NewResourceRelation::new(self.id, new_landscape_analysis_id);
+        new_current_landscape_relation.relation_type = Some("head".to_string());
+        new_current_landscape_relation.user_id = Some(self.user_id.unwrap());
+        new_current_landscape_relation.create(pool)?;
+        Ok(self)
+    }
+
+    pub fn get_user_lenses(user_id: Uuid, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
+        let lenses = Interaction::find_paginated_outputs_for_user(0, 200, user_id, "lens", pool)?;
+        let lenses = lenses.into_iter()
+            .map(|interaction| Lens::from_resource(interaction.resource))
+            .collect::<Vec<Lens>>();
+        Ok(lenses)
+    }
 }
 
 impl NewLens {
@@ -232,7 +265,7 @@ pub async fn post_lens_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
-    let mut start_landscape_id: Uuid;
+    let start_landscape_id: Uuid;
     let traces: Vec<Trace>;
     if let Some(fork_landscape_id) = payload.fork_landscape_id {
         // we start analysis from a already existing landscape
@@ -282,11 +315,55 @@ pub async fn post_lens_route(
     Ok(Json(lens))
 }
 
+#[debug_handler]
+pub async fn delete_lens_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Lens>, PpdcError> {
+    println!("Deleting lens: {:?}", id);
+    let mut lens = Lens::find_full_lens(id, &pool)?;
+    let mut landscape_analysis_id = lens.current_landscape_id;
 
-/*
-pub fn create_landscape_analysis_between_traces(start_trace_id: Uuid, end_trace_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-    let start_trace = Trace::find(start_trace_id, pool)?;
-    let end_trace = Trace::find(end_trace_id, pool)?;
-    let landscape_analysis = LandscapeAnalysis::new(start_trace, end_trace, pool)?;
-    Ok(landscape_analysis)
-}*/
+    while let Some(id) = landscape_analysis_id {
+        println!("Deleting landscape analysis: {:?}", id);
+        let current_landscape_analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+        println!("Current landscape analysis: {:?}", current_landscape_analysis);
+        if let Some(parent_analysis_id) = current_landscape_analysis.parent_analysis_id {
+            // update head to the parent landscape_analysis before to delete the current landscape_analysis
+            println!("Updating head to parent landscape analysis: {:?}", parent_analysis_id);
+            lens = lens.update_current_landscape(parent_analysis_id, &pool)?;
+        } else {
+            // we reached last landscape_analysis, delete the lens before deleting the root landscape_analysis
+            // delete the lens first since we dont know where to put the head after deletion.
+            println!("Deleting lens");
+            lens = lens.delete(&pool)?;
+            landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, &pool)?;
+            return Ok(Json(lens));
+        }
+        println!("Deleting landscape analysis: {:?}", current_landscape_analysis.id);
+        let deletion_option = landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, &pool)?;
+        println!("Deletion option: {:?}", deletion_option);
+        if let Some(_deletion_option) = deletion_option {
+            // deletion succeded, continue with the parent.
+            landscape_analysis_id = current_landscape_analysis.parent_analysis_id;
+
+        } else {
+            // we reached a landscape analysis referenced by other lens or landscape_analysis, just delete the lens
+            println!("Reached a landscape analysis referenced by other lens or landscape_analysis, just deleting the lens");
+            break;
+        }
+    }
+    println!("Deleting lens: {:?}", id);
+    let lens = lens.delete(&pool)?;
+    println!("Lens deleted: {:?}", lens);
+    Ok(Json(lens))
+}
+
+pub async fn get_user_lenses_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<Lens>>, PpdcError> {
+    let lenses = Lens::get_user_lenses(session.user_id.unwrap(), &pool)?;
+    Ok(Json(lenses))
+}

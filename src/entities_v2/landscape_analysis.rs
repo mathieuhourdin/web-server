@@ -6,7 +6,10 @@ use crate::entities::{
     resource_relation::{NewResourceRelation, ResourceRelation},
     session::Session,
 };
-use crate::entities_v2::landmark::Landmark;
+use crate::entities_v2::{
+    landmark::Landmark,
+    lens::Lens,
+};
 use crate::work_analyzer::analysis_processor::run_analysis_pipeline;
 use axum::{
     debug_handler,
@@ -72,6 +75,7 @@ impl LandscapeAnalysis {
 
     /// Hydrates user_id and interaction_date from the author interaction.
     pub fn with_user_id(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        println!("Hydrating user_id for analysis: {:?}", self.id);
         let resource = self.to_resource();
         let interaction = resource.find_resource_author_interaction(pool)?;
         Ok(LandscapeAnalysis {
@@ -84,6 +88,7 @@ impl LandscapeAnalysis {
     /// Hydrates parent_analysis_id from resource relations.
     /// Looks for a relation of type "prnt" (parent) pointing to another analysis.
     pub fn with_parent_analysis(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        println!("Hydrating parent_analysis_id for analysis: {:?}", self.id);
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
         let parent_analysis_id = targets
             .into_iter()
@@ -98,6 +103,7 @@ impl LandscapeAnalysis {
     /// Hydrates trace_id from resource relations.
     /// Looks for a relation of type "trce" (trace) pointing to a trace resource.
     pub fn with_trace(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        println!("Hydrating trace_id for analysis: {:?}", self.id);
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
         let analyzed_trace_id = targets
             .into_iter()
@@ -111,7 +117,9 @@ impl LandscapeAnalysis {
 
     /// Finds a LandscapeAnalysis by id and fully hydrates it from the database.
     pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        println!("Finding full analysis: {:?}", id);
         let resource = Resource::find(id, pool)?;
+        println!("Resource: {:?}", resource);
         let analysis = LandscapeAnalysis::from_resource(resource);
         let analysis = analysis.with_user_id(pool)?;
         let analysis = analysis.with_parent_analysis(pool)?;
@@ -143,6 +151,36 @@ impl LandscapeAnalysis {
     pub fn get_landmarks(self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
         let landmarks = Landmark::get_for_landscape_analysis(self.id, pool)?;
         Ok(landmarks)
+    }
+
+    pub fn get_children_landscape_analyses(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+        let children_landscape_analyses = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        let children_landscape_analyses = children_landscape_analyses
+            .into_iter()
+            .filter(|relation| {
+                relation.resource_relation.relation_type == "prnt"
+                && relation.origin_resource.resource_type == ResourceType::Analysis
+            })
+            .map(|relation| LandscapeAnalysis::from_resource(relation.origin_resource))
+            .collect::<Vec<LandscapeAnalysis>>();
+        Ok(children_landscape_analyses)
+    }
+    pub fn get_heading_lens(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
+        let lenses = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        let lenses = lenses
+            .into_iter()
+            .filter(|relation| {
+                relation.resource_relation.relation_type == "head"
+                && relation.origin_resource.resource_type == ResourceType::Lens
+            })
+            .map(|relation| Lens::from_resource(relation.origin_resource))
+            .collect::<Vec<Lens>>();
+        Ok(lenses)
+    }
+    pub fn delete(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let resource = self.to_resource();
+        let deleted_resource = resource.delete(pool)?;
+        Ok(LandscapeAnalysis::from_resource(deleted_resource))
     }
 }
 
@@ -332,9 +370,20 @@ pub async fn delete_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(_session): Extension<Session>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Resource>, PpdcError> {
-    let analysis = delete_analysis_resources_and_clean_graph(id, &pool)?;
-    Ok(Json(analysis))
+) -> Result<Json<LandscapeAnalysis>, PpdcError> {
+    let analysis = delete_leaf_and_cleanup(id, &pool)?;
+    Ok(Json(analysis.expect("No analysis found")))
+}
+
+#[debug_handler]
+pub async fn get_landmarks_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Landmark>>, PpdcError> {
+    let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    let landmarks = landscape.get_landmarks(&pool)?;
+    Ok(Json(landmarks))
 }
 
 #[debug_handler]    
@@ -347,17 +396,32 @@ pub async fn get_last_analysis_route(
     Ok(Json(last_analysis.expect("No last analysis found")))
 }
 
-pub fn delete_analysis_resources_and_clean_graph(
+pub fn delete_leaf_and_cleanup(
     id: Uuid,
     pool: &DbPool,
-) -> Result<Resource, PpdcError> {
-    let analysis = Resource::find(id, &pool)?;
-    println!("Analysis: {:?}", analysis);
+) -> Result<Option<LandscapeAnalysis>, PpdcError> {
+    println!("Deleting leaf and cleanup for analysis: {:?}", id);
+    let landscape_analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    println!("Landscape analysis: {:?}", landscape_analysis);
+    let children_landscape_analyses = landscape_analysis.get_children_landscape_analyses(&pool)?;
+    println!("Children landscape analyses: {:?}", children_landscape_analyses);
+    let heading_lens = landscape_analysis.get_heading_lens(&pool)?;
+    println!("Heading lens: {:?}", heading_lens);
+    if children_landscape_analyses.len() > 0 || heading_lens.len() > 0 {
+        println!("Children landscape analyses or heading lens found, not deleting");
+        return Ok(None);
+    }
+    println!("Analysis: {:?}", landscape_analysis);
     let related_resources = ResourceRelation::find_origin_for_resource(id, &pool)?;
+    println!("Related resources: {:?}", related_resources);
     for resource_relation in related_resources {
         println!("Resource relation: {:?}", resource_relation);
         // check if the resource is owned by the analysis (for elements and entities)
-        if resource_relation.resource_relation.relation_type == "ownr".to_string() {
+        if resource_relation.resource_relation.relation_type == "ownr".to_string() 
+            && resource_relation.origin_resource.resource_type != ResourceType::Trace
+            && resource_relation.origin_resource.resource_type != ResourceType::Lens
+            && resource_relation.origin_resource.resource_type != ResourceType::Analysis
+            {
             println!("Deleting resource: {:?}", resource_relation.origin_resource);
             resource_relation.origin_resource.delete(&pool)?;
         } else if resource_relation.origin_resource.resource_type == ResourceType::Trace {
@@ -366,8 +430,9 @@ pub fn delete_analysis_resources_and_clean_graph(
             trace.update(&pool)?;
         }
     }
-    let analysis = analysis.delete(&pool)?;
-    Ok(analysis)
+    println!("Deleting landscape analysis: {:?}", landscape_analysis);
+    let landscape_analysis = landscape_analysis.delete(&pool)?;
+    Ok(Some(landscape_analysis))
 }
 
 pub fn find_last_analysis_resource(

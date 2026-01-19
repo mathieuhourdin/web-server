@@ -122,6 +122,16 @@ impl ResourceRelation {
             .collect();
         Ok(resource_relations)
     }
+
+    pub fn delete(self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let resource_relation = diesel::delete(resource_relations::table)
+            .filter(resource_relations::id.eq(self.id))
+            .get_result(&mut conn)?;
+        Ok(resource_relation)
+    }
 }
 
 #[debug_handler]

@@ -36,6 +36,7 @@ pub fn create_router() -> Router {
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/analysis", post(landscape_analysis::post_analysis_route).get(landscape_analysis::get_last_analysis_route))
         .route("/:id/landmarks", get(landmark::get_landmarks_for_user_route))
+        .route("/:id/lens", get(lens::get_user_lenses_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()
@@ -97,10 +98,12 @@ pub fn create_router() -> Router {
     let analysis_router = Router::new()
         .route("/", post(landscape_analysis::post_analysis_route))
         .route("/:id", delete(landscape_analysis::delete_analysis_route))
+        .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
+        .route("/:id", delete(lens::delete_lens_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let llm_calls_router = Router::new()

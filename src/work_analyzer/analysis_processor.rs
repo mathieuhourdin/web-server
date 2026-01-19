@@ -8,8 +8,7 @@ use crate::entities::{
 };
 use crate::entities_v2::{
     landscape_analysis::{
-        delete_analysis_resources_and_clean_graph, 
-        find_last_analysis_resource,
+        self, 
         LandscapeAnalysis,
     },
     landmark::Landmark,
@@ -32,13 +31,13 @@ pub async fn run_analysis_pipeline(landscape_analysis_id: Uuid) -> Result<Landsc
     let date = landscape_analysis.interaction_date;
 
 
-    let last_analysis = find_last_analysis_resource(user_id, &pool)?;
+    let last_analysis = landscape_analysis::find_last_analysis_resource(user_id, &pool)?;
     let last_analysis_option_id = last_analysis.as_ref().map(|last_analysis| last_analysis.resource.id).clone();
 
     let high_level_analysis = process_analysis(user_id, date.unwrap().date(), &landscape_analysis_id, last_analysis_option_id, &pool)
         .await
         .map_err(|e| {
-            let _ = delete_analysis_resources_and_clean_graph(landscape_analysis_id, &pool);
+            let _ = landscape_analysis::delete_leaf_and_cleanup(landscape_analysis_id, &pool);
             println!("Error: {:?}", e);
             e
         })?;
