@@ -7,7 +7,11 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
 };
 use crate::entities_v2::{
-    landscape_analysis::{delete_analysis_resources_and_clean_graph, find_last_analysis_resource},
+    landscape_analysis::{
+        delete_analysis_resources_and_clean_graph, 
+        find_last_analysis_resource,
+        LandscapeAnalysis,
+    },
     landmark::Landmark,
 };
 use crate::work_analyzer::{
@@ -18,34 +22,32 @@ use crate::work_analyzer::{
 use chrono::NaiveDate;
 use uuid::Uuid;
 
-pub async fn run_analysis_pipeline(analysis_id: Uuid) -> Result<Resource, PpdcError> {
-    println!("work_analyzer::analysis_processor::run_analysis_pipeline: Running analysis pipeline for analysis id: {}", analysis_id);
+pub async fn run_analysis_pipeline(landscape_analysis_id: Uuid) -> Result<LandscapeAnalysis, PpdcError> {
+    println!("work_analyzer::analysis_processor::run_analysis_pipeline: Running analysis pipeline for analysis id: {}", landscape_analysis_id);
     let pool = get_global_pool();
 
-    let analysis = Resource::find(analysis_id, &pool)?;
+    let landscape_analysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
 
-    let analysis_interaction = &analysis.find_resource_author_interaction(&pool)?;
-    let user_id = analysis_interaction.interaction_user_id;
-    let date = analysis_interaction
-        .interaction_date
-        .date();
+    let user_id = landscape_analysis.user_id;
+    let date = landscape_analysis.interaction_date;
 
-    let last_analysis = find_last_analysis_resource(analysis_interaction.interaction_user_id, &pool)?;
+
+    let last_analysis = find_last_analysis_resource(user_id, &pool)?;
     let last_analysis_option_id = last_analysis.as_ref().map(|last_analysis| last_analysis.resource.id).clone();
 
-    let high_level_analysis = process_analysis(user_id, date, &analysis.id, last_analysis_option_id, &pool)
+    let high_level_analysis = process_analysis(user_id, date.unwrap().date(), &landscape_analysis_id, last_analysis_option_id, &pool)
         .await
         .map_err(|e| {
-            let _ = delete_analysis_resources_and_clean_graph(analysis_id, &pool);
+            let _ = delete_analysis_resources_and_clean_graph(landscape_analysis_id, &pool);
             println!("Error: {:?}", e);
             e
         })?;
-    let mut analysis = analysis;
-    analysis.title = high_level_analysis.title;
-    analysis.subtitle = high_level_analysis.subtitle;
-    analysis.content = high_level_analysis.content;
-    analysis.maturing_state = MaturingState::Finished;
-    let analysis = analysis.update(&pool)?;
+    let mut landscape_analysis = landscape_analysis;
+    landscape_analysis.title = high_level_analysis.title;
+    landscape_analysis.subtitle = high_level_analysis.subtitle;
+    landscape_analysis.plain_text_state_summary = high_level_analysis.content;
+    landscape_analysis.processing_state = MaturingState::Finished;
+    let landscape_analysis = landscape_analysis.update(&pool)?;
 
     match last_analysis {
         Some(last_analysis) => {
@@ -53,14 +55,14 @@ pub async fn run_analysis_pipeline(analysis_id: Uuid) -> Result<Resource, PpdcEr
             last_analysis_resource.maturing_state = MaturingState::Trashed;
             let last_analysis_resource = last_analysis_resource.update(&pool)?;
             let mut new_parent_relation =
-                NewResourceRelation::new(analysis.id, last_analysis_resource.id);
+                NewResourceRelation::new(landscape_analysis.id, last_analysis_resource.id);
             new_parent_relation.user_id = Some(user_id);
             new_parent_relation.relation_type = Some("prnt".to_string());
             new_parent_relation.create(pool)?;
-            Ok(analysis)
+            Ok(landscape_analysis)
         }
         None => {
-            Ok(analysis)
+            Ok(landscape_analysis)
         }
     }
 }

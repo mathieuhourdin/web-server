@@ -122,6 +122,15 @@ impl Landmark {
         }
         Ok(landmarks)
     }
+
+    pub fn get_for_landscape_analysis(landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+        let resource_relations = ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
+        let landmarks = resource_relations
+            .into_iter()
+            .map(|relation| Landmark::from_resource(relation.origin_resource))
+            .collect::<Vec<Landmark>>();
+        Ok(landmarks)
+    }
 }
 
 impl NewLandmark {
