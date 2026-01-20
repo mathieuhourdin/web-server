@@ -7,6 +7,27 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-01-20 Work on the prompts for the pipeline
+
+I have some troubles with the prompts i use. I have solved some issues, such as lost landmarks in the analysis process.
+However now I have other problems : 
+
+- Creation of unidentified landmarks that pollute the pipeline in the following steps (resources with empty title and not enougth data to identifie resource)
+- Sometime not every resources are identified, the model focuses on specific parts of the trace and forgets about the rest.
+- Sometime the process creates resources like "Chatgpt and databases", which we don't want. It is more like a concept or a thema. 
+- We somehow need to refine our ontology because we have some troubles defining if something should be a resource or not. Eg if I use chatgpt to make some research on a topic, should chatgpt be a resource ? Should the topic be a resource ? I think we could have a topic landmark type, and a tool landmark type. Maybe a LLM should be in the same category as reading (we want to know what percentage of the information the user gets is from reading and what percentage is from LLMs)
+- The matching step asks things we don't need, such as repeating the title... we should only ask for a match of ids and maybe a confidence. Then we just rebuild the full element from the matching.
+
+### 2026-01-20 Work on lens and landmark_analysis
+
+Last days I have made some work on lens creation, deletion and landmark_analysis processing.
+It is now possible to create and delete a lens, and that will create landmark_analysis for each trace between fork and target.
+
+This basically works now.
+
+However there is still some cleaning that needs to be done : use the v2 entities everywhere in the work_analyzer, remove some code that is not used anymore.
+I also should be carefull about cleaning the graph if there is an error in the processing.
+
 ### 2026-01-16 next steps
 
 I have made some moves in the direction of the new model.
