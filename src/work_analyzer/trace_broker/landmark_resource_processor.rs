@@ -33,13 +33,18 @@ impl ExtractedElementForLandmark for ExtractedElementForResource {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchedExtractedElementForResource {
+    pub id: Option<String>,
     pub resource_label: String,
     pub extracted_content: String,
     pub generated_context: String,
     pub resource_id: Option<String>,
+    pub confidence: f32,
 }
 
 impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
+    fn id(&self) -> Option<String> {
+        self.id.clone()
+    }
     fn title(&self) -> String {
         self.resource_label.clone()
     }
@@ -57,6 +62,9 @@ impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
     }
     fn landmark_type(&self) -> ResourceType {
         ResourceType::Resource
+    }
+    fn confidence(&self) -> f32 {
+        self.confidence
     }
 }
 #[derive(Debug, Serialize, Deserialize)]

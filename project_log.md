@@ -7,6 +7,27 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-01-20 Work on lean matching
+
+I want to give local ids to the elements and the landmarks that I match in the matching process. 
+It requires to think it well to have a simple way to create those local ids, and to do the matching next.
+
+I think i should have a struct like local array.
+The elements would be something like : 
+struct LocalArrayItem<T> {
+local_id : i32,
+    item: T
+}
+with T se / de.
+Then we have a method that takes a vec of items, and creates a LocalArray.
+
+We have a method that serialize the item the way we want for the matching (flat structure).
+We do the same for the two arrays.
+
+Then we send this to the LLM.
+
+After that we use a method that will reconstruct the desired matched elements from the two localArrays
+
 ### 2026-01-20 Work on the prompts for the pipeline
 
 I have some troubles with the prompts i use. I have solved some issues, such as lost landmarks in the analysis process.

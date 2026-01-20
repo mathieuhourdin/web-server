@@ -12,6 +12,45 @@ use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
 use crate::db::DbPool;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+
+#[derive(Serialize, Deserialize)]
+#[serde(bound(serialize = "T: Serialize", deserialize = "T: for<'a> Deserialize<'a>"))]
+
+pub struct LocalArrayItem<T>
+{
+    pub local_id: i32,
+    #[serde(flatten)]
+    pub item: T,
+}
+
+
+#[derive(Serialize, Deserialize)]
+#[serde(bound(serialize = "T: Serialize", deserialize = "T: for<'a> Deserialize<'a>"))]
+pub struct LocalArray<T> 
+{
+    pub items: Vec<LocalArrayItem<T>>,
+}
+
+impl<T> LocalArray<T> 
+where T: Serialize + for<'a> Deserialize<'a>
+{
+    pub fn from_vec(items: Vec<T>) -> Self {
+        LocalArray { items: 
+        items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| LocalArrayItem { local_id: index as i32, item: item })
+            .collect::<Vec<LocalArrayItem<T>>>()
+        }
+    }
+}
+pub struct ElementLandmarkMatchingResult {
+    pub element: Option<String>,
+    pub landmark_id: Option<String>,
+    pub confidence: f32,
+}
 
 pub trait NewLandmarkForExtractedElement {
     fn title(&self) -> String;
@@ -40,12 +79,14 @@ pub trait NewLandmarkForExtractedElement {
 }
 
 pub trait MatchedExtractedElementForLandmark {
+    fn id(&self) -> Option<String>;
     fn title(&self) -> String;
     fn subtitle(&self) -> String;
     fn extracted_content(&self) -> String;
     fn generated_context(&self) -> String;
     fn landmark_id(&self) -> Option<String>;
     fn landmark_type(&self) -> ResourceType;
+    fn confidence(&self) -> f32;
 
     fn to_new_resource(&self) -> NewResource {
         NewResource::new(
