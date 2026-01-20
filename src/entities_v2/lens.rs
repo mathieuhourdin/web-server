@@ -26,6 +26,7 @@ use crate::entities_v2::{
     landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
     trace::Trace
 };
+use crate::work_analyzer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Lens {
@@ -312,6 +313,9 @@ pub async fn post_lens_route(
     let lens = lens.with_forked_landscape(&pool)?;
     let lens = lens.with_current_landscape(&pool)?;
     let lens = lens.with_current_trace(&pool)?;
+
+    tokio::spawn(async move { work_analyzer::analysis_processor::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await });
+
     Ok(Json(lens))
 }
 
