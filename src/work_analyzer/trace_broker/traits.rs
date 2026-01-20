@@ -126,6 +126,7 @@ pub trait LandmarkProcessor: Send + Sync {
     ) -> Result<Vec<Landmark>, PpdcError> {
         println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements");
         let mut new_landmarks: Vec<Landmark> = vec![];
+        let mut updated_landmark_ids: Vec<Uuid> = vec![];
         for element in matched_elements {
             let created_landmark;
             if element.landmark_id().is_none() {
@@ -133,11 +134,24 @@ pub trait LandmarkProcessor: Send + Sync {
                 let new_landmark = new_resource_proposition.to_new_landmark(context.analysis_resource_id, context.user_id, None);
                 created_landmark = new_landmark.create(&context.pool)?;
             } else {
-                created_landmark = landmark_create_copy_child_and_return(Uuid::parse_str(element.landmark_id().clone().unwrap().as_str())?, context.user_id, context.analysis_resource_id, &context.pool)?;
+                let updated_landmark_id = Uuid::parse_str(element.landmark_id().clone().unwrap().as_str())?;
+                created_landmark = landmark_create_copy_child_and_return(updated_landmark_id, context.user_id, context.analysis_resource_id, &context.pool)?;
+                updated_landmark_ids.push(updated_landmark_id);
             }
             //let element = MatchedExtractedElementForLandmarkType::from(element);
             let _ = Self::element_create_for_trace_landmark_and_analysis(element, context.trace.id, &created_landmark, context.analysis_resource_id, context.user_id, &context.pool);
             new_landmarks.push(created_landmark);
+        }
+        for landmark in &context.landmarks {
+            println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements landmark id : {}", landmark.id);
+            println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements updated_landmark_ids : {:?}", updated_landmark_ids);
+            if !updated_landmark_ids.contains(&landmark.id) {
+                println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements creating new resource relation for landmark id : {}", landmark.id);
+                let mut new_resource_relation = NewResourceRelation::new(landmark.id, context.analysis_resource_id);
+                new_resource_relation.relation_type = Some("refr".to_string());
+                new_resource_relation.user_id = Some(context.user_id);
+                new_resource_relation.create(&context.pool)?;
+            }
         }
         Ok(new_landmarks)
     }

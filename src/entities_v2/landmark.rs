@@ -127,6 +127,10 @@ impl Landmark {
         let resource_relations = ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
         let landmarks = resource_relations
             .into_iter()
+            .filter(|relation| {
+                relation.origin_resource.resource_type == ResourceType::Resource
+                || relation.origin_resource.resource_type == ResourceType::Task
+            })
             .map(|relation| Landmark::from_resource(relation.origin_resource))
             .collect::<Vec<Landmark>>();
         Ok(landmarks)

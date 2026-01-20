@@ -148,8 +148,8 @@ impl Lens {
         let lens = Lens::from_resource(lens);
         let lens = lens.with_user_id(pool)?;
         let lens = lens.with_forked_landscape(pool)?;
-        let lens = lens.clone().with_current_landscape(pool)?;
-        let lens = lens.clone().with_current_trace(pool)?;
+        let lens = lens.with_current_landscape(pool)?;
+        let lens = lens.with_current_trace(pool)?;
         Ok(lens)
     }
     pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
@@ -178,7 +178,7 @@ impl Lens {
     pub fn get_user_lenses(user_id: Uuid, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
         let lenses = Interaction::find_paginated_outputs_for_user(0, 200, user_id, "lens", pool)?;
         let lenses = lenses.into_iter()
-            .map(|interaction| Lens::from_resource(interaction.resource))
+            .map(|interaction| Lens::find_full_lens(interaction.resource.id, pool).unwrap())
             .collect::<Vec<Lens>>();
         Ok(lenses)
     }

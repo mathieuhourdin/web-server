@@ -44,7 +44,6 @@ pub enum ResourceType {
 
 impl ResourceType {
     pub fn from_code(code: &str) -> Result<ResourceType, PpdcError> {
-        dbg!(code);
         match code {
             "book" => Ok(ResourceType::Book),
             "rdnt" => Ok(ResourceType::ReadingNote),

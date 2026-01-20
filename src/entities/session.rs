@@ -106,7 +106,7 @@ impl Session {
     }
 
     pub fn get_valid_session_from_id(id: &str, pool: &DbPool) -> Result<Session, PpdcError> {
-        println!("generate_valid_session_from_id id : {id}");
+        //println!("generate_valid_session_from_id id : {id}");
         let decoded_session_id = Uuid::parse_str(id);
         if decoded_session_id.is_err() {
             println!("Error when decoding session_id: {id}");
@@ -130,10 +130,10 @@ impl Session {
                 }
             }
         };
-        println!(
-            "generate_valid_session_from_id found_session id {:#?}",
-            found_session.id
-        );
+        //println!(
+        //    "generate_valid_session_from_id found_session id {:#?}",
+        //    found_session.id
+        //);
         Ok(found_session)
     }
 }

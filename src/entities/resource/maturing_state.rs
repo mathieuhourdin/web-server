@@ -20,7 +20,6 @@ pub enum MaturingState {
 
 impl MaturingState {
     pub fn from_code(code: &str) -> Result<MaturingState, PpdcError> {
-        dbg!(code);
         match code {
             "drft" => Ok(MaturingState::Draft),
             "rvew" => Ok(MaturingState::Review),

@@ -14,14 +14,14 @@ use async_trait::async_trait;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExtractedElementForResource {
-    pub resource: String,
+    pub resource_label: String,
     pub extracted_content: String,
     pub generated_context: String,
 }
 
 impl ExtractedElementForLandmark for ExtractedElementForResource {
     fn reference(&self) -> String {
-        self.resource.clone()
+        self.resource_label.clone()
     }
     fn extracted_content(&self) -> String {
         self.extracted_content.clone()
@@ -33,7 +33,7 @@ impl ExtractedElementForLandmark for ExtractedElementForResource {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchedExtractedElementForResource {
-    pub resource: String,
+    pub resource_label: String,
     pub extracted_content: String,
     pub generated_context: String,
     pub resource_id: Option<String>,
@@ -41,7 +41,7 @@ pub struct MatchedExtractedElementForResource {
 
 impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
     fn title(&self) -> String {
-        self.resource.clone()
+        self.resource_label.clone()
     }
     fn subtitle(&self) -> String {
         "".to_string()
@@ -83,7 +83,7 @@ impl NewLandmarkForExtractedElement for NewResourceForExtractedElement {
         self.title.clone()
     }
     fn subtitle(&self) -> String {
-        self.subtitle.clone()
+        format!("Par {} - {}", self.author, self.resource_type)
     }
     fn content(&self) -> String {
         self.content.clone()
@@ -112,21 +112,41 @@ impl LandmarkProcessor for ResourceProcessor {
 
     fn extract_system_prompt(&self) -> String {
         let system_prompt = format!("
-        Tu es un moteur de décomposition de traces en éléments simples pour une plateforme de suivi de travail.
-        Dans cette trace, il est possible que l'utilisateur fasse référence à des ressources (livres, articles, films...).
-        Identifie ces ressources, et extrais les parties de la trace qui parlent de ces ressources.
-        Ne renvoie des éléments que si une ressource est réellement mentionnée dans la trace.
-        Si aucune ressource n'est mentionnée, renvoie une liste vide.
+            Tu es un extracteur de ressources mentionnées dans une trace utilisateur (plateforme de suivi de travail).
 
-        Pour t'aider à identifier les ressources malgré certaines abréviations et références implicites, je te donne une liste de ressources que l'utilisateur a déjà explorées.
-        L'utilisateur peut faire référence à des ressources qui ne sont pas dans cette liste.
+            Définition (IMPORTANT) :
+            - Une 'ressource' est un artefact externe identifiable : livre, article, papier, billet, film, série, podcast, outil/logiciel, site web, service en ligne.
+            - Ne considère PAS comme ressource des objets internes du système (ex: Analyse de la trace ..., IDs, noms de runs, landmark, analysis, etc.).
 
+            Objectif :
+            - Repérer toutes les ressources explicitement mentionnées dans la trace.
+            - Pour chaque ressource trouvée, produire un élément JSON avec :
+              - resource_label : nom/titre de la ressource (chaîne courte, normalisée si possible)
+              - extracted_content : extrait exact de la trace (copié/collé) qui justifie la mention (1 à 3 phrases max)
+              - generated_context : 1 à 2 phrases décrivant le rôle de la ressource DANS CETTE TRACE UNIQUEMENT.
+                - Interdit : ajouter des faits externes (auteur, date, résumé du livre, contexte hors trace).
+                - Autorisé : reformuler ce que la trace dit (ex: 'mentionné comme lecture', 'utilisé pour explorer un sujet', 'envie de lire').
 
-        Réponds uniquement avec du JSON valide respectant le schéma donné.
-        "
+            Règles strictes :
+            - Si AU MOINS une ressource est explicitement mentionnée, la liste 'elements' NE DOIT PAS être vide.
+            - Si aucune ressource n'est mentionnée, renvoyer {{'elements': []}} .
+            - Ne renvoyer que du JSON valide, sans texte autour, et respectant exactement le schéma.
+
+            Schéma de sortie (à respecter) :
+            {{
+              'elements': [
+                {{
+                  'resource_label': 'string',
+                  'extracted_content': 'string',
+                  'generated_context': 'string'
+                }}
+              ]
+            }}"
         );
+
         system_prompt
     }
+
     fn extract_schema(&self) -> serde_json::Value {
         let schema = serde_json::json!({
             "type": "object",
@@ -136,11 +156,11 @@ impl LandmarkProcessor for ResourceProcessor {
                     "items": {
                         "type": "object", 
                         "properties": {
-                            "resource": {"type": "string"},
+                            "resource_label": {"type": "string"},
                             "extracted_content": {"type": "string"},
                             "generated_context": {"type": "string"}
                         },
-                        "required": ["resource", "extracted_content", "generated_context"],
+                        "required": ["resource_label", "extracted_content", "generated_context"],
                         "additionalProperties": false
                     }
                 }
@@ -202,7 +222,7 @@ impl LandmarkProcessor for ResourceProcessor {
                     "items": {
                         "type": "object", 
                         "properties": {
-                            "resource": {"type": "string"},
+                            "resource_label": {"type": "string"},
                             "extracted_content": {"type": "string"},
                             "generated_context": {"type": "string"},
                             "resource_id": {
@@ -218,7 +238,7 @@ impl LandmarkProcessor for ResourceProcessor {
                             }
                         },
                         "required": [
-                            "resource",
+                            "resource_label",
                             "extracted_content",
                             "generated_context",
                             "resource_id"
@@ -238,10 +258,21 @@ impl LandmarkProcessor for ResourceProcessor {
     ) -> Result<Vec<ExtractedElementForResource>, PpdcError> {
 
         println!("work_analyzer::trace_broker::split_trace_in_elements_gpt_request");
-        let resources_string = context.landmarks.iter().map(|resource| format!(" Title: {}, Subtitle: {}, Content: {}", resource.title.clone(), resource.subtitle.clone(), resource.content.clone())).collect::<Vec<String>>().join("\n");
+        let resources_string = context.landmarks
+            .iter()
+            .filter(|resource| resource.landmark_type == ResourceType::Resource)
+            .map(|resource| format!(
+                " Title: {}, Subtitle: {}, Content: {}", 
+                resource.title.clone(), 
+                resource.subtitle.clone(),
+                resource.content.clone()))
+                .collect::<Vec<String>>()
+                .join("\n");
         let user_prompt = format!("
-        Ressources déjà explorées : {}\n\n
-        Trace à décomposer : {}\n\n",
+        Ressources déjà explorées :Ressources déjà connues (peut aider à reconnaître des abréviations) :
+         {}\n\n
+        Trace à analyser : 
+        {}",
         resources_string, context.trace.content.as_str());
         let gpt_request_config = GptRequestConfig::new(
             "gpt-4.1-nano".to_string(),
@@ -261,7 +292,11 @@ impl LandmarkProcessor for ResourceProcessor {
         println!("work_analyzer::trace_broker::match_elements_and_resources");
 
         let elements_string = serde_json::to_string(&elements)?;
-        let resources_string = serde_json::to_string(&context.landmarks)?;
+        let resources = context.landmarks
+            .iter()
+            .filter(|resource| resource.landmark_type == ResourceType::Resource)
+            .collect::<Vec<&Landmark>>();
+        let resources_string = serde_json::to_string(&resources)?;
 
         let user_prompt = format!("
         Éléments simples : {}\n\n
@@ -301,10 +336,11 @@ impl LandmarkProcessor for ResourceProcessor {
         context: &ProcessorContext,
     ) -> Result<Vec<Landmark>, PpdcError> {
         let elements = self.extract_elements(context).await?;
-        if elements.is_empty() {
-            return Ok(vec![]);
+        let mut matched_elements: Vec<MatchedExtractedElementForResource> = vec![];
+        if !elements.is_empty() {
+            matched_elements = self.match_elements(&elements, context).await?;
         }
-        let matched_elements = self.match_elements(&elements, context).await?;
+        let matched_elements = matched_elements;
         let new_landmarks = self.create_new_landmarks_and_elements(matched_elements, context).await?;
         Ok(new_landmarks)
         

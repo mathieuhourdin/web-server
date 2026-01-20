@@ -97,7 +97,7 @@ pub fn create_router() -> Router {
 
     let analysis_router = Router::new()
         .route("/", post(landscape_analysis::post_analysis_route))
-        .route("/:id", delete(landscape_analysis::delete_analysis_route))
+        .route("/:id", delete(landscape_analysis::delete_analysis_route).get(landscape_analysis::get_analysis_route))
         .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
