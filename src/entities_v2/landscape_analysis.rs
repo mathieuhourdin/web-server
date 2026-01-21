@@ -378,7 +378,6 @@ pub async fn delete_analysis_route(
 #[debug_handler]
 pub async fn get_landmarks_route(
     Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<Landmark>>, PpdcError> {
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
@@ -399,7 +398,6 @@ pub async fn get_last_analysis_route(
 #[debug_handler]
 pub async fn get_analysis_route(
     Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;

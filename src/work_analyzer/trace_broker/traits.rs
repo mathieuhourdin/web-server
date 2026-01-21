@@ -13,10 +13,9 @@ use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
 use crate::db::DbPool;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use crate::work_analyzer::trace_broker::matching::{
     LocalArray,
-    MatchingResult,
     Matches,
     LandmarkForMatching,
     self

@@ -68,7 +68,8 @@ impl Lens {
             fork_landscape_id: None,
             current_landscape_id: None,
             current_trace_id: Uuid::nil(),
-            current_state_date: NaiveDateTime::from_timestamp(0, 0),
+            #[allow(deprecated)]
+            current_state_date: NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
             model_version: "".to_string(),
             autoplay: false,
             is_primary: false,
@@ -322,7 +323,6 @@ pub async fn post_lens_route(
 #[debug_handler]
 pub async fn delete_lens_route(
     Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Lens>, PpdcError> {
     println!("Deleting lens: {:?}", id);

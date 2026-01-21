@@ -45,7 +45,7 @@ pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<Lands
         pool: pool.clone(),
     };
     let resource_processor = ResourceProcessor::new();
-    let new_landmarks = resource_processor.process(&context).await?;
+    let _new_landmarks = resource_processor.process(&context).await?;
     Ok(landscape_analysis)
 }
 
