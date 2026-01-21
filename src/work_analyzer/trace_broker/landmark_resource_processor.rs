@@ -247,7 +247,7 @@ impl LandmarkProcessor for ResourceProcessor {
                         "properties": {
                             "element_id": {"type": "string"},
                             "confidence": {"type": "number"},
-                            "landmark_id": {
+                            "candidate_id": {
                                 "anyOf": [
                                     {
                                         "type": "string",
@@ -262,7 +262,7 @@ impl LandmarkProcessor for ResourceProcessor {
                         "required": [
                             "element_id",
                             "confidence",
-                            "landmark_id"
+                            "candidate_id"
                         ],
                         "additionalProperties": false
                     }
@@ -310,7 +310,9 @@ impl LandmarkProcessor for ResourceProcessor {
         elements: Vec<ExtractedElementForResource>,
         context: &ProcessorContext,
     ) -> Result<Vec<MatchedExtractedElementForResource>, PpdcError> {
-        self.match_elements_base(elements, &context.landmarks).await
+        let matched_elements = self.match_elements_base(elements, &context.landmarks).await?;
+        println!("work_analyzer::trace_broker::match_elements matched_elements: {:?}", matched_elements);
+        Ok(matched_elements)
         /*
         println!("work_analyzer::trace_broker::match_elements_and_resources");
 
@@ -364,6 +366,7 @@ impl LandmarkProcessor for ResourceProcessor {
             matched_elements = self.match_elements(elements, context).await?;
         }
         let matched_elements = matched_elements;
+        println!("work_analyzer::trace_broker::process matched_elements: {:?}", matched_elements);
         let new_landmarks = self.create_new_landmarks_and_elements(matched_elements, context).await?;
         Ok(new_landmarks)
         

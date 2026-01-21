@@ -25,7 +25,7 @@ pub trait MatchableElement {
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(bound(serialize = "T: Serialize", deserialize = "T: DeserializeOwned"))]
 pub struct LocalArrayItem<T>
 {
@@ -35,7 +35,7 @@ pub struct LocalArrayItem<T>
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(bound(serialize = "T: Serialize", deserialize = "T: DeserializeOwned"))]
 pub struct LocalArray<T> 
 {
@@ -149,6 +149,8 @@ mod tests {
             elements,
             landmarks,
         );
+
+        println!("result: {:?}", result);
         
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].reference(), "My Resource");

@@ -3,6 +3,7 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
     error::PpdcError,
 };
+use std::fmt::Debug;
 use crate::entities_v2::landmark::{
     Landmark,
     NewLandmark,
@@ -117,7 +118,7 @@ pub struct ProcessorConfig {
 #[async_trait]
 pub trait LandmarkProcessor: Send + Sync {
     
-    type ExtractedElement: ExtractedElementForLandmark + Send + Serialize + DeserializeOwned;
+    type ExtractedElement: ExtractedElementForLandmark + Send + Serialize + DeserializeOwned + Debug;
     type MatchedElement: MatchedExtractedElementForLandmark + Send;
     type NewLandmark: NewLandmarkForExtractedElement + Send;
 
@@ -163,6 +164,9 @@ pub trait LandmarkProcessor: Send + Sync {
             self.match_elements_schema()
         );
         let matching_results: Matches = gpt_request_config.execute().await?;
+        println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base matching_results: {:?}", matching_results);
+        println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base elements_local_array: {:?}", elements_local_array);
+        println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base landmarks_local_array: {:?}", landmarks_local_array);
         let matched_elements = matching::attach_matching_results_to_elements(matching_results.matches, elements_local_array, landmarks_local_array);
         Ok(matched_elements)
     }

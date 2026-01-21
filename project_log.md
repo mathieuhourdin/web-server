@@ -7,6 +7,15 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-01-21 Finished matching
+
+The lean matching is working now. We dont ask for the whole entity but just for a matching using int ids.
+Matching could become a more standealone feature of the pipline at some point maybe. But for now we keep it like that.
+
+Lets focus on the next refinements in the pipline : 
+- dont pollute the ontology with empty landmarks 
+- make the extraction work on the whole trace and don't miss some references to resources.
+
 ### 2026-01-20 Work on lean matching
 
 I want to give local ids to the elements and the landmarks that I match in the matching process. 
