@@ -12,40 +12,16 @@ use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
 use crate::db::DbPool;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use crate::work_analyzer::trace_broker::matching::{
+    LocalArray,
+    MatchingResult,
+    Matches,
+    LandmarkForMatching,
+    self
+};
 
 
-#[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "T: Serialize", deserialize = "T: for<'a> Deserialize<'a>"))]
-
-pub struct LocalArrayItem<T>
-{
-    pub local_id: i32,
-    #[serde(flatten)]
-    pub item: T,
-}
-
-
-#[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "T: Serialize", deserialize = "T: for<'a> Deserialize<'a>"))]
-pub struct LocalArray<T> 
-{
-    pub items: Vec<LocalArrayItem<T>>,
-}
-
-impl<T> LocalArray<T> 
-where T: Serialize + for<'a> Deserialize<'a>
-{
-    pub fn from_vec(items: Vec<T>) -> Self {
-        LocalArray { items: 
-        items
-            .into_iter()
-            .enumerate()
-            .map(|(index, item)| LocalArrayItem { local_id: index as i32, item: item })
-            .collect::<Vec<LocalArrayItem<T>>>()
-        }
-    }
-}
 pub struct ElementLandmarkMatchingResult {
     pub element: Option<String>,
     pub landmark_id: Option<String>,
@@ -79,23 +55,28 @@ pub trait NewLandmarkForExtractedElement {
 }
 
 pub trait MatchedExtractedElementForLandmark {
-    fn id(&self) -> Option<String>;
-    fn title(&self) -> String;
-    fn subtitle(&self) -> String;
+    fn reference(&self) -> String;
     fn extracted_content(&self) -> String;
     fn generated_context(&self) -> String;
     fn landmark_id(&self) -> Option<String>;
-    fn landmark_type(&self) -> ResourceType;
     fn confidence(&self) -> f32;
 
     fn to_new_resource(&self) -> NewResource {
         NewResource::new(
-            self.title(),
-            self.subtitle(),
-            self.extracted_content(),
+            self.reference(),
+            "".to_string(),
+            format!("{} - {}", self.extracted_content(), self.generated_context()),
             ResourceType::Event
         )
     }
+    fn new(
+        reference: String,
+        extracted_content: String,
+        generated_context: String,
+        landmark_id: Option<String>,
+        confidence: f32,
+    ) -> Self
+    where Self: Sized;
 }
 
 pub trait ExtractedElementForLandmark {
@@ -136,7 +117,7 @@ pub struct ProcessorConfig {
 #[async_trait]
 pub trait LandmarkProcessor: Send + Sync {
     
-    type ExtractedElement: ExtractedElementForLandmark + Send;
+    type ExtractedElement: ExtractedElementForLandmark + Send + Serialize + DeserializeOwned;
     type MatchedElement: MatchedExtractedElementForLandmark + Send;
     type NewLandmark: NewLandmarkForExtractedElement + Send;
 
@@ -156,9 +137,35 @@ pub trait LandmarkProcessor: Send + Sync {
 
     async fn match_elements(
         &self,
-        elements: &Vec<Self::ExtractedElement>,
+        elements: Vec<Self::ExtractedElement>,
         context: &ProcessorContext,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError>;
+
+    async fn match_elements_base(
+        &self,
+        elements: Vec<Self::ExtractedElement>,
+        landmarks: &Vec<Landmark>,
+    ) -> Result<Vec<Self::MatchedElement>, PpdcError> {
+
+        let landmarks_for_matching: Vec<LandmarkForMatching> = landmarks.iter().map(|landmark| LandmarkForMatching::from(landmark)).collect();
+        let elements_local_array = LocalArray::from_vec(elements);
+        let landmarks_local_array = LocalArray::from_vec(landmarks_for_matching);
+        let user_prompt = format!("
+            Elements: {}\n\n
+            Candidates: {}\n\n
+        ",
+        serde_json::to_string(&elements_local_array)?,
+        serde_json::to_string(&landmarks_local_array)?);
+        let gpt_request_config = GptRequestConfig::new(
+            "gpt-4.1-nano".to_string(),
+            &self.match_elements_system_prompt(),
+            &user_prompt,
+            self.match_elements_schema()
+        );
+        let matching_results: Matches = gpt_request_config.execute().await?;
+        let matched_elements = matching::attach_matching_results_to_elements(matching_results.matches, elements_local_array, landmarks_local_array);
+        Ok(matched_elements)
+    }
 
     async fn create_new_landmarks_and_elements(
         &self,

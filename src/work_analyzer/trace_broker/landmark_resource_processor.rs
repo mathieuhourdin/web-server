@@ -12,7 +12,7 @@ use crate::work_analyzer::trace_broker::{
 use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExtractedElementForResource {
     pub resource_label: String,
     pub extracted_content: String,
@@ -31,7 +31,7 @@ impl ExtractedElementForLandmark for ExtractedElementForResource {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MatchedExtractedElementForResource {
     pub id: Option<String>,
     pub resource_label: String,
@@ -42,14 +42,8 @@ pub struct MatchedExtractedElementForResource {
 }
 
 impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
-    fn id(&self) -> Option<String> {
-        self.id.clone()
-    }
-    fn title(&self) -> String {
+    fn reference(&self) -> String {
         self.resource_label.clone()
-    }
-    fn subtitle(&self) -> String {
-        "".to_string()
     }
     fn extracted_content(&self) -> String {
         self.extracted_content.clone()
@@ -60,16 +54,23 @@ impl MatchedExtractedElementForLandmark for MatchedExtractedElementForResource {
     fn landmark_id(&self) -> Option<String> {
         self.resource_id.clone()
     }
-    fn landmark_type(&self) -> ResourceType {
-        ResourceType::Resource
-    }
     fn confidence(&self) -> f32 {
         self.confidence
     }
+    fn new(
+        reference: String,
+        extracted_content: String,
+        generated_context: String,
+        landmark_id: Option<String>,
+        confidence: f32,
+    ) -> Self {
+        Self { id: None, resource_label: reference, extracted_content, generated_context, resource_id: landmark_id, confidence }
+    }
+
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchedElementsForResources {
-    pub matched_elements: Vec<MatchedExtractedElementForResource>,
+    pub matches: Vec<MatchedExtractedElementForResource>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExtractedElementsForResources {
@@ -208,32 +209,45 @@ impl LandmarkProcessor for ResourceProcessor {
 
     fn match_elements_system_prompt(&self) -> String {
         let system_prompt = format!("
-        Tu es un moteur de correspondance entre éléments simples et ressources.
-        Des éléments simples ont été extraits d'un texte utilisateur, et ils sont censés faire référence à des ressources.
-        Les ressources actuellement explorées par l'utilisateur sont fournies.
-        Pour chaque élément simple, tu dois chercher s'il correspond à une ressource.
-        Si un élément simple correspond à une ressource, renvoie le avec l'ID de la ressource.
-        Si un élément simple ne correspond à aucune ressource, renvoie le quand même, avec une valeur null pour le resource_id.
-        conserve les champs existants de l'élément simple.
-        Renvoie tous les éléments simples fournis, même s'ils ne correspondent pas à une ressource.
-        Réponds uniquement avec du JSON valide respectant le schéma donné.
-        "
-        );
+            Tu es un moteur de matching entre une liste d'éléments et une liste de candidats (landmarks).
+
+            On te fournit :
+            - elements : une liste d'objets. Chaque objet a un champ local_id (entier ou string court) et des champs texte décrivant une mention (label, evidence, context…).
+            - candidates : une liste d'objets. Chaque objet a un champ local_id et des champs texte décrivant une ressource existante (title, subtitle, content, type…).
+
+            Ta tâche :
+            - Pour CHAQUE élément, choisir au plus UN candidat correspondant.
+            - Si aucun candidat ne correspond suffisamment, choisir null.
+
+            Règles STRICTES :
+            1) Tu dois produire exactement un résultat par élément (même nombre et même ordre que elements).
+            2) Tu ne dois jamais modifier, réécrire ou copier les textes d'entrée (label/evidence/context/title/etc.).
+               Tu dois uniquement renvoyer des identifiants et un score.
+            3) Utilise uniquement les local_id fournis. N'invente jamais d'ID.
+            4) Si tu hésites, renvoie landmark_local_id = null et une confidence faible.
+
+            Sortie :
+            - Réponds uniquement avec du JSON valide, conforme au schéma fourni.
+            - Le JSON doit contenir 'matches': une liste d'objets avec :
+              - element_local_id : l'ID local de l'élément
+              - landmark_local_id : l'ID local du candidat choisi, ou null
+              - confidence : un nombre entre 0 et 1
+              ");
         system_prompt
     }
+
     fn match_elements_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "matched_elements": { 
+                "matches": { 
                     "type": "array", 
                     "items": {
                         "type": "object", 
                         "properties": {
-                            "resource_label": {"type": "string"},
-                            "extracted_content": {"type": "string"},
-                            "generated_context": {"type": "string"},
-                            "resource_id": {
+                            "element_id": {"type": "string"},
+                            "confidence": {"type": "number"},
+                            "landmark_id": {
                                 "anyOf": [
                                     {
                                         "type": "string",
@@ -246,16 +260,15 @@ impl LandmarkProcessor for ResourceProcessor {
                             }
                         },
                         "required": [
-                            "resource_label",
-                            "extracted_content",
-                            "generated_context",
-                            "resource_id"
+                            "element_id",
+                            "confidence",
+                            "landmark_id"
                         ],
                         "additionalProperties": false
                     }
                 }
             },
-            "required": ["matched_elements"],
+            "required": ["matches"],
             "additionalProperties": false
         })
     }
@@ -294,9 +307,11 @@ impl LandmarkProcessor for ResourceProcessor {
 
     async fn match_elements(
         &self,
-        elements: &Vec<ExtractedElementForResource>,
+        elements: Vec<ExtractedElementForResource>,
         context: &ProcessorContext,
     ) -> Result<Vec<MatchedExtractedElementForResource>, PpdcError> {
+        self.match_elements_base(elements, &context.landmarks).await
+        /*
         println!("work_analyzer::trace_broker::match_elements_and_resources");
 
         let elements_string = serde_json::to_string(&elements)?;
@@ -316,7 +331,7 @@ impl LandmarkProcessor for ResourceProcessor {
             self.match_elements_schema()
         );
         let matched_elements: MatchedElementsForResources = gpt_request_config.execute().await?;
-        Ok(matched_elements.matched_elements)
+        Ok(matched_elements.matched_elements)*/
     }
     async fn get_new_landmark_for_extracted_element(
         &self,
@@ -346,7 +361,7 @@ impl LandmarkProcessor for ResourceProcessor {
         let elements = self.extract_elements(context).await?;
         let mut matched_elements: Vec<MatchedExtractedElementForResource> = vec![];
         if !elements.is_empty() {
-            matched_elements = self.match_elements(&elements, context).await?;
+            matched_elements = self.match_elements(elements, context).await?;
         }
         let matched_elements = matched_elements;
         let new_landmarks = self.create_new_landmarks_and_elements(matched_elements, context).await?;

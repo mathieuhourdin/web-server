@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use crate::entities::resource::resource_type::ResourceType;
 use crate::work_analyzer::trace_broker::traits::NewLandmarkForExtractedElement;
 
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NewLandmarkForExtractedElementType {
     pub title: String,
