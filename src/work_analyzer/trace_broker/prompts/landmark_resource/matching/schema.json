@@ -1,0 +1,34 @@
+{
+    "type": "object",
+    "properties": {
+        "matches": { 
+            "type": "array", 
+            "items": {
+                "type": "object", 
+                "properties": {
+                    "element_id": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "candidate_id": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "element_id",
+                    "confidence",
+                    "candidate_id"
+                ],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": ["matches"],
+    "additionalProperties": false
+}

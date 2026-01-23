@@ -1,8 +1,6 @@
-use crate::entities::{
-    resource::{NewResource, Resource, resource_type::ResourceType, maturing_state::MaturingState},
-    resource_relation::NewResourceRelation,
-    error::PpdcError,
-};
+use crate::{entities::{
+    error::PpdcError, resource::{NewResource, Resource, resource_type::ResourceType}, resource_relation::NewResourceRelation
+}, entities_v2::landmark};
 use std::fmt::Debug;
 use crate::entities_v2::landmark::{
     Landmark,
@@ -20,7 +18,8 @@ use crate::work_analyzer::trace_broker::matching::{
     LandmarkForMatching,
     self
 };
-
+use crate::work_analyzer::trace_broker::types::IdentityState;
+use std::collections::HashMap;
 
 pub struct ElementLandmarkMatchingResult {
     pub element: Option<String>,
@@ -32,7 +31,7 @@ pub trait NewLandmarkForExtractedElement {
     fn title(&self) -> String;
     fn subtitle(&self) -> String;
     fn content(&self) -> String;
-    fn identified(&self) -> bool;
+    fn identity_state(&self) -> IdentityState;
     fn landmark_type(&self) -> ResourceType;
 
     fn to_new_landmark(
@@ -46,7 +45,7 @@ pub trait NewLandmarkForExtractedElement {
             self.subtitle(),
             self.content(),
             self.landmark_type(),
-            if self.identified() { MaturingState::Finished } else { MaturingState::Draft },
+            self.identity_state().into(),
             analysis_id,
             user_id,
             parent_id,
@@ -56,6 +55,7 @@ pub trait NewLandmarkForExtractedElement {
 
 pub trait MatchedExtractedElementForLandmark {
     fn reference(&self) -> String;
+    fn description(&self) -> String;
     fn extracted_content(&self) -> String;
     fn generated_context(&self) -> String;
     fn landmark_id(&self) -> Option<String>;
@@ -64,7 +64,7 @@ pub trait MatchedExtractedElementForLandmark {
     fn to_new_resource(&self) -> NewResource {
         NewResource::new(
             self.reference(),
-            "".to_string(),
+            self.description(),
             format!("{} - {}", self.extracted_content(), self.generated_context()),
             ResourceType::Event
         )
@@ -118,7 +118,7 @@ pub struct ProcessorConfig {
 pub trait LandmarkProcessor: Send + Sync {
     
     type ExtractedElement: ExtractedElementForLandmark + Send + Serialize + DeserializeOwned + Debug;
-    type MatchedElement: MatchedExtractedElementForLandmark + Send;
+    type MatchedElement: MatchedExtractedElementForLandmark + Send + From<(Self::ExtractedElement, Option<String>, f32)>;
     type NewLandmark: NewLandmarkForExtractedElement + Send;
 
     fn new() -> Self;
@@ -147,6 +147,31 @@ pub trait LandmarkProcessor: Send + Sync {
         landmarks: &Vec<Landmark>,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError> {
 
+        let mut matched_elements: Vec<Self::MatchedElement> = vec![];
+        let mut elements = elements;
+        
+        // Collect references of matched elements to remove them later
+        let mut matched_references: std::collections::HashSet<String> = std::collections::HashSet::new();
+        
+        for element in &elements {
+            for landmark in landmarks {
+                if element.reference() == landmark.title {
+                    matched_elements.push(Self::MatchedElement::new(
+                        element.reference(),
+                        element.extracted_content(),
+                        element.generated_context(),
+                        Some(landmark.id.to_string()),
+                        1.0,
+                    ));
+                    matched_references.insert(element.reference());
+                    break; // Found a match, no need to check other landmarks
+                }
+            }
+        }
+        
+        // Remove matched elements from the vector
+        elements.retain(|element| !matched_references.contains(&element.reference()));
+
         let landmarks_for_matching: Vec<LandmarkForMatching> = landmarks.iter().map(|landmark| LandmarkForMatching::from(landmark)).collect();
         let elements_local_array = LocalArray::from_vec(elements);
         let landmarks_local_array = LocalArray::from_vec(landmarks_for_matching);
@@ -154,19 +179,22 @@ pub trait LandmarkProcessor: Send + Sync {
             Elements: {}\n\n
             Candidates: {}\n\n
         ",
-        serde_json::to_string(&elements_local_array)?,
-        serde_json::to_string(&landmarks_local_array)?);
+        serde_json::to_string(&elements_local_array.items)?,
+        serde_json::to_string(&landmarks_local_array.items)?);
         let gpt_request_config = GptRequestConfig::new(
             "gpt-4.1-nano".to_string(),
             &self.match_elements_system_prompt(),
             &user_prompt,
-            self.match_elements_schema()
+            Some(self.match_elements_schema())
         );
         let matching_results: Matches = gpt_request_config.execute().await?;
         println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base matching_results: {:?}", matching_results);
         println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base elements_local_array: {:?}", elements_local_array);
         println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base landmarks_local_array: {:?}", landmarks_local_array);
-        let matched_elements = matching::attach_matching_results_to_elements(matching_results.matches, elements_local_array, landmarks_local_array);
+        let attached_elements = matching::attach_matching_results_to_elements(matching_results.matches, elements_local_array, landmarks_local_array);
+
+        matched_elements.extend(attached_elements);
+
         Ok(matched_elements)
     }
 
@@ -178,6 +206,7 @@ pub trait LandmarkProcessor: Send + Sync {
         println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements");
         let mut new_landmarks: Vec<Landmark> = vec![];
         let mut updated_landmark_ids: Vec<Uuid> = vec![];
+        let mut landmarks_updates: HashMap<Uuid, Uuid> = HashMap::new();
         for element in matched_elements {
             let created_landmark;
             if element.landmark_id().is_none() {
@@ -185,12 +214,19 @@ pub trait LandmarkProcessor: Send + Sync {
                 let new_landmark = new_resource_proposition.to_new_landmark(context.analysis_resource_id, context.user_id, None);
                 created_landmark = new_landmark.create(&context.pool)?;
             } else {
+                // If two elements match the same landmark, the two should be linked to the same new landmark.
                 let updated_landmark_id = Uuid::parse_str(element.landmark_id().clone().unwrap().as_str())?;
-                created_landmark = landmark_create_copy_child_and_return(updated_landmark_id, context.user_id, context.analysis_resource_id, &context.pool)?;
-                updated_landmark_ids.push(updated_landmark_id);
+                if landmarks_updates.contains_key(&updated_landmark_id) {
+                    created_landmark = Landmark::find(landmarks_updates.get(&updated_landmark_id).unwrap().clone(), &context.pool)?;
+                } else {
+                    // If it is the first reference to this landmark, we create a new landmark and link it to the parent landmark.
+                    created_landmark = landmark_create_copy_child_and_return(updated_landmark_id, context.user_id, context.analysis_resource_id, &context.pool)?;
+                    landmarks_updates.insert(updated_landmark_id, created_landmark.id);
+                    updated_landmark_ids.push(updated_landmark_id);
+                }
             }
             //let element = MatchedExtractedElementForLandmarkType::from(element);
-            let _ = Self::element_create_for_trace_landmark_and_analysis(element, context.trace.id, &created_landmark, context.analysis_resource_id, context.user_id, &context.pool);
+            let _ = Self::element_create_for_trace_landmark_and_analysis(element, context.trace.id, created_landmark.id, context.analysis_resource_id, context.user_id, &context.pool);
             new_landmarks.push(created_landmark);
         }
         for landmark in &context.landmarks {
@@ -222,7 +258,7 @@ pub trait LandmarkProcessor: Send + Sync {
     fn element_create_for_trace_landmark_and_analysis(
         element: Self::MatchedElement,
         trace_id: Uuid,
-        landmark: &Landmark,
+        landmark_id: Uuid,
         analysis_resource_id: Uuid,
         user_id: Uuid,
         pool: &DbPool,
@@ -233,7 +269,7 @@ pub trait LandmarkProcessor: Send + Sync {
         new_resource_relation.relation_type = Some("elmt".to_string());
         new_resource_relation.user_id = Some(user_id);
         new_resource_relation.create(pool)?;
-        let mut new_resource_relation = NewResourceRelation::new(created_element.id, landmark.id);
+        let mut new_resource_relation = NewResourceRelation::new(created_element.id, landmark_id);
         new_resource_relation.relation_type = Some("elmt".to_string());
         new_resource_relation.user_id = Some(user_id);
         new_resource_relation.create(pool)?;

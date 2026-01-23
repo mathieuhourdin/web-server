@@ -1,0 +1,32 @@
+{
+    "type": "object",
+    "properties": {
+        "elements": {
+            "type": "array", 
+            "items": {
+                "type": "object", 
+                "properties": {
+                    "resource_identifier": {"type": "string"},
+                    "author": {"type": "string"},
+                    "theme": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "extracted_content": {"type": "string"},
+                    "generated_context": {"type": "string"}
+                },
+                "required": ["resource_identifier", "author", "theme", "extracted_content", "generated_context"],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": ["elements"],
+    "additionalProperties": false
+}

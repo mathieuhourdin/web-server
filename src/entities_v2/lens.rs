@@ -293,6 +293,7 @@ pub async fn post_lens_route(
     let current_trace_id = traces.last().unwrap().id;
     let mut previous_landscape_analysis_id = start_landscape_id;
     let mut landscape_analysis_ids: Vec<Uuid> = Vec::new();
+    landscape_analysis_ids.push(start_landscape_id);
     for trace in traces {
         let new_landscape_analysis = NewLandscapeAnalysis::new_placeholder(
             session.user_id.unwrap(), 

@@ -62,31 +62,28 @@ pub fn attach_matching_results_to_elements<E, M>(
     landmarks_local_array: LocalArray<LandmarkForMatching>
 ) -> Vec<M> 
 where E: ExtractedElementForLandmark,
-      M: MatchedExtractedElementForLandmark,
+      M: MatchedExtractedElementForLandmark + From<(E, Option<String>, f32)>,
 {
     let mut matched_elements: Vec<M> = vec![];
 
     for element in elements_local_array.items {
         let mut candidate_id = None;
-        let mut confidence = 0.0;
+        let mut confidence = 1.0;
         if let Some(matching_result) = matching_results
             .iter()
             .find(|item| item.element_id == Some(element.local_id.clone())) {
-            confidence = matching_result.confidence;
-            let landmark = landmarks_local_array.items
-                .iter()
-                .find(|item| Some(item.local_id.clone()) == matching_result.candidate_id);
-            if let Some(landmark) = landmark {
-                candidate_id = Some(landmark.item.id.to_string());
-            } 
+            // We get into this block if the element is in the matching results.
+            if (matching_result.confidence > 0.4) {
+                confidence = matching_result.confidence;
+                let landmark = landmarks_local_array.items
+                    .iter()
+                    .find(|item| Some(item.local_id.clone()) == matching_result.candidate_id);
+                if let Some(landmark) = landmark {
+                    candidate_id = Some(landmark.item.id.to_string());
+                } 
+            }
         }
-        matched_elements.push(MatchedExtractedElementForLandmark::new(
-            element.item.reference(),
-            element.item.extracted_content(),
-            element.item.generated_context(),
-            candidate_id,
-            confidence
-        ));
+        matched_elements.push(M::from((element.item, candidate_id, confidence)));
     }
     matched_elements
 }
@@ -99,6 +96,7 @@ pub struct LandmarkForMatching {
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    #[serde(skip_serializing)]
     pub landmark_type: ResourceType,
 }
 
@@ -122,7 +120,7 @@ mod tests {
     fn test_basic_matching() {
         // Un élément, un landmark, un match
         let element = ExtractedElementForResource {
-            resource_label: "My Resource".to_string(),
+            resource_identifier: "My Resource".to_string(),
             extracted_content: "Some content".to_string(),
             generated_context: "Some context".to_string(),
         };

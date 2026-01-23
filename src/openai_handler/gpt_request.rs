@@ -5,7 +5,7 @@ pub struct GptRequestConfig {
     pub model: String,
     pub system_prompt: String,
     pub user_prompt: String,
-    pub schema: serde_json::Value,
+    pub schema: Option<serde_json::Value>,
 }
 
 impl GptRequestConfig {
@@ -13,7 +13,7 @@ impl GptRequestConfig {
         model: String,
         system_prompt: impl Into<String>,
         user_prompt: impl Into<String>,
-        schema: serde_json::Value,
+        schema: Option<serde_json::Value>,
     ) -> Self {
         Self {
             model,

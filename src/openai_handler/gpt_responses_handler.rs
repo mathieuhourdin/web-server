@@ -44,7 +44,7 @@ struct ContentItem {
 pub async fn make_gpt_request<T>(
     system_prompt: String,
     user_prompt: String,
-    schema: serde_json::Value,
+    schema: Option<serde_json::Value>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
 where
     T: for<'de> serde::Deserialize<'de>,
@@ -55,7 +55,7 @@ where
     let client = Client::new();
 
     let gpt_request = GPTRequest {
-        model: "gpt-4.1-nano-2025-04-14".to_string(),
+        model: "gpt-4.1-mini-2025-04-14".to_string(),
         input: vec![
             GPTMessage {
                 role: "system".to_string(),
@@ -67,14 +67,14 @@ where
             },
         ],
         max_output_tokens: 4500,
-        text: serde_json::json!({
+        text: schema.clone().map(|schema| serde_json::json!({
             "format": {
                 "type": "json_schema",
                 "name": "reference_schema",
-                "schema": schema,
+                "schema": schema.clone(),
                 "strict": true
             }
-        }),
+        })).unwrap_or_default(),
     };
 
     // Serialize request to JSON string for persistence
@@ -125,7 +125,7 @@ where
     let pool = db::get_global_pool();
     let new_call = NewLlmCall::new(
         call_status.clone(),
-        "gpt-4.1-nano-2025-04-14".to_string(),
+        "gpt-4.1-mini-2025-04-14".to_string(),
         full_prompt,
         schema_json,
         request_json,
@@ -172,9 +172,17 @@ where
 
     println!("Extracted JSON text: {json_text}");
 
-    // Ici : on attend que json_text soit un JSON valide qui matche T
-    let result: T = serde_json::from_str(json_text)
-        .map_err(|e| format!("Failed to deserialize JSON into target type: {e}"))?;
+    // Si pas de schéma, on parse directement le texte brut comme String
+    // Sinon, on parse comme JSON selon le schéma
+    let result: T = if schema.is_none() {
+        // Pas de schéma : texte brut, on parse directement comme String
+        serde_json::from_value(serde_json::Value::String(json_text.to_string()))
+            .map_err(|e| format!("Failed to deserialize text into target type: {e}"))?
+    } else {
+        // Avec schéma : on parse comme JSON
+        serde_json::from_str(json_text)
+            .map_err(|e| format!("Failed to deserialize JSON into target type: {e}"))?
+    };
 
     Ok(result)
 }

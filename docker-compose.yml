@@ -9,6 +9,7 @@ services:
     volumes:
       - ./:/usr/src/app
       - cargo-cache:/usr/local/cargo/registry
+      - cargo-target:/usr/src/app/target
     command: bash -c "cargo watch -x run"
   postgres_db:
     image: postgres
@@ -33,7 +34,9 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl
     depends_on:
       - web-server
+    restart: unless-stopped
 
 volumes:
   pgdata:
   cargo-cache:
+  cargo-target:

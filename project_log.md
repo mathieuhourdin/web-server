@@ -7,6 +7,35 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-01-23  Work on the landmark API and pipeline prompts
+
+I created a route to get a landmark with all its parents landmarks, and the elements of its parents.
+This way we can get all the history of a given landmark.
+
+
+I also worked on the pipeline. 
+- Removed the already existing resources from the extract prompt to avoid false positive
+- Created a new prompt with examples of the desired outputs.
+- I removed the too custom examples (Ughetto in the prompt while my traces are about him)
+- More distinction between resources I consume and resources I produce
+- Desired but not read resources 
+
+It works better I think : have no false positive (repeated Ughetto mentions).
+I have also made some tests with stronger models (first I thought I was using 4.1-mini but actually I was still on nano)
+- It gives really better results with mini
+- base 4.1 creates big costs to run the full pipeline, with results ok but not far better than mini.
+
+
+I also made some researches about RAG implementation in my pipeline.
+I could use searches using Tavily.
+Maybe it would fit after the extraction and the matching : if a resource is not properly identified, make a search query to have more things about it. Or even before the matching I dont know. Need to make some tests.
+
+### 2026-01-22 Work on full-text context and matching
+
+I created a track for a full-text context summary of the user work. It gives some ok results but tends to repeat some information. Maybe it could be better with a stronger model.
+
+I also added a non LLM matching step in the pipeline. If an extracted element has the same title of an existing resource, it will be matched automatically and the data is not sent to the LLM.
+
 ### 2026-01-21 Finished matching
 
 The lean matching is working now. We dont ask for the whole entity but just for a matching using int ids.

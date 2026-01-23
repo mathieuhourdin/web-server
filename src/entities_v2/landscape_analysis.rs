@@ -10,7 +10,7 @@ use crate::entities_v2::{
     landmark::Landmark,
     lens::Lens,
 };
-use crate::work_analyzer::analysis_processor::run_analysis_pipeline;
+//use crate::work_analyzer::analysis_processor::run_analysis_pipeline;
 use axum::{
     debug_handler,
     extract::{Extension, Json, Path},
@@ -148,7 +148,7 @@ impl LandscapeAnalysis {
         self.update(pool)
     }
 
-    pub fn get_landmarks(self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+    pub fn get_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
         let landmarks = Landmark::get_for_landscape_analysis(self.id, pool)?;
         Ok(landmarks)
     }
@@ -358,7 +358,7 @@ pub async fn post_analysis_route(
     new_interaction.interaction_progress = 0;
     new_interaction.create(&pool)?;
 
-    tokio::spawn(async move { run_analysis_pipeline(analysis_resource.id).await });
+    //tokio::spawn(async move { run_analysis_pipeline(analysis_resource.id).await });
 
     //let resources = process_analysis(payload.user_id, date, &analysis_resource.id, last_analysis_id_option, &pool).await?;
 

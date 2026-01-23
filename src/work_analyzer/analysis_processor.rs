@@ -5,6 +5,7 @@ use crate::entities::{
     interaction::model::{Interaction, InteractionWithResource},
     resource::{maturing_state::MaturingState, Resource},
     resource_relation::NewResourceRelation,
+    user::User,
 };
 use crate::entities_v2::{
     landscape_analysis::{
@@ -12,6 +13,7 @@ use crate::entities_v2::{
         LandscapeAnalysis,
     },
     landmark::Landmark,
+    trace::Trace
 };
 use crate::work_analyzer::{
     trace_broker::{ResourceProcessor, ProcessorContext, LandmarkProcessor},
@@ -32,22 +34,50 @@ pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uu
 pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<LandscapeAnalysis, PpdcError> {
     println!("work_analyzer::analysis_processor::run_landscape_analysis: Running analysis pipeline for landscape analysis id: {}", landscape_analysis_id);
     let pool = get_global_pool();
-    let landscape_analysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
-    let previous_landscape_analysis_id = landscape_analysis.parent_analysis_id.expect("Should have a parent analysis id at this stage");
-    let previous_landscape_analysis = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, &pool)?;
-    let previous_landscape_analysis_landmarks = previous_landscape_analysis.get_landmarks(&pool)?;
-    let current_landscape_analysis_trace = Resource::find(landscape_analysis.analyzed_trace_id.expect("Should have a trace id at this stage"), &pool)?;
-    let context = ProcessorContext {
-        landmarks: previous_landscape_analysis_landmarks,
-        trace: current_landscape_analysis_trace,
-        user_id: landscape_analysis.user_id,
-        analysis_resource_id: landscape_analysis_id,
-        pool: pool.clone(),
-    };
-    let resource_processor = ResourceProcessor::new();
-    let _new_landmarks = resource_processor.process(&context).await?;
+    let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
+    let previous_landscape_analysis_id = landscape_analysis.parent_analysis_id;
+    let analyzed_trace_id = landscape_analysis.analyzed_trace_id;
+    
+    let full_trace_string: String;
+    let previous_context: String;
+    if let (Some(analyzed_trace_id), Some(previous_landscape_analysis_id)) = (analyzed_trace_id, previous_landscape_analysis_id) {
+        let previous_landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, &pool)?;
+        let previous_landscape_analysis_landmarks = previous_landscape_analysis.get_landmarks(&pool)?;
+        let analyzed_trace = Trace::find_full_trace(analyzed_trace_id, &pool)?;
+        let current_landscape_analysis_trace = Resource::find(analyzed_trace_id, &pool)?;
+        previous_context = previous_landscape_analysis.plain_text_state_summary;
+        let context = ProcessorContext {
+            landmarks: previous_landscape_analysis_landmarks,
+            trace: current_landscape_analysis_trace,
+            user_id: landscape_analysis.user_id,
+            analysis_resource_id: landscape_analysis_id,
+            pool: pool.clone(),
+        };
+        let resource_processor = ResourceProcessor::new();
+        let _new_landmarks = resource_processor.process(&context).await?;
+        full_trace_string = format!("
+            Titre : {}\n
+            Sous titre : {}\n
+            Contenu : {}\n",
+            analyzed_trace.title,
+            analyzed_trace.subtitle,
+            analyzed_trace.content
+        );
+    } else {
+        full_trace_string = User::find(&landscape_analysis.user_id, &pool)?.biography.unwrap_or_default();
+        previous_context = "Aucun contexte pour l'instant".to_string();
+    }
+    /*let new_high_level_analysis = get_high_level_analysis(
+        &previous_context, 
+        &full_trace_string)
+        .await?;
+    let mut landscape_analysis = landscape_analysis;
+    landscape_analysis.plain_text_state_summary = new_high_level_analysis;
+    let landscape_analysis = landscape_analysis.update(&pool)?;*/
     Ok(landscape_analysis)
 }
+
+/*
 
 pub async fn run_analysis_pipeline(landscape_analysis_id: Uuid) -> Result<LandscapeAnalysis, PpdcError> {
     println!("work_analyzer::analysis_processor::run_analysis_pipeline: Running analysis pipeline for analysis id: {}", landscape_analysis_id);
@@ -191,4 +221,4 @@ pub async fn process_trace(
     let new_landmarks = resource_processor.process(&context).await?;
     let new_resources = new_landmarks.into_iter().map(|landmark| Landmark::to_resource(landmark.clone())).collect::<Vec<Resource>>();
     Ok(new_resources)
-}
+} */

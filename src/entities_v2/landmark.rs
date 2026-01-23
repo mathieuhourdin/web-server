@@ -34,6 +34,20 @@ pub struct Landmark {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LandmarkWithParentsAndElements {
+    #[serde(flatten)]
+    pub landmark: Landmark,
+    pub parent_landmarks: Vec<Landmark>,
+    pub related_elements: Vec<Resource>,
+}
+
+impl LandmarkWithParentsAndElements {
+    pub fn new(landmark: Landmark, parent_landmarks: Vec<Landmark>, related_elements: Vec<Resource>) -> Self {
+        Self { landmark, parent_landmarks, related_elements }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewLandmark {
     pub title: String,
@@ -93,6 +107,38 @@ impl Landmark {
         let result = self.to_resource();
         let updated_resource = result.update(pool)?;
         Ok(Landmark::from_resource(updated_resource))
+    }
+
+    pub fn find_parent(&self, pool: &DbPool) -> Result<Option<Landmark>, PpdcError> {
+        let resource_relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let parent = resource_relations
+            .into_iter()
+            .find(|relation| relation.resource_relation.relation_type == "prnt")
+            .map(|relation| Landmark::from_resource(relation.target_resource));
+        Ok(parent)
+    }
+
+    pub fn find_elements(&self, pool: &DbPool) -> Result<Vec<Resource>, PpdcError> {
+        let resource_relations = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        let elements = resource_relations
+            .into_iter()
+            .filter(|relation| relation.resource_relation.relation_type == "elmt")
+            .map(|relation| relation.origin_resource);
+        Ok(elements.collect::<Vec<Resource>>())
+    }
+
+    pub fn find_with_parents(id: Uuid, pool: &DbPool) -> Result<LandmarkWithParentsAndElements, PpdcError> {
+        let origin_landmark = Landmark::find(id, pool)?;
+        let mut elements: Vec<Resource> = origin_landmark.find_elements(pool)?;
+        let mut parents: Vec<Landmark> = vec![];
+        let mut current_landmark = origin_landmark.clone();
+        while let Some(parent) = current_landmark.find_parent(pool)? {
+            let current_elements = parent.find_elements(pool)?;
+            elements.extend(current_elements);
+            parents.push(parent.clone());
+            current_landmark = parent;
+        }
+        Ok(LandmarkWithParentsAndElements::new(origin_landmark, parents, elements))
     }
 
     pub fn get_analysis(self, pool: &DbPool) -> Result<Resource, PpdcError> {
@@ -183,8 +229,6 @@ impl NewLandmark {
 
         // create the landmark with all positive flags
         let mut landmark = self;
-        landmark.publishing_state = "fnsh".to_string();
-        landmark.maturing_state = MaturingState::Finished;
         let new_resource = landmark.to_new_resource();
         let created_resource = new_resource.create(pool)?;
         let landmark = Landmark::from_resource(created_resource);
@@ -203,12 +247,6 @@ impl NewLandmark {
             new_resource_relation.relation_type = Some("prnt".to_string());
             new_resource_relation.user_id = Some(user_id);
             new_resource_relation.create(pool)?;
-
-            // update the parent landmark to the draft state
-            let mut parent_landmark = Landmark::find(parent_id, pool)?;
-            parent_landmark.publishing_state = "drft".to_string();
-            parent_landmark.maturing_state = MaturingState::Draft;
-            parent_landmark.update(pool)?;
         }
 
         // link the landmark to the user with the interaction
@@ -232,6 +270,15 @@ pub async fn get_landmarks_for_user_route(
 ) -> Result<Json<Vec<Landmark>>, PpdcError> {
     let landmarks = Landmark::find_all_up_to_date_for_user(user_id, &pool)?;
     Ok(Json(landmarks))
+}
+
+#[debug_handler]
+pub async fn get_landmark_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<LandmarkWithParentsAndElements>, PpdcError> {
+    let landmark = Landmark::find_with_parents(id, &pool)?;
+    Ok(Json(landmark))
 }
 
 pub fn landmark_create_copy_child_and_return(

@@ -100,6 +100,9 @@ pub fn create_router() -> Router {
         .route("/:id", delete(landscape_analysis::delete_analysis_route).get(landscape_analysis::get_analysis_route))
         .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let landmarks_router = Router::new()
+        .route("/:id", get(landmark::get_landmark_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
@@ -128,6 +131,7 @@ pub fn create_router() -> Router {
         .nest("/analysis", analysis_router)
         .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)
+        .nest("/landmarks", landmarks_router)
         .route("/link_preview", post(link_preview::post_preview_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))
