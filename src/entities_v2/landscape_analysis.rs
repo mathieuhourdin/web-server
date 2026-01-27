@@ -115,6 +115,26 @@ impl LandscapeAnalysis {
         })
     }
 
+    pub fn find_full_parent(&self, pool: &DbPool) -> Result<Option<LandscapeAnalysis>, PpdcError> {
+        let parent_analysis_id = self.parent_analysis_id;
+        if let Some(parent_analysis_id) = parent_analysis_id {
+            let parent_analysis = LandscapeAnalysis::find_full_analysis(parent_analysis_id, pool)?;
+            Ok(Some(parent_analysis))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn find_all_parents(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+        let mut parents = vec![];
+        let mut current_analysis = self.clone();
+        while let Some(parent_analysis) = current_analysis.find_full_parent(pool)? {
+            parents.push(parent_analysis.clone());
+            current_analysis = parent_analysis;
+        }
+        Ok(parents)
+    }
+
     /// Finds a LandscapeAnalysis by id and fully hydrates it from the database.
     pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         println!("Finding full analysis: {:?}", id);
@@ -402,6 +422,16 @@ pub async fn get_analysis_route(
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
     Ok(Json(landscape))
+}
+
+#[debug_handler]
+pub async fn get_analysis_parents_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<LandscapeAnalysis>>, PpdcError> {
+    let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    let parents = landscape.find_all_parents(&pool)?;
+    Ok(Json(parents))
 }
 
 pub fn delete_leaf_and_cleanup(

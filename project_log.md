@@ -7,6 +7,47 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-01-27 About the reading notes pipeline
+
+I could have a pipeline that manages two specific types of traces : 
+- Journaling traces. Very diverse, multiple subjects and resources, maybe some "noise" about small things of the day...
+- Reading notes traces. All about the same resource, even if some links could be done with other resources/questions/tasks.
+
+The first stage could be to identify the type of trace we are talking about. I see multiple options : 
+- The pipeline recognizes only based on the trace what kind of trace we are talking about.
+- The trace type is recognized from the description of the journal the trace belongs to
+- The journal has a type that is infered once for all from the description of the journal
+- The user chooses the type of journal in a list of choices.
+
+I think that for a first experiment we could have a user choosed journal type because it avoids creating a new pipeline stage.
+
+Another question arises : 
+Do we want to store the whole trace in the resource landmark or to split it in small pieces ?
+
+To have a really enriched content, we would love to have 
+- a trace
+- in a trace, a split of multiple elements that are linked both to the trace and to a specific theme.
+This way, we also have a graph of the different theme that appears in a given resource. We could present the resource from different point of view : chronologically, or by theme, etc. It is also a nice way to link themes to resources. It is also a way to test a theme identification pipeline.
+
+A pipeline for such a trace would look like : 
+
+- Identify the resource it is talking about
+- Search the existing resources to see if any title matches (be careful about abreviations such as HOM, DDIA)
+- Create a title, subtitle
+- analyze the existing themes
+
+### 2026-01-26 Thoughts about next steps
+
+Several next steps are possible. I should also consider that I need to show something in production quite quickly.
+
+Options : 
+- work more deeply on resources identification. Be sure to identify all resources in a trace etc. Maybe implement some RAG for better identification with Tavily.
+- Extend the trace analysis for other landmarks : task and/or deliverable.
+- Do the full switch for the new entity model (think about how to keep the existing written articles display)
+- Do some cleaning on some parts of the platform : auth, api response format, CI/CD, maybe some tests.
+- Extend the analysis toward different kind of traces. More precisely, create a specific pipeline for traces that are about a unique subject (note taking about a book for instance). This is a specific use case that could be my real MVP, and probably far easier to implement than the task following part. It could require to give more knowledge to the journal entity (it could hold some global parameters for the traces it holds, such as this is a journal for traces that are notes about books). This way the analysis pipeline could be much more precise and don't load all the context each time (if we are sure that it is a trace about a book, we should retry the analysis until we find the referenced resource, do some RAG, or even ask the user if nothing is found)
+- Work on the public display of the plateform (a SSR part with a link to the SPA part, and maybe just a given page for the preview of each article)
+
 ### 2026-01-23  Work on the landmark API and pipeline prompts
 
 I created a route to get a landmark with all its parents landmarks, and the elements of its parents.

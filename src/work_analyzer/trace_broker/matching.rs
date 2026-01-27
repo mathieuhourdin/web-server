@@ -123,6 +123,8 @@ mod tests {
             resource_identifier: "My Resource".to_string(),
             extracted_content: "Some content".to_string(),
             generated_context: "Some context".to_string(),
+            author: "John Doe".to_string(),
+            theme: Some("Theme".to_string()),
         };
         let elements = LocalArray::from_vec(vec![element]);
         

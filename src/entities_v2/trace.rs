@@ -10,7 +10,7 @@ use crate::entities::{
 use crate::work_analyzer::trace_broker::trace_qualify::qualify_trace;
 use axum::{
     debug_handler,
-    extract::{Extension, Json},
+    extract::{Extension, Json, Path},
 };
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
@@ -160,6 +160,15 @@ impl Trace {
         traces.push(trace);
         Ok(traces)
     }
+
+    pub fn get_all_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+        let interactions = Interaction::find_all_traces_for_user(user_id, pool)?;
+        let traces = interactions
+            .into_iter()
+            .map(|interaction| Trace::from_resource(interaction.resource))
+            .collect();
+        Ok(traces)
+    }
 }
 
 /// Struct for creating a new Trace with all required data.
@@ -268,4 +277,22 @@ pub async fn post_trace_route(
     //let element_resources = create_element_resources_from_trace(resource.clone(), session.user_id.unwrap(), &pool).await?;
 
     Ok(Json(resource))
+}
+
+#[debug_handler]
+pub async fn get_all_traces_for_user_route(
+    Extension(pool): Extension<DbPool>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<Vec<Trace>>, PpdcError> {
+    let traces = Trace::get_all_for_user(user_id, &pool)?;
+    Ok(Json(traces))
+}
+
+#[debug_handler]
+pub async fn get_trace_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Trace>, PpdcError> {
+    let trace = Trace::find_full_trace(id, &pool)?;
+    Ok(Json(trace))
 }

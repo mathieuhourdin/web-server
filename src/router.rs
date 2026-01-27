@@ -37,6 +37,7 @@ pub fn create_router() -> Router {
         .route("/:id/analysis", post(landscape_analysis::post_analysis_route).get(landscape_analysis::get_last_analysis_route))
         .route("/:id/landmarks", get(landmark::get_landmarks_for_user_route))
         .route("/:id/lens", get(lens::get_user_lenses_route))
+        .route("/:id/traces", get(trace::get_all_traces_for_user_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()
@@ -73,6 +74,7 @@ pub fn create_router() -> Router {
 
     let traces_router = Router::new()
         .route("/", post(trace::post_trace_route))
+        .route("/:id", get(trace::get_trace_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let interactions_router = Router::new()
@@ -99,6 +101,7 @@ pub fn create_router() -> Router {
         .route("/", post(landscape_analysis::post_analysis_route))
         .route("/:id", delete(landscape_analysis::delete_analysis_route).get(landscape_analysis::get_analysis_route))
         .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
+        .route("/:id/parents", get(landscape_analysis::get_analysis_parents_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let landmarks_router = Router::new()
         .route("/:id", get(landmark::get_landmark_route))

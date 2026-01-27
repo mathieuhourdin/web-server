@@ -236,6 +236,24 @@ impl Interaction {
             pool,
         )
     }
+
+    /// Actually, we only get the last 200 traces for the user.
+    pub fn find_all_traces_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<InteractionWithResource>, PpdcError> {
+        Interaction::load_paginated(
+            0,
+            200,
+            Interaction::filter_outputs()
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .order(interactions::interaction_date.desc()),
+            "all",
+            "trce",
+            pool,
+        )
+    }
+
     pub fn find_last_analysis_for_user(
         user_id: Uuid,
         pool: &DbPool,
