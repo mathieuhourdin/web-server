@@ -6,6 +6,81 @@ Every day I work on this project, I take notes of :
 - My thoughts, hesitations and considerations on the project
 - Some results of expermientations
 
+### 2026-01-29 Small Idea
+
+I could use a search pipeline on the traces to find matches on some words, and to look for known abreviations etc. When an abreviation is found, i could replace the abreviation by the content of the matched landmark. I could have it for the proper names too. Like if i find a book title... Don't know if it's a good idea to do it before analysis, I should try it.
+
+### 2026-01-29 Naming of the first element analyzed from a trace
+
+I should find an element name. Options : 
+- FirstElement : always the first element created when we analyse a trace. It reflects the constraint that the following analytic elements belong on this fondational element, and that this element should never be deleted if other are created in the same landscape_analyis.
+- AnalyticTwin : a twin of the trace. Ok, it makes me think about digital twins, but somehow it doesn't reflect the fact that it is part of the analytic world. Not as much as TraceMirror.
+- TraceMirror : it is a mirror of the trace in the analytic part of the platform. This has the advantage of keeping the optical/perception metaphore we have in the rest of the platform.
+
+I should have a constraint on the elements : Unique trace_id, analysis_id where kind = FirstElement.
+
+A question is : should the trace mirror be referenced by the next created elements ? It is a good way to make it explicit that this element is fondational. The fact that I shouldn't delete this element before others is important. I may want to replay the end of the analysis but not the pre analysis pipeline.
+
+
+
+### 2026-01-28 Thoughts about new pipeline
+
+I had some thoughts about the new pipeline.
+Maybe it should not be a new pipeline.
+It should just be a first stage in the existing pipeline. Why ? 
+When we analyze a note trace, there is a lot of work to do that is very similar to the journal trace analysis. Eg. the search for resources cited in the trace. Because a lot of notes will reference bibliography.
+
+So what we really need to do is to think deeper this first stage of analysis we already have when we persist the new trace.
+I think the trace mostly should have some metadata from a first anaysis. 
+And those metadata should help the Landmark processing the trace by the following pipeline.
+
+Currently the pre analysis of the trace is not in the pipleine. It runs synchronously when I persist a new trace.
+
+However it is somehow anti-pattern to do so. All LLM created data, not validated by the user, are supposed to belong to the analytic entites (Lens, Landscape, Landmark, Elements). 
+Howver we need to think a little bit about that. It has some frictions with how some parts of the app is designed now
+
+Currently I use those generated content for : 
+- I display the traces with their title and a substitle. 
+- And I create a interaction_date that equals to the date they were really written at (not the date they are added to the plateform, for imports cases)
+
+Title : if the title is now in an other entity, related to the analysis, I wont really be able to use it for display purpose. Because it is not easy to get the related analytic element for a trace, because there could be multiple analysis run on this trace, etc. Actually it could work if the title is really independant from the previous context of the analysis. Then I could retrieve any element related to this trace and use the title to display.
+Interaction date : Actually I should just work on an import pipeline from traces / journals the user already has. Some kind of ETL pipeline. 
+
+Solution that seems ok : 
+- Allways keep the trace as it is first. Raw content, the user gives it a structure in the raw text if he wants but no more.
+- The first stage of the process creates a first analytic element. This element does content extension for the trace. It gives a title, a subtitle maybe, maybe some tags. It could work on desambiguation from the full context of the user, or from an abreviation list idk. All this could make it a mirror of the given trace, ready to be indexed in a search index.
+- This first element could be related to some landmarks, as global landmarks for this trace. Resource DDIA if the trace is a note about DDIA. Theme DB and resource Chatgpt if it is notes from questions to chatgpt by the user (or a full response !)
+- Then the pipeline keep processing with normal stage, but can rely on the existing context, and creates default relations to this resource and this theme.
+
+
+I have a small concern about the link between analytics and lenses. Lenses are the main way to change analytic context, in the graphical interface but it should also be the case in the api. For instance if i want the first analytic element associated to a trace, I should pass the lens ID, or my current landscape analysis.
+But currently the lens has only a link to the head analysis. Analysis cant have a direct unique link to the lens because with the branches, an analysis can be an ancestor to multiple lens. 
+Just thinking, a solution could be to tag all ancestors of a given lens with the lens uuid, or with a has, or idk, to be able to retrieve this in a easier way than just recursive search. I dont know the classic solutions for that kind of problems.
+I see another way with a n-n relation between lens and landscape analysis, but i'm not sure it is a good idea. A lot of relations for something that is already expressed in the model, and it will need many joins to do it. 
+
+
+Just thinking : I should make the distinction of all those big parts of my system appear in the architecture : 
+3 blocs : 
+- UserEvents -> Content created by the user, Journals and Traces, the source of truth of the system , 
+- Analytics -> What is created by the analysis pipelines. Could run multiple time. They are projections in Event Based langage.
+- Publications -> What the user shows of its work. Deliverables he shooses to publish, traces... All this is user validated even if some parts could be AI written.
+- System for other entites such as sessions, LLM calls... 
+
+### 2026-01-27 Results
+
+I made some new things on the frontend graphical representation of the platform : 
+- A list of traces ordered by date
+- An identifier to show where the current landscape_analysis is sitted in the trace list
+- The possibility to move to former lanscape_analysis in the parent list of the current landscape_analysis
+- It shows updates in the displayed landscape
+
+This uses some new routes in the Rest API, to recursively retrieve the parents of the current lanscape.
+The recursive implementation is really naive currently but it is ok for the current depth of the trees. But at some point I will want to use some more efficient request such as with recursive.
+
+I have started to think about the implementation of the Note pipeline.
+The stages of a v1 of this pipeline seem to be quite straightforward.
+
+The more interesting part is how we do a splitting in the note trace. I want to try a theme split.
 
 ### 2026-01-27 About the reading notes pipeline
 
