@@ -480,3 +480,16 @@ pub fn find_last_analysis_resource(
     let interaction = Interaction::find_last_analysis_for_user(user_id, pool)?;
     Ok(interaction)
 }
+
+pub fn add_landmark_ref(
+    landscape_analysis_id: Uuid,
+    landmark_id: Uuid,
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let mut new_resource_relation = NewResourceRelation::new(landmark_id, landscape_analysis_id);
+    new_resource_relation.relation_type = Some("refr".to_string());
+    new_resource_relation.user_id = Some(user_id);
+    new_resource_relation.create(pool)?;
+    Ok(())
+}

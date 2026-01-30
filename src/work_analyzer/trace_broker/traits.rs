@@ -1,6 +1,9 @@
-use crate::{entities::{
-    error::PpdcError, resource::{NewResource, Resource, resource_type::ResourceType}, resource_relation::NewResourceRelation
-}};
+use crate::entities::{
+    error::PpdcError, 
+    resource::{
+        resource_type::ResourceType,
+    }, 
+};
 use std::fmt::Debug;
 use crate::entities_v2::{
     landmark::{
@@ -9,6 +12,13 @@ use crate::entities_v2::{
         landmark_create_copy_child_and_return,
     },
     trace::Trace,
+    element::{
+        NewElement,
+        ElementType,
+    },
+    landscape_analysis::{
+        self,
+    },
 };
 use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
@@ -64,12 +74,16 @@ pub trait MatchedExtractedElementForLandmark {
     fn landmark_id(&self) -> Option<String>;
     fn confidence(&self) -> f32;
 
-    fn to_new_resource(&self) -> NewResource {
-        NewResource::new(
+    fn to_new_element(&self, trace_id: Uuid, landmark_id: Option<Uuid>, analysis_id: Uuid, user_id: Uuid) -> NewElement {
+        NewElement::new(
             self.reference(),
             self.description(),
             format!("{} - {}", self.extracted_content(), self.generated_context()),
-            ResourceType::Event
+            ElementType::Event,
+            trace_id,
+            landmark_id,
+            analysis_id,
+            user_id,
         )
     }
     fn new(
@@ -99,7 +113,7 @@ pub struct ProcessorContext {
     pub landmarks: Vec<Landmark>,
     pub trace: Trace,
     pub user_id: Uuid,
-    pub analysis_resource_id: Uuid,
+    pub landscape_analysis_id: Uuid,
     pub pool: DbPool,
 }
 
@@ -214,7 +228,7 @@ pub trait LandmarkProcessor: Send + Sync {
             let created_landmark;
             if element.landmark_id().is_none() {
                 let new_resource_proposition = self.get_new_landmark_for_extracted_element(&element, context).await?;
-                let new_landmark = new_resource_proposition.to_new_landmark(context.analysis_resource_id, context.user_id, None);
+                let new_landmark = new_resource_proposition.to_new_landmark(context.landscape_analysis_id, context.user_id, None);
                 created_landmark = new_landmark.create(&context.pool)?;
             } else {
                 // If two elements match the same landmark, the two should be linked to the same new landmark.
@@ -223,13 +237,19 @@ pub trait LandmarkProcessor: Send + Sync {
                     created_landmark = Landmark::find(landmarks_updates.get(&updated_landmark_id).unwrap().clone(), &context.pool)?;
                 } else {
                     // If it is the first reference to this landmark, we create a new landmark and link it to the parent landmark.
-                    created_landmark = landmark_create_copy_child_and_return(updated_landmark_id, context.user_id, context.analysis_resource_id, &context.pool)?;
+                    created_landmark = landmark_create_copy_child_and_return(updated_landmark_id, context.user_id, context.landscape_analysis_id, &context.pool)?;
                     landmarks_updates.insert(updated_landmark_id, created_landmark.id);
                     updated_landmark_ids.push(updated_landmark_id);
                 }
             }
             //let element = MatchedExtractedElementForLandmarkType::from(element);
-            let _ = Self::element_create_for_trace_landmark_and_analysis(element, context.trace.id, created_landmark.id, context.analysis_resource_id, context.user_id, &context.pool);
+            let _ = element.to_new_element(
+                context.trace.id, 
+                Some(created_landmark.id), 
+                context.landscape_analysis_id, 
+                context.user_id
+            )
+            .create(&context.pool)?;
             new_landmarks.push(created_landmark);
         }
         for landmark in &context.landmarks {
@@ -237,10 +257,7 @@ pub trait LandmarkProcessor: Send + Sync {
             println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements updated_landmark_ids : {:?}", updated_landmark_ids);
             if !updated_landmark_ids.contains(&landmark.id) {
                 println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements creating new resource relation for landmark id : {}", landmark.id);
-                let mut new_resource_relation = NewResourceRelation::new(landmark.id, context.analysis_resource_id);
-                new_resource_relation.relation_type = Some("refr".to_string());
-                new_resource_relation.user_id = Some(context.user_id);
-                new_resource_relation.create(&context.pool)?;
+                landscape_analysis::add_landmark_ref(context.landscape_analysis_id, landmark.id, context.user_id, &context.pool)?;
             }
         }
         Ok(new_landmarks)
@@ -256,30 +273,4 @@ pub trait LandmarkProcessor: Send + Sync {
         &self,
         context: &ProcessorContext,
     ) -> Result<Vec<Landmark>, PpdcError>;
-
-
-    fn element_create_for_trace_landmark_and_analysis(
-        element: Self::MatchedElement,
-        trace_id: Uuid,
-        landmark_id: Uuid,
-        analysis_resource_id: Uuid,
-        user_id: Uuid,
-        pool: &DbPool,
-    ) -> Result<Resource, PpdcError> {
-        let new_element = element.to_new_resource();
-        let created_element = new_element.create(pool)?;
-        let mut new_resource_relation = NewResourceRelation::new(created_element.id, trace_id);
-        new_resource_relation.relation_type = Some("elmt".to_string());
-        new_resource_relation.user_id = Some(user_id);
-        new_resource_relation.create(pool)?;
-        let mut new_resource_relation = NewResourceRelation::new(created_element.id, landmark_id);
-        new_resource_relation.relation_type = Some("elmt".to_string());
-        new_resource_relation.user_id = Some(user_id);
-        new_resource_relation.create(pool)?;
-        let mut new_analysis_relation= NewResourceRelation::new(created_element.id, analysis_resource_id);
-        new_analysis_relation.relation_type = Some("ownr".to_string());
-        new_analysis_relation.user_id = Some(user_id);
-        new_analysis_relation.create(pool)?;
-        Ok(created_element)
-    }
 }

@@ -246,6 +246,19 @@ impl NewElement {
         }
     }
 
+    pub fn new(
+        title: String,
+        subtitle: String,
+        content: String,
+        element_type: ElementType,
+        trace_id: Uuid,
+        landmark_id: Option<Uuid>,
+        analysis_id: Uuid,
+        user_id: Uuid,
+    ) -> NewElement {
+        NewElement { title, subtitle, content, element_type, user_id, analysis_id, trace_id, landmark_id }
+    }
+
     /// Creates the underlying Resource, then "ownr" -> analysis, "elmt" -> trace,
     /// and optionally "elmt" -> landmark. Does not create an interaction.
     pub fn create(self, pool: &DbPool) -> Result<Element, PpdcError> {

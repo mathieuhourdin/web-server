@@ -87,7 +87,7 @@ pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<Lands
             landmarks: previous_landscape_analysis_landmarks,
             trace: current_landscape_analysis_trace,
             user_id: landscape_analysis.user_id,
-            analysis_resource_id: landscape_analysis_id,
+            landscape_analysis_id,
             pool: pool.clone(),
         };
         let resource_processor = ResourceProcessor::new();
