@@ -1,11 +1,14 @@
 use crate::{entities::{
     error::PpdcError, resource::{NewResource, Resource, resource_type::ResourceType}, resource_relation::NewResourceRelation
-}, entities_v2::landmark};
+}};
 use std::fmt::Debug;
-use crate::entities_v2::landmark::{
-    Landmark,
-    NewLandmark,
-    landmark_create_copy_child_and_return,
+use crate::entities_v2::{
+    landmark::{
+        Landmark,
+        NewLandmark,
+        landmark_create_copy_child_and_return,
+    },
+    trace::Trace,
 };
 use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
@@ -94,7 +97,7 @@ pub trait ExtractedElementForLandmark {
 // Processor context is created at runtime with the data related to the current processing.
 pub struct ProcessorContext {
     pub landmarks: Vec<Landmark>,
-    pub trace: Resource,
+    pub trace: Trace,
     pub user_id: Uuid,
     pub analysis_resource_id: Uuid,
     pub pool: DbPool,

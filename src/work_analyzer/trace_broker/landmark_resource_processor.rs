@@ -189,7 +189,7 @@ impl LandmarkProcessor for ResourceProcessor {
     ) -> Result<Vec<ExtractedElementForResource>, PpdcError> {
 
         println!("work_analyzer::trace_broker::split_trace_in_elements_gpt_request");
-        let known_resources = context.landmarks
+        let _known_resources = context.landmarks
             .iter()
             .filter(|resource| {
                 resource.landmark_type == ResourceType::Resource

@@ -1,7 +1,6 @@
 use crate::db::get_global_pool;
 use crate::entities::{
     error::PpdcError,
-    resource::Resource,
     user::User,
 };
 use crate::entities_v2::{
@@ -14,6 +13,7 @@ use crate::entities_v2::{
 };
 use crate::work_analyzer::{
     trace_broker::{ResourceProcessor, ProcessorContext, LandmarkProcessor},
+    high_level_analysis::get_high_level_analysis,
 };
 use uuid::Uuid;
 
@@ -66,11 +66,14 @@ pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uu
 }
 
 pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<LandscapeAnalysis, PpdcError> {
+    let run_high_level_analysis = false;
+
     println!("work_analyzer::analysis_processor::run_landscape_analysis: Running analysis pipeline for landscape analysis id: {}", landscape_analysis_id);
     let pool = get_global_pool();
     let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
     let previous_landscape_analysis_id = landscape_analysis.parent_analysis_id;
     let analyzed_trace_id = landscape_analysis.analyzed_trace_id;
+
     
     let full_trace_string: String;
     let previous_context: String;
@@ -78,7 +81,7 @@ pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<Lands
         let previous_landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, &pool)?;
         let previous_landscape_analysis_landmarks = previous_landscape_analysis.get_landmarks(&pool)?;
         let analyzed_trace = Trace::find_full_trace(analyzed_trace_id, &pool)?;
-        let current_landscape_analysis_trace = Resource::find(analyzed_trace_id, &pool)?;
+        let current_landscape_analysis_trace = Trace::find_full_trace(analyzed_trace_id, &pool)?;
         previous_context = previous_landscape_analysis.plain_text_state_summary;
         let context = ProcessorContext {
             landmarks: previous_landscape_analysis_landmarks,
@@ -101,12 +104,14 @@ pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<Lands
         full_trace_string = User::find(&landscape_analysis.user_id, &pool)?.biography.unwrap_or_default();
         previous_context = "Aucun contexte pour l'instant".to_string();
     }
-    /*let new_high_level_analysis = get_high_level_analysis(
-        &previous_context, 
-        &full_trace_string)
-        .await?;
-    let mut landscape_analysis = landscape_analysis;
-    landscape_analysis.plain_text_state_summary = new_high_level_analysis;
-    let landscape_analysis = landscape_analysis.update(&pool)?;*/
+    if run_high_level_analysis {
+    let new_high_level_analysis = get_high_level_analysis(
+            &previous_context, 
+            &full_trace_string)
+            .await?;
+        let mut landscape_analysis = landscape_analysis.clone();
+        landscape_analysis.plain_text_state_summary = new_high_level_analysis;
+        landscape_analysis.update(&pool)?;
+    }
     Ok(landscape_analysis)
 }

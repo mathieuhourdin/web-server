@@ -228,7 +228,7 @@ impl NewLandmark {
         let parent_id = self.parent_id;
 
         // create the landmark with all positive flags
-        let mut landmark = self;
+        let landmark = self;
         let new_resource = landmark.to_new_resource();
         let created_resource = new_resource.create(pool)?;
         let landmark = Landmark::from_resource(created_resource);

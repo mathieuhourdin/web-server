@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
-use crate::entities::{resource::Resource, error::PpdcError};
+use crate::entities::{error::PpdcError};
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
-use crate::entities_v2::{landscape_analysis::LandscapeAnalysis, trace::Trace};
-use crate::work_analyzer::context_builder::create_work_context;
 
 pub async fn get_high_level_analysis(
     previous_context: &String,
@@ -48,7 +46,7 @@ pub async fn get_high_level_analysis_from_gpt(
         new_trace
     );
 
-    let schema = serde_json::json!({
+    let _schema = serde_json::json!({
         "type": "object",
         "properties": {
             "title": {"type": "string"},

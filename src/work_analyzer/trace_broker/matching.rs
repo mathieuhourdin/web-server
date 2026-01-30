@@ -73,7 +73,7 @@ where E: ExtractedElementForLandmark,
             .iter()
             .find(|item| item.element_id == Some(element.local_id.clone())) {
             // We get into this block if the element is in the matching results.
-            if (matching_result.confidence > 0.4) {
+            if matching_result.confidence > 0.4 {
                 confidence = matching_result.confidence;
                 let landmark = landmarks_local_array.items
                     .iter()
