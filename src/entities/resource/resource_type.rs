@@ -40,6 +40,7 @@ pub enum ResourceType {
     GeneralComment,
     Feeling,
     Lens,
+    TraceMirror,
 }
 
 impl ResourceType {
@@ -74,6 +75,7 @@ impl ResourceType {
             "cmnt" => Ok(ResourceType::GeneralComment),
             "feln" => Ok(ResourceType::Feeling),
             "lens" => Ok(ResourceType::Lens),
+            "trcm" => Ok(ResourceType::TraceMirror),
             &_ => {
                 return Err(PpdcError::new(
                     404,
@@ -113,6 +115,7 @@ impl ResourceType {
             ResourceType::GeneralComment => "cmnt",
             ResourceType::Feeling => "feln",
             ResourceType::Lens => "lens",
+            ResourceType::TraceMirror => "trcm",
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -145,6 +148,7 @@ impl ResourceType {
             ResourceType::GeneralComment => "GeneralComment",
             ResourceType::Feeling => "Feeling",
             ResourceType::Lens => "Lens",
+            ResourceType::TraceMirror => "Trace Mirror",
         }
     }
     pub fn from_full_text(full_text: &str) -> Result<ResourceType, PpdcError> {
@@ -177,6 +181,7 @@ impl ResourceType {
             "GeneralComment" => Ok(ResourceType::GeneralComment),
             "Feeling" => Ok(ResourceType::Feeling),
             "Lens" => Ok(ResourceType::Lens),
+            "Trace Mirror" => Ok(ResourceType::TraceMirror),
             &_ => Err(PpdcError::new(
                 404,
                 ErrorType::ApiError,

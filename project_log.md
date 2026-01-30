@@ -6,6 +6,14 @@ Every day I work on this project, I take notes of :
 - My thoughts, hesitations and considerations on the project
 - Some results of expermientations
 
+
+### 2026-01-30 move toward v2 and new pipeline
+
+I worked on the existing pipeline to remove all use of legacy api. 
+Now I only use the v2 entities. 
+
+I also refined the pipeline orchestration. And I started to create a new subpipeline for the Trace Mirror.
+
 ### 2026-01-29 Small Idea
 
 I could use a search pipeline on the traces to find matches on some words, and to look for known abreviations etc. When an abreviation is found, i could replace the abreviation by the content of the matched landmark. I could have it for the proper names too. Like if i find a book title... Don't know if it's a good idea to do it before analysis, I should try it.

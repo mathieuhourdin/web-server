@@ -1,0 +1,13 @@
+{
+    "type": "object",
+    "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+        }
+    },
+    "required": ["title", "subtitle", "tags"],
+    "additionalProperties": false
+}

@@ -14,8 +14,10 @@ use crate::entities_v2::{
 use crate::work_analyzer::{
     trace_broker::{ResourceProcessor, ProcessorContext, LandmarkProcessor},
     high_level_analysis::get_high_level_analysis,
+    trace_mirror,
 };
 use uuid::Uuid;
+use crate::db::DbPool;
 
 pub struct AnalysisProcessor {
     pub context: ProcessorContext,
@@ -66,52 +68,103 @@ pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uu
 }
 
 pub async fn run_landscape_analysis(landscape_analysis_id: Uuid) -> Result<LandscapeAnalysis, PpdcError> {
-    let run_high_level_analysis = false;
 
     println!("work_analyzer::analysis_processor::run_landscape_analysis: Running analysis pipeline for landscape analysis id: {}", landscape_analysis_id);
     let pool = get_global_pool();
+
     let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
     let previous_landscape_analysis_id = landscape_analysis.parent_analysis_id;
     let analyzed_trace_id = landscape_analysis.analyzed_trace_id;
 
+
     
-    let full_trace_string: String;
-    let previous_context: String;
     if let (Some(analyzed_trace_id), Some(previous_landscape_analysis_id)) = (analyzed_trace_id, previous_landscape_analysis_id) {
-        let previous_landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, &pool)?;
-        let previous_landscape_analysis_landmarks = previous_landscape_analysis.get_landmarks(&pool)?;
-        let analyzed_trace = Trace::find_full_trace(analyzed_trace_id, &pool)?;
-        let current_landscape_analysis_trace = Trace::find_full_trace(analyzed_trace_id, &pool)?;
-        previous_context = previous_landscape_analysis.plain_text_state_summary;
-        let context = ProcessorContext {
-            landmarks: previous_landscape_analysis_landmarks,
-            trace: current_landscape_analysis_trace,
-            user_id: landscape_analysis.user_id,
-            landscape_analysis_id,
-            pool: pool.clone(),
-        };
-        let resource_processor = ResourceProcessor::new();
-        let _new_landmarks = resource_processor.process(&context).await?;
-        full_trace_string = format!("
-            Titre : {}\n
-            Sous titre : {}\n
-            Contenu : {}\n",
-            analyzed_trace.title,
-            analyzed_trace.subtitle,
-            analyzed_trace.content
-        );
+        return Ok(analysis_pipeline_with_trace(landscape_analysis_id, analyzed_trace_id, previous_landscape_analysis_id, &pool).await?);
+
     } else {
-        full_trace_string = User::find(&landscape_analysis.user_id, &pool)?.biography.unwrap_or_default();
-        previous_context = "Aucun contexte pour l'instant".to_string();
+        return Ok(analysis_pipeline_without_trace(landscape_analysis_id, &pool).await?);
     }
+}
+
+/**
+ * This function is used to run the analysis when there is no trace.
+ * It happens for the root analysis, when we launch a new lens from the beginning of the user production.
+ * We create a context from the user biography.
+ */
+pub async fn analysis_pipeline_without_trace(landscape_analysis_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+    let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
+    let biography = User::find(&landscape_analysis.user_id, &pool)?.biography.unwrap_or_default();
+    let previous_context = "Aucun contexte pour l'instant".to_string();
+    let landscape_analysis = high_level_analysis_pipeline(&previous_context, landscape_analysis_id, &biography, pool).await?;
+    Ok(landscape_analysis)
+}
+
+/**
+ * This function is used to run the analysis when there is a trace.
+ * It is the classical case.
+ */
+pub async fn analysis_pipeline_with_trace(landscape_analysis_id: Uuid, analyzed_trace_id: Uuid, previous_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+
+    let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
+      
+    // build the context of the previous landscape analysis
+    let previous_landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, &pool)?;
+    let previous_landscape_analysis_landmarks = previous_landscape_analysis.get_landmarks(&pool)?;
+
+    let analyzed_trace = Trace::find_full_trace(analyzed_trace_id, &pool)?;
+
+
+    // First stage of processing 
+    // Create the trace mirror element
+    let _trace_mirror = trace_mirror::pipeline::run(
+        &analyzed_trace, 
+        landscape_analysis.user_id, 
+        landscape_analysis_id, &pool)
+        .await?;
+
+
+    // Second stage of processing
+    // Run the landmark analysis pipeline
+    let context = ProcessorContext {
+        landmarks: previous_landscape_analysis_landmarks,
+        trace: analyzed_trace.clone(),
+        user_id: landscape_analysis.user_id,
+        landscape_analysis_id,
+        pool: pool.clone(),
+    };
+    let resource_processor = ResourceProcessor::new();
+    let _new_landmarks = resource_processor.process(&context).await?;
+
+
+    // Third stage of processing
+    // Run the high level analysis pipeline
+    let full_trace_string = format!("
+        Titre : {}\n
+        Sous titre : {}\n
+        Contenu : {}\n",
+        analyzed_trace.title,
+        analyzed_trace.subtitle,
+        analyzed_trace.content
+    );
+    let previous_context = previous_landscape_analysis.plain_text_state_summary;
+    let landscape_analysis = high_level_analysis_pipeline(&previous_context, landscape_analysis_id, &full_trace_string, pool).await?;
+    Ok(landscape_analysis)
+}
+
+
+pub async fn high_level_analysis_pipeline(previous_context: &String, landscape_analysis_id: Uuid, full_trace_string: &String, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+    let run_high_level_analysis = false;
+    let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
+
     if run_high_level_analysis {
     let new_high_level_analysis = get_high_level_analysis(
-            &previous_context, 
-            &full_trace_string)
-            .await?;
+        previous_context, 
+        full_trace_string)
+        .await?;
         let mut landscape_analysis = landscape_analysis.clone();
         landscape_analysis.plain_text_state_summary = new_high_level_analysis;
-        landscape_analysis.update(&pool)?;
+        let landscape_analysis = landscape_analysis.update(&pool)?;
+        return Ok(landscape_analysis);
     }
     Ok(landscape_analysis)
 }

@@ -4,3 +4,4 @@ pub mod context_builder;
 pub mod trace_broker;
 //pub mod update_landmarks;
 pub mod high_level_analysis;
+pub mod trace_mirror;

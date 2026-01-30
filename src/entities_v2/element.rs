@@ -66,6 +66,23 @@ impl ElementType {
     }
 }
 
+impl From<ResourceType> for ElementType {
+    fn from(resource_type: ResourceType) -> Self {
+        match resource_type {
+            ResourceType::TraceMirror => ElementType::TraceMirror,
+            _ => ElementType::Event,
+        }
+    }
+}
+
+impl From<ElementType> for ResourceType {
+    fn from(element_type: ElementType) -> Self {
+        match element_type {
+            ElementType::TraceMirror => ResourceType::TraceMirror,
+            _ => ResourceType::Event,
+        }
+    }
+}
 impl Element {
     /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id)
     /// and extended_content must be hydrated via `with_*` / `find_full`.
@@ -74,14 +91,14 @@ impl Element {
             .comment
             .as_deref()
             .and_then(ElementType::from_code)
-            .unwrap_or(ElementType::Idea);
+            .unwrap_or(ElementType::Event);
         Self {
             id: resource.id,
             title: resource.title,
             subtitle: resource.subtitle,
             content: resource.content,
             extended_content: None,
-            element_type,
+            element_type: element_type.into(),
             user_id: Uuid::nil(),
             analysis_id: Uuid::nil(),
             trace_id: Uuid::nil(),
@@ -101,7 +118,7 @@ impl Element {
             external_content_url: None,
             comment: Some(self.element_type.to_code().to_string()),
             image_url: None,
-            resource_type: ResourceType::Element,
+            resource_type: self.element_type.into(),
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
             category_id: None,
@@ -176,7 +193,7 @@ impl Element {
             .into_iter()
             .filter(|r| {
                 r.resource_relation.relation_type == "elmt"
-                    && r.origin_resource.resource_type == ResourceType::Element
+                    && r.origin_resource.resource_type == ResourceType::Event
             })
             .map(|r| Element::from_resource(r.origin_resource))
             .collect();
@@ -190,7 +207,7 @@ impl Element {
             .into_iter()
             .filter(|r| {
                 r.resource_relation.relation_type == "elmt"
-                    && r.origin_resource.resource_type == ResourceType::Element
+                    && r.origin_resource.resource_type == ResourceType::Event
             })
             .map(|r| Element::from_resource(r.origin_resource))
             .collect();
@@ -238,7 +255,7 @@ impl NewElement {
             external_content_url: None,
             comment: Some(self.element_type.to_code().to_string()),
             image_url: None,
-            resource_type: Some(ResourceType::Element),
+            resource_type: Some(self.element_type.into()),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
             category_id: None,
