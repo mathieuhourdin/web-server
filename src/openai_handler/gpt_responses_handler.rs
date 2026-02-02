@@ -121,31 +121,34 @@ where
         })
         .unwrap_or_default();
 
-    // Persist the LLM call to database before attempting full parsing
-    let pool = db::get_global_pool();
-    let new_call = NewLlmCall::new(
-        call_status.clone(),
-        "gpt-4.1-mini-2025-04-14".to_string(),
-        full_prompt,
-        schema_json,
-        request_json,
-        request_url.clone(),
-        body.clone(),
-        output_text.clone(),
-        0, // input_tokens_used - not available in current response structure
-        0, // reasoning_tokens_used - not available in current response structure
-        0, // output_tokens_used - not available in current response structure
-        0.0, // price - not available in current response structure
-        "USD".to_string(), // currency - default
-    );
+    let env = environment::get_env();
+    if env != "bintest" {
+        // Persist the LLM call to database before attempting full parsing
+        let pool = db::get_global_pool();
+        let new_call = NewLlmCall::new(
+            call_status.clone(),
+            "gpt-4.1-mini-2025-04-14".to_string(),
+            full_prompt,
+            schema_json,
+            request_json,
+            request_url.clone(),
+            body.clone(),
+            output_text.clone(),
+            0, // input_tokens_used - not available in current response structure
+            0, // reasoning_tokens_used - not available in current response structure
+            0, // output_tokens_used - not available in current response structure
+            0.0, // price - not available in current response structure
+            "USD".to_string(), // currency - default
+        );
 
-    // Try to persist, but don't fail the whole request if persistence fails
-    if let Err(e) = new_call.create(pool) {
-        eprintln!("Failed to persist LLM call to database: {e}");
-    }
+        // Try to persist, but don't fail the whole request if persistence fails
+        if let Err(e) = new_call.create(pool) {
+            eprintln!("Failed to persist LLM call to database: {e}");
+        }
 
-    if !status.is_success() {
-        return Err(format!("GPT API error ({status}): {body}").into());
+        if !status.is_success() {
+            return Err(format!("GPT API error ({status}): {body}").into());
+        }
     }
 
     // Now do full parsing for type T

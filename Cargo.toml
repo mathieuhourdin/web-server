@@ -28,6 +28,7 @@ r2d2 = "0.8.10"
 http = "1.2.0"
 urlencoding = "2.1.0"
 async-trait = "0.1.89"
+anyhow = "1.0.100"
 
 [dev-dependencies]
 tokio-test = "*"

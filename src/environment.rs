@@ -41,3 +41,8 @@ pub fn get_search_engine_id() -> String {
     dotenv().ok();
     std::env::var("SEARCH_ENGINE_ID").unwrap_or_else(|_| "".to_string())
 }
+
+pub fn get_env() -> String {
+    dotenv().ok();
+    std::env::var("ENV").unwrap_or_else(|_| "development".to_string())
+}
