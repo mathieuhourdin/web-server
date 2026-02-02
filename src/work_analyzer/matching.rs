@@ -88,6 +88,10 @@ where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
     }
     to_process_elements.retain(|element| !matched_identifiers.contains(&element.identifier()));
 
+    if to_process_elements.is_empty() {
+        return Ok(result);
+    }
+
     // Now we match the remaining elements to the landmarks using the GPT API.
     let landmarks_for_matching: Vec<LandmarkForMatching> = landmarks.iter().map(|landmark| LandmarkForMatching::from(landmark)).collect();
     let elements_local_array = LocalArray::from_vec(to_process_elements);

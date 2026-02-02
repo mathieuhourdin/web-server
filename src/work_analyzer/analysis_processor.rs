@@ -119,7 +119,9 @@ pub async fn analysis_pipeline_with_trace(landscape_analysis_id: Uuid, analyzed_
     let trace_mirror = trace_mirror::pipeline::run(
         &analyzed_trace, 
         landscape_analysis.user_id, 
-        landscape_analysis_id, &pool)
+        landscape_analysis_id,
+        &previous_landscape_analysis_landmarks,
+         &pool)
         .await?;
 
 

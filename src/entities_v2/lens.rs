@@ -160,19 +160,48 @@ impl Lens {
     }
 
     pub fn update_current_landscape(self, new_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let current_landscape_relation = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let current_landscape_relation = current_landscape_relation.into_iter()
-            .find(|relation| relation.resource_relation.relation_type == "head".to_string())
-            .map(|relation| relation.resource_relation);
+        // Get the new landscape to retrieve its trace_id
+        let new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
+        let new_trace_id = new_landscape.analyzed_trace_id;
+
+        let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        
+        // Find and separate the landscape and trace relations
+        let mut current_landscape_relation = None;
+        let mut current_trace_relation = None;
+        
+        for relation in relations {
+            match relation.resource_relation.relation_type.as_str() {
+                "head" => current_landscape_relation = Some(relation.resource_relation),
+                "trgt" => current_trace_relation = Some(relation.resource_relation),
+                _ => {}
+            }
+        }
+
+        // Update landscape relation (head)
         if current_landscape_relation.is_none() {
             return Err(PpdcError::new(404, ErrorType::ApiError, "Current landscape not found".to_string()));
         }
-        let current_landscape_relation = current_landscape_relation.unwrap();
-        current_landscape_relation.delete(pool)?;
+        current_landscape_relation.unwrap().delete(pool)?;
         let mut new_current_landscape_relation = NewResourceRelation::new(self.id, new_landscape_analysis_id);
         new_current_landscape_relation.relation_type = Some("head".to_string());
         new_current_landscape_relation.user_id = Some(self.user_id.unwrap());
         new_current_landscape_relation.create(pool)?;
+
+        // Update trace relation (trgt)
+        // Delete existing trace relation if it exists
+        if let Some(trace_relation) = current_trace_relation {
+            trace_relation.delete(pool)?;
+        }
+        
+        // Only create new trace relation if the new landscape has an analyzed trace
+        if let Some(trace_id) = new_trace_id {
+            let mut new_current_trace_relation = NewResourceRelation::new(self.id, trace_id);
+            new_current_trace_relation.relation_type = Some("trgt".to_string());
+            new_current_trace_relation.user_id = Some(self.user_id.unwrap());
+            new_current_trace_relation.create(pool)?;
+        }
+
         Ok(self)
     }
 
@@ -267,47 +296,31 @@ pub async fn post_lens_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
-    let start_landscape_id: Uuid;
-    let traces: Vec<Trace>;
-    if let Some(fork_landscape_id) = payload.fork_landscape_id {
-        // we start analysis from a already existing landscape
-        // just create new landscapes from this one
-        start_landscape_id = fork_landscape_id;
-        let fork_landscape = LandscapeAnalysis::find_full_analysis(fork_landscape_id, &pool)?;
-        traces = Trace::get_between(session.user_id.unwrap(), fork_landscape.analyzed_trace_id.unwrap(), payload.current_trace_id, &pool)?;
-    } else {
-        // we start analysis from the first trace. We should first create a new landscape from user biography.
-        // It will have no landmarks, but will have a global context from the biography.
-        let initial_landscape = NewLandscapeAnalysis::new(
-            "Analyse de la biographie".to_string(),
-            "Analyse de la biographie".to_string(),
-            "Analyse de la biographie".to_string(),
-            session.user_id.unwrap(),
-            Utc::now().naive_utc(),
-            None,
-            None,
-        ).create(&pool)?;
-        start_landscape_id = initial_landscape.id;
-        traces = Trace::get_before(session.user_id.unwrap(), payload.current_trace_id, &pool)?;
-    }
-    let current_trace_id = traces.last().unwrap().id;
-    let mut previous_landscape_analysis_id = start_landscape_id;
-    let mut landscape_analysis_ids: Vec<Uuid> = Vec::new();
-    landscape_analysis_ids.push(start_landscape_id);
-    for trace in traces {
-        let new_landscape_analysis = NewLandscapeAnalysis::new_placeholder(
-            session.user_id.unwrap(), 
-            trace.id, 
-            Some(previous_landscape_analysis_id)
-        ).create(&pool)?;
-        landscape_analysis_ids.push(new_landscape_analysis.id);
-        previous_landscape_analysis_id = new_landscape_analysis.id;
-    }
+    let current_trace_id = payload.current_trace_id;
+    let previous_landscape_analysis_id = match payload.fork_landscape_id {
+        Some(fork_landscape_id) => {
+            fork_landscape_id
+        }
+        None => {
+            let initial_landscape = NewLandscapeAnalysis::new(
+                "Analyse de la biographie".to_string(),
+                "Analyse de la biographie".to_string(),
+                "Analyse de la biographie".to_string(),
+                session.user_id.unwrap(),
+                Utc::now().naive_utc(),
+                None,
+                None,
+            ).create(&pool)?;
+            initial_landscape.id
+        }
+    };
+    let landscape_analysis_ids = create_landscape_placeholders(current_trace_id, previous_landscape_analysis_id, &pool)?;
+    let last_landscape_analysis_id = landscape_analysis_ids.last().unwrap();
 
     // after we have the first landscape, we can create the landscape placeholders from the first one using traces as diff.
     let lens = NewLens::new(
         payload, current_trace_id, 
-        previous_landscape_analysis_id, 
+        last_landscape_analysis_id.clone(), 
         session.user_id.unwrap()
     )
         .create(&pool)?;
@@ -319,6 +332,51 @@ pub async fn post_lens_route(
     tokio::spawn(async move { work_analyzer::analysis_processor::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await });
 
     Ok(Json(lens))
+}
+
+#[debug_handler]
+pub async fn put_lens_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<NewLensDto>,
+) -> Result<Json<Lens>, PpdcError> {
+    let mut lens = Lens::find_full_lens(id, &pool)?;
+
+    if payload.current_trace_id != lens.current_trace_id {
+        let landscape_analysis_ids = create_landscape_placeholders(payload.current_trace_id, lens.current_landscape_id.unwrap(), &pool)?;
+        let last_landscape_analysis_id = landscape_analysis_ids.last().unwrap().clone();
+        lens = lens.update_current_landscape(last_landscape_analysis_id, &pool)?;
+        tokio::spawn(async move { work_analyzer::analysis_processor::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await });
+    }
+    let lens = lens.with_user_id(&pool)?;
+    let lens = lens.with_forked_landscape(&pool)?;
+    let lens = lens.with_current_landscape(&pool)?;
+    let lens = lens.with_current_trace(&pool)?;
+    Ok(Json(lens))
+}
+
+pub fn create_landscape_placeholders(current_trace_id: Uuid, previous_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
+    let previous_landscape = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, pool)?;
+    let user_id = previous_landscape.user_id;
+    let traces: Vec<Trace>;
+    if previous_landscape.analyzed_trace_id.is_none() {
+        traces = Trace::get_before(user_id, current_trace_id, pool)?;
+    } else {
+        traces = Trace::get_between(user_id, previous_landscape.analyzed_trace_id.unwrap(), current_trace_id, pool)?;
+    }
+    let mut landscape_analysis_ids = vec![previous_landscape_analysis_id];
+    let mut previous_id = previous_landscape_analysis_id;
+    for trace in traces {
+        let new_landscape_analysis = NewLandscapeAnalysis::new_placeholder(
+            user_id,
+            trace.id,
+            Some(previous_id),
+        ).create(pool)?;
+        landscape_analysis_ids.push(new_landscape_analysis.id);
+        previous_id = new_landscape_analysis.id;
+    }
+    Ok(landscape_analysis_ids)
 }
 
 #[debug_handler]

@@ -333,3 +333,11 @@ impl NewElement {
         })
     }
 }
+
+pub fn link_to_landmark(element_id: Uuid, landmark_id: Uuid, user_id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
+    let mut elmt_landmark = NewResourceRelation::new(element_id, landmark_id);
+    elmt_landmark.relation_type = Some("elmt".to_string());
+    elmt_landmark.user_id = Some(user_id);
+    elmt_landmark.create(pool)?;
+    Ok(landmark_id)
+}

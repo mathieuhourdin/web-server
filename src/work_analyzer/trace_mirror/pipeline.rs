@@ -1,11 +1,13 @@
 use crate::entities_v2::{
     trace::Trace,
     element::{
+        self,
         Element,
         NewElement,
         ElementType,
     },
     journal::Journal,
+    landmark::Landmark,
 };
 use crate::entities::error::PpdcError;
 use crate::db::DbPool;
@@ -56,14 +58,23 @@ pub struct NewPrimaryResource {
 
 
 
-pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
+pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, landmarks: &Vec<Landmark>, pool: &DbPool) -> Result<Element, PpdcError> {
     let trace_header = header::extract_mirror_header(trace).await?;
     let trace_mirror = create_trace_mirror(trace, trace_header, user_id, landscape_analysis_id, pool).await?;
     let journal = Journal::find_full(trace.journal_id.unwrap(), pool)?;
     let journal_subtitle = journal.subtitle;
     if journal_subtitle == "note" {
-        let _primary_resource_suggestion = primary_resource::suggestion::extract(trace).await?;
-        //let new_primary_resource = create_new_primary_resource(primary_resource_suggestion, user_id, landscape_analysis_id, pool).await?;
+        let primary_resource_suggestion = primary_resource::suggestion::extract(trace).await?;
+        let primary_resource_matched = primary_resource::matching::run(primary_resource_suggestion, landmarks).await?;
+        let trace_mirror_landmark_id: Uuid;
+        if primary_resource_matched.candidate_id.is_some() {
+            let element_landmark_id = primary_resource_matched.candidate_id.unwrap();
+            trace_mirror_landmark_id = Uuid::parse_str(element_landmark_id.as_str())?;
+        } else {
+            let primary_resource_created = primary_resource::creation::run(primary_resource_matched, landscape_analysis_id, user_id, pool).await?;
+            trace_mirror_landmark_id = primary_resource_created.id;
+        }
+        element::link_to_landmark(trace_mirror.id, trace_mirror_landmark_id, user_id, pool)?;
     }
     Ok(trace_mirror)
 }

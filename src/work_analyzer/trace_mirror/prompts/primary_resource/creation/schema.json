@@ -1,0 +1,17 @@
+{
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "author": {"type": "string"},
+        "theme": {
+            "anyOf": [
+                { "type": "string", "minLength": 1 },
+                { "type": "null" }
+            ]
+        },
+        "content": {"type": "string"},
+        "identity_state": {"type": "string", "enum": ["identified", "stub", "discard"]}
+    },
+    "required": ["title", "author", "theme", "content", "identity_state"],
+    "additionalProperties": false
+}

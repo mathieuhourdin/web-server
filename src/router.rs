@@ -109,7 +109,7 @@ pub fn create_router() -> Router {
 
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
-        .route("/:id", delete(lens::delete_lens_route))
+        .route("/:id", delete(lens::delete_lens_route).put(lens::put_lens_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let llm_calls_router = Router::new()
