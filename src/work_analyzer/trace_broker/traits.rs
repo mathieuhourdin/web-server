@@ -26,20 +26,12 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
-use crate::work_analyzer::trace_broker::matching::{
-    LocalArray,
-    Matches,
-    LandmarkForMatching,
+use crate::work_analyzer::matching::{
+    ElementWithIdentifier,
     self
 };
 use crate::work_analyzer::trace_broker::types::IdentityState;
 use std::collections::HashMap;
-
-pub struct ElementLandmarkMatchingResult {
-    pub element: Option<String>,
-    pub landmark_id: Option<String>,
-    pub confidence: f32,
-}
 
 pub trait NewLandmarkForExtractedElement {
     fn title(&self) -> String;
@@ -103,6 +95,12 @@ pub trait ExtractedElementForLandmark {
     fn generated_context(&self) -> String;
 }
 
+impl<T: ExtractedElementForLandmark> ElementWithIdentifier for T {
+    fn identifier(&self) -> String {
+        self.reference()
+    }
+}
+
 // I create a trait. 
 // Each processor will implement this trait.
 // For each landmark type, a processor object is created that processes the trace for this landmark type.
@@ -136,8 +134,8 @@ pub struct ProcessorConfig {
 #[async_trait]
 pub trait LandmarkProcessor: Send + Sync {
     
-    type ExtractedElement: ExtractedElementForLandmark + Send + Serialize + DeserializeOwned + Debug;
-    type MatchedElement: MatchedExtractedElementForLandmark + Send + From<(Self::ExtractedElement, Option<String>, f32)>;
+    type ExtractedElement: ExtractedElementForLandmark + Send + Serialize + DeserializeOwned + Debug + Clone;
+    type MatchedElement: MatchedExtractedElementForLandmark + Send + From<(Self::ExtractedElement, Option<String>, f32)> + Clone;
     type NewLandmark: NewLandmarkForExtractedElement + Send;
 
     fn new() -> Self;
@@ -166,55 +164,20 @@ pub trait LandmarkProcessor: Send + Sync {
         landmarks: &Vec<Landmark>,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError> {
 
-        let mut matched_elements: Vec<Self::MatchedElement> = vec![];
-        let mut elements = elements;
-        
-        // Collect references of matched elements to remove them later
-        let mut matched_references: std::collections::HashSet<String> = std::collections::HashSet::new();
-        
-        for element in &elements {
-            for landmark in landmarks {
-                if element.reference() == landmark.title {
-                    matched_elements.push(Self::MatchedElement::new(
-                        element.reference(),
-                        element.extracted_content(),
-                        element.generated_context(),
-                        Some(landmark.id.to_string()),
-                        1.0,
-                    ));
-                    matched_references.insert(element.reference());
-                    break; // Found a match, no need to check other landmarks
-                }
-            }
-        }
-        
-        // Remove matched elements from the vector
-        elements.retain(|element| !matched_references.contains(&element.reference()));
-
-        let landmarks_for_matching: Vec<LandmarkForMatching> = landmarks.iter().map(|landmark| LandmarkForMatching::from(landmark)).collect();
-        let elements_local_array = LocalArray::from_vec(elements);
-        let landmarks_local_array = LocalArray::from_vec(landmarks_for_matching);
-        let user_prompt: String = format!("
-            Elements: {}\n\n
-            Candidates: {}\n\n
-        ",
-        serde_json::to_string(&elements_local_array.items)?,
-        serde_json::to_string(&landmarks_local_array.items)?);
-        let gpt_request_config = GptRequestConfig::new(
-            "gpt-4.1-nano".to_string(),
-            &self.match_elements_system_prompt(),
-            &user_prompt,
-            Some(self.match_elements_schema())
-        );
-        let matching_results: Matches = gpt_request_config.execute().await?;
-        println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base matching_results: {:?}", matching_results);
-        println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base elements_local_array: {:?}", elements_local_array);
-        println!("work_analyzer::trace_broker::LandmarkProcessor::match_elements_base landmarks_local_array: {:?}", landmarks_local_array);
-        let attached_elements = matching::attach_matching_results_to_elements(matching_results.matches, elements_local_array, landmarks_local_array);
-
-        matched_elements.extend(attached_elements);
-
-        Ok(matched_elements)
+        let matched_elements = matching::match_elements::<Self::ExtractedElement>(elements, landmarks, &self.match_elements_system_prompt()).await?;
+        let matched_elements: Vec<Self::MatchedElement> = matched_elements
+            .iter()
+            .map(|element| {
+                Self::MatchedElement::new(
+                    element.element.identifier(),
+                    element.element.extracted_content(),
+                    element.element.generated_context(),
+                    element.candidate_id.clone(),
+                    element.confidence,
+                )
+            })
+            .collect();
+        return Ok(matched_elements);
     }
 
     async fn create_new_landmarks_and_elements(
@@ -255,10 +218,7 @@ pub trait LandmarkProcessor: Send + Sync {
             new_landmarks.push(created_landmark);
         }
         for landmark in &context.landmarks {
-            println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements landmark id : {}", landmark.id);
-            println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements updated_landmark_ids : {:?}", updated_landmark_ids);
             if !updated_landmark_ids.contains(&landmark.id) {
-                println!("work_analyzer::trace_broker::LandmarkProcessor::create_new_landmarks_and_elements creating new resource relation for landmark id : {}", landmark.id);
                 landscape_analysis::add_landmark_ref(context.landscape_analysis_id, landmark.id, context.user_id, &context.pool)?;
             }
         }

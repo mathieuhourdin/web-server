@@ -9,9 +9,9 @@ use crate::work_analyzer::trace_broker::{
         ProcessorContext,
         LandmarkProcessor,
         ExtractedElementForLandmark, MatchedExtractedElementForLandmark, NewLandmarkForExtractedElement
-    },
-    matching::LandmarkForMatching,
+    }
 };
+use crate::work_analyzer::matching::LandmarkForMatching;
 use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
 
