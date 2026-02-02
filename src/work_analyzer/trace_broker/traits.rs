@@ -13,6 +13,7 @@ use crate::entities_v2::{
     },
     trace::Trace,
     element::{
+        Element,
         NewElement,
         ElementType,
     },
@@ -112,6 +113,7 @@ pub trait ExtractedElementForLandmark {
 pub struct ProcessorContext {
     pub landmarks: Vec<Landmark>,
     pub trace: Trace,
+    pub trace_mirror: Element,
     pub user_id: Uuid,
     pub landscape_analysis_id: Uuid,
     pub pool: DbPool,
@@ -192,7 +194,7 @@ pub trait LandmarkProcessor: Send + Sync {
         let landmarks_for_matching: Vec<LandmarkForMatching> = landmarks.iter().map(|landmark| LandmarkForMatching::from(landmark)).collect();
         let elements_local_array = LocalArray::from_vec(elements);
         let landmarks_local_array = LocalArray::from_vec(landmarks_for_matching);
-        let user_prompt = format!("
+        let user_prompt: String = format!("
             Elements: {}\n\n
             Candidates: {}\n\n
         ",

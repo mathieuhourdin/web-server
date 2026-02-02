@@ -5,12 +5,20 @@ use crate::entities_v2::{
         NewElement,
         ElementType,
     },
+    journal::Journal,
 };
 use crate::entities::error::PpdcError;
 use crate::db::DbPool;
-use crate::openai_handler::GptRequestConfig;
 use uuid::Uuid;
-use serde::Deserialize;
+use crate::work_analyzer::trace_mirror::{
+    header::{
+        self,
+        MirrorHeader,
+    },
+    primary_resource_suggestion::{
+        self,
+    },
+};
 
 // Here we have the pipeline step where we create a trace mirror element from the trace.
 // Trace mirror has the content of the trace, and is linked to the trace.
@@ -24,13 +32,6 @@ use serde::Deserialize;
 
 // First step : MirrorHeader
 // This step only creates a title, a subtitle and a list of tags.
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct MirrorHeader {
-    pub title: String,
-    pub subtitle: String,
-    pub tags: Vec<String>,
-}
 
 // Second step : MirrorQualification
 // This step qualifies the trace against some questions : 
@@ -47,10 +48,6 @@ pub struct MirrorHeader {
 // Maybe some RAG one day ?
 // Match the resource to an existing resource or create a new one.
 
-pub struct PrimaryResourceSuggestion {
-    pub resource_identifier: String, 
-    pub theme: Option<String>,
-}
 
 pub struct NewPrimaryResource {
     pub resource_identifier: String,
@@ -59,33 +56,23 @@ pub struct NewPrimaryResource {
     pub theme: Option<String>,
 }
 
-/// Extracts a MirrorHeader (title, subtitle, tags) from the trace content using the LLM.
-pub async fn extract_mirror_header(trace: &Trace) -> Result<MirrorHeader, PpdcError> {
-    let system_prompt = include_str!("prompts/mirror_header/system.md").to_string();
-    let schema_str = include_str!("prompts/mirror_header/schema.json");
-    let schema: serde_json::Value = serde_json::from_str(schema_str)?;
-    let user_prompt = format!(
-        "trace_text :\n{}\n",
-        trace.content
-    );
-    let config = GptRequestConfig::new(
-        "gpt-4.1-mini".to_string(),
-        system_prompt,
-        user_prompt,
-        Some(schema),
-    );
-    config.execute().await
-}
+
 
 pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
-    let trace_mirror = create_trace_mirror(trace, user_id, landscape_analysis_id, pool).await?;
+    let trace_header = header::extract_mirror_header(trace).await?;
+    let trace_mirror = create_trace_mirror(trace, trace_header, user_id, landscape_analysis_id, pool).await?;
+    let journal = Journal::find_full(trace.journal_id.unwrap(), pool)?;
+    let journal_subtitle = journal.subtitle;
+    if journal_subtitle == "note" {
+        let _primary_resource_suggestion = primary_resource_suggestion::extract(trace).await?;
+        //let new_primary_resource = create_new_primary_resource(primary_resource_suggestion, user_id, landscape_analysis_id, pool).await?;
+    }
     Ok(trace_mirror)
 }
 
 /// Creates a trace mirror element: runs MirrorHeader extraction, then creates an Element
 /// with the extracted title/subtitle and the trace content.
-pub async fn create_trace_mirror(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
-    let header = extract_mirror_header(trace).await?;
+pub async fn create_trace_mirror(trace: &Trace, header: MirrorHeader, user_id: Uuid, landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
     let trace_mirror = NewElement::new(
         header.title,
         header.subtitle,

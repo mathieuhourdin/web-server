@@ -116,7 +116,7 @@ pub async fn analysis_pipeline_with_trace(landscape_analysis_id: Uuid, analyzed_
 
     // First stage of processing 
     // Create the trace mirror element
-    let _trace_mirror = trace_mirror::pipeline::run(
+    let trace_mirror = trace_mirror::pipeline::run(
         &analyzed_trace, 
         landscape_analysis.user_id, 
         landscape_analysis_id, &pool)
@@ -128,6 +128,7 @@ pub async fn analysis_pipeline_with_trace(landscape_analysis_id: Uuid, analyzed_
     let context = ProcessorContext {
         landmarks: previous_landscape_analysis_landmarks,
         trace: analyzed_trace.clone(),
+        trace_mirror: trace_mirror.clone(),
         user_id: landscape_analysis.user_id,
         landscape_analysis_id,
         pool: pool.clone(),

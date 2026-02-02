@@ -197,7 +197,7 @@ impl LandmarkProcessor for ResourceProcessor {
             })
             .map(|resource| LandmarkForMatching::from(resource))
             .collect::<Vec<LandmarkForMatching>>();
-        let trace_string = format!("{}\n{}\n{}", context.trace.title, context.trace.subtitle, context.trace.content);
+        let trace_string = format!("{}\n{}\n{}", context.trace_mirror.title, context.trace_mirror.subtitle, context.trace_mirror.content);
         let user_prompt = format!("
         trace_text : \n {}
         ",

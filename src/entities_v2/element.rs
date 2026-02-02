@@ -24,6 +24,7 @@ pub struct Element {
     pub user_id: Uuid,
     pub analysis_id: Uuid,
     pub trace_id: Uuid,
+    pub landmark_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -102,6 +103,7 @@ impl Element {
             user_id: Uuid::nil(),
             analysis_id: Uuid::nil(),
             trace_id: Uuid::nil(),
+            landmark_id: None,
             created_at: resource.created_at,
             updated_at: resource.updated_at,
         }
@@ -173,12 +175,29 @@ impl Element {
         })
     }
 
-    /// Finds an Element by id and fully hydrates it (user_id, analysis_id, trace_id).
+    /// Hydrates `landmark_id` from an "elmt" relation whose target is a Landmark (not a Trace).
+    pub fn with_landmark_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let landmark_id = targets
+            .into_iter()
+            .find(|t| {
+                t.resource_relation.relation_type == "elmt"
+                    && t.target_resource.resource_type != ResourceType::Trace
+            })
+            .map(|t| t.target_resource.id);
+        Ok(Element {
+            landmark_id,
+            ..self
+        })
+    }
+
+    /// Finds an Element by id and fully hydrates it (user_id, analysis_id, trace_id, landmark_id).
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
         let resource = Resource::find(id, pool)?;
         let el = Element::from_resource(resource);
         let el = el.with_analysis_id(pool)?;
         let el = el.with_trace_id(pool)?;
+        let el = el.with_landmark_id(pool)?;
         let el = match el.clone().with_user_id(pool) {
             Ok(e) => e,
             Err(_) => el,
@@ -309,6 +328,7 @@ impl NewElement {
             user_id,
             analysis_id,
             trace_id,
+            landmark_id,
             ..element
         })
     }
