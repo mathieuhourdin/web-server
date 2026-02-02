@@ -1,16 +1,23 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::entities_v2::trace::Trace;
 use crate::entities::error::{PpdcError, ErrorType};
 use crate::openai_handler::GptRequestConfig;
+use crate::work_analyzer::matching::ElementWithIdentifier;
 
 const MAX_RETRIES: u32 = 3;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrimaryResourceSuggestion {
     pub resource_identifier: String,
     pub theme: Option<String>,
     pub author: Option<String>,
     pub evidence: Vec<String>,
+}
+
+impl ElementWithIdentifier for PrimaryResourceSuggestion {
+    fn identifier(&self) -> String {
+        self.resource_identifier.clone()
+    }
 }
 
 /// Returns the evidence strings that are not exact substrings of `trace_content`.
@@ -23,8 +30,8 @@ fn invalid_evidence(evidence: &[String], trace_content: &str) -> Vec<String> {
 }
 
 pub async fn extract(trace: &Trace) -> Result<PrimaryResourceSuggestion, PpdcError> {
-    let system_prompt = include_str!("prompts/primary_resource_suggestion/system.md").to_string();
-    let schema_str = include_str!("prompts/primary_resource_suggestion/schema.json");
+    let system_prompt = include_str!("../prompts/primary_resource/suggestion/system.md").to_string();
+    let schema_str = include_str!("../prompts/primary_resource/suggestion/schema.json");
     let schema: serde_json::Value = serde_json::from_str(schema_str)?;
     let trace_content = trace.content.clone();
     let mut last_invalid: Option<Vec<String>> = None;

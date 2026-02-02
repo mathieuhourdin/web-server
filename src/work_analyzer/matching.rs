@@ -67,7 +67,7 @@ pub struct ElementMatched<ElementWithIdentifier> {
 pub async fn match_elements<E>(
     elements: Vec<E>,
     landmarks: &Vec<Landmark>,
-    system_prompt: &str,
+    system_prompt: Option<&str>,
 ) -> Result<Vec<ElementMatched<E>>, PpdcError>
 where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
 {
@@ -98,7 +98,8 @@ where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
     ",
     serde_json::to_string(&elements_local_array.items)?,
     serde_json::to_string(&landmarks_local_array.items)?);
-    let schema = include_str!("trace_broker/prompts/landmark_resource/matching/schema.json").to_string();
+    let schema = include_str!("prompts/matching/schema.json").to_string();
+    let system_prompt = system_prompt.unwrap_or(include_str!("prompts/matching/system.md")).to_string();
     let gpt_request_config = GptRequestConfig::new(
         "gpt-4.1-mini".to_string(),
         system_prompt.to_string(),

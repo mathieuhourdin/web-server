@@ -144,8 +144,6 @@ pub trait LandmarkProcessor: Send + Sync {
     fn extract_schema(&self) -> serde_json::Value;
     fn create_new_landmark_system_prompt(&self) -> String;
     fn create_new_landmark_schema(&self) -> serde_json::Value;
-    fn match_elements_system_prompt(&self) -> String;
-    fn match_elements_schema(&self) -> serde_json::Value;
 
     async fn extract_elements(
         &self,
@@ -164,7 +162,7 @@ pub trait LandmarkProcessor: Send + Sync {
         landmarks: &Vec<Landmark>,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError> {
 
-        let matched_elements = matching::match_elements::<Self::ExtractedElement>(elements, landmarks, &self.match_elements_system_prompt()).await?;
+        let matched_elements = matching::match_elements::<Self::ExtractedElement>(elements, landmarks, None).await?;
         let matched_elements: Vec<Self::MatchedElement> = matched_elements
             .iter()
             .map(|element| {

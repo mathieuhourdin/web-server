@@ -173,16 +173,6 @@ impl LandmarkProcessor for ResourceProcessor {
         serde_json::from_str(&schema).unwrap()
     }
 
-    fn match_elements_system_prompt(&self) -> String {
-        let system_prompt = include_str!("prompts/landmark_resource/matching/system.md").to_string();
-        system_prompt
-    }
-
-    fn match_elements_schema(&self) -> serde_json::Value {
-        let schema = include_str!("prompts/landmark_resource/matching/schema.json").to_string();
-        serde_json::from_str(&schema).unwrap()
-    }
-
     async fn extract_elements(
         &self,
         context: &ProcessorContext,

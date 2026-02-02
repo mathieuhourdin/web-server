@@ -15,9 +15,7 @@ use crate::work_analyzer::trace_mirror::{
         self,
         MirrorHeader,
     },
-    primary_resource_suggestion::{
-        self,
-    },
+    primary_resource,
 };
 
 // Here we have the pipeline step where we create a trace mirror element from the trace.
@@ -64,7 +62,7 @@ pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, pool
     let journal = Journal::find_full(trace.journal_id.unwrap(), pool)?;
     let journal_subtitle = journal.subtitle;
     if journal_subtitle == "note" {
-        let _primary_resource_suggestion = primary_resource_suggestion::extract(trace).await?;
+        let _primary_resource_suggestion = primary_resource::suggestion::extract(trace).await?;
         //let new_primary_resource = create_new_primary_resource(primary_resource_suggestion, user_id, landscape_analysis_id, pool).await?;
     }
     Ok(trace_mirror)
