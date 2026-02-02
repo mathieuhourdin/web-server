@@ -24,7 +24,7 @@ Règles :
 3) resource_identifier : titre exact si présent ("Bullshit Jobs"), sinon description normalisée en français ("Un article de N. Klein sur le climat", "Un roman de Tolstoï").
 4) theme : sujet principal en quelques mots ("travail et bullshit jobs", "climat et capitalisme"), ou null.
 5) author : auteur mentionné dans trace_text, copié tel quel ("David Graeber", "N. Klein"), ou null si aucun.
-6) evidence : **obligatoire**, tableau non vide. Chaque élément doit être un extrait **littéral** de trace_text (même ponctuation, pas de troncature au milieu d'un mot). Ce sont les phrases ou segments qui montrent que la ressource est bien celle dont parle la note. Tu peux en fournir plusieurs si besoin.
+6) evidence : **obligatoire**, tableau non vide. Chaque élément doit être un extrait **littéral** de trace_text (même ponctuation, pas de troncature au milieu d'un mot). Ce sont les phrases ou segments qui montrent que la ressource est bien celle dont parle la note. Tu peux en fournir plusieurs si besoin. Tu dois extraire seulement des extraits qui aident à identifier la ressource (max 3).
 
 Tu réponds UNIQUEMENT avec le JSON.
 
