@@ -181,7 +181,7 @@ impl TraceMirror {
             .into_iter()
             .filter(|origin| {
                 origin.resource_relation.relation_type == "lnds"
-                    && origin.origin_resource.resource_type == ResourceType::TraceMirror
+                    && origin.origin_resource.is_trace_mirror()
             })
             .map(|origin| TraceMirror::find_full_trace_mirror(origin.origin_resource.id, pool))
             .collect::<Result<Vec<_>, _>>()?;
@@ -195,7 +195,7 @@ impl TraceMirror {
             .into_iter()
             .filter(|origin| {
                 origin.resource_relation.relation_type == "trce"
-                    && origin.origin_resource.resource_type == ResourceType::TraceMirror
+                    && origin.origin_resource.is_trace_mirror()
             })
             .map(|origin| TraceMirror::find_full_trace_mirror(origin.origin_resource.id, pool))
             .collect::<Result<Vec<_>, _>>()?;

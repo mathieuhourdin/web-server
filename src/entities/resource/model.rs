@@ -115,6 +115,42 @@ impl Resource {
             .execute(&mut conn)?;
         Ok(self)
     }
+
+    pub fn is_entity_type(&self, entity_type: EntityType) -> bool {
+        self.entity_type == entity_type
+    }
+
+    pub fn is_public_post(&self) -> bool {
+        self.is_entity_type(EntityType::PublicPost)
+    }
+
+    pub fn is_journal(&self) -> bool {
+        self.is_entity_type(EntityType::Journal)
+    }
+
+    pub fn is_trace(&self) -> bool {
+        self.is_entity_type(EntityType::Trace)
+    }
+
+    pub fn is_trace_mirror(&self) -> bool {
+        self.is_entity_type(EntityType::TraceMirror)
+    }
+
+    pub fn is_element(&self) -> bool {
+        self.is_entity_type(EntityType::Element)
+    }
+
+    pub fn is_landmark(&self) -> bool {
+        self.is_entity_type(EntityType::Landmark)
+    }
+
+    pub fn is_landscape_analysis(&self) -> bool {
+        self.is_entity_type(EntityType::LandscapeAnalysis)
+    }
+
+    pub fn is_lens(&self) -> bool {
+        self.is_entity_type(EntityType::Lens)
+    }
 }
 
 impl NewResource {

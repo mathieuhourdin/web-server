@@ -186,7 +186,7 @@ impl LandscapeAnalysis {
             .into_iter()
             .filter(|relation| {
                 relation.resource_relation.relation_type == "prnt"
-                && relation.origin_resource.resource_type == ResourceType::Analysis
+                && relation.origin_resource.is_landscape_analysis()
             })
             .map(|relation| LandscapeAnalysis::from_resource(relation.origin_resource))
             .collect::<Vec<LandscapeAnalysis>>();
@@ -198,7 +198,7 @@ impl LandscapeAnalysis {
             .into_iter()
             .filter(|relation| {
                 relation.resource_relation.relation_type == "head"
-                && relation.origin_resource.resource_type == ResourceType::Lens
+                && relation.origin_resource.is_lens()
             })
             .map(|relation| Lens::from_resource(relation.origin_resource))
             .collect::<Vec<Lens>>();
@@ -464,13 +464,13 @@ pub fn delete_leaf_and_cleanup(
         println!("Resource relation: {:?}", resource_relation);
         // check if the resource is owned by the analysis (for elements and entities)
         if resource_relation.resource_relation.relation_type == "ownr".to_string() 
-            && resource_relation.origin_resource.resource_type != ResourceType::Trace
-            && resource_relation.origin_resource.resource_type != ResourceType::Lens
-            && resource_relation.origin_resource.resource_type != ResourceType::Analysis
+            && !resource_relation.origin_resource.is_trace()
+            && !resource_relation.origin_resource.is_lens()
+            && !resource_relation.origin_resource.is_landscape_analysis()
             {
             println!("Deleting resource: {:?}", resource_relation.origin_resource);
             resource_relation.origin_resource.delete(&pool)?;
-        } else if resource_relation.origin_resource.resource_type == ResourceType::Trace {
+        } else if resource_relation.origin_resource.is_trace() {
             let mut trace = resource_relation.origin_resource;
             trace.maturing_state = MaturingState::Draft;
             trace.update(&pool)?;

@@ -149,7 +149,7 @@ impl Landmark {
             .into_iter()
             .find(|relation| {
                 relation.resource_relation.relation_type == "ownr".to_string()
-                && relation.target_resource.resource_type == ResourceType::Analysis
+                && relation.target_resource.is_landscape_analysis()
             })
             .map(|relation| relation.target_resource)
             .ok_or(PpdcError::new(400, ErrorType::ApiError, "Analysis not found".to_string()))

@@ -169,7 +169,7 @@ impl Element {
             .into_iter()
             .find(|t| {
                 t.resource_relation.relation_type == "elmt"
-                    && t.target_resource.resource_type == ResourceType::Trace
+                    && t.target_resource.is_trace()
             })
             .map(|t| t.target_resource.id);
         Ok(Element {
@@ -185,7 +185,7 @@ impl Element {
             .into_iter()
             .find(|t| {
                 t.resource_relation.relation_type == "elmt"
-                    && t.target_resource.resource_type != ResourceType::Trace
+                    && !t.target_resource.is_trace()
             })
             .map(|t| t.target_resource.id);
         Ok(Element {
