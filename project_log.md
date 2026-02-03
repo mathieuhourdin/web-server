@@ -7,6 +7,70 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-03 Today
+
+I need to create a TraceMirror entity because it is different than a element.
+Then i will be able to use the mirrors in the following pipeline.
+
+### 2026-02-03 Next steps
+
+Now I have an analysis for the TraceMirror. 
+I should use this trace mirror for the rest of the pipeline, in order to have all the context informations about the trace (is it a note trace, what is it mainly talking about...)
+It should now be the time to add a new landmark, and I think it should be theme. Or people. I dont know. 
+But this raises the question about how to design more precisely the elements. Should an element be linked to two landmarks ? Recently I have found that asking for a trio reference, author and theme for the extraction was working really well, because it is a natural mapping to many resource references, and there is almost always one or two of thoses three mentioned when a resource is referenced.
+
+What came to my mind is the following thing : 
+- I could reuse the input / output breakdown that was first in the platform
+- The user's activity is a flow of inputs he takes from the outside and of outputs he provides.
+- That flow is what we organise and make stable using landmarks
+- In a advanced design, we should link inputs to outputs but in a V1 we can treat them as independant
+- Inputs are trio resource, author, theme that feeds the user work
+- Outputs are mostly a duo idea, deliverable. Or action, deliverable
+- A third category could be all the qualitative things the user says about himself (I am tired, happy...) that we could store as raw materials for now.
+- Thinking again, we should have a big partition of the user's space between different aspects of his life (perso, tech, socio...). However this is strongly related to my own multi activity and shouldn't be a first priority. At least, put some tags on the trace mirror to help retrieve the right traces when we want to perform the analysis.
+
+For now, what matters is to focus on the input part. That is the easyest part I think.
+This means to work on the trio resource, author theme.
+
+It seems clear that a single element should be allowed to belong to multiple landmarks. We want to know that a part of a trace uses the resource A and is about B, not to know independantly that there is a part about A and a part about B.
+The author could stay aside for now I think, because they are strongly related to the resources. We will discuss this later.
+But the first thing is that we have a n-n relation between elements and landmarks (or maybe multiple 1-N ? I should think about that later.)
+Then in the pipeline, the extraction should be performed with both theme and resource.
+We could have a single extraction run, and then two matching runs for the matching.
+
+I dont see any issues here actually.
+
+What is more complex is the following : when I have qualified the whole trace, what should I do on the elements from the trace ? Should a link them to the global resource each time ? But if it is a resource mention, then it would be related to two resources ? Maybe we should have a hierarchy : a resource as global context, another as local focus. Same for the theme. I think that, for now, it is better to think about it as :
+- The trace mirror holds the global context
+- The element holds the local information.
+
+In a note, some parts will be mentions of other resources and will be mapped to them.
+But some other parts are just from the gloabl resource, but treat sub themes of the global theme. Eg in a encoding related trace, we have an element about avro, an element about protobuf.
+There is really no problems about that. We just should do some experiments to see what prompts and pipeline give the good result but it should work.
+
+
+### 2026-02-02 Work of the day
+
+Today I have made some good improvements.
+Now the trace mirror creation is working. I have made the extraction, matching and creation.
+I made the matching part more abstrait and this is a good thing, i will be able to use it for all future matching problems.
+I think I should work on a similar structure for most LLM calls : when I call the LLM for a collection, I dont want to ask it to repeat the existing fields, I just want new fields and to gather the information after that.
+
+I worked on the PUT lens route too. I will need some more things to prevent going back in time. 
+
+Howerver now all of this is working pretty good. I will need to work deeper on themes and to fine tune my pipeline but then I think it will be quite ok.
+
+### 2026-02-02 Trace extractions
+
+I have made a new experiment where I extract a vector of evidences from the trace to justify what part are referencing a resource. Then I make sanity check to verify that the evidence is really a substring of the existing trace.
+I should think about two kind of extraction : 
+- extract a small piece of the trace that justify the association. We want to keep it small, for instance a simple extraction of the title, or author + theme.
+- extract all the text that is related to this extraction. This is how we make sure to have all the contained information from the trace for the following analysis.
+
+For the note tracemirror analysis, I think I can stick to the first part because the whole trace is supposed to be about the same resource.
+However I can imagine more complex situations : 
+I have a trace that is a note about a resource. However the user has an idea during the book reading. Then the trace has both a summary part and a new idea part. But I think this should be treated later in the pipeline.
+
 ### 2026-01-30 move toward v2 and new pipeline
 
 I worked on the existing pipeline to remove all use of legacy api. 
