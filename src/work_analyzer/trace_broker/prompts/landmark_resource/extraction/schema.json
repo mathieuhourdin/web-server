@@ -19,10 +19,13 @@
                             }
                         ]
                     },
-                    "extracted_content": {"type": "string"},
-                    "generated_context": {"type": "string"}
+                    "evidence": {"type": "string"},
+                    "extractions": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    }
                 },
-                "required": ["resource_identifier", "author", "theme", "extracted_content", "generated_context"],
+                "required": ["resource_identifier", "author", "theme", "evidence", "extractions"],
                 "additionalProperties": false
             }
         }

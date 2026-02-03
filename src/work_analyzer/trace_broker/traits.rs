@@ -9,7 +9,7 @@ use crate::entities_v2::{
     landmark::{
         Landmark,
         NewLandmark,
-        landmark_create_copy_child_and_return,
+        self
     },
     trace::Trace,
     trace_mirror::TraceMirror,
@@ -208,7 +208,7 @@ pub trait LandmarkProcessor: Send + Sync {
                     created_landmark = Landmark::find(landmarks_updates.get(&updated_landmark_id).unwrap().clone(), &context.pool)?;
                 } else {
                     // If it is the first reference to this landmark, we create a new landmark and link it to the parent landmark.
-                    created_landmark = landmark_create_copy_child_and_return(updated_landmark_id, context.user_id, context.landscape_analysis_id, &context.pool)?;
+                    created_landmark = landmark::create_copy_child_and_return(updated_landmark_id, context.user_id, context.landscape_analysis_id, &context.pool)?;
                     landmarks_updates.insert(updated_landmark_id, created_landmark.id);
                     updated_landmark_ids.push(updated_landmark_id);
                 }

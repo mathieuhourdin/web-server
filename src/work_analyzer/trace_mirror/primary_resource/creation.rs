@@ -1,4 +1,3 @@
-use crate::work_analyzer::trace_mirror::primary_resource::suggestion::PrimaryResourceSuggestion;
 use crate::work_analyzer::trace_mirror::primary_resource::matching::PrimaryResourceMatched;
 use serde::{Deserialize, Serialize};
 use crate::openai_handler::GptRequestConfig;

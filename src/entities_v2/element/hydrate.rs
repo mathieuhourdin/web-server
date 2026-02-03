@@ -1,92 +1,20 @@
 use uuid::Uuid;
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
 
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{
         entity_type::EntityType,
-        Resource,
-        NewResource,
-        resource_type::ResourceType,
         maturing_state::MaturingState,
+        NewResource,
+        Resource,
+        resource_type::ResourceType,
     },
-    resource_relation::{NewResourceRelation, ResourceRelation},
+    resource_relation::ResourceRelation,
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Element {
-    pub id: Uuid,
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub extended_content: Option<String>,
-    pub element_type: ElementType,
-    pub user_id: Uuid,
-    pub analysis_id: Uuid,
-    pub trace_id: Uuid,
-    pub trace_mirror_id: Option<Uuid>,
-    pub landmark_id: Option<Uuid>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
+use super::model::{Element, ElementType, NewElement};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-pub enum ElementType {
-    TraceMirror,
-    Action,
-    Event,
-    Idea,
-    Quote,
-    Emotion,
-    Fact,
-}
-
-impl ElementType {
-    pub fn to_code(self) -> &'static str {
-        match self {
-            ElementType::TraceMirror => "trcm",
-            ElementType::Action => "actn",
-            ElementType::Event => "evnt",
-            ElementType::Idea => "idea",
-            ElementType::Quote => "quot",
-            ElementType::Emotion => "emot",
-            ElementType::Fact => "fact",
-        }
-    }
-
-    pub fn from_code(code: &str) -> Option<ElementType> {
-        match code {
-            "trcm" => Some(ElementType::TraceMirror),
-            "actn" => Some(ElementType::Action),
-            "evnt" => Some(ElementType::Event),
-            "idea" => Some(ElementType::Idea),
-            "quot" => Some(ElementType::Quote),
-            "emot" => Some(ElementType::Emotion),
-            "fact" => Some(ElementType::Fact),
-            _ => None,
-        }
-    }
-}
-
-impl From<ResourceType> for ElementType {
-    fn from(resource_type: ResourceType) -> Self {
-        match resource_type {
-            ResourceType::TraceMirror => ElementType::TraceMirror,
-            _ => ElementType::Event,
-        }
-    }
-}
-
-impl From<ElementType> for ResourceType {
-    fn from(element_type: ElementType) -> Self {
-        match element_type {
-            ElementType::TraceMirror => ResourceType::TraceMirror,
-            _ => ResourceType::Event,
-        }
-    }
-}
 impl Element {
     /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id, trace_mirror_id)
     /// and extended_content must be hydrated via `with_*` / `find_full`.
@@ -251,38 +179,6 @@ impl Element {
             .collect();
         Ok(elements)
     }
-
-    /// Updates the Element in the database via the Resource.
-    pub fn update(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let resource = self.to_resource();
-        let updated = resource.update(pool)?;
-        Ok(Element {
-            title: updated.title,
-            subtitle: updated.subtitle,
-            content: updated.content,
-            updated_at: updated.updated_at,
-            ..self
-        })
-    }
-}
-
-impl From<Resource> for Element {
-    fn from(resource: Resource) -> Self {
-        Element::from_resource(resource)
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct NewElement {
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub element_type: ElementType,
-    pub user_id: Uuid,
-    pub analysis_id: Uuid,
-    pub trace_id: Uuid,
-    pub trace_mirror_id: Option<Uuid>,
-    pub landmark_id: Option<Uuid>,
 }
 
 impl NewElement {
@@ -302,73 +198,10 @@ impl NewElement {
             is_external: Some(false),
         }
     }
-
-    pub fn new(
-        title: String,
-        subtitle: String,
-        content: String,
-        element_type: ElementType,
-        trace_id: Uuid,
-        trace_mirror_id: Option<Uuid>,
-        landmark_id: Option<Uuid>,
-        analysis_id: Uuid,
-        user_id: Uuid,
-    ) -> NewElement {
-        NewElement { title, subtitle, content, element_type, user_id, analysis_id, trace_id, trace_mirror_id, landmark_id }
-    }
-
-    /// Creates the underlying Resource, then "ownr" -> analysis, "elmt" -> trace,
-    /// and optionally "elmt" -> landmark. Does not create an interaction.
-    pub fn create(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let user_id = self.user_id;
-        let analysis_id = self.analysis_id;
-        let trace_id = self.trace_id;
-        let trace_mirror_id = self.trace_mirror_id;
-        let landmark_id = self.landmark_id;
-
-        let new_resource = self.to_new_resource();
-        let created = new_resource.create(pool)?;
-        let element = Element::from_resource(created);
-
-        let mut ownr = NewResourceRelation::new(element.id, analysis_id);
-        ownr.relation_type = Some("ownr".to_string());
-        ownr.user_id = Some(user_id);
-        ownr.create(pool)?;
-
-        let mut elmt_trace = NewResourceRelation::new(element.id, trace_id);
-        elmt_trace.relation_type = Some("elmt".to_string());
-        elmt_trace.user_id = Some(user_id);
-        elmt_trace.create(pool)?;
-
-        if let Some(trace_mirror_id) = trace_mirror_id {
-            let mut elmt_trace_mirror = NewResourceRelation::new(element.id, trace_mirror_id);
-            elmt_trace_mirror.relation_type = Some("trcm".to_string());
-            elmt_trace_mirror.user_id = Some(user_id);
-            elmt_trace_mirror.create(pool)?;
-        }
-
-        if let Some(lid) = landmark_id {
-            let mut elmt_landmark = NewResourceRelation::new(element.id, lid);
-            elmt_landmark.relation_type = Some("elmt".to_string());
-            elmt_landmark.user_id = Some(user_id);
-            elmt_landmark.create(pool)?;
-        }
-
-        Ok(Element {
-            user_id,
-            analysis_id,
-            trace_id,
-            trace_mirror_id,
-            landmark_id,
-            ..element
-        })
-    }
 }
 
-pub fn link_to_landmark(element_id: Uuid, landmark_id: Uuid, user_id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
-    let mut elmt_landmark = NewResourceRelation::new(element_id, landmark_id);
-    elmt_landmark.relation_type = Some("elmt".to_string());
-    elmt_landmark.user_id = Some(user_id);
-    elmt_landmark.create(pool)?;
-    Ok(landmark_id)
+impl From<Resource> for Element {
+    fn from(resource: Resource) -> Self {
+        Element::from_resource(resource)
+    }
 }

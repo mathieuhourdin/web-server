@@ -1,0 +1,107 @@
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::entities::resource::resource_type::ResourceType;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Element {
+    pub id: Uuid,
+    pub title: String,
+    pub subtitle: String,
+    pub content: String,
+    pub extended_content: Option<String>,
+    pub element_type: ElementType,
+    pub user_id: Uuid,
+    pub analysis_id: Uuid,
+    pub trace_id: Uuid,
+    pub trace_mirror_id: Option<Uuid>,
+    pub landmark_id: Option<Uuid>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum ElementType {
+    TraceMirror,
+    Action,
+    Event,
+    Idea,
+    Quote,
+    Emotion,
+    Fact,
+}
+
+impl ElementType {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            ElementType::TraceMirror => "trcm",
+            ElementType::Action => "actn",
+            ElementType::Event => "evnt",
+            ElementType::Idea => "idea",
+            ElementType::Quote => "quot",
+            ElementType::Emotion => "emot",
+            ElementType::Fact => "fact",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<ElementType> {
+        match code {
+            "trcm" => Some(ElementType::TraceMirror),
+            "actn" => Some(ElementType::Action),
+            "evnt" => Some(ElementType::Event),
+            "idea" => Some(ElementType::Idea),
+            "quot" => Some(ElementType::Quote),
+            "emot" => Some(ElementType::Emotion),
+            "fact" => Some(ElementType::Fact),
+            _ => None,
+        }
+    }
+}
+
+impl From<ResourceType> for ElementType {
+    fn from(resource_type: ResourceType) -> Self {
+        match resource_type {
+            ResourceType::TraceMirror => ElementType::TraceMirror,
+            _ => ElementType::Event,
+        }
+    }
+}
+
+impl From<ElementType> for ResourceType {
+    fn from(element_type: ElementType) -> Self {
+        match element_type {
+            ElementType::TraceMirror => ResourceType::TraceMirror,
+            _ => ResourceType::Event,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NewElement {
+    pub title: String,
+    pub subtitle: String,
+    pub content: String,
+    pub element_type: ElementType,
+    pub user_id: Uuid,
+    pub analysis_id: Uuid,
+    pub trace_id: Uuid,
+    pub trace_mirror_id: Option<Uuid>,
+    pub landmark_id: Option<Uuid>,
+}
+
+impl NewElement {
+    pub fn new(
+        title: String,
+        subtitle: String,
+        content: String,
+        element_type: ElementType,
+        trace_id: Uuid,
+        trace_mirror_id: Option<Uuid>,
+        landmark_id: Option<Uuid>,
+        analysis_id: Uuid,
+        user_id: Uuid,
+    ) -> NewElement {
+        NewElement { title, subtitle, content, element_type, user_id, analysis_id, trace_id, trace_mirror_id, landmark_id }
+    }
+}

@@ -1,6 +1,5 @@
 use uuid::Uuid;
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
+
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
@@ -8,21 +7,11 @@ use crate::entities::{
         entity_type::EntityType,
         maturing_state::MaturingState,
         resource_type::ResourceType,
-        NewResource,
         Resource,
     },
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Journal {
-    pub id: Uuid,
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub user_id: Uuid,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
+use super::model::Journal;
 
 impl Journal {
     /// Creates a Journal from a Resource with default/placeholder values
@@ -84,17 +73,10 @@ impl Journal {
         let journal = journal.with_user_id(pool)?;
         Ok(journal)
     }
+}
 
-    /// Updates the Journal in the database.
-    pub fn update(self, pool: &DbPool) -> Result<Journal, PpdcError> {
-        let resource = self.to_resource();
-        let updated_resource = NewResource::from(resource).update(&self.id, pool)?;
-        Ok(Journal {
-            title: updated_resource.title,
-            subtitle: updated_resource.subtitle,
-            content: updated_resource.content,
-            updated_at: updated_resource.updated_at,
-            ..self
-        })
+impl From<Resource> for Journal {
+    fn from(resource: Resource) -> Self {
+        Journal::from_resource(resource)
     }
 }

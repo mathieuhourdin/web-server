@@ -1,67 +1,12 @@
 use uuid::Uuid;
-use crate::entities::{
-    error::{ErrorType, PpdcError},
-    resource::{
-        entity_type::EntityType,
-        Resource,
-        NewResource,
-        resource_type::ResourceType,
-        maturing_state::MaturingState,
-    },
-    resource_relation::{NewResourceRelation, ResourceRelation},
-    interaction::model::{NewInteraction, Interaction},
-};
-use chrono::NaiveDateTime;
-use serde::{Deserialize, Serialize};
-use axum::extract::{Extension, Json, Path};
+
 use crate::db::DbPool;
-use axum::debug_handler;
+use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities::resource::{entity_type::EntityType, NewResource, Resource, resource_type::ResourceType};
+use crate::entities::resource_relation::ResourceRelation;
+use crate::entities::interaction::model::Interaction;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Landmark {
-    pub id: Uuid,
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub external_content_url: Option<String>,
-    pub comment: Option<String>,
-    pub image_url: Option<String>,
-    pub landmark_type: ResourceType,
-    pub maturing_state: MaturingState,
-    pub publishing_state: String,
-    pub category_id: Option<Uuid>,
-    pub is_external: bool,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LandmarkWithParentsAndElements {
-    #[serde(flatten)]
-    pub landmark: Landmark,
-    pub parent_landmarks: Vec<Landmark>,
-    pub related_elements: Vec<Resource>,
-}
-
-impl LandmarkWithParentsAndElements {
-    pub fn new(landmark: Landmark, parent_landmarks: Vec<Landmark>, related_elements: Vec<Resource>) -> Self {
-        Self { landmark, parent_landmarks, related_elements }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct NewLandmark {
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub landmark_type: ResourceType,
-    pub maturing_state: MaturingState,
-    pub publishing_state: String,
-    pub analysis_id: Uuid,
-    pub user_id: Uuid,
-    pub parent_id: Option<Uuid>,
-}
-
+use super::model::{Landmark, LandmarkWithParentsAndElements, NewLandmark};
 
 impl Landmark {
     pub fn to_resource(self) -> Resource {
@@ -83,6 +28,7 @@ impl Landmark {
             updated_at: self.updated_at,
         }
     }
+
     pub fn from_resource(resource: Resource) -> Self {
         Self {
             id: resource.id,
@@ -100,15 +46,6 @@ impl Landmark {
             created_at: resource.created_at,
             updated_at: resource.updated_at,
         }
-    }
-    pub fn find(id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let result = Resource::find(id, pool)?;
-        Ok(Landmark::from_resource(result))
-    }
-    pub fn update(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let result = self.to_resource();
-        let updated_resource = result.update(pool)?;
-        Ok(Landmark::from_resource(updated_resource))
     }
 
     pub fn find_parent(&self, pool: &DbPool) -> Result<Option<Landmark>, PpdcError> {
@@ -165,7 +102,10 @@ impl Landmark {
         let mut landmarks = vec![];
         for landmark_type in landmarks_types {
             let interactions = Interaction::find_landmarks_for_user_by_type(user_id, landmark_type, pool)?;
-            let landmarks_for_type = interactions.into_iter().map(|interaction| Landmark::from_resource(interaction.resource)).collect::<Vec<Landmark>>();
+            let landmarks_for_type = interactions
+                .into_iter()
+                .map(|interaction| Landmark::from_resource(interaction.resource))
+                .collect::<Vec<Landmark>>();
             landmarks.extend(landmarks_for_type);
         }
         Ok(landmarks)
@@ -186,29 +126,6 @@ impl Landmark {
 }
 
 impl NewLandmark {
-    pub fn new(
-        title: String, 
-        subtitle: String, 
-        content: String, 
-        landmark_type: ResourceType, 
-        maturing_state: MaturingState,
-        analysis_id: Uuid,
-        user_id: Uuid,
-        parent_id: Option<Uuid>,
-    ) -> NewLandmark {
-        Self {
-            title,
-            subtitle,
-            content,
-            landmark_type,
-            maturing_state,
-            publishing_state: "pbsh".to_string(),
-            analysis_id,
-            user_id,
-            parent_id
-        }
-    }
-
     pub fn to_new_resource(self) -> NewResource {
         NewResource {
             title: self.title,
@@ -225,83 +142,10 @@ impl NewLandmark {
             is_external: None,
         }
     }
-    pub fn create(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let analysis_id = self.analysis_id;
-        let user_id = self.user_id;
-        let parent_id = self.parent_id;
-
-        // create the landmark with all positive flags
-        let landmark = self;
-        let new_resource = landmark.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
-        let landmark = Landmark::from_resource(created_resource);
-
-        // Create relation with analysis
-        let mut new_resource_relation = NewResourceRelation::new(landmark.id, analysis_id);
-        new_resource_relation.relation_type = Some("ownr".to_string());
-        new_resource_relation.user_id = Some(user_id);
-        new_resource_relation.create(pool)?;
-
-
-        if let Some(parent_id) = parent_id {
-
-            // create the parent relation to the parent landmark
-            let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_id);
-            new_resource_relation.relation_type = Some("prnt".to_string());
-            new_resource_relation.user_id = Some(user_id);
-            new_resource_relation.create(pool)?;
-        }
-
-        // link the landmark to the user with the interaction
-        let mut new_interaction = NewInteraction::new(user_id, landmark.id);
-        new_interaction.interaction_type = Some("anly".to_string());
-        new_interaction.create(pool)?;
-        Ok(landmark)
-    }
 }
 
 impl From<Resource> for Landmark {
     fn from(resource: Resource) -> Self {
         Landmark::from_resource(resource)
     }
-}
-
-#[debug_handler]
-pub async fn get_landmarks_for_user_route(
-    Extension(pool): Extension<DbPool>,
-    Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<Landmark>>, PpdcError> {
-    let landmarks = Landmark::find_all_up_to_date_for_user(user_id, &pool)?;
-    Ok(Json(landmarks))
-}
-
-#[debug_handler]
-pub async fn get_landmark_route(
-    Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<LandmarkWithParentsAndElements>, PpdcError> {
-    let landmark = Landmark::find_with_parents(id, &pool)?;
-    Ok(Json(landmark))
-}
-
-pub fn landmark_create_copy_child_and_return(
-    parent_landmark_id: Uuid,
-    user_id: Uuid,
-    analysis_id: Uuid,
-    pool: &DbPool,
-) -> Result<Landmark, PpdcError> {
-    let parent_landmark = Landmark::find(parent_landmark_id, pool)?;
-    let landmark = NewLandmark::new(
-        parent_landmark.title, 
-        parent_landmark.subtitle, 
-        parent_landmark.content, 
-        parent_landmark.landmark_type, 
-        parent_landmark.maturing_state,
-        analysis_id,
-        user_id,
-        Some(parent_landmark_id)
-
-    );
-    let landmark = landmark.create(pool)?;
-    Ok(landmark)
 }

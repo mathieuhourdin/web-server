@@ -1,7 +1,9 @@
+use uuid::Uuid;
+
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
-    interaction::model::{Interaction, NewInteraction},
+    interaction::model::Interaction,
     resource::{
         entity_type::EntityType,
         maturing_state::MaturingState,
@@ -9,32 +11,10 @@ use crate::entities::{
         NewResource,
         Resource,
     },
-    resource_relation::{NewResourceRelation, ResourceRelation},
-    session::Session,
+    resource_relation::ResourceRelation,
 };
-use axum::{
-    debug_handler,
-    extract::{Extension, Json, Path},
-};
-use chrono::{NaiveDateTime, Utc};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TraceMirror {
-    pub id: Uuid,
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub tags: Vec<String>,
-    pub trace_id: Uuid,
-    pub landscape_analysis_id: Uuid,
-    pub user_id: Uuid,
-    pub primary_resource_id: Option<Uuid>,
-    pub primary_theme_id: Option<Uuid>,
-    pub created_at: NaiveDateTime,
-    pub updated_at: NaiveDateTime,
-}
+use super::model::{NewTraceMirror, TraceMirror};
 
 impl TraceMirror {
     /// Creates a TraceMirror from a Resource with default/placeholder values
@@ -110,10 +90,7 @@ impl TraceMirror {
             .find(|target| target.resource_relation.relation_type == "trce")
             .map(|target| target.target_resource.id)
             .unwrap_or(Uuid::nil());
-        Ok(TraceMirror {
-            trace_id,
-            ..self
-        })
+        Ok(TraceMirror { trace_id, ..self })
     }
 
     /// Hydrates landscape_analysis_id from resource relations.
@@ -125,10 +102,7 @@ impl TraceMirror {
             .find(|target| target.resource_relation.relation_type == "lnds")
             .map(|target| target.target_resource.id)
             .unwrap_or(Uuid::nil());
-        Ok(TraceMirror {
-            landscape_analysis_id,
-            ..self
-        })
+        Ok(TraceMirror { landscape_analysis_id, ..self })
     }
 
     /// Hydrates primary_resource_id from resource relations.
@@ -139,10 +113,7 @@ impl TraceMirror {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "prir")
             .map(|target| target.target_resource.id);
-        Ok(TraceMirror {
-            primary_resource_id,
-            ..self
-        })
+        Ok(TraceMirror { primary_resource_id, ..self })
     }
 
     /// Hydrates primary_theme_id from resource relations.
@@ -153,10 +124,7 @@ impl TraceMirror {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "prit")
             .map(|target| target.target_resource.id);
-        Ok(TraceMirror {
-            primary_theme_id,
-            ..self
-        })
+        Ok(TraceMirror { primary_theme_id, ..self })
     }
 
     /// Finds a TraceMirror by id and fully hydrates it from the database.
@@ -219,50 +187,9 @@ impl TraceMirror {
     }
 }
 
-/// Struct for creating a new TraceMirror with all required data.
-pub struct NewTraceMirror {
-    pub title: String,
-    pub subtitle: String,
-    pub content: String,
-    pub tags: Vec<String>,
-    pub trace_id: Uuid,
-    pub landscape_analysis_id: Uuid,
-    pub user_id: Uuid,
-    pub primary_resource_id: Option<Uuid>,
-    pub primary_theme_id: Option<Uuid>,
-    pub interaction_date: Option<NaiveDateTime>,
-}
-
 impl NewTraceMirror {
-    /// Creates a new NewTraceMirror with all fields.
-    pub fn new(
-        title: String,
-        subtitle: String,
-        content: String,
-        tags: Vec<String>,
-        trace_id: Uuid,
-        landscape_analysis_id: Uuid,
-        user_id: Uuid,
-        primary_resource_id: Option<Uuid>,
-        primary_theme_id: Option<Uuid>,
-        interaction_date: Option<NaiveDateTime>,
-    ) -> NewTraceMirror {
-        NewTraceMirror {
-            title,
-            subtitle,
-            content,
-            tags,
-            trace_id,
-            landscape_analysis_id,
-            user_id,
-            primary_resource_id,
-            primary_theme_id,
-            interaction_date,
-        }
-    }
-
     /// Converts to a NewResource for database insertion.
-    fn to_new_resource(&self) -> NewResource {
+    pub fn to_new_resource(&self) -> NewResource {
         let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
 
         NewResource {
@@ -280,103 +207,10 @@ impl NewTraceMirror {
             image_url: None,
         }
     }
+}
 
-    /// Creates the TraceMirror in the database.
-    /// This creates the underlying Resource, Interaction, and ResourceRelations.
-    pub fn create(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let user_id = self.user_id;
-        let interaction_date = self.interaction_date.unwrap_or_else(|| Utc::now().naive_utc());
-        let trace_id = self.trace_id;
-        let landscape_analysis_id = self.landscape_analysis_id;
-        let primary_resource_id = self.primary_resource_id;
-        let primary_theme_id = self.primary_theme_id;
-
-        // Create the underlying resource
-        let new_resource = self.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
-
-        // Create the author interaction
-        let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
-        new_interaction.interaction_type = Some("outp".to_string());
-        new_interaction.interaction_date = Some(interaction_date);
-        new_interaction.interaction_progress = 0;
-        new_interaction.create(pool)?;
-
-        // Create trace relation
-        let mut trace_relation = NewResourceRelation::new(created_resource.id, trace_id);
-        trace_relation.relation_type = Some("trce".to_string());
-        trace_relation.user_id = Some(user_id);
-        trace_relation.create(pool)?;
-
-        // Create landscape analysis relation
-        let mut landscape_relation =
-            NewResourceRelation::new(created_resource.id, landscape_analysis_id);
-        landscape_relation.relation_type = Some("lnds".to_string());
-        landscape_relation.user_id = Some(user_id);
-        landscape_relation.create(pool)?;
-
-        // Create primary resource relation if provided
-        if let Some(resource_id) = primary_resource_id {
-            let mut resource_relation = NewResourceRelation::new(created_resource.id, resource_id);
-            resource_relation.relation_type = Some("prir".to_string());
-            resource_relation.user_id = Some(user_id);
-            resource_relation.create(pool)?;
-        }
-
-        // Create primary theme relation if provided
-        if let Some(theme_id) = primary_theme_id {
-            let mut theme_relation = NewResourceRelation::new(created_resource.id, theme_id);
-            theme_relation.relation_type = Some("prit".to_string());
-            theme_relation.user_id = Some(user_id);
-            theme_relation.create(pool)?;
-        }
-
-        // Return the fully hydrated trace mirror
-        TraceMirror::find_full_trace_mirror(created_resource.id, pool)
+impl From<Resource> for TraceMirror {
+    fn from(resource: Resource) -> Self {
+        TraceMirror::from_resource(resource)
     }
-}
-
-#[debug_handler]
-pub async fn get_trace_mirror_route(
-    Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<TraceMirror>, PpdcError> {
-    let trace_mirror = TraceMirror::find_full_trace_mirror(id, &pool)?;
-    Ok(Json(trace_mirror))
-}
-
-#[debug_handler]
-pub async fn get_trace_mirrors_by_landscape_route(
-    Extension(pool): Extension<DbPool>,
-    Path(landscape_analysis_id): Path<Uuid>,
-) -> Result<Json<Vec<TraceMirror>>, PpdcError> {
-    let trace_mirrors = TraceMirror::find_by_landscape_analysis(landscape_analysis_id, &pool)?;
-    Ok(Json(trace_mirrors))
-}
-
-#[debug_handler]
-pub async fn get_trace_mirrors_by_trace_route(
-    Extension(pool): Extension<DbPool>,
-    Path(trace_id): Path<Uuid>,
-) -> Result<Json<Vec<TraceMirror>>, PpdcError> {
-    let trace_mirrors = TraceMirror::find_by_trace(trace_id, &pool)?;
-    Ok(Json(trace_mirrors))
-}
-
-/// Links a trace mirror to its primary resource landmark
-pub fn link_to_primary_resource(trace_mirror_id: Uuid, primary_resource_id: Uuid, user_id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
-    let mut mirror_resource = NewResourceRelation::new(trace_mirror_id, primary_resource_id);
-    mirror_resource.relation_type = Some("prir".to_string());
-    mirror_resource.user_id = Some(user_id);
-    mirror_resource.create(pool)?;
-    Ok(primary_resource_id)
-}
-
-#[debug_handler]
-pub async fn get_user_trace_mirrors_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-) -> Result<Json<Vec<TraceMirror>>, PpdcError> {
-    let trace_mirrors = TraceMirror::find_by_user(session.user_id.unwrap(), &pool)?;
-    Ok(Json(trace_mirrors))
 }
