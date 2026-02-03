@@ -26,6 +26,7 @@ pub struct Element {
     pub user_id: Uuid,
     pub analysis_id: Uuid,
     pub trace_id: Uuid,
+    pub trace_mirror_id: Option<Uuid>,
     pub landmark_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -87,7 +88,7 @@ impl From<ElementType> for ResourceType {
     }
 }
 impl Element {
-    /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id)
+    /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id, trace_mirror_id)
     /// and extended_content must be hydrated via `with_*` / `find_full`.
     pub fn from_resource(resource: Resource) -> Self {
         let element_type = resource
@@ -105,6 +106,7 @@ impl Element {
             user_id: Uuid::nil(),
             analysis_id: Uuid::nil(),
             trace_id: Uuid::nil(),
+            trace_mirror_id: None,
             landmark_id: None,
             created_at: resource.created_at,
             updated_at: resource.updated_at,
@@ -178,6 +180,19 @@ impl Element {
         })
     }
 
+    /// Hydrates `trace_mirror_id` from a "trcm" relation (element -> trace mirror).
+    pub fn with_trace_mirror_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let trace_mirror_id = targets
+            .into_iter()
+            .find(|t| t.resource_relation.relation_type == "trcm")
+            .map(|t| t.target_resource.id);
+        Ok(Element {
+            trace_mirror_id,
+            ..self
+        })
+    }
+
     /// Hydrates `landmark_id` from an "elmt" relation whose target is a Landmark (not a Trace).
     pub fn with_landmark_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
@@ -194,12 +209,13 @@ impl Element {
         })
     }
 
-    /// Finds an Element by id and fully hydrates it (user_id, analysis_id, trace_id, landmark_id).
+    /// Finds an Element by id and fully hydrates it (user_id, analysis_id, trace_id, trace_mirror_id, landmark_id).
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
         let resource = Resource::find(id, pool)?;
         let el = Element::from_resource(resource);
         let el = el.with_analysis_id(pool)?;
         let el = el.with_trace_id(pool)?;
+        let el = el.with_trace_mirror_id(pool)?;
         let el = el.with_landmark_id(pool)?;
         let el = match el.clone().with_user_id(pool) {
             Ok(e) => e,
@@ -265,6 +281,7 @@ pub struct NewElement {
     pub user_id: Uuid,
     pub analysis_id: Uuid,
     pub trace_id: Uuid,
+    pub trace_mirror_id: Option<Uuid>,
     pub landmark_id: Option<Uuid>,
 }
 
@@ -292,11 +309,12 @@ impl NewElement {
         content: String,
         element_type: ElementType,
         trace_id: Uuid,
+        trace_mirror_id: Option<Uuid>,
         landmark_id: Option<Uuid>,
         analysis_id: Uuid,
         user_id: Uuid,
     ) -> NewElement {
-        NewElement { title, subtitle, content, element_type, user_id, analysis_id, trace_id, landmark_id }
+        NewElement { title, subtitle, content, element_type, user_id, analysis_id, trace_id, trace_mirror_id, landmark_id }
     }
 
     /// Creates the underlying Resource, then "ownr" -> analysis, "elmt" -> trace,
@@ -305,6 +323,7 @@ impl NewElement {
         let user_id = self.user_id;
         let analysis_id = self.analysis_id;
         let trace_id = self.trace_id;
+        let trace_mirror_id = self.trace_mirror_id;
         let landmark_id = self.landmark_id;
 
         let new_resource = self.to_new_resource();
@@ -321,6 +340,13 @@ impl NewElement {
         elmt_trace.user_id = Some(user_id);
         elmt_trace.create(pool)?;
 
+        if let Some(trace_mirror_id) = trace_mirror_id {
+            let mut elmt_trace_mirror = NewResourceRelation::new(element.id, trace_mirror_id);
+            elmt_trace_mirror.relation_type = Some("trcm".to_string());
+            elmt_trace_mirror.user_id = Some(user_id);
+            elmt_trace_mirror.create(pool)?;
+        }
+
         if let Some(lid) = landmark_id {
             let mut elmt_landmark = NewResourceRelation::new(element.id, lid);
             elmt_landmark.relation_type = Some("elmt".to_string());
@@ -332,6 +358,7 @@ impl NewElement {
             user_id,
             analysis_id,
             trace_id,
+            trace_mirror_id,
             landmark_id,
             ..element
         })

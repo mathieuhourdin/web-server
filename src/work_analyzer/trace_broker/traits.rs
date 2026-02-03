@@ -67,13 +67,21 @@ pub trait MatchedExtractedElementForLandmark {
     fn landmark_id(&self) -> Option<String>;
     fn confidence(&self) -> f32;
 
-    fn to_new_element(&self, trace_id: Uuid, landmark_id: Option<Uuid>, analysis_id: Uuid, user_id: Uuid) -> NewElement {
+    fn to_new_element(
+        &self,
+        trace_id: Uuid,
+        trace_mirror_id: Option<Uuid>,
+        landmark_id: Option<Uuid>,
+        analysis_id: Uuid,
+        user_id: Uuid,
+    ) -> NewElement {
         NewElement::new(
             self.reference(),
             self.description(),
             format!("{} - {}", self.extracted_content(), self.generated_context()),
             ElementType::Event,
             trace_id,
+            trace_mirror_id,
             landmark_id,
             analysis_id,
             user_id,
@@ -208,6 +216,7 @@ pub trait LandmarkProcessor: Send + Sync {
             //let element = MatchedExtractedElementForLandmarkType::from(element);
             let _ = element.to_new_element(
                 context.trace.id, 
+                Some(context.trace_mirror.id),
                 Some(created_landmark.id), 
                 context.landscape_analysis_id, 
                 context.user_id
