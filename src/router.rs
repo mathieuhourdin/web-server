@@ -21,6 +21,7 @@ use crate::entities_v2::{
     llm_call,
     landmark,
     lens,
+    trace_mirror,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -117,6 +118,13 @@ pub fn create_router() -> Router {
         .route("/:id", get(llm_call::get_llm_call_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let trace_mirrors_router = Router::new()
+        .route("/", get(trace_mirror::get_user_trace_mirrors_route))
+        .route("/:id", get(trace_mirror::get_trace_mirror_route))
+        .route("/landscape/:landscape_id", get(trace_mirror::get_trace_mirrors_by_landscape_route))
+        .route("/trace/:trace_id", get(trace_mirror::get_trace_mirrors_by_trace_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     let sessions_router = Router::new().route(
         "/",
         get(sessions_service::get_session_route).post(sessions_service::post_session_route),
@@ -135,6 +143,7 @@ pub fn create_router() -> Router {
         .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)
         .nest("/landmarks", landmarks_router)
+        .nest("/trace_mirrors", trace_mirrors_router)
         .route("/link_preview", post(link_preview::post_preview_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))

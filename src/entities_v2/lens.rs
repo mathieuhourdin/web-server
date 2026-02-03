@@ -6,6 +6,7 @@ use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities::session::Session;
 use crate::entities::{
     resource::{
+        EntityType,
         NewResource, 
         ResourceType, 
         MaturingState, 
@@ -87,6 +88,7 @@ impl Lens {
             comment: None,
             image_url: None,
             resource_type: ResourceType::Lens,
+            entity_type: EntityType::Lens,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
             category_id: None,
@@ -235,6 +237,7 @@ impl NewLens {
             subtitle: self.description,
             content: None,
             resource_type: Some(ResourceType::Lens),
+            entity_type: Some(EntityType::Lens),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
             category_id: None,

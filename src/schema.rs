@@ -90,6 +90,7 @@ diesel::table! {
         is_external -> Bool,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        entity_type -> Text,
     }
 }
 

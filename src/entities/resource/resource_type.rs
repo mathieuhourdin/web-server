@@ -1,4 +1,5 @@
 use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities::resource::entity_type::EntityType;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::Pg;
 use diesel::pg::PgValue;
@@ -12,35 +13,36 @@ use serde::{Deserialize, Serialize, Serializer};
 #[derive(Clone, Debug, Copy, AsExpression, PartialEq, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Text)]
 pub enum ResourceType {
-    Book,
-    ReadingNote,
-    ResourceList,
-    Problem,
-    ResearchArticle,
-    NewsArticle,
-    OpinionArticle,
-    Movie,
-    Video,
-    Podcast,
-    Song,
-    Course,
-    Idea,
-    Journal,
-    JournalItem,
-    Trace,
-    Mission,
-    Element,
-    Task,
-    Question,
-    Deliverable,
-    Process,
-    Resource,
-    Analysis,
-    Event,
-    GeneralComment,
-    Feeling,
-    Lens,
-    TraceMirror,
+    Book, // public post
+    ReadingNote, // public post
+    ResourceList, // public post
+    Problem, // public post
+    ResearchArticle, //public post
+    NewsArticle, // public post
+    OpinionArticle, // public post
+    Movie, // public post
+    Video, // public post
+    Podcast, // public post
+    Song, // public post
+    Course, // public post
+    Idea, // public post
+    Journal, // Journal 
+    JournalItem, // public post
+    Trace, // Trace
+    Mission, // Landmark
+    Element, // Element
+    Task, // Landmark
+    Question, // Landmark
+    Deliverable, // Landmark
+    Process, // Landmark
+    Resource, // Landmark
+    Analysis, // LandscapeAnalysis
+    Event, // Element
+    GeneralComment, // Element
+    Feeling, // Element
+    Theme, // Landmark
+    Lens, // Lens
+    TraceMirror, // TraceMirror
 }
 
 impl ResourceType {
@@ -74,6 +76,7 @@ impl ResourceType {
             "evnt" => Ok(ResourceType::Event),
             "cmnt" => Ok(ResourceType::GeneralComment),
             "feln" => Ok(ResourceType::Feeling),
+            "them" => Ok(ResourceType::Theme),
             "lens" => Ok(ResourceType::Lens),
             "trcm" => Ok(ResourceType::TraceMirror),
             &_ => {
@@ -114,6 +117,7 @@ impl ResourceType {
             ResourceType::Event => "evnt",
             ResourceType::GeneralComment => "cmnt",
             ResourceType::Feeling => "feln",
+            ResourceType::Theme => "them",
             ResourceType::Lens => "lens",
             ResourceType::TraceMirror => "trcm",
         }
@@ -147,6 +151,7 @@ impl ResourceType {
             ResourceType::Event => "Event",
             ResourceType::GeneralComment => "GeneralComment",
             ResourceType::Feeling => "Feeling",
+            ResourceType::Theme => "Theme",
             ResourceType::Lens => "Lens",
             ResourceType::TraceMirror => "Trace Mirror",
         }
@@ -180,6 +185,7 @@ impl ResourceType {
             "Event" => Ok(ResourceType::Event),
             "GeneralComment" => Ok(ResourceType::GeneralComment),
             "Feeling" => Ok(ResourceType::Feeling),
+            "Theme" => Ok(ResourceType::Theme),
             "Lens" => Ok(ResourceType::Lens),
             "Trace Mirror" => Ok(ResourceType::TraceMirror),
             &_ => Err(PpdcError::new(
@@ -195,6 +201,41 @@ impl ResourceType {
             "article" => Some(ResourceType::NewsArticle),
             "music.song" => Some(ResourceType::Podcast),
             &_ => None,
+        }
+    }
+
+    pub fn to_entity_type(&self) -> EntityType {
+        match self {
+            ResourceType::Book
+            | ResourceType::ReadingNote
+            | ResourceType::ResourceList
+            | ResourceType::Problem
+            | ResourceType::ResearchArticle
+            | ResourceType::NewsArticle
+            | ResourceType::OpinionArticle
+            | ResourceType::Movie
+            | ResourceType::Video
+            | ResourceType::Podcast
+            | ResourceType::Song
+            | ResourceType::Course
+            | ResourceType::Idea
+            | ResourceType::JournalItem => EntityType::PublicPost,
+            ResourceType::Journal => EntityType::Journal,
+            ResourceType::Trace => EntityType::Trace,
+            ResourceType::TraceMirror => EntityType::TraceMirror,
+            ResourceType::Element
+            | ResourceType::Event
+            | ResourceType::GeneralComment
+            | ResourceType::Feeling => EntityType::Element,
+            ResourceType::Mission
+            | ResourceType::Task
+            | ResourceType::Question
+            | ResourceType::Deliverable
+            | ResourceType::Process
+            | ResourceType::Resource
+            | ResourceType::Theme => EntityType::Landmark,
+            ResourceType::Analysis => EntityType::LandscapeAnalysis,
+            ResourceType::Lens => EntityType::Lens,
         }
     }
 }

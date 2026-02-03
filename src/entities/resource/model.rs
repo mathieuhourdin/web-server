@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entities::resource::maturing_state::MaturingState;
+use crate::entities::resource::entity_type::EntityType;
 use crate::entities::resource::resource_type::ResourceType;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
@@ -35,6 +36,7 @@ pub struct Resource {
     pub is_external: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub entity_type: EntityType,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
@@ -51,6 +53,7 @@ pub struct NewResource {
     pub publishing_state: Option<String>,
     pub category_id: Option<Uuid>,
     pub is_external: Option<bool>,
+    pub entity_type: Option<EntityType>,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
@@ -67,6 +70,7 @@ pub struct NewResourceDto {
     pub publishing_state: Option<String>,
     pub category_id: Option<Uuid>,
     pub is_external: Option<bool>,
+    pub entity_type: Option<EntityType>,
 }
 
 impl Resource {
@@ -129,6 +133,7 @@ impl NewResource {
             comment: None,
             image_url: None,
             resource_type: Some(resource_type),
+            entity_type: Some(resource_type.to_entity_type()),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("pbsh".to_string()),
             category_id: None,
@@ -136,7 +141,10 @@ impl NewResource {
         }
     }
 
-    pub fn create(self, pool: &DbPool) -> Result<Resource, PpdcError> {
+    pub fn create(mut self, pool: &DbPool) -> Result<Resource, PpdcError> {
+        if self.entity_type.is_none() {
+            self.entity_type = self.resource_type.map(|resource_type| resource_type.to_entity_type());
+        }
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -170,6 +178,7 @@ impl From<Resource> for NewResource {
             comment: resource.comment,
             image_url: resource.image_url,
             resource_type: Some(resource.resource_type),
+            entity_type: Some(resource.entity_type),
             maturing_state: Some(resource.maturing_state),
             publishing_state: Some(resource.publishing_state),
             category_id: resource.category_id,

@@ -2,7 +2,13 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     interaction::model::{Interaction, NewInteraction},
-    resource::{maturing_state::MaturingState, resource_type::ResourceType, NewResource, Resource},
+    resource::{
+        entity_type::EntityType,
+        maturing_state::MaturingState,
+        resource_type::ResourceType,
+        NewResource,
+        Resource,
+    },
     resource_relation::{NewResourceRelation, ResourceRelation},
     session::Session,
 };
@@ -65,6 +71,7 @@ impl Trace {
             comment: None,
             image_url: None,
             resource_type: ResourceType::Trace,
+            entity_type: EntityType::Trace,
             maturing_state: self.maturing_state,
             publishing_state: "drft".to_string(),
             category_id: None,
@@ -208,6 +215,7 @@ impl NewTrace {
             subtitle: self.subtitle.clone(),
             content: Some(self.content.clone()),
             resource_type: Some(ResourceType::Trace),
+            entity_type: Some(EntityType::Trace),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
             category_id: None,

@@ -12,8 +12,8 @@ use crate::entities_v2::{
         landmark_create_copy_child_and_return,
     },
     trace::Trace,
+    trace_mirror::TraceMirror,
     element::{
-        Element,
         NewElement,
         ElementType,
     },
@@ -111,7 +111,7 @@ impl<T: ExtractedElementForLandmark> ElementWithIdentifier for T {
 pub struct ProcessorContext {
     pub landmarks: Vec<Landmark>,
     pub trace: Trace,
-    pub trace_mirror: Element,
+    pub trace_mirror: TraceMirror,
     pub user_id: Uuid,
     pub landscape_analysis_id: Uuid,
     pub pool: DbPool,

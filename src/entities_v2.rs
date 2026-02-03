@@ -5,3 +5,4 @@ pub mod landscape_analysis;
 pub mod llm_call;
 pub mod landmark;
 pub mod lens;
+pub mod trace_mirror;

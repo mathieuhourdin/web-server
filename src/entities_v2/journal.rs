@@ -4,7 +4,13 @@ use serde::{Deserialize, Serialize};
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
-    resource::{Resource, NewResource, resource_type::ResourceType, maturing_state::MaturingState},
+    resource::{
+        entity_type::EntityType,
+        maturing_state::MaturingState,
+        resource_type::ResourceType,
+        NewResource,
+        Resource,
+    },
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -44,6 +50,7 @@ impl Journal {
             comment: None,
             image_url: None,
             resource_type: ResourceType::Journal,
+            entity_type: EntityType::Journal,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
             category_id: None,

@@ -2,6 +2,7 @@ use uuid::Uuid;
 use crate::entities::{
     error::{ErrorType, PpdcError},
     resource::{
+        entity_type::EntityType,
         Resource,
         NewResource,
         resource_type::ResourceType,
@@ -73,6 +74,7 @@ impl Landmark {
             comment: self.comment,
             image_url: self.image_url,
             resource_type: self.landmark_type,
+            entity_type: EntityType::Landmark,
             maturing_state: self.maturing_state,
             publishing_state: self.publishing_state,
             category_id: self.category_id,
@@ -216,6 +218,7 @@ impl NewLandmark {
             comment: None,
             image_url: None,
             resource_type: Some(self.landmark_type),
+            entity_type: Some(EntityType::Landmark),
             maturing_state: Some(self.maturing_state),
             publishing_state: Some(self.publishing_state),
             category_id: None,

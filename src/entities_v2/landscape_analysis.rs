@@ -2,7 +2,13 @@ use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
     interaction::model::{Interaction, InteractionWithResource, NewInteraction},
-    resource::{maturing_state::MaturingState, resource_type::ResourceType, NewResource, Resource},
+    resource::{
+        entity_type::EntityType,
+        maturing_state::MaturingState,
+        resource_type::ResourceType,
+        NewResource,
+        Resource,
+    },
     resource_relation::{NewResourceRelation, ResourceRelation},
     session::Session,
 };
@@ -64,6 +70,7 @@ impl LandscapeAnalysis {
             comment: None,
             image_url: None,
             resource_type: ResourceType::Analysis,
+            entity_type: EntityType::LandscapeAnalysis,
             maturing_state: self.processing_state,
             publishing_state: "drft".to_string(),
             category_id: None,
@@ -256,6 +263,7 @@ impl NewLandscapeAnalysis {
             subtitle: self.subtitle.clone(),
             content: Some(self.plain_text_state_summary.clone()),
             resource_type: Some(ResourceType::Analysis),
+            entity_type: Some(EntityType::LandscapeAnalysis),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
             category_id: None,

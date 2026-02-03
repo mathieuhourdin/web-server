@@ -6,7 +6,9 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{
-        Resource, NewResource,
+        entity_type::EntityType,
+        Resource,
+        NewResource,
         resource_type::ResourceType,
         maturing_state::MaturingState,
     },
@@ -121,6 +123,7 @@ impl Element {
             comment: Some(self.element_type.to_code().to_string()),
             image_url: None,
             resource_type: self.element_type.into(),
+            entity_type: EntityType::Element,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
             category_id: None,
@@ -275,6 +278,7 @@ impl NewElement {
             comment: Some(self.element_type.to_code().to_string()),
             image_url: None,
             resource_type: Some(self.element_type.into()),
+            entity_type: Some(EntityType::Element),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
             category_id: None,

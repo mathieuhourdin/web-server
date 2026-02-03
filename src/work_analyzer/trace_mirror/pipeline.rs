@@ -1,10 +1,9 @@
 use crate::entities_v2::{
     trace::Trace,
-    element::{
-        self,
-        Element,
-        NewElement,
-        ElementType,
+    trace_mirror::{
+        self as trace_mirror,
+        TraceMirror,
+        NewTraceMirror,
     },
     journal::Journal,
     landmark::Landmark,
@@ -58,7 +57,7 @@ pub struct NewPrimaryResource {
 
 
 
-pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, landmarks: &Vec<Landmark>, pool: &DbPool) -> Result<Element, PpdcError> {
+pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, landmarks: &Vec<Landmark>, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
     let trace_header = header::extract_mirror_header(trace).await?;
     let trace_mirror = create_trace_mirror(trace, trace_header, user_id, landscape_analysis_id, pool).await?;
     let journal = Journal::find_full(trace.journal_id.unwrap(), pool)?;
@@ -68,29 +67,31 @@ pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, land
         let primary_resource_matched = primary_resource::matching::run(primary_resource_suggestion, landmarks).await?;
         let trace_mirror_landmark_id: Uuid;
         if primary_resource_matched.candidate_id.is_some() {
-            let element_landmark_id = primary_resource_matched.candidate_id.unwrap();
-            trace_mirror_landmark_id = Uuid::parse_str(element_landmark_id.as_str())?;
+            let primary_resource_landmark_id = primary_resource_matched.candidate_id.unwrap();
+            trace_mirror_landmark_id = Uuid::parse_str(primary_resource_landmark_id.as_str())?;
         } else {
             let primary_resource_created = primary_resource::creation::run(primary_resource_matched, landscape_analysis_id, user_id, pool).await?;
             trace_mirror_landmark_id = primary_resource_created.id;
         }
-        element::link_to_landmark(trace_mirror.id, trace_mirror_landmark_id, user_id, pool)?;
+        trace_mirror::link_to_primary_resource(trace_mirror.id, trace_mirror_landmark_id, user_id, pool)?;
     }
     Ok(trace_mirror)
 }
 
-/// Creates a trace mirror element: runs MirrorHeader extraction, then creates an Element
-/// with the extracted title/subtitle and the trace content.
-pub async fn create_trace_mirror(trace: &Trace, header: MirrorHeader, user_id: Uuid, landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
-    let trace_mirror = NewElement::new(
+/// Creates a trace mirror: runs MirrorHeader extraction, then creates a TraceMirror
+/// with the extracted title/subtitle/tags.
+pub async fn create_trace_mirror(trace: &Trace, header: MirrorHeader, user_id: Uuid, landscape_analysis_id: Uuid, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
+    let trace_mirror = NewTraceMirror::new(
         header.title,
         header.subtitle,
         trace.content.clone(),
-        ElementType::TraceMirror,
+        header.tags,
         trace.id,
-        None,
         landscape_analysis_id,
         user_id,
+        None, // primary_resource_id
+        None, // primary_theme_id
+        None, // interaction_date
     );
     let trace_mirror = trace_mirror.create(pool)?;
     Ok(trace_mirror)
