@@ -162,8 +162,8 @@ pub async fn post_analysis_replay_route(
     let analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
     let replayed_analysis = analysis.replay(&pool)?;
     let landscape_analysis_ids = vec![replayed_analysis.id];
-    tokio::spawn(async move {
+    /*tokio::spawn(async move {
         work_analyzer::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await
-    });
+    });*/
     Ok(Json(replayed_analysis))
 }

@@ -8,6 +8,7 @@ use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::trace_broker::traits::{ProcessorContext, NewLandmarkForExtractedElement};
 use crate::work_analyzer::trace_broker::types::IdentityState;
 use crate::work_analyzer::trace_broker::matching::{MatchedElements, MatchedElement, LandmarkMatching};
+use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;
@@ -220,8 +221,139 @@ async fn create_landmark_via_gpt(
 // Main Creation Logic
 // ============================================================================
 
-/// Confidence threshold for linking to existing landmarks
-const CONFIDENCE_THRESHOLD: f32 = 0.4;
+/// Confidence threshold for linking to existing landmarks when no config is provided
+const DEFAULT_CONFIDENCE_THRESHOLD: f32 = 0.4;
+
+pub async fn create_elements(
+    config: &AnalysisConfig,
+    _context: &AnalysisContext,
+    _inputs: &AnalysisInputs,
+    matched: MatchedElements,
+) -> Result<CreatedElements, PpdcError> {
+    run_creation_impl(matched, config.matching_confidence_threshold).await
+}
+
+async fn run_creation_impl(
+    matched: MatchedElements,
+    confidence_threshold: f32,
+) -> Result<CreatedElements, PpdcError> {
+    let MatchedElements { context, elements } = matched;
+    let log_header = format!("analysis_id: {}", context.landscape_analysis_id);
+    tracing::info!(
+        target: "work_analyzer",
+        "{} trace_broker_creation_start elements={}",
+        log_header,
+        elements.len()
+    );
+    
+    let mut created_landmarks: Vec<Landmark> = vec![];
+    let mut created_elements: Vec<Element> = vec![];
+    
+    // Track which parent landmarks were updated (to avoid duplicate refs)
+    let mut updated_landmark_ids: Vec<Uuid> = vec![];
+    // Map from parent landmark ID to created child landmark ID
+    let mut landmarks_updates: HashMap<Uuid, Uuid> = HashMap::new();
+    
+    for element in &elements {
+        let new_element = NewElement::new(
+            element.title.clone(),
+            element.title.clone(),
+            format!("{}\n\nExtractions: {:?}", element.evidence, element.extractions),
+            ElementType::Event,
+            context.trace.id,
+            Some(context.trace_mirror.id),
+            None,
+            context.landscape_analysis_id,
+            context.user_id,
+        );
+        let created_element = new_element.create(&context.pool)?;
+        created_elements.push(created_element.clone());
+
+        // Process each landmark suggestion for this element
+        for suggestion in &element.landmark_suggestions {
+            let created_landmark = process_suggestion(
+                &context,
+                element,
+                suggestion,
+                confidence_threshold,
+                &mut landmarks_updates,
+                &mut updated_landmark_ids,
+            ).await?;
+            
+            link_to_landmark(
+                created_element.id,
+                created_landmark.id,
+                context.user_id,
+                &context.pool,
+            )?;
+            created_landmarks.push(created_landmark);
+        }
+    }
+    
+    // Add landmark refs for landmarks that were not updated
+    for landmark in &context.landmarks {
+        if !updated_landmark_ids.contains(&landmark.id) {
+            landscape_analysis::add_landmark_ref(
+                context.landscape_analysis_id,
+                landmark.id,
+                context.user_id,
+                &context.pool,
+            )?;
+        }
+    }
+
+    tracing::info!(
+        target: "work_analyzer",
+        "{} trace_broker_creation_complete created_landmarks={} created_elements={}",
+        log_header,
+        created_landmarks.len(),
+        created_elements.len()
+    );
+    Ok(CreatedElements {
+        context,
+        created_landmarks,
+        created_elements,
+    })
+}
+
+/// Process a single landmark suggestion
+async fn process_suggestion(
+    context: &ProcessorContext,
+    element: &MatchedElement,
+    suggestion: &LandmarkMatching,
+    confidence_threshold: f32,
+    landmarks_updates: &mut HashMap<Uuid, Uuid>,
+    updated_landmark_ids: &mut Vec<Uuid>,
+) -> Result<Landmark, PpdcError> {
+    // Check if we have a high-confidence match
+    if let Some(ref candidate_id_str) = suggestion.candidate_id {
+        if suggestion.confidence >= confidence_threshold {
+            let parent_landmark_id = Uuid::parse_str(candidate_id_str)?;
+            
+            // Check if we already created a child for this parent
+            if let Some(&child_id) = landmarks_updates.get(&parent_landmark_id) {
+                return Landmark::find(child_id, &context.pool);
+            }
+            
+            // Create a child copy of the existing landmark
+            let created_landmark = landmark::create_copy_child_and_return(
+                parent_landmark_id,
+                context.user_id,
+                context.landscape_analysis_id,
+                &context.pool,
+            )?;
+            
+            landmarks_updates.insert(parent_landmark_id, created_landmark.id);
+            updated_landmark_ids.push(parent_landmark_id);
+            
+            return Ok(created_landmark);
+        }
+    }
+    
+    // No high-confidence match - create new landmark via GPT
+    let input = LandmarkCreationInput::from_matched(element, suggestion);
+    create_landmark_via_gpt(&input, context).await
+}
 
 impl MatchedElements {
     /// Process matched elements to create or link landmarks and create elements.
@@ -232,117 +364,6 @@ impl MatchedElements {
     /// 
     /// Then create Element records linking traces to landmarks.
     pub async fn run_creation(self) -> Result<CreatedElements, PpdcError> {
-        let log_header = format!("analysis_id: {}", self.context.landscape_analysis_id);
-        tracing::info!(
-            target: "work_analyzer",
-            "{} trace_broker_creation_start elements={}",
-            log_header,
-            self.elements.len()
-        );
-        
-        let mut created_landmarks: Vec<Landmark> = vec![];
-        let mut created_elements: Vec<Element> = vec![];
-        
-        // Track which parent landmarks were updated (to avoid duplicate refs)
-        let mut updated_landmark_ids: Vec<Uuid> = vec![];
-        // Map from parent landmark ID to created child landmark ID
-        let mut landmarks_updates: HashMap<Uuid, Uuid> = HashMap::new();
-        
-        for element in &self.elements {
-            let new_element = NewElement::new(
-                element.title.clone(),
-                element.title.clone(),
-                format!("{}\n\nExtractions: {:?}", element.evidence, element.extractions),
-                ElementType::Event,
-                self.context.trace.id,
-                Some(self.context.trace_mirror.id),
-                None,
-                self.context.landscape_analysis_id,
-                self.context.user_id,
-            );
-            let created_element = new_element.create(&self.context.pool)?;
-            created_elements.push(created_element.clone());
-
-            // Process each landmark suggestion for this element
-            for suggestion in &element.landmark_suggestions {
-                let created_landmark = self.process_suggestion(
-                    element,
-                    suggestion,
-                    &mut landmarks_updates,
-                    &mut updated_landmark_ids,
-                ).await?;
-                
-                link_to_landmark(
-                    created_element.id,
-                    created_landmark.id,
-                    self.context.user_id,
-                    &self.context.pool,
-                )?;
-                created_landmarks.push(created_landmark);
-            }
-        }
-        
-        // Add landmark refs for landmarks that were not updated
-        for landmark in &self.context.landmarks {
-            if !updated_landmark_ids.contains(&landmark.id) {
-                landscape_analysis::add_landmark_ref(
-                    self.context.landscape_analysis_id,
-                    landmark.id,
-                    self.context.user_id,
-                    &self.context.pool,
-                )?;
-            }
-        }
-
-        tracing::info!(
-            target: "work_analyzer",
-            "{} trace_broker_creation_complete created_landmarks={} created_elements={}",
-            log_header,
-            created_landmarks.len(),
-            created_elements.len()
-        );
-        Ok(CreatedElements {
-            context: self.context,
-            created_landmarks,
-            created_elements,
-        })
-    }
-    
-    /// Process a single landmark suggestion
-    async fn process_suggestion(
-        &self,
-        element: &MatchedElement,
-        suggestion: &LandmarkMatching,
-        landmarks_updates: &mut HashMap<Uuid, Uuid>,
-        updated_landmark_ids: &mut Vec<Uuid>,
-    ) -> Result<Landmark, PpdcError> {
-        // Check if we have a high-confidence match
-        if let Some(ref candidate_id_str) = suggestion.candidate_id {
-            if suggestion.confidence >= CONFIDENCE_THRESHOLD {
-                let parent_landmark_id = Uuid::parse_str(candidate_id_str)?;
-                
-                // Check if we already created a child for this parent
-                if let Some(&child_id) = landmarks_updates.get(&parent_landmark_id) {
-                    return Landmark::find(child_id, &self.context.pool);
-                }
-                
-                // Create a child copy of the existing landmark
-                let created_landmark = landmark::create_copy_child_and_return(
-                    parent_landmark_id,
-                    self.context.user_id,
-                    self.context.landscape_analysis_id,
-                    &self.context.pool,
-                )?;
-                
-                landmarks_updates.insert(parent_landmark_id, created_landmark.id);
-                updated_landmark_ids.push(parent_landmark_id);
-                
-                return Ok(created_landmark);
-            }
-        }
-        
-        // No high-confidence match - create new landmark via GPT
-        let input = LandmarkCreationInput::from_matched(element, suggestion);
-        create_landmark_via_gpt(&input, &self.context).await
+        run_creation_impl(self, DEFAULT_CONFIDENCE_THRESHOLD).await
     }
 }

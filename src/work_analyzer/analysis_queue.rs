@@ -5,12 +5,11 @@ use crate::entities_v2::{
     lens::Lens,
     trace::Trace
 };
-use crate::work_analyzer::analysis_processor::run_landscape_analysis;
 use crate::db::{DbPool, get_global_pool};
 use crate::work_analyzer::analysis_processor;
 use chrono::Utc;
 
-pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uuid>) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+/*pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uuid>) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
     println!("run_analysis_pipeline_for_landscapes: {:?}", landscape_analysis_ids);
     tracing::info!(
         target: "work_analyzer",
@@ -22,7 +21,7 @@ pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uu
     }
     println!("run_analysis_pipeline_for_landscapes complete");
     Ok(vec![])
-}
+}*/
 
 pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
     println!("run_lens: {:?}", lens_id);

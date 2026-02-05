@@ -58,7 +58,7 @@ diesel::table! {
         currency -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        analysis_id -> Uuid,
+        analysis_id -> Nullable<Uuid>,
     }
 }
 

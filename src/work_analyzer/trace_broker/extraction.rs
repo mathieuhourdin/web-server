@@ -2,7 +2,29 @@ use crate::entities::error::PpdcError;
 use crate::work_analyzer::trace_broker::traits::ProcessorContext;
 use crate::entities_v2::landmark::LandmarkType;
 use crate::openai_handler::GptRequestConfig;
+use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
 use serde::{Deserialize, Serialize};
+
+pub async fn extract_elements(
+    _config: &AnalysisConfig,
+    context: &AnalysisContext,
+    inputs: &AnalysisInputs,
+    state: &AnalysisStateMirror,
+) -> Result<ExtractedElements, PpdcError> {
+    let processor_context = ProcessorContext {
+        landmarks: inputs.previous_landscape_landmarks.clone(),
+        trace: inputs.trace.clone(),
+        trace_mirror: state.trace_mirror.clone(),
+        user_id: context.user_id,
+        landscape_analysis_id: context.analysis_id,
+        pool: context.pool.clone(),
+    };
+    let elements = extract_input_elements(&processor_context).await?;
+    Ok(ExtractedElements {
+        context: processor_context,
+        elements,
+    })
+}
 
 pub struct Extractable {
     pub context: ProcessorContext,

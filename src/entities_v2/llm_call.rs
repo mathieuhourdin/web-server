@@ -28,7 +28,7 @@ pub struct LlmCall {
     pub currency: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub analysis_id: Uuid,
+    pub analysis_id: Option<Uuid>,
 }
 
 #[derive(Insertable, AsChangeset)]

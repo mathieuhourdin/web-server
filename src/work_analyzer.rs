@@ -9,4 +9,4 @@ pub mod matching;
 pub mod analysis_queue;
 pub mod observability;
 
-pub use analysis_queue::{run_analysis_pipeline_for_landscapes, run_lens};
+pub use analysis_queue::run_lens;
