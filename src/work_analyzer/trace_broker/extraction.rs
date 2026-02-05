@@ -116,7 +116,8 @@ pub async fn extract_input_elements(context: &ProcessorContext) -> Result<Vec<Ex
         "gpt-4.1-nano".to_string(),
         include_str!("prompts/landmark_resource/extraction/system.md").to_string(),
         &user_prompt,
-        Some(serde_json::from_str::<serde_json::Value>(include_str!("prompts/landmark_resource/extraction/schema.json"))?)
+        Some(serde_json::from_str::<serde_json::Value>(include_str!("prompts/landmark_resource/extraction/schema.json"))?),
+        Some(context.landscape_analysis_id),
     ).with_log_header(log_header.as_str());
     let elements: ExtractedInputElements = gpt_request_config.execute().await?;
     tracing::info!(

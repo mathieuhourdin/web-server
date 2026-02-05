@@ -58,6 +58,7 @@ diesel::table! {
         currency -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        analysis_id -> Uuid,
     }
 }
 
@@ -128,6 +129,7 @@ diesel::joinable!(comments -> resources (resource_id));
 diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
+diesel::joinable!(llm_calls -> resources (analysis_id));
 diesel::joinable!(resource_relations -> users (user_id));
 diesel::joinable!(resources -> categories (category_id));
 diesel::joinable!(sessions -> users (user_id));

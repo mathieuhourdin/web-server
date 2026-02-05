@@ -55,6 +55,7 @@ pub async fn extract(trace: &Trace, log_header: &str) -> Result<PrimaryResourceS
             system_prompt.clone(),
             user_prompt,
             Some(schema.clone()),
+            None,
         ).with_log_header(log_header);
         let result: PrimaryResourceSuggestion = config.execute().await?;
 

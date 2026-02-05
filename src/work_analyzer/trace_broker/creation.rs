@@ -186,6 +186,7 @@ async fn create_landmark_via_gpt(
         &system_prompt,
         &user_prompt,
         Some(schema),
+        Some(context.landscape_analysis_id),
     ).with_log_header(log_header.as_str());
     
     // Call GPT and deserialize based on type

@@ -24,6 +24,7 @@ pub async fn extract_mirror_header(trace: &Trace, log_header: &str) -> Result<Mi
         system_prompt,
         user_prompt,
         Some(schema),
+        None,
     ).with_log_header(log_header);
     config.execute().await
 }

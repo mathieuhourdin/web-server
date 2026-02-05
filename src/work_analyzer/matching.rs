@@ -108,7 +108,8 @@ where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
         "gpt-4.1-mini".to_string(),
         system_prompt.to_string(),
         &user_prompt,
-        Some(serde_json::from_str(&schema).unwrap())
+        Some(serde_json::from_str(&schema).unwrap()),
+        None,
     ).with_log_header(log_header.unwrap_or("analysis_id: unknown"));
     let matching_results: Matches = gpt_request_config.execute().await?;
 

@@ -1,5 +1,6 @@
 use crate::entities::error::PpdcError;
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
+use uuid::Uuid;
 
 pub struct GptRequestConfig {
     pub model: String,
@@ -7,6 +8,7 @@ pub struct GptRequestConfig {
     pub user_prompt: String,
     pub schema: Option<serde_json::Value>,
     pub log_header: Option<String>,
+    pub analysis_id: Option<Uuid>,
 }
 
 impl GptRequestConfig {
@@ -15,6 +17,7 @@ impl GptRequestConfig {
         system_prompt: impl Into<String>,
         user_prompt: impl Into<String>,
         schema: Option<serde_json::Value>,
+        analysis_id: Option<Uuid>,
     ) -> Self {
         Self {
             model,
@@ -22,6 +25,7 @@ impl GptRequestConfig {
             user_prompt: user_prompt.into(),
             schema,
             log_header: None,
+            analysis_id,
         }
     }
 
@@ -38,6 +42,7 @@ impl GptRequestConfig {
             self.user_prompt.clone(), 
             self.schema.clone(),
             self.log_header.as_deref(),
+            self.analysis_id,
         ).await?)
     }
 }

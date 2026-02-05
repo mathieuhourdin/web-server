@@ -195,7 +195,8 @@ impl LandmarkProcessor for ResourceProcessor {
             "gpt-4.1-nano".to_string(),
             &self.extract_system_prompt(),
             &user_prompt,
-            Some(self.extract_schema())
+            Some(self.extract_schema()),
+            Some(context.landscape_analysis_id),
         );
         let elements: ExtractedElementsForResources = gpt_request_config.execute().await?;
         Ok(elements.elements)
@@ -220,7 +221,7 @@ impl LandmarkProcessor for ResourceProcessor {
     async fn get_new_landmark_for_extracted_element(
         &self,
         element: &MatchedExtractedElementForResource,
-        _context: &ProcessorContext,
+        context: &ProcessorContext,
     ) -> Result<Self::NewLandmark, PpdcError> {
 
         println!("work_analyzer::trace_broker::get_new_resource_for_extracted_element_from_gpt_request");
@@ -232,7 +233,8 @@ impl LandmarkProcessor for ResourceProcessor {
             "gpt-4.1-nano".to_string(),
             &self.create_new_landmark_system_prompt(),
             &user_prompt,
-            Some(self.create_new_landmark_schema())
+            Some(self.create_new_landmark_schema()),
+            Some(context.landscape_analysis_id),
         );
         let new_resource_for_extracted_element: NewResourceForExtractedElement = gpt_request_config.execute().await?;
         Ok(new_resource_for_extracted_element)

@@ -87,6 +87,6 @@ pub async fn get_high_level_analysis_from_gpt(
     });
 
     let high_level_analysis: String =
-        make_gpt_request(system_prompt, user_prompt, None, Some(log_header)).await?;
+        make_gpt_request(system_prompt, user_prompt, None, Some(log_header), None).await?;
     Ok(high_level_analysis)
 }

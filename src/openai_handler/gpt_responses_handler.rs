@@ -4,6 +4,7 @@ use tracing::info;
 use crate::db;
 use crate::entities_v2::llm_call::NewLlmCall;
 use crate::environment;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
 struct GPTRequest {
@@ -47,6 +48,7 @@ pub async fn make_gpt_request<T>(
     user_prompt: String,
     schema: Option<serde_json::Value>,
     log_header: Option<&str>,
+    analysis_id: Option<Uuid>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
 where
     T: for<'de> serde::Deserialize<'de>,
@@ -132,7 +134,7 @@ where
     );
 
     let env = environment::get_env();
-    if env != "bintest" {
+    if env != "bintest" && analysis_id.is_some() {
         // Persist the LLM call to database before attempting full parsing
         let pool = db::get_global_pool();
         let new_call = NewLlmCall::new(
@@ -149,6 +151,7 @@ where
             0, // output_tokens_used - not available in current response structure
             0.0, // price - not available in current response structure
             "USD".to_string(), // currency - default
+            analysis_id.unwrap(),
         );
 
         // Try to persist, but don't fail the whole request if persistence fails

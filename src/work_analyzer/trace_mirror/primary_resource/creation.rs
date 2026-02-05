@@ -26,7 +26,8 @@ pub async fn run(element: PrimaryResourceMatched, analysis_id: Uuid, user_id: Uu
         "gpt-4.1-mini".to_string(),
         system_prompt,
         &serde_json::to_string(&element)?,
-        Some(serde_json::from_str(&schema).unwrap())
+        Some(serde_json::from_str(&schema).unwrap()),
+        Some(analysis_id),
     ).with_log_header(log_header);
     let primary_resource_created = gpt_request_config.execute().await?;
     let new_landmark = create_primary_resource(primary_resource_created, analysis_id, user_id, pool).await?;
