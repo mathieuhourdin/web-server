@@ -7,6 +7,74 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-04 stage point
+
+Did a lot of things today. Did not have the time to check on every of them if they were ok.
+
+- Did not checked the replay route for an analysis
+- Did not checked the ???
+- I wanted to create separated log files for each analysis run in dev mode but did not
+- There is somehow a bug that makes that the very first Trace is not run by the lens. (actyally it seems to be an import issue)
+
+What I did : 
+- Import of my own journals with a new bin.
+- Rewrite of the existing extraction system prompt.
+- Some updates on the front
+
+
+Just had an idea : We have another invariant.
+- traceMirror, elements, landscape, landmark are immutable elements for the user, through the API. They only have GET methods.
+- analysis, lens are the way a user can do actions on the analytical part. They have POST, PUT and DELETE methods in the API.
+
+### 2026-02-04 Fix to do
+When there is an error in the signup process we need to make it clear for the user with an error message.
+### 2026-02-04 RAG ideas
+
+My pipeline with RAG could look like this : 
+- extraction, just the way it is currently
+- Internal search : find 3 records close to this one based on search key.
+- External search : find 5 responses close to this one based on search key (title, author, theme).
+- Matching : with this content, the external search result, do you think I should match to one of those 3 existing landmarks ?
+- Creation : if not, generate a new landmark from the extraction and the search result.
+
+### 2026-02-04 current state
+
+I have completed the trace mirror creation, with a new trace mirror entity.
+I have introduced a new entity_type on resources that helps differenciate between v2 entites, to prepare for migration.
+I also splitted the v2 entities to make it easyer to use, but also to have a hydration file that holds everything that will be suppressed with the migration.
+I have changed the trace_broker pipeline to be horizontally layered : 
+- extraction 
+- matching
+- creation 
+
+I have introduced two new landmarks : author and theme.
+They are created during the same pipeline as resources, the input pipeline.
+
+I also created a new 
+
+My current pipeline runs, which is good.
+However there is some issues / quality loss from previous one.
+- In extraction, I take some elements that are not input (an email i write). I think this is because the new prompt is too long.
+- In matching, sometime I dont match. Maybe I have a confidence threshold too high (0.7)
+- Once a Landmark is created, it is never improved, while it could be (if y have a new element for this landmark, try again to identify the title. Maybe use some RAG at this point)
+- Soon I will need more work on context and on RAG, to give something richer and more precise to model calls. Maybe the first thing to do would be to do it for the trace mirror pipeline.
+
+What should I work on first then ?
+- Extraction refinement
+- matching threshold (immediate)
+- batch import of my existing data to be able to test on richer data
+- Tests on more data will also require more work on analysis control to be able to run / reverse / rerun on a single analysis / trace, so that it will be easier to check how it performs and how the pipeline improves.
+- Some researches on how I could use RAG in my pipeline, to think about a little POC somewhere.
+
+
+(resource could be information_vector)
+
+I thought about RAG in different ways : 
+- Internally, I could request for close landmarks using fuzzy search. It could help retrieve a better context thant all related landmarks. It is not clear how it helps however, because : matching is performed on multiple elements at the same time.
+- External : The obvious way is to query an internet search engine before creation to help identify the exact resource.
+
+I'm thinking about something : maybe the extraction would perform better if I splitt the trace in smaller parts.
+
 ### 2026-02-03 Today
 
 I need to create a TraceMirror entity because it is different than a element.
