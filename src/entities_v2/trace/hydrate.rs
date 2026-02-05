@@ -78,7 +78,6 @@ impl Trace {
 
     /// Finds a Trace by id and fully hydrates it from the database.
     pub fn find_full_trace(id: Uuid, pool: &DbPool) -> Result<Trace, PpdcError> {
-        println!("Finding full trace: {:?}", id);
         let resource = Resource::find(id, pool)?;
         let trace = Trace::from_resource(resource);
         let trace = trace.with_user_id(pool)?;

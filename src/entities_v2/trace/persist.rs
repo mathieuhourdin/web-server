@@ -48,10 +48,12 @@ impl NewTrace {
         if let Some(date) = interaction_date {
             new_interaction.interaction_date = Some(date);
         }
+        new_interaction.interaction_user_id = Some(self.user_id);
         new_interaction.interaction_progress = 0;
         new_interaction.create(pool)?;
 
         // Create journal relation
+        println!("Creating journal relation with resource id: {} and journal id: {}", created_resource.id, journal_id);
         let mut journal_relation = NewResourceRelation::new(created_resource.id, journal_id);
         journal_relation.relation_type = Some("jrit".to_string());
         journal_relation.user_id = Some(user_id);

@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 use crate::entities_v2::{
-    landmark::Landmark,
+    landmark::{Landmark, LandmarkType},
 };
-use crate::entities::resource::resource_type::ResourceType;
 use crate::entities::error::PpdcError;
 use crate::openai_handler::GptRequestConfig;
 
@@ -68,6 +67,7 @@ pub async fn match_elements<E>(
     elements: Vec<E>,
     landmarks: &Vec<Landmark>,
     system_prompt: Option<&str>,
+    log_header: Option<&str>,
 ) -> Result<Vec<ElementMatched<E>>, PpdcError>
 where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
 {
@@ -109,7 +109,7 @@ where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
         system_prompt.to_string(),
         &user_prompt,
         Some(serde_json::from_str(&schema).unwrap())
-    );
+    ).with_log_header(log_header.unwrap_or("analysis_id: unknown"));
     let matching_results: Matches = gpt_request_config.execute().await?;
 
     let attached_elements: Vec<ElementMatched<E>> = attach_matching_results_to_elements_with_identifier::<E>(matching_results.matches, elements_local_array, landmarks_local_array);
@@ -157,7 +157,7 @@ pub struct LandmarkForMatching {
     pub subtitle: String,
     pub content: String,
     #[serde(skip_serializing)]
-    pub landmark_type: ResourceType,
+    pub landmark_type: LandmarkType,
 }
 
 impl From<&Landmark> for LandmarkForMatching {
@@ -190,7 +190,7 @@ mod tests {
             title: "Landmark Title".to_string(),
             subtitle: "Subtitle".to_string(),
             content: "Content".to_string(),
-            landmark_type: ResourceType::Resource,
+            landmark_type: LandmarkType::Resource,
         };
         let landmarks = LocalArray::from_vec(vec![landmark]);
 

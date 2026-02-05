@@ -1,4 +1,3 @@
-
 Tu es un moteur de matching entre une liste d'éléments et une liste de candidats (landmarks).
 
 On te fournit :
@@ -28,5 +27,5 @@ Sortie :
 - Réponds uniquement avec du JSON valide, conforme au schéma fourni.
 - Le JSON doit contenir 'matches': une liste d'objets avec :
   - element_id : l'ID local de l'élément
-  - candidate_id : l'ID local du candidat choisi, ou null
+  - landmark_id : l'ID local du candidat choisi, ou null
   - confidence : un nombre entre 0 et 1

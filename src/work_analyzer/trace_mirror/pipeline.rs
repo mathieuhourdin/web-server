@@ -58,23 +58,64 @@ pub struct NewPrimaryResource {
 
 
 pub async fn run(trace: &Trace, user_id: Uuid, landscape_analysis_id: Uuid, landmarks: &Vec<Landmark>, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-    let trace_header = header::extract_mirror_header(trace).await?;
+    let log_header = format!("analysis_id: {}", landscape_analysis_id);
+    tracing::info!(
+        target: "work_analyzer",
+        "{} trace_mirror_start trace_id={} user_id={} landmarks={}",
+        log_header,
+        trace.id,
+        user_id,
+        landmarks.len()
+    );
+    let trace_header = header::extract_mirror_header(trace, &log_header).await?;
+    tracing::info!(
+        target: "work_analyzer",
+        "{} trace_mirror_header_extracted title={} subtitle={}",
+        log_header,
+        trace_header.title,
+        trace_header.subtitle
+    );
     let trace_mirror = create_trace_mirror(trace, trace_header, user_id, landscape_analysis_id, pool).await?;
+    tracing::info!(
+        target: "work_analyzer",
+        "{} trace_mirror_created trace_mirror_id={}",
+        log_header,
+        trace_mirror.id
+    );
     let journal = Journal::find_full(trace.journal_id.unwrap(), pool)?;
     let journal_subtitle = journal.subtitle;
     if journal_subtitle == "note" {
-        let primary_resource_suggestion = primary_resource::suggestion::extract(trace).await?;
-        let primary_resource_matched = primary_resource::matching::run(primary_resource_suggestion, landmarks).await?;
+        tracing::info!(
+            target: "work_analyzer",
+            "{} trace_mirror_primary_resource_start",
+            log_header
+        );
+        let primary_resource_suggestion = primary_resource::suggestion::extract(trace, &log_header).await?;
+        let primary_resource_matched =
+            primary_resource::matching::run(primary_resource_suggestion, landmarks, &log_header).await?;
         let trace_mirror_landmark_id: Uuid;
         if primary_resource_matched.candidate_id.is_some() {
             let primary_resource_landmark_id = primary_resource_matched.candidate_id.unwrap();
             trace_mirror_landmark_id = Uuid::parse_str(primary_resource_landmark_id.as_str())?;
         } else {
-            let primary_resource_created = primary_resource::creation::run(primary_resource_matched, landscape_analysis_id, user_id, pool).await?;
+            let primary_resource_created =
+                primary_resource::creation::run(primary_resource_matched, landscape_analysis_id, user_id, pool, &log_header).await?;
             trace_mirror_landmark_id = primary_resource_created.id;
         }
         trace_mirror::link_to_primary_resource(trace_mirror.id, trace_mirror_landmark_id, user_id, pool)?;
+        tracing::info!(
+            target: "work_analyzer",
+            "{} trace_mirror_primary_resource_linked primary_resource_id={}",
+            log_header,
+            trace_mirror_landmark_id
+        );
     }
+    tracing::info!(
+        target: "work_analyzer",
+        "{} trace_mirror_complete trace_mirror_id={}",
+        log_header,
+        trace_mirror.id
+    );
     Ok(trace_mirror)
 }
 

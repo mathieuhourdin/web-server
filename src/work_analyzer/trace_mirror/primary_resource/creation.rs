@@ -2,11 +2,8 @@ use crate::work_analyzer::trace_mirror::primary_resource::matching::PrimaryResou
 use serde::{Deserialize, Serialize};
 use crate::openai_handler::GptRequestConfig;
 use crate::entities::error::{PpdcError, ErrorType};
-use crate::entities_v2::landmark::{Landmark, NewLandmark};
-use crate::entities::resource::{
-    ResourceType,
-    MaturingState,
-};
+use crate::entities_v2::landmark::{Landmark, LandmarkType, NewLandmark};
+use crate::entities::resource::MaturingState;
 use crate::db::DbPool;
 use uuid::Uuid;
 
@@ -19,7 +16,7 @@ pub struct PrimaryResourceCreated {
     pub identity_state: String,
 }
 
-pub async fn run(element: PrimaryResourceMatched, analysis_id: Uuid, user_id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
+pub async fn run(element: PrimaryResourceMatched, analysis_id: Uuid, user_id: Uuid, pool: &DbPool, log_header: &str) -> Result<Landmark, PpdcError> {
     if element.candidate_id.is_some() {
         return Err(PpdcError::new(400, ErrorType::ApiError, "Primary resource already created".to_string()));
     }
@@ -30,7 +27,7 @@ pub async fn run(element: PrimaryResourceMatched, analysis_id: Uuid, user_id: Uu
         system_prompt,
         &serde_json::to_string(&element)?,
         Some(serde_json::from_str(&schema).unwrap())
-    );
+    ).with_log_header(log_header);
     let primary_resource_created = gpt_request_config.execute().await?;
     let new_landmark = create_primary_resource(primary_resource_created, analysis_id, user_id, pool).await?;
     Ok(new_landmark)
@@ -41,7 +38,7 @@ pub async fn create_primary_resource(primary_resource_created: PrimaryResourceCr
         primary_resource_created.title,
         format!("Par {} sur {}", primary_resource_created.author.unwrap_or("".to_string()), primary_resource_created.theme.unwrap_or("".to_string())),
         primary_resource_created.content,
-        ResourceType::Resource,
+        LandmarkType::Resource,
         MaturingState::Draft,
         analysis_id,
         user_id,

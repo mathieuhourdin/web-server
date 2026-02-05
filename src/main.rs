@@ -6,6 +6,7 @@ use axum::Extension;
 
 #[tokio::main]
 async fn main() {
+    web_server::logging::init_tracing();
     let pool = db::create_pool();
     db::init_global_pool(pool.clone());
 

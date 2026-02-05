@@ -73,6 +73,7 @@ impl Trace {
 }
 
 /// Struct for creating a new Trace with all required data.
+#[derive(Debug, Clone)]
 pub struct NewTrace {
     pub title: String,
     pub subtitle: String,
@@ -88,9 +89,9 @@ impl NewTrace {
         title: String,
         subtitle: String,
         content: String,
+        interaction_date: Option<NaiveDateTime>,
         user_id: Uuid,
         journal_id: Uuid,
-        interaction_date: Option<NaiveDateTime>,
     ) -> NewTrace {
         NewTrace {
             title,

@@ -13,6 +13,7 @@ pub struct LandscapeAnalysis {
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
     pub parent_analysis_id: Option<Uuid>,
+    pub replayed_from_id: Option<Uuid>,
     pub analyzed_trace_id: Option<Uuid>,
     pub processing_state: MaturingState,
     pub created_at: NaiveDateTime,

@@ -13,7 +13,8 @@ use crate::entities::{
     resource::{maturing_state::MaturingState, resource_type::ResourceType, NewResource, Resource},
     session::Session,
 };
-use crate::entities_v2::landmark::Landmark;
+use crate::entities_v2::{element::Element, landmark::Landmark};
+use crate::work_analyzer;
 
 use super::model::LandscapeAnalysis;
 use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
@@ -114,6 +115,16 @@ pub async fn get_landmarks_route(
 }
 
 #[debug_handler]
+pub async fn get_elements_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Element>>, PpdcError> {
+    let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    let elements = landscape.get_elements(&pool)?;
+    Ok(Json(elements))
+}
+
+#[debug_handler]
 pub async fn get_last_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -140,4 +151,19 @@ pub async fn get_analysis_parents_route(
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
     let parents = landscape.find_all_parents(&pool)?;
     Ok(Json(parents))
+}
+
+#[debug_handler]
+pub async fn post_analysis_replay_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(_session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<LandscapeAnalysis>, PpdcError> {
+    let analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    let replayed_analysis = analysis.replay(&pool)?;
+    let landscape_analysis_ids = vec![replayed_analysis.id];
+    tokio::spawn(async move {
+        work_analyzer::analysis_processor::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await
+    });
+    Ok(Json(replayed_analysis))
 }

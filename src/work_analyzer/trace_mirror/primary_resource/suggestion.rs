@@ -29,7 +29,7 @@ fn invalid_evidence(evidence: &[String], trace_content: &str) -> Vec<String> {
         .collect()
 }
 
-pub async fn extract(trace: &Trace) -> Result<PrimaryResourceSuggestion, PpdcError> {
+pub async fn extract(trace: &Trace, log_header: &str) -> Result<PrimaryResourceSuggestion, PpdcError> {
     let system_prompt = include_str!("../prompts/primary_resource/suggestion/system.md").to_string();
     let schema_str = include_str!("../prompts/primary_resource/suggestion/schema.json");
     let schema: serde_json::Value = serde_json::from_str(schema_str)?;
@@ -55,7 +55,7 @@ pub async fn extract(trace: &Trace) -> Result<PrimaryResourceSuggestion, PpdcErr
             system_prompt.clone(),
             user_prompt,
             Some(schema.clone()),
-        );
+        ).with_log_header(log_header);
         let result: PrimaryResourceSuggestion = config.execute().await?;
 
         let invalid = invalid_evidence(&result.evidence, &trace_content);

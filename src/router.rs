@@ -14,6 +14,7 @@ use crate::entities::resource_relation;
 use crate::entities::transcription;
 use crate::entities::{
     comment, interaction::interaction_routes as interaction, resource, user,
+    error::{PpdcError, ErrorType},
 };
 use crate::entities_v2::{
     trace,
@@ -36,7 +37,6 @@ pub fn create_router() -> Router {
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/analysis", post(landscape_analysis::post_analysis_route).get(landscape_analysis::get_last_analysis_route))
-        .route("/:id/landmarks", get(landmark::get_landmarks_for_user_route))
         .route("/:id/lens", get(lens::get_user_lenses_route))
         .route("/:id/traces", get(trace::get_all_traces_for_user_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
@@ -101,7 +101,9 @@ pub fn create_router() -> Router {
     let analysis_router = Router::new()
         .route("/", post(landscape_analysis::post_analysis_route))
         .route("/:id", delete(landscape_analysis::delete_analysis_route).get(landscape_analysis::get_analysis_route))
+        .route("/:id/replay", post(landscape_analysis::post_analysis_replay_route))
         .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
+        .route("/:id/elements", get(landscape_analysis::get_elements_route))
         .route("/:id/parents", get(landscape_analysis::get_analysis_parents_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let landmarks_router = Router::new()
@@ -153,7 +155,7 @@ pub fn create_router() -> Router {
 }
 
 async fn fallback_handler() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "404 Not Found")
+    (StatusCode::NOT_FOUND, PpdcError::new(404, ErrorType::ApiError, "404 Not Found".to_string()))
 }
 async fn root_handler() -> impl IntoResponse {
     (StatusCode::OK, "Ok")

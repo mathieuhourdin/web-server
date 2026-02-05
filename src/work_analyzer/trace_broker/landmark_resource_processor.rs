@@ -1,7 +1,6 @@
 use crate::entities::error::PpdcError;
-use crate::entities::resource::resource_type::ResourceType;
 use crate::entities::resource::maturing_state::MaturingState;
-use crate::entities_v2::landmark::Landmark;
+use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::trace_broker::types::IdentityState;
 use crate::work_analyzer::trace_broker::{
@@ -9,7 +8,7 @@ use crate::work_analyzer::trace_broker::{
         ProcessorContext,
         LandmarkProcessor,
         ExtractedElementForLandmark, MatchedExtractedElementForLandmark, NewLandmarkForExtractedElement
-    }
+    },
 };
 use crate::work_analyzer::matching::LandmarkForMatching;
 use serde::{Deserialize, Serialize};
@@ -135,8 +134,8 @@ impl NewLandmarkForExtractedElement for NewResourceForExtractedElement {
     fn identity_state(&self) -> IdentityState {
         self.identity_state
     }
-    fn landmark_type(&self) -> ResourceType {
-        ResourceType::Resource
+    fn landmark_type(&self) -> LandmarkType {
+        LandmarkType::Resource
     }
 }
 
@@ -182,7 +181,7 @@ impl LandmarkProcessor for ResourceProcessor {
         let _known_resources = context.landmarks
             .iter()
             .filter(|resource| {
-                resource.landmark_type == ResourceType::Resource
+                resource.landmark_type == LandmarkType::Resource
                 && (resource.maturing_state == MaturingState::Finished || resource.maturing_state == MaturingState::Review || resource.maturing_state == MaturingState::Draft)
             })
             .map(|resource| LandmarkForMatching::from(resource))
@@ -210,7 +209,7 @@ impl LandmarkProcessor for ResourceProcessor {
         let landmarks = context.landmarks.clone()
             .into_iter()
             .filter(|resource| {
-                resource.landmark_type == ResourceType::Resource
+                resource.landmark_type == LandmarkType::Resource
                 && (resource.maturing_state == MaturingState::Finished || resource.maturing_state == MaturingState::Review || resource.maturing_state == MaturingState::Draft)
             })
             .collect::<Vec<Landmark>>();

@@ -29,6 +29,9 @@ http = "1.2.0"
 urlencoding = "2.1.0"
 async-trait = "0.1.89"
 anyhow = "1.0.100"
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [dev-dependencies]
 tokio-test = "*"

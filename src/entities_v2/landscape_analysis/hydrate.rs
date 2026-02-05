@@ -12,7 +12,7 @@ use crate::entities::{
     },
     resource_relation::ResourceRelation,
 };
-use crate::entities_v2::{landmark::Landmark, lens::Lens};
+use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
 use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
 
@@ -28,6 +28,7 @@ impl LandscapeAnalysis {
             interaction_date: None,
             user_id: Uuid::nil(),
             parent_analysis_id: None,
+            replayed_from_id: None,
             analyzed_trace_id: None,
             processing_state: resource.maturing_state,
             created_at: resource.created_at,
@@ -58,7 +59,6 @@ impl LandscapeAnalysis {
 
     /// Hydrates user_id and interaction_date from the author interaction.
     pub fn with_user_id(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        println!("Hydrating user_id for analysis: {:?}", self.id);
         let resource = self.to_resource();
         let interaction = resource.find_resource_author_interaction(pool)?;
         Ok(LandscapeAnalysis {
@@ -71,7 +71,6 @@ impl LandscapeAnalysis {
     /// Hydrates parent_analysis_id from resource relations.
     /// Looks for a relation of type "prnt" (parent) pointing to another analysis.
     pub fn with_parent_analysis(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        println!("Hydrating parent_analysis_id for analysis: {:?}", self.id);
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
         let parent_analysis_id = targets
             .into_iter()
@@ -83,13 +82,23 @@ impl LandscapeAnalysis {
     /// Hydrates trace_id from resource relations.
     /// Looks for a relation of type "trce" (trace) pointing to a trace resource.
     pub fn with_trace(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        println!("Hydrating trace_id for analysis: {:?}", self.id);
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
         let analyzed_trace_id = targets
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "trce")
             .map(|target| target.target_resource.id);
         Ok(LandscapeAnalysis { analyzed_trace_id, ..self })
+    }
+
+    /// Hydrates replayed_from_id from resource relations.
+    /// Looks for a relation of type "rply" (replayed from) pointing to another analysis.
+    pub fn with_replayed_from(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let replayed_from_id = targets
+            .into_iter()
+            .find(|target| target.resource_relation.relation_type == "rply")
+            .map(|target| target.target_resource.id);
+        Ok(LandscapeAnalysis { replayed_from_id, ..self })
     }
 
     pub fn find_full_parent(&self, pool: &DbPool) -> Result<Option<LandscapeAnalysis>, PpdcError> {
@@ -114,19 +123,31 @@ impl LandscapeAnalysis {
 
     /// Finds a LandscapeAnalysis by id and fully hydrates it from the database.
     pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        println!("Finding full analysis: {:?}", id);
         let resource = Resource::find(id, pool)?;
-        println!("Resource: {:?}", resource);
         let analysis = LandscapeAnalysis::from_resource(resource);
         let analysis = analysis.with_user_id(pool)?;
         let analysis = analysis.with_parent_analysis(pool)?;
         let analysis = analysis.with_trace(pool)?;
+        let analysis = analysis.with_replayed_from(pool)?;
         Ok(analysis)
     }
 
     pub fn get_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
         let landmarks = Landmark::get_for_landscape_analysis(self.id, pool)?;
         Ok(landmarks)
+    }
+
+    pub fn get_elements(&self, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
+        let elements = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        let elements = elements
+            .into_iter()
+            .filter(|relation| {
+                relation.resource_relation.relation_type == "ownr"
+                    && relation.origin_resource.is_element()
+            })
+            .map(|relation| Element::from_resource(relation.origin_resource))
+            .collect::<Vec<Element>>();
+        Ok(elements)
     }
 
     pub fn get_children_landscape_analyses(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {

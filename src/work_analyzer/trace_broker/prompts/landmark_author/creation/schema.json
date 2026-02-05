@@ -1,0 +1,11 @@
+{
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "main_subjects": {"type": "string"},
+        "content": {"type": "string"},
+        "identity_state": {"type": "string", "enum": ["identified", "stub", "discard"]}
+    },
+    "required": ["title", "main_subjects", "content", "identity_state"],
+    "additionalProperties": false
+}

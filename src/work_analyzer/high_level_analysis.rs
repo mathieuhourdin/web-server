@@ -4,11 +4,13 @@ use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 
 pub async fn get_high_level_analysis(
     previous_context: &String,
-    trace: &String
+    trace: &String,
+    log_header: &str,
 ) -> Result<String, PpdcError> {
     let high_level_analysis = get_high_level_analysis_from_gpt(
         previous_context, 
-        trace)
+        trace,
+        log_header)
     .await?;
     Ok(high_level_analysis)
 
@@ -27,9 +29,14 @@ pub fn get_system_prompt() -> String {
 
 pub async fn get_high_level_analysis_from_gpt(
     work_context: &String,
-    new_trace: &String
+    new_trace: &String,
+    log_header: &str,
 ) -> Result<String, PpdcError> {
-    println!("work_analyzer::high_level_analysis::get_high_level_analysis_from_gpt: Getting high level analysis from gpt string");
+    tracing::info!(
+        target: "work_analyzer",
+        "{} high_level_analysis_llm_start",
+        log_header
+    );
 
     let system_prompt = get_system_prompt();
 
@@ -57,6 +64,7 @@ pub async fn get_high_level_analysis_from_gpt(
         "additionalProperties": false
     });
 
-    let high_level_analysis: String = make_gpt_request(system_prompt, user_prompt, None).await?;
+    let high_level_analysis: String =
+        make_gpt_request(system_prompt, user_prompt, None, Some(log_header)).await?;
     Ok(high_level_analysis)
 }

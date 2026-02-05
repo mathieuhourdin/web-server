@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         system_prompt,
         user_prompt,
         Some(schema_json),
+        None,
     ).await?;
 
     // 4) Afficher le résultat joliment

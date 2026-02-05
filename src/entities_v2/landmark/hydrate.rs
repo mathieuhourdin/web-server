@@ -6,8 +6,26 @@ use crate::entities::resource::{entity_type::EntityType, NewResource, Resource, 
 use crate::entities::resource_relation::ResourceRelation;
 use crate::entities::interaction::model::Interaction;
 
-use super::model::{Landmark, LandmarkWithParentsAndElements, NewLandmark};
+use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
 
+
+impl LandmarkType {
+    pub fn from_resource_type(resource_type: ResourceType) -> LandmarkType {
+        match resource_type {
+            ResourceType::Resource => LandmarkType::Resource,
+            ResourceType::Theme => LandmarkType::Theme,
+            ResourceType::Author => LandmarkType::Author,
+            _ => LandmarkType::Resource
+        }
+    }
+    pub fn to_resource_type(self) -> ResourceType {
+        match self {
+            LandmarkType::Resource => ResourceType::Resource,
+            LandmarkType::Theme => ResourceType::Theme,
+            LandmarkType::Author => ResourceType::Author,
+        }
+    }
+}
 impl Landmark {
     pub fn to_resource(self) -> Resource {
         Resource {
@@ -18,7 +36,7 @@ impl Landmark {
             external_content_url: self.external_content_url,
             comment: self.comment,
             image_url: self.image_url,
-            resource_type: self.landmark_type,
+            resource_type: self.landmark_type.to_resource_type(),
             entity_type: EntityType::Landmark,
             maturing_state: self.maturing_state,
             publishing_state: self.publishing_state,
@@ -38,7 +56,7 @@ impl Landmark {
             external_content_url: resource.external_content_url,
             comment: resource.comment,
             image_url: resource.image_url,
-            landmark_type: resource.resource_type,
+            landmark_type: LandmarkType::from_resource_type(resource.resource_type),
             maturing_state: resource.maturing_state,
             publishing_state: resource.publishing_state,
             category_id: resource.category_id,
@@ -94,30 +112,12 @@ impl Landmark {
         Ok(analysis)
     }
 
-    pub fn find_all_up_to_date_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
-        let landmarks_types = [
-            ResourceType::Resource,
-            ResourceType::Task
-        ];
-        let mut landmarks = vec![];
-        for landmark_type in landmarks_types {
-            let interactions = Interaction::find_landmarks_for_user_by_type(user_id, landmark_type, pool)?;
-            let landmarks_for_type = interactions
-                .into_iter()
-                .map(|interaction| Landmark::from_resource(interaction.resource))
-                .collect::<Vec<Landmark>>();
-            landmarks.extend(landmarks_for_type);
-        }
-        Ok(landmarks)
-    }
-
     pub fn get_for_landscape_analysis(landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
         let resource_relations = ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
         let landmarks = resource_relations
             .into_iter()
             .filter(|relation| {
-                relation.origin_resource.resource_type == ResourceType::Resource
-                || relation.origin_resource.resource_type == ResourceType::Task
+                relation.origin_resource.is_landmark()
             })
             .map(|relation| Landmark::from_resource(relation.origin_resource))
             .collect::<Vec<Landmark>>();
@@ -134,7 +134,7 @@ impl NewLandmark {
             external_content_url: None,
             comment: None,
             image_url: None,
-            resource_type: Some(self.landmark_type),
+            resource_type: Some(self.landmark_type.to_resource_type()),
             entity_type: Some(EntityType::Landmark),
             maturing_state: Some(self.maturing_state),
             publishing_state: Some(self.publishing_state),

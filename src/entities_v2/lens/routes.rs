@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{error::PpdcError, session::Session};
-use crate::entities_v2::landscape_analysis::NewLandscapeAnalysis;
+use crate::entities_v2::{landscape_analysis::NewLandscapeAnalysis, trace::Trace};
 use crate::work_analyzer;
 
 use super::model::{Lens, NewLens, NewLensDto};
@@ -64,10 +64,14 @@ pub async fn put_lens_route(
     let mut lens = Lens::find_full_lens(id, &pool)?;
 
     if payload.current_trace_id != lens.current_trace_id {
-        let landscape_analysis_ids = create_landscape_placeholders(payload.current_trace_id, lens.current_landscape_id.unwrap(), &pool)?;
-        let last_landscape_analysis_id = landscape_analysis_ids.last().unwrap().clone();
-        lens = lens.update_current_landscape(last_landscape_analysis_id, &pool)?;
-        tokio::spawn(async move { work_analyzer::analysis_processor::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await });
+        let payload_trace = Trace::find_full_trace(payload.current_trace_id, &pool)?;
+        let current_trace = Trace::find_full_trace(lens.current_trace_id, &pool)?;
+        if payload_trace.interaction_date.unwrap() > current_trace.interaction_date.unwrap() {
+            let landscape_analysis_ids = create_landscape_placeholders(payload.current_trace_id, lens.current_landscape_id.unwrap(), &pool)?;
+            let last_landscape_analysis_id = landscape_analysis_ids.last().unwrap().clone();
+            lens = lens.update_current_landscape(last_landscape_analysis_id, &pool)?;
+            tokio::spawn(async move { work_analyzer::analysis_processor::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await });
+        }
     }
     let lens = lens.with_user_id(&pool)?;
     let lens = lens.with_forked_landscape(&pool)?;

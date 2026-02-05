@@ -146,15 +146,12 @@ where
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, _state: &B) -> Result<Self, Self::Rejection> {
-        println!("from_request_parts");
         let pool = parts
             .extensions
             .get::<DbPool>()
             .expect("Extension DbPool should be set");
-        println!("from_request_parts pool");
         if let Some(auth_header) = parts.headers.get("Authorization") {
             if let Ok(auth_str) = auth_header.to_str() {
-                println!("from_request_parts auth_str {:#?}", auth_str);
                 return Ok(Session::get_valid_session_from_id(auth_str, &pool).unwrap());
             }
         }

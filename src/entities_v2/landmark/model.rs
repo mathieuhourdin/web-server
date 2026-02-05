@@ -1,9 +1,8 @@
 use uuid::Uuid;
 use crate::entities::{
-    error::PpdcError,
+    error::{ErrorType, PpdcError},
     resource::{
         Resource,
-        resource_type::ResourceType,
         maturing_state::MaturingState,
     },
     resource_relation::NewResourceRelation,
@@ -22,7 +21,7 @@ pub struct Landmark {
     pub external_content_url: Option<String>,
     pub comment: Option<String>,
     pub image_url: Option<String>,
-    pub landmark_type: ResourceType,
+    pub landmark_type: LandmarkType,
     pub maturing_state: MaturingState,
     pub publishing_state: String,
     pub category_id: Option<Uuid>,
@@ -31,6 +30,48 @@ pub struct Landmark {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LandmarkType {
+    Resource,
+    Theme,
+    Author,
+}
+
+impl LandmarkType {
+    pub fn to_code(&self) -> &'static str {
+        match self {
+            LandmarkType::Resource => "rsrc",
+            LandmarkType::Theme => "them",
+            LandmarkType::Author => "autr",
+        }
+    }
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "rsrc" => Ok(LandmarkType::Resource),
+            "them" => Ok(LandmarkType::Theme),
+            "autr" => Ok(LandmarkType::Author),
+            _ => Err(PpdcError::new(400, ErrorType::ApiError, "Invalid landmark type".to_string())),
+        }
+    }
+}
+impl Serialize for LandmarkType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_code())
+    }
+}
+
+impl<'de> Deserialize<'de> for LandmarkType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(LandmarkType::from_code(&s).unwrap_or(LandmarkType::Resource))
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LandmarkWithParentsAndElements {
     #[serde(flatten)]
@@ -50,7 +91,7 @@ pub struct NewLandmark {
     pub title: String,
     pub subtitle: String,
     pub content: String,
-    pub landmark_type: ResourceType,
+    pub landmark_type: LandmarkType,
     pub maturing_state: MaturingState,
     pub publishing_state: String,
     pub analysis_id: Uuid,
@@ -75,7 +116,7 @@ impl NewLandmark {
         title: String, 
         subtitle: String, 
         content: String, 
-        landmark_type: ResourceType, 
+        landmark_type: LandmarkType, 
         maturing_state: MaturingState,
         analysis_id: Uuid,
         user_id: Uuid,

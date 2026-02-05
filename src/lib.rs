@@ -1,6 +1,7 @@
 pub mod db;
 pub mod entities;
 pub mod environment;
+pub mod logging;
 pub mod http;
 pub mod link_preview;
 pub mod openai_handler;

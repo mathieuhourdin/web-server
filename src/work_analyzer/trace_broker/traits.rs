@@ -1,9 +1,4 @@
-use crate::entities::{
-    error::PpdcError, 
-    resource::{
-        resource_type::ResourceType,
-    }, 
-};
+use crate::entities::error::PpdcError;
 use std::fmt::Debug;
 use crate::entities_v2::{
     landmark::{
@@ -38,7 +33,7 @@ pub trait NewLandmarkForExtractedElement {
     fn subtitle(&self) -> String;
     fn content(&self) -> String;
     fn identity_state(&self) -> IdentityState;
-    fn landmark_type(&self) -> ResourceType;
+    fn landmark_type(&self) -> crate::entities_v2::landmark::LandmarkType;
 
     fn to_new_landmark(
         &self,
@@ -133,7 +128,7 @@ pub struct ProcessorContext {
 // Then we need to create three prompts for each step.
 // I think we need a struct for gpt config.
 pub struct ProcessorConfig {
-    pub landmark_type: ResourceType,
+    pub landmark_type: crate::entities_v2::landmark::LandmarkType,
     pub extract_elements_gpt_config: GptRequestConfig,
     pub match_elements_gpt_config: GptRequestConfig,
     pub create_new_landmarks_gpt_config: GptRequestConfig,
@@ -170,7 +165,9 @@ pub trait LandmarkProcessor: Send + Sync {
         landmarks: &Vec<Landmark>,
     ) -> Result<Vec<Self::MatchedElement>, PpdcError> {
 
-        let matched_elements = matching::match_elements::<Self::ExtractedElement>(elements, landmarks, None).await?;
+        let matched_elements =
+            matching::match_elements::<Self::ExtractedElement>(elements, landmarks, None, None)
+                .await?;
         let matched_elements: Vec<Self::MatchedElement> = matched_elements
             .iter()
             .map(|element| {

@@ -15,8 +15,13 @@ pub struct PrimaryResourceMatched {
 }
 
 
-pub async fn run(element: PrimaryResourceSuggestion, landmarks: &Vec<Landmark>) -> Result<PrimaryResourceMatched, PpdcError> {
-    let matched_elements = matching::match_elements::<PrimaryResourceSuggestion>(vec![element], landmarks, None).await?;
+pub async fn run(element: PrimaryResourceSuggestion, landmarks: &Vec<Landmark>, log_header: &str) -> Result<PrimaryResourceMatched, PpdcError> {
+    let matched_elements = matching::match_elements::<PrimaryResourceSuggestion>(
+        vec![element],
+        landmarks,
+        None,
+        Some(log_header),
+    ).await?;
 
     let matched_element = matched_elements
     .iter()

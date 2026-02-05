@@ -42,7 +42,8 @@ pub enum ResourceType {
     Feeling, // Element
     Theme, // Landmark
     Lens, // Lens
-    TraceMirror, // TraceMirror
+    TraceMirror, // TraceMirror 
+    Author, // Landmark
 }
 
 impl ResourceType {
@@ -79,6 +80,7 @@ impl ResourceType {
             "them" => Ok(ResourceType::Theme),
             "lens" => Ok(ResourceType::Lens),
             "trcm" => Ok(ResourceType::TraceMirror),
+            "autr" => Ok(ResourceType::Author),
             &_ => {
                 return Err(PpdcError::new(
                     404,
@@ -120,6 +122,7 @@ impl ResourceType {
             ResourceType::Theme => "them",
             ResourceType::Lens => "lens",
             ResourceType::TraceMirror => "trcm",
+            ResourceType::Author => "autr",
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -154,6 +157,7 @@ impl ResourceType {
             ResourceType::Theme => "Theme",
             ResourceType::Lens => "Lens",
             ResourceType::TraceMirror => "Trace Mirror",
+            ResourceType::Author => "Author",
         }
     }
     pub fn from_full_text(full_text: &str) -> Result<ResourceType, PpdcError> {
@@ -188,6 +192,7 @@ impl ResourceType {
             "Theme" => Ok(ResourceType::Theme),
             "Lens" => Ok(ResourceType::Lens),
             "Trace Mirror" => Ok(ResourceType::TraceMirror),
+            "Author" => Ok(ResourceType::Author),
             &_ => Err(PpdcError::new(
                 404,
                 ErrorType::ApiError,
@@ -233,7 +238,8 @@ impl ResourceType {
             | ResourceType::Deliverable
             | ResourceType::Process
             | ResourceType::Resource
-            | ResourceType::Theme => EntityType::Landmark,
+            | ResourceType::Theme
+            | ResourceType::Author => EntityType::Landmark,
             ResourceType::Analysis => EntityType::LandscapeAnalysis,
             ResourceType::Lens => EntityType::Lens,
         }

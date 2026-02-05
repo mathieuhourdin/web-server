@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use crate::db;
 use crate::entities_v2::llm_call::NewLlmCall;
 use crate::environment;
@@ -45,6 +46,7 @@ pub async fn make_gpt_request<T>(
     system_prompt: String,
     user_prompt: String,
     schema: Option<serde_json::Value>,
+    log_header: Option<&str>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
 where
     T: for<'de> serde::Deserialize<'de>,
@@ -95,7 +97,6 @@ where
 
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
-    println!("Raw GPT response: {body}");
 
     // Determine call status based on HTTP status and response
     let call_status = if !status.is_success() {
@@ -121,6 +122,15 @@ where
         })
         .unwrap_or_default();
 
+    let resolved_log_header = log_header.unwrap_or("analysis_id: unknown");
+    info!(
+        target: "work_analyzer",
+        "{} llm_result prompt={} output={}",
+        resolved_log_header,
+        full_prompt,
+        output_text
+    );
+
     let env = environment::get_env();
     if env != "bintest" {
         // Persist the LLM call to database before attempting full parsing
@@ -143,7 +153,12 @@ where
 
         // Try to persist, but don't fail the whole request if persistence fails
         if let Err(e) = new_call.create(pool) {
-            eprintln!("Failed to persist LLM call to database: {e}");
+            tracing::warn!(
+                target: "work_analyzer",
+                "{} llm_persist_failed error={}",
+                resolved_log_header,
+                e
+            );
         }
 
         if !status.is_success() {
@@ -154,7 +169,6 @@ where
     // Now do full parsing for type T
     let gpt_resp: GPTResponse =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse GPTResponse: {e}"))?;
-    println!("Parsed GPTResponse: {gpt_resp:?}");
 
     if gpt_resp.status != "completed" {
         return Err(format!("GPT response not completed, status={}", gpt_resp.status).into());
@@ -172,8 +186,6 @@ where
                 .map(|c| c.text.as_str())
         })
         .ok_or_else(|| "No output_text found in GPT response output".to_string())?;
-
-    println!("Extracted JSON text: {json_text}");
 
     // Si pas de schéma, on parse directement le texte brut comme String
     // Sinon, on parse comme JSON selon le schéma

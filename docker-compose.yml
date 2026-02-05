@@ -8,9 +8,10 @@ services:
       - "3000:3000"
     volumes:
       - ./:/usr/src/app
+      - ./logs:/usr/src/app/logs
       - cargo-cache:/usr/local/cargo/registry
       - cargo-target:/usr/src/app/target
-    command: bash -c "cargo watch -x 'run --bin web-server'"
+    command: bash -c "cargo watch -i logs -x 'run --bin web-server'"
   postgres_db:
     image: postgres
     ports:

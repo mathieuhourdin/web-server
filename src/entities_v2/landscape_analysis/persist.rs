@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError,
+    error::{ErrorType, PpdcError},
     interaction::model::{Interaction, InteractionWithResource, NewInteraction},
     resource::{maturing_state::MaturingState, NewResource},
     resource_relation::NewResourceRelation,
@@ -36,6 +36,84 @@ impl LandscapeAnalysis {
         let resource = self.to_resource();
         let deleted_resource = resource.delete(pool)?;
         Ok(LandscapeAnalysis::from_resource(deleted_resource))
+    }
+
+    /// Replays a finished analysis by creating a new draft analysis with the same parent/trace.
+    /// This marks the current analysis as Trashed and updates any heading lenses to the new analysis.
+    /// No transaction is used (dev/test convenience).
+    pub fn replay(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let analysis = LandscapeAnalysis::find_full_analysis(self.id, pool)?;
+
+        if analysis.processing_state != MaturingState::Finished {
+            return Err(PpdcError::new(
+                409,
+                ErrorType::ApiError,
+                "Replay is only allowed for finished analyses".to_string(),
+            ));
+        }
+
+        let children = analysis.get_children_landscape_analyses(pool)?;
+        if !children.is_empty() {
+            return Err(PpdcError::new(
+                409,
+                ErrorType::ApiError,
+                "Replay rejected: analysis has children".to_string(),
+            ));
+        }
+
+        let trace_id = analysis.analyzed_trace_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Replay requires an analyzed trace id".to_string(),
+            )
+        })?;
+
+        let user_id = analysis.user_id;
+        let parent_analysis_id = analysis.parent_analysis_id;
+        let old_analysis_id = analysis.id;
+
+        // Use processing_state as a lightweight lock
+        let _trashed = analysis
+            .clone()
+            .set_processing_state(MaturingState::Trashed, pool)?;
+
+        // Re-check children to reduce race risks (best-effort, no locks)
+        let children_after = analysis.get_children_landscape_analyses(pool)?;
+        if !children_after.is_empty() {
+            let _ = analysis.clone().set_processing_state(MaturingState::Finished, pool);
+            return Err(PpdcError::new(
+                409,
+                ErrorType::ApiError,
+                "Replay rejected: analysis got children during replay".to_string(),
+            ));
+        }
+
+        let new_analysis = match NewLandscapeAnalysis::new_placeholder(
+            user_id,
+            trace_id,
+            parent_analysis_id,
+        )
+        .create(pool)
+        {
+            Ok(analysis) => analysis,
+            Err(err) => {
+                let _ = analysis.clone().set_processing_state(MaturingState::Finished, pool);
+                return Err(err);
+            }
+        };
+
+        let mut replay_relation = NewResourceRelation::new(new_analysis.id, old_analysis_id);
+        replay_relation.relation_type = Some("rply".to_string());
+        replay_relation.user_id = Some(user_id);
+        replay_relation.create(pool)?;
+
+        let lenses = analysis.get_heading_lens(pool)?;
+        for lens in lenses {
+            lens.update_current_landscape(new_analysis.id, pool)?;
+        }
+
+        Ok(new_analysis)
     }
 }
 
@@ -100,6 +178,11 @@ pub fn delete_leaf_and_cleanup(
     println!("Related resources: {:?}", related_resources);
     for resource_relation in related_resources {
         println!("Resource relation: {:?}", resource_relation);
+        if resource_relation.origin_resource.is_trace_mirror() {
+            println!("Deleting trace mirror: {:?}", resource_relation.origin_resource);
+            resource_relation.origin_resource.delete(pool)?;
+            continue;
+        }
         // check if the resource is owned by the analysis (for elements and entities)
         if resource_relation.resource_relation.relation_type == "ownr".to_string() 
             && !resource_relation.origin_resource.is_trace()

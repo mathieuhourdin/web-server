@@ -11,7 +11,7 @@ pub struct MirrorHeader {
 }
 
 /// Extracts a MirrorHeader (title, subtitle, tags) from the trace content using the LLM.
-pub async fn extract_mirror_header(trace: &Trace) -> Result<MirrorHeader, PpdcError> {
+pub async fn extract_mirror_header(trace: &Trace, log_header: &str) -> Result<MirrorHeader, PpdcError> {
     let system_prompt = include_str!("prompts/mirror_header/system.md").to_string();
     let schema_str = include_str!("prompts/mirror_header/schema.json");
     let schema: serde_json::Value = serde_json::from_str(schema_str)?;
@@ -24,6 +24,6 @@ pub async fn extract_mirror_header(trace: &Trace) -> Result<MirrorHeader, PpdcEr
         system_prompt,
         user_prompt,
         Some(schema),
-    );
+    ).with_log_header(log_header);
     config.execute().await
 }

@@ -1,4 +1,6 @@
 /target
+/target_lab
+/imports
 *.swp
 *.swo
 *.swn
