@@ -26,7 +26,7 @@ impl Lens {
             description: resource.subtitle,
             fork_landscape_id: None,
             current_landscape_id: None,
-            current_trace_id: Uuid::nil(),
+            target_trace_id: Uuid::nil(),
             #[allow(deprecated)]
             current_state_date: NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
             model_version: "".to_string(),
@@ -78,22 +78,18 @@ impl Lens {
         let current_landscape_id = targets.into_iter()
             .find(|target| target.resource_relation.relation_type == "head".to_string())
             .map(|target| target.target_resource.id);
-        if current_landscape_id.is_none() {
-            return Err(PpdcError::new(404, ErrorType::ApiError, "Current landscape not found".to_string()));
-        }
-        let current_landscape_id = current_landscape_id.unwrap();
-        Ok(Lens { current_landscape_id: Some(current_landscape_id), ..self })
+        Ok(Lens { current_landscape_id, ..self })
     }
-    pub fn with_current_trace(self, pool: &DbPool) -> Result<Lens, PpdcError> {
+    pub fn with_target_trace(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let targets = ResourceRelation::find_target_for_resource(self.id, &pool)?;
-        let current_trace_id = targets.into_iter()
+        let target_trace_id = targets.into_iter()
             .find(|target| target.resource_relation.relation_type == "trgt".to_string())
             .map(|target| target.target_resource.id);
-        if current_trace_id.is_none() {
-            return Err(PpdcError::new(404, ErrorType::ApiError, "Current trace not found".to_string()));
+        if target_trace_id.is_none() {
+            return Err(PpdcError::new(404, ErrorType::ApiError, "Target trace not found".to_string()));
         }
-        let current_trace_id = current_trace_id.unwrap();
-        Ok(Lens { current_trace_id, ..self })
+        let target_trace_id = target_trace_id.unwrap();
+        Ok(Lens { target_trace_id, ..self })
     }
     pub fn find_full_lens(id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
         let lens = Resource::find(id, pool)?;
@@ -101,7 +97,7 @@ impl Lens {
         let lens = lens.with_user_id(pool)?;
         let lens = lens.with_forked_landscape(pool)?;
         let lens = lens.with_current_landscape(pool)?;
-        let lens = lens.with_current_trace(pool)?;
+        let lens = lens.with_target_trace(pool)?;
         Ok(lens)
     }
 

@@ -62,6 +62,27 @@ impl Trace {
         Ok(traces)
     }
 
+    pub fn get_first(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
+        let interaction = Interaction::find_first_trace_for_user(user_id, pool)?;
+        match interaction {
+            Some(interaction) => Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_next(user_id: Uuid, trace_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
+        let trace = Trace::find_full_trace(trace_id, pool)?;
+        let interactions = Interaction::find_all_traces_for_user_after_date(user_id, trace.interaction_date.unwrap(), pool)?;
+        let next_trace = interactions
+            .into_iter()
+            .map(|interaction| Trace::from_resource(interaction.resource))
+            .next();
+        match next_trace {
+            Some(next_trace) => Ok(Some(Trace::find_full_trace(next_trace.id, pool)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_all_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
         let interactions = Interaction::find_all_traces_for_user(user_id, pool)?;
         let traces = interactions

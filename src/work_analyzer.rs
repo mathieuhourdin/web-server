@@ -6,3 +6,7 @@ pub mod trace_broker;
 pub mod high_level_analysis;
 pub mod trace_mirror;
 pub mod matching;
+pub mod analysis_queue;
+pub mod observability;
+
+pub use analysis_queue::{run_analysis_pipeline_for_landscapes, run_lens};

@@ -23,47 +23,44 @@ impl Lens {
     pub fn update_current_landscape(self, new_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
         // Get the new landscape to retrieve its trace_id
         let new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
-        let new_trace_id = new_landscape.analyzed_trace_id;
 
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
         
         // Find and separate the landscape and trace relations
         let mut current_landscape_relation = None;
-        let mut current_trace_relation = None;
         
         for relation in relations {
             match relation.resource_relation.relation_type.as_str() {
                 "head" => current_landscape_relation = Some(relation.resource_relation),
-                "trgt" => current_trace_relation = Some(relation.resource_relation),
                 _ => {}
             }
         }
 
         // Update landscape relation (head)
-        if current_landscape_relation.is_none() {
-            return Err(PpdcError::new(404, ErrorType::ApiError, "Current landscape not found".to_string()));
+        if current_landscape_relation.is_some() {
+            current_landscape_relation.unwrap().delete(pool)?;
         }
-        current_landscape_relation.unwrap().delete(pool)?;
         let mut new_current_landscape_relation = NewResourceRelation::new(self.id, new_landscape_analysis_id);
         new_current_landscape_relation.relation_type = Some("head".to_string());
         new_current_landscape_relation.user_id = Some(self.user_id.unwrap());
         new_current_landscape_relation.create(pool)?;
 
-        // Update trace relation (trgt)
-        // Delete existing trace relation if it exists
-        if let Some(trace_relation) = current_trace_relation {
-            trace_relation.delete(pool)?;
+        let lens = Lens::find_full_lens(self.id, pool)?;
+        Ok(lens)
+    }
+    pub fn update_target_trace(self, new_target_trace_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
+        let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        for relation in relations {
+            if relation.resource_relation.relation_type == "trgt".to_string() {
+                relation.resource_relation.delete(pool)?;
+            }
         }
-        
-        // Only create new trace relation if the new landscape has an analyzed trace
-        if let Some(trace_id) = new_trace_id {
-            let mut new_current_trace_relation = NewResourceRelation::new(self.id, trace_id);
-            new_current_trace_relation.relation_type = Some("trgt".to_string());
-            new_current_trace_relation.user_id = Some(self.user_id.unwrap());
-            new_current_trace_relation.create(pool)?;
-        }
-
-        Ok(self)
+        let mut new_target_trace_relation = NewResourceRelation::new(self.id, new_target_trace_id);
+        new_target_trace_relation.relation_type = Some("trgt".to_string());
+        new_target_trace_relation.user_id = Some(self.user_id.unwrap());
+        new_target_trace_relation.create(pool)?;
+        let lens = Lens::find_full_lens(self.id, pool)?;
+        Ok(lens)
     }
 }
 
@@ -72,7 +69,7 @@ impl NewLens {
 
         let user_id = self.user_id;
         let current_state_date = self.current_state_date;
-        let current_trace_id = self.current_trace_id;
+        let target_trace_id = self.target_trace_id;
         let fork_landscape_id = self.fork_landscape_id;
         let current_landscape_id = self.current_landscape_id;
 
@@ -89,11 +86,13 @@ impl NewLens {
             new_fork_relation.user_id = Some(user_id);
             new_fork_relation.create(pool)?;
         }
-        let mut new_landscape_relation = NewResourceRelation::new(created_resource.id, current_landscape_id);
-        new_landscape_relation.relation_type = Some("head".to_string());
-        new_landscape_relation.user_id = Some(user_id);
-        new_landscape_relation.create(pool)?;
-        let mut new_trace_relation = NewResourceRelation::new(created_resource.id, current_trace_id);
+        if let Some(current_landscape_id) = current_landscape_id {
+            let mut new_landscape_relation = NewResourceRelation::new(created_resource.id, current_landscape_id);
+            new_landscape_relation.relation_type = Some("head".to_string());
+            new_landscape_relation.user_id = Some(user_id);
+            new_landscape_relation.create(pool)?;
+        }
+        let mut new_trace_relation = NewResourceRelation::new(created_resource.id, target_trace_id);
         new_trace_relation.relation_type = Some("trgt".to_string());
         new_trace_relation.user_id = Some(user_id);
         new_trace_relation.create(pool)?;

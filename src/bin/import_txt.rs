@@ -127,8 +127,6 @@ fn get_block_date(line: &str) -> Option<String> {
 }
 
 fn extract_blocks(lines: Vec<&str>) -> Vec<Block> {
-    let date_regex = Regex::new(r"(\d{4}-\d{2}-\d{2})").unwrap();
-    let date_time_regex = Regex::new(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})").unwrap();
     let french_date_regex = french_date_regex();
     let mut last_empty = true;
     let mut blocks = Vec::new();
@@ -153,6 +151,7 @@ fn extract_blocks(lines: Vec<&str>) -> Vec<Block> {
         current_block.content += "\n";
         last_empty = false;
     }
+    blocks.push(current_block.clone());
     blocks
 }
 
