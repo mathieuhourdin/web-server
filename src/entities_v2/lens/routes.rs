@@ -1,14 +1,13 @@
 use axum::{debug_handler, extract::{Extension, Json, Path}};
-use chrono::Utc;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{error::PpdcError, session::Session};
-use crate::entities_v2::{landscape_analysis::NewLandscapeAnalysis, trace::Trace};
+use crate::entities_v2::trace::Trace;
 use crate::work_analyzer;
 
 use super::model::{Lens, NewLens, NewLensDto};
-use super::persist::{create_landscape_placeholders, delete_lens_and_landscapes};
+use super::persist::delete_lens_and_landscapes;
 
 #[debug_handler]
 pub async fn post_lens_route(

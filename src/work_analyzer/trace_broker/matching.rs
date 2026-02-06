@@ -1,5 +1,4 @@
 use crate::entities_v2::landmark::LandmarkType;
-use crate::work_analyzer::trace_broker::traits::ProcessorContext;
 use crate::work_analyzer::trace_broker::extraction::{ExtractedElements, LandmarkSuggestion};
 use serde::{Deserialize, Serialize};
 use crate::entities::error::PpdcError;
@@ -28,7 +27,7 @@ pub async fn match_elements(
     run_matching_impl(config, context, inputs, state, extracted).await
 }
 
-async fn run_matching_impl(config: &AnalysisConfig, context: &AnalysisContext, inputs: &AnalysisInputs, state: &AnalysisStateMirror, extracted: ExtractedElements) -> Result<MatchedElements, PpdcError> {
+async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, inputs: &AnalysisInputs, _state: &AnalysisStateMirror, extracted: ExtractedElements) -> Result<MatchedElements, PpdcError> {
     let log_header = format!("analysis_id: {}", context.analysis_id);
     let landmark_types = [LandmarkType::Resource, LandmarkType::Author, LandmarkType::Theme];
 

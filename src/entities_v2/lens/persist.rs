@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::{ErrorType, PpdcError},
+    error::PpdcError,
     interaction::model::NewInteraction,
     resource_relation::{NewResourceRelation, ResourceRelation},
 };
@@ -22,7 +22,7 @@ impl Lens {
 
     pub fn update_current_landscape(self, new_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
         // Get the new landscape to retrieve its trace_id
-        let new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
+        let _new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
 
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
         

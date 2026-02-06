@@ -9,4 +9,3 @@ pub mod creation;
 pub use traits::{LandmarkProcessor, ProcessorContext};
 pub use landmark_resource_processor::ResourceProcessor;
 pub use creation::CreatedElements;
-pub use extraction::Extractable;

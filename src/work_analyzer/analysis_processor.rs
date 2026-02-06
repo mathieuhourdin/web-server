@@ -1,7 +1,5 @@
-use crate::db::get_global_pool;
 use crate::entities::{
     error::PpdcError,
-    user::User,
     resource::MaturingState,
 };
 use crate::entities_v2::{
@@ -15,13 +13,12 @@ use crate::entities_v2::{
     element::Element,
 };
 use crate::work_analyzer::{
-    trace_broker::{creation, extraction, matching, ProcessorContext},
+    trace_broker::{creation, extraction, matching},
     high_level_analysis,
     mirror_pipeline,
 };
 use uuid::Uuid;
 use crate::db::DbPool;
-use crate::environment::get_env;
 
 
 
@@ -86,7 +83,7 @@ impl AnalysisProcessor {
         let state = self.run_trace_broker_pipeline(state).await?;
 
         // run high level analysis pipeline
-        let state = self.run_high_level_analysis_pipeline(state).await?;
+        self.run_high_level_analysis_pipeline(state).await?;
 
         let mut analysis = LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
         analysis.processing_state = MaturingState::Finished;
@@ -147,7 +144,7 @@ impl AnalysisProcessor {
 
     async fn run_high_level_analysis_pipeline(&self, state: AnalysisStateTraceBroker) -> Result<AnalysisStateTraceBroker, PpdcError> {
         let AnalysisStateTraceBroker { current_landscape, current_trace_mirror, current_landmarks, current_elements } = state;
-        let high_level_analysis = high_level_analysis::high_level_analysis_pipeline(
+        let _high_level_analysis = high_level_analysis::high_level_analysis_pipeline(
             &current_landscape.plain_text_state_summary,
             self.context.analysis_id,
             &self.inputs.trace.content,

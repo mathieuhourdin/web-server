@@ -205,9 +205,6 @@ async fn create_landmark_via_gpt(
 // Main Creation Logic
 // ============================================================================
 
-/// Confidence threshold for linking to existing landmarks when no config is provided
-const DEFAULT_CONFIDENCE_THRESHOLD: f32 = 0.4;
-
 pub async fn create_elements(
     config: &AnalysisConfig,
     context: &AnalysisContext,
@@ -302,8 +299,8 @@ async fn run_creation_impl(
 async fn process_suggestion(
     config: &AnalysisConfig,
     context: &AnalysisContext,
-    inputs: &AnalysisInputs,
-    state: &AnalysisStateMirror,
+    _inputs: &AnalysisInputs,
+    _state: &AnalysisStateMirror,
     element: &MatchedElement,
     suggestion: &LandmarkMatching,
     landmarks_updates: &mut HashMap<Uuid, Uuid>,

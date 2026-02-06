@@ -4,7 +4,6 @@ use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities::resource::{entity_type::EntityType, NewResource, Resource, resource_type::ResourceType};
 use crate::entities::resource_relation::ResourceRelation;
-use crate::entities::interaction::model::Interaction;
 
 use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
 

@@ -14,7 +14,6 @@ use crate::entities::{
     session::Session,
 };
 use crate::entities_v2::{element::Element, landmark::Landmark};
-use crate::work_analyzer;
 
 use super::model::LandscapeAnalysis;
 use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
@@ -161,9 +160,9 @@ pub async fn post_analysis_replay_route(
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
     let analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
     let replayed_analysis = analysis.replay(&pool)?;
-    let landscape_analysis_ids = vec![replayed_analysis.id];
+    let _landscape_analysis_ids = vec![replayed_analysis.id];
     /*tokio::spawn(async move {
-        work_analyzer::run_analysis_pipeline_for_landscapes(landscape_analysis_ids).await
+        work_analyzer::run_analysis_pipeline_for_landscapes(_landscape_analysis_ids).await
     });*/
     Ok(Json(replayed_analysis))
 }
