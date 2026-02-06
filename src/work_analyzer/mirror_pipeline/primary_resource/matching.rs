@@ -1,7 +1,7 @@
 use crate::work_analyzer::matching;
 use crate::entities_v2::landmark::Landmark;
 use crate::entities::error::{PpdcError, ErrorType};
-use crate::work_analyzer::trace_mirror::primary_resource::suggestion::PrimaryResourceSuggestion;
+use crate::work_analyzer::mirror_pipeline::primary_resource::suggestion::PrimaryResourceSuggestion;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-use crate::work_analyzer::trace_mirror::primary_resource::matching::PrimaryResourceMatched;
+use crate::work_analyzer::mirror_pipeline::primary_resource::matching::PrimaryResourceMatched;
 use serde::{Deserialize, Serialize};
 use crate::openai_handler::GptRequestConfig;
 use crate::entities::error::{PpdcError, ErrorType};
