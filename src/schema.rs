@@ -59,6 +59,8 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         analysis_id -> Nullable<Uuid>,
+        system_prompt -> Text,
+        user_prompt -> Text,
     }
 }
 

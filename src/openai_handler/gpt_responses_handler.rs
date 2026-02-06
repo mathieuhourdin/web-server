@@ -152,6 +152,8 @@ where
             0.0, // price - not available in current response structure
             "USD".to_string(), // currency - default
             analysis_id.unwrap(),
+            system_prompt,
+            user_prompt,
         );
 
         // Try to persist, but don't fail the whole request if persistence fails

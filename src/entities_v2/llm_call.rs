@@ -29,6 +29,8 @@ pub struct LlmCall {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub analysis_id: Option<Uuid>,
+    pub system_prompt: String,
+    pub user_prompt: String,
 }
 
 #[derive(Insertable, AsChangeset)]
@@ -48,6 +50,8 @@ pub struct NewLlmCall {
     pub price: f64,
     pub currency: String,
     pub analysis_id: Uuid,
+    pub system_prompt: String,
+    pub user_prompt: String,
 }
 
 impl LlmCall {
@@ -70,7 +74,24 @@ impl LlmCall {
 }
 
 impl NewLlmCall {
-    pub fn new(status: String, model: String, prompt: String, schema: String, request: String, request_url: String, response: String, output: String, input_tokens_used: i32, reasoning_tokens_used: i32, output_tokens_used: i32, price: f64, currency: String, analysis_id: Uuid) -> Self {
+    pub fn new(
+        status: String, 
+        model: String, 
+        prompt: String, 
+        schema: String, 
+        request: String, 
+        request_url: String, 
+        response: String, 
+        output: String, 
+        input_tokens_used: i32, 
+        reasoning_tokens_used: i32, 
+        output_tokens_used: i32, 
+        price: f64, 
+        currency: String, 
+        analysis_id: Uuid, 
+        system_prompt: String, 
+        user_prompt: String,
+    ) -> Self {
         Self {
             status,
             model,
@@ -86,6 +107,8 @@ impl NewLlmCall {
             price,
             currency,
             analysis_id,
+            system_prompt,
+            user_prompt,
         }
     }
     
