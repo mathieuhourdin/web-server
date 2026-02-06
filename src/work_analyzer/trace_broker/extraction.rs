@@ -11,33 +11,14 @@ pub async fn extract_elements(
     inputs: &AnalysisInputs,
     state: &AnalysisStateMirror,
 ) -> Result<ExtractedElements, PpdcError> {
-    let processor_context = ProcessorContext {
-        landmarks: inputs.previous_landscape_landmarks.clone(),
-        trace: inputs.trace.clone(),
-        trace_mirror: state.trace_mirror.clone(),
-        user_id: context.user_id,
-        landscape_analysis_id: context.analysis_id,
-        pool: context.pool.clone(),
-    };
-    let elements = extract_input_elements(&processor_context).await?;
+    let elements = extract_input_elements(_config, context, inputs, state).await?;
     Ok(ExtractedElements {
-        context: processor_context,
         elements,
     })
 }
 
 pub struct Extractable {
     pub context: ProcessorContext,
-}
-
-impl Extractable {
-    pub async fn extract(self) -> Result<ExtractedElements, PpdcError> {
-        let elements = extract_input_elements(&self.context).await?;
-        Ok(ExtractedElements {
-            context: self.context,
-            elements,
-        })
-    }
 }
 
 impl From<ProcessorContext> for Extractable {
@@ -48,7 +29,6 @@ impl From<ProcessorContext> for Extractable {
     }
 }
 pub struct ExtractedElements {
-    pub context: ProcessorContext,
     pub elements: Vec<ExtractedElement>,
 }
 pub struct ExtractedElement {
@@ -120,16 +100,9 @@ impl ExtractedInputElement {
     }
 }
 
-pub async fn extract_input_elements(context: &ProcessorContext) -> Result<Vec<ExtractedElement>, PpdcError> {
-    let log_header = format!("analysis_id: {}", context.landscape_analysis_id);
-    tracing::info!(
-        target: "work_analyzer",
-        "{} trace_broker_extraction_start trace_id={} trace_mirror_id={}",
-        log_header,
-        context.trace.id,
-        context.trace_mirror.id
-    );
-    let trace_string = format!("{}\n{}\n{}", context.trace_mirror.title, context.trace_mirror.subtitle, context.trace_mirror.content);
+pub async fn extract_input_elements(_config: &AnalysisConfig, context: &AnalysisContext, inputs: &AnalysisInputs, state: &AnalysisStateMirror) -> Result<Vec<ExtractedElement>, PpdcError> {
+    let log_header = format!("analysis_id: {}", context.analysis_id);
+    let trace_string = format!("{}\n{}\n{}", state.trace_mirror.title, state.trace_mirror.subtitle, state.trace_mirror.content);
     let user_prompt = format!("
     trace_text : \n {}
     ",
@@ -139,14 +112,8 @@ pub async fn extract_input_elements(context: &ProcessorContext) -> Result<Vec<Ex
         include_str!("prompts/landmark_resource/extraction/system.md").to_string(),
         &user_prompt,
         Some(serde_json::from_str::<serde_json::Value>(include_str!("prompts/landmark_resource/extraction/schema.json"))?),
-        Some(context.landscape_analysis_id),
+        Some(context.analysis_id),
     ).with_log_header(log_header.as_str());
     let elements: ExtractedInputElements = gpt_request_config.execute().await?;
-    tracing::info!(
-        target: "work_analyzer",
-        "{} trace_broker_extraction_complete elements={}",
-        log_header,
-        elements.elements.len()
-    );
     Ok(elements.elements.into_iter().enumerate().map(|(index, element)| element.to_extracted_element(format!("el-{}", index))).collect())
 }

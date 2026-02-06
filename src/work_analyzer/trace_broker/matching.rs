@@ -6,7 +6,7 @@ use crate::entities::error::PpdcError;
 use crate::entities_v2::landmark::Landmark;
 use crate::work_analyzer::matching;
 use crate::work_analyzer::matching::ElementWithIdentifier;
-use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs};
+use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
 
 /// Get the system prompt for matching based on landmark type
 fn get_matching_system_prompt(landmark_type: LandmarkType) -> &'static str {
@@ -19,24 +19,18 @@ fn get_matching_system_prompt(landmark_type: LandmarkType) -> &'static str {
 
 
 pub async fn match_elements(
-    _config: &AnalysisConfig,
-    _context: &AnalysisContext,
-    _inputs: &AnalysisInputs,
+    config: &AnalysisConfig,
+    context: &AnalysisContext,
+    inputs: &AnalysisInputs,
+    state: &AnalysisStateMirror,
     extracted: ExtractedElements,
 ) -> Result<MatchedElements, PpdcError> {
-    run_matching_impl(extracted).await
+    run_matching_impl(config, context, inputs, state, extracted).await
 }
 
-async fn run_matching_impl(extracted: ExtractedElements) -> Result<MatchedElements, PpdcError> {
-    let log_header = format!("analysis_id: {}", extracted.context.landscape_analysis_id);
+async fn run_matching_impl(config: &AnalysisConfig, context: &AnalysisContext, inputs: &AnalysisInputs, state: &AnalysisStateMirror, extracted: ExtractedElements) -> Result<MatchedElements, PpdcError> {
+    let log_header = format!("analysis_id: {}", context.analysis_id);
     let landmark_types = [LandmarkType::Resource, LandmarkType::Author, LandmarkType::Theme];
-
-    tracing::info!(
-        target: "work_analyzer",
-        "{} trace_broker_matching_start elements={}",
-        log_header,
-        extracted.elements.len()
-    );
 
     let mut matching_placeholders = extracted
         .elements
@@ -57,9 +51,7 @@ async fn run_matching_impl(extracted: ExtractedElements) -> Result<MatchedElemen
         .collect::<Vec<MatchedElement>>();
 
     for landmark_type in landmark_types {
-        let landmarks = extracted
-            .context
-            .landmarks
+        let landmarks = inputs.previous_landscape_landmarks
             .iter()
             .filter(|landmark| landmark.landmark_type == landmark_type)
             .cloned()
@@ -76,14 +68,6 @@ async fn run_matching_impl(extracted: ExtractedElements) -> Result<MatchedElemen
             })
             .collect::<Vec<LandmarkGptPayload>>();
         let system_prompt = get_matching_system_prompt(landmark_type);
-        tracing::info!(
-            target: "work_analyzer",
-            "{} trace_broker_matching_request landmark_type={:?} candidates={} elements={}",
-            log_header,
-            landmark_type,
-            landmarks.len(),
-            landmark_match_placeholders.len()
-        );
         let matching_results = matching::match_elements(
             landmark_match_placeholders.clone(),
             &landmarks,
@@ -129,25 +113,11 @@ async fn run_matching_impl(extracted: ExtractedElements) -> Result<MatchedElemen
         matching_placeholders.len()
     );
     Ok(MatchedElements {
-        context: extracted.context,
         elements: matching_placeholders,
     })
 }
 
-impl ExtractedElements {
-    /**
-     * This function is really dirty right now, a lot of data clone.
-     * Should not be really a problem since the amount of elements is not that big.
-     * I may come back later to improve it.
-     */
-    pub async fn run_matching(self) -> Result<MatchedElements, PpdcError> {
-        run_matching_impl(self).await
-    }
-}
-
-
 pub struct MatchedElements {
-    pub context: ProcessorContext,
     pub elements: Vec<MatchedElement>,
 }
 
