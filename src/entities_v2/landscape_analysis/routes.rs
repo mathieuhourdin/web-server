@@ -151,18 +151,3 @@ pub async fn get_analysis_parents_route(
     let parents = landscape.find_all_parents(&pool)?;
     Ok(Json(parents))
 }
-
-#[debug_handler]
-pub async fn post_analysis_replay_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(_session): Extension<Session>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<LandscapeAnalysis>, PpdcError> {
-    let analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
-    let replayed_analysis = analysis.replay(&pool)?;
-    let _landscape_analysis_ids = vec![replayed_analysis.id];
-    /*tokio::spawn(async move {
-        work_analyzer::run_analysis_pipeline_for_landscapes(_landscape_analysis_ids).await
-    });*/
-    Ok(Json(replayed_analysis))
-}

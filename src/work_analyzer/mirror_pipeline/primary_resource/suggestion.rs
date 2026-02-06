@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::entities_v2::trace::Trace;
+use uuid::Uuid;
 use crate::entities::error::{PpdcError, ErrorType};
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::matching::ElementWithIdentifier;
@@ -29,7 +30,7 @@ fn invalid_evidence(evidence: &[String], trace_content: &str) -> Vec<String> {
         .collect()
 }
 
-pub async fn extract(trace: &Trace, log_header: &str) -> Result<PrimaryResourceSuggestion, PpdcError> {
+pub async fn extract(trace: &Trace, analysis_id: Uuid, log_header: &str) -> Result<PrimaryResourceSuggestion, PpdcError> {
     let system_prompt = include_str!("../prompts/primary_resource/suggestion/system.md").to_string();
     let schema_str = include_str!("../prompts/primary_resource/suggestion/schema.json");
     let schema: serde_json::Value = serde_json::from_str(schema_str)?;
@@ -55,7 +56,7 @@ pub async fn extract(trace: &Trace, log_header: &str) -> Result<PrimaryResourceS
             system_prompt.clone(),
             user_prompt,
             Some(schema.clone()),
-            None,
+            Some(analysis_id),
         ).with_log_header(log_header);
         let result: PrimaryResourceSuggestion = config.execute().await?;
 

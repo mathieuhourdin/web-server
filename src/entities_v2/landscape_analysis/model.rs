@@ -29,6 +29,7 @@ pub struct NewLandscapeAnalysis {
     pub user_id: Uuid,
     pub parent_analysis_id: Option<Uuid>,
     pub analyzed_trace_id: Option<Uuid>,
+    pub replayed_from_id: Option<Uuid>,
 }
 
 impl NewLandscapeAnalysis {
@@ -41,6 +42,7 @@ impl NewLandscapeAnalysis {
         interaction_date: NaiveDateTime,
         parent_analysis_id: Option<Uuid>,
         analyzed_trace_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
     ) -> NewLandscapeAnalysis {
         NewLandscapeAnalysis {
             title,
@@ -50,10 +52,11 @@ impl NewLandscapeAnalysis {
             user_id,
             parent_analysis_id,
             analyzed_trace_id,
+            replayed_from_id,
         }
     }
 
-    pub fn new_placeholder(user_id: Uuid, trace_id: Uuid, parent_landscape_analysis_id: Option<Uuid>) -> NewLandscapeAnalysis {
+    pub fn new_placeholder(user_id: Uuid, trace_id: Uuid, parent_landscape_analysis_id: Option<Uuid>, replayed_from_id: Option<Uuid>) -> NewLandscapeAnalysis {
         NewLandscapeAnalysis {
             title: format!("Analyse de la trace {}", trace_id),
             subtitle: "Analyse".to_string(),
@@ -62,6 +65,7 @@ impl NewLandscapeAnalysis {
             user_id,
             parent_analysis_id: parent_landscape_analysis_id,
             analyzed_trace_id: Some(trace_id),
+            replayed_from_id,
         }
     }
 }

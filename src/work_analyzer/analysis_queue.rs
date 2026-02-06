@@ -1,5 +1,5 @@
 use uuid::Uuid;
-use crate::entities::error::PpdcError;
+use crate::entities::{error::PpdcError, resource::MaturingState};
 use crate::entities_v2::{
     landscape_analysis::{LandscapeAnalysis, NewLandscapeAnalysis},
     lens::Lens,
@@ -30,6 +30,7 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
     while let Some(new_lens) = run_lens_step(lens.id, &pool.clone()).await? {
         lens = new_lens;
     }
+    lens = lens.set_processing_state(MaturingState::Finished, &pool)?;
     Ok(lens)
 }
 
@@ -50,6 +51,27 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
     let current_trace_id = current_landscape.analyzed_trace_id;
     if current_trace_id == Some(lens.target_trace_id) {
         // The lens is up to date, no need to run the pipeline.
+        // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
+        if lens.processing_state == MaturingState::Replay {
+            let new_analysis = NewLandscapeAnalysis::new(
+                format!("Replay de l'Analyse de la trace {}", current_trace_id.unwrap()),
+                String::new(),
+                String::new(),
+                lens.user_id.expect("User id is required"),
+                Utc::now().naive_utc(),
+                current_landscape.parent_analysis_id,
+                Some(current_trace_id.unwrap()),
+                Some(current_landscape.id),
+            ).create(&pool)?;
+            let _lens = lens.update_current_landscape(new_analysis.id, &pool)?;
+            let processor = analysis_processor::AnalysisProcessor::setup(
+                new_analysis.id,
+                current_trace_id.unwrap(),
+                current_landscape_id,
+                &pool
+            )?;
+            let _new_landscape = processor.process().await?;
+        } 
         return Ok(None);
     }
     // The lens is not up to date, run the pipeline.
@@ -77,6 +99,7 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         Utc::now().naive_utc(),
         Some(current_landscape_id),
         Some(next_trace.id),
+        None,
     ).create(&pool)?;
     let lens = lens.update_current_landscape(new_analysis.id, &pool)?;
     let processor = analysis_processor::AnalysisProcessor::setup(
@@ -97,6 +120,7 @@ pub async fn create_first_landscape(user_id: Uuid, pool: &DbPool) -> Result<Land
         "Analyse de la biographie".to_string(),
         user_id,
         Utc::now().naive_utc(),
+        None,
         None,
         None,
     ).create(&pool)?;

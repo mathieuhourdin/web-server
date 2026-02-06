@@ -72,6 +72,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
             &landmarks,
             Some(system_prompt),
             Some(&log_header),
+            context.analysis_id,
         ).await?;
         matching_placeholders = matching_placeholders
             .iter()

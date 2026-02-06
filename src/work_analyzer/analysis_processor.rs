@@ -107,9 +107,13 @@ impl AnalysisProcessor {
         let journal = Journal::find_full(self.inputs.trace.journal_id.unwrap(), &self.context.pool)?;
         let journal_subtitle = journal.subtitle;
         if journal_subtitle == "note" {
-            let primary_resource_suggestion = mirror_pipeline::primary_resource::suggestion::extract(&self.inputs.trace, &log_header).await?;
+            let primary_resource_suggestion = mirror_pipeline::primary_resource::suggestion::extract(
+                &self.inputs.trace,
+                self.context.analysis_id,
+                &log_header,
+            ).await?;
             let primary_resource_matched =
-                mirror_pipeline::primary_resource::matching::run(primary_resource_suggestion, &self.inputs.previous_landscape_landmarks, &log_header).await?;
+                mirror_pipeline::primary_resource::matching::run(&self.context, primary_resource_suggestion, &self.inputs.previous_landscape_landmarks, &log_header).await?;
             let trace_mirror_landmark_id: Uuid;
             if primary_resource_matched.candidate_id.is_some() {
                 let primary_resource_landmark_id = primary_resource_matched.candidate_id.unwrap();

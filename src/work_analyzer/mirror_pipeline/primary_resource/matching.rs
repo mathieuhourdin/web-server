@@ -2,6 +2,7 @@ use crate::work_analyzer::matching;
 use crate::entities_v2::landmark::Landmark;
 use crate::entities::error::{PpdcError, ErrorType};
 use crate::work_analyzer::mirror_pipeline::primary_resource::suggestion::PrimaryResourceSuggestion;
+use crate::work_analyzer::analysis_processor::AnalysisContext;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,12 +16,13 @@ pub struct PrimaryResourceMatched {
 }
 
 
-pub async fn run(element: PrimaryResourceSuggestion, landmarks: &Vec<Landmark>, log_header: &str) -> Result<PrimaryResourceMatched, PpdcError> {
+pub async fn run(context: &AnalysisContext, element: PrimaryResourceSuggestion, landmarks: &Vec<Landmark>, log_header: &str) -> Result<PrimaryResourceMatched, PpdcError> {
     let matched_elements = matching::match_elements::<PrimaryResourceSuggestion>(
         vec![element],
         landmarks,
         None,
         Some(log_header),
+        context.analysis_id,
     ).await?;
 
     let matched_element = matched_elements

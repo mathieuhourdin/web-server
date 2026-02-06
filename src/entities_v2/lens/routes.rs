@@ -2,9 +2,10 @@ use axum::{debug_handler, extract::{Extension, Json, Path}};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{error::PpdcError, session::Session};
+use crate::entities::{error::PpdcError, session::Session, resource::maturing_state::MaturingState};
 use crate::entities_v2::trace::Trace;
 use crate::work_analyzer;
+
 
 use super::model::{Lens, NewLens, NewLensDto};
 use super::persist::delete_lens_and_landscapes;
@@ -42,6 +43,12 @@ pub async fn put_lens_route(
         let current_trace = Trace::find_full_trace(lens.target_trace_id, &pool)?;
         if payload_trace.interaction_date.unwrap() > current_trace.interaction_date.unwrap() {
             lens = lens.update_target_trace(payload.target_trace_id, &pool)?;
+            tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+        }
+    }
+    if payload.processing_state.is_some() {
+        if lens.processing_state == MaturingState::Finished && payload.processing_state.unwrap() == MaturingState::Replay {
+            lens = lens.set_processing_state(payload.processing_state.unwrap(), &pool)?;
             tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
         }
     }

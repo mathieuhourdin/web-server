@@ -71,6 +71,13 @@ impl LlmCall {
             .first(&mut conn)?;
         Ok(llm_call)
     }
+    pub fn get_by_analysis_id(analysis_id: Uuid, db: &DbPool) -> Result<Vec<Self>, PpdcError> {
+        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let llm_calls = llm_calls::table
+            .filter(llm_calls::analysis_id.eq(analysis_id))
+            .load::<Self>(&mut conn)?;
+        Ok(llm_calls)
+    }
 }
 
 impl NewLlmCall {
@@ -130,6 +137,14 @@ pub async fn get_llm_calls_route(
     Ok(Json(llm_calls))
 }
 
+#[debug_handler]
+pub async fn get_llm_calls_by_analysis_id_route(
+    Extension(pool): Extension<DbPool>,
+    Path(analysis_id): Path<Uuid>,
+) -> Result<Json<Vec<LlmCall>>, PpdcError> {
+    let llm_calls = LlmCall::get_by_analysis_id(analysis_id, &pool)?;
+    Ok(Json(llm_calls))
+}
 #[debug_handler]
 pub async fn get_llm_call_route(
     Extension(pool): Extension<DbPool>,

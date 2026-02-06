@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::{ErrorType, PpdcError},
+    error::PpdcError,
     interaction::model::{Interaction, InteractionWithResource, NewInteraction},
     resource::{maturing_state::MaturingState, NewResource},
     resource_relation::NewResourceRelation,
@@ -38,10 +38,7 @@ impl LandscapeAnalysis {
         Ok(LandscapeAnalysis::from_resource(deleted_resource))
     }
 
-    /// Replays a finished analysis by creating a new draft analysis with the same parent/trace.
-    /// This marks the current analysis as Trashed and updates any heading lenses to the new analysis.
-    /// No transaction is used (dev/test convenience).
-    pub fn replay(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+    /*pub fn replay(self, lens_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let analysis = LandscapeAnalysis::find_full_analysis(self.id, pool)?;
 
         if analysis.processing_state != MaturingState::Finished {
@@ -93,15 +90,9 @@ impl LandscapeAnalysis {
             user_id,
             trace_id,
             parent_analysis_id,
-        )
-        .create(pool)
-        {
-            Ok(analysis) => analysis,
-            Err(err) => {
-                let _ = analysis.clone().set_processing_state(MaturingState::Finished, pool);
-                return Err(err);
-            }
-        };
+            replayed_from_id,
+        );
+        let new_analysis = new_analysis.create(pool)?;
 
         let mut replay_relation = NewResourceRelation::new(new_analysis.id, old_analysis_id);
         replay_relation.relation_type = Some("rply".to_string());
@@ -114,7 +105,7 @@ impl LandscapeAnalysis {
         }
 
         Ok(new_analysis)
-    }
+    }*/
 }
 
 impl NewLandscapeAnalysis {
@@ -125,6 +116,7 @@ impl NewLandscapeAnalysis {
         let interaction_date = self.interaction_date;
         let parent_analysis_id = self.parent_analysis_id;
         let analyzed_trace_id = self.analyzed_trace_id;
+        let replayed_from_id = self.replayed_from_id;
 
         // Create the underlying resource
         let new_resource = self.to_new_resource();
@@ -151,6 +143,12 @@ impl NewLandscapeAnalysis {
             trace_relation.relation_type = Some("trce".to_string());
             trace_relation.user_id = Some(user_id);
             trace_relation.create(pool)?;
+        }
+        if let Some(replayed_from_id) = replayed_from_id {
+            let mut replayed_from_relation = NewResourceRelation::new(created_resource.id, replayed_from_id);
+            replayed_from_relation.relation_type = Some("rply".to_string());
+            replayed_from_relation.user_id = Some(user_id);
+            replayed_from_relation.create(pool)?;
         }
 
         // Return the fully hydrated analysis

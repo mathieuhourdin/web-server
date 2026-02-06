@@ -16,6 +16,7 @@ pub enum MaturingState {
     Review,
     Finished,
     Trashed,
+    Replay,
 }
 
 impl MaturingState {
@@ -25,6 +26,7 @@ impl MaturingState {
             "rvew" => Ok(MaturingState::Review),
             "fnsh" => Ok(MaturingState::Finished),
             "trsh" => Ok(MaturingState::Trashed),
+            "rply" => Ok(MaturingState::Replay),
             &_ => {
                 return Err(PpdcError::new(
                     404,
@@ -40,6 +42,7 @@ impl MaturingState {
             MaturingState::Review => "rvew",
             MaturingState::Finished => "fnsh",
             MaturingState::Trashed => "trsh",
+            MaturingState::Replay => "rply",
         }
     }
 }

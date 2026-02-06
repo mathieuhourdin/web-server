@@ -47,6 +47,7 @@ impl From<MaturingState> for IdentityState {
             MaturingState::Review => IdentityState::Stub,
             MaturingState::Trashed => IdentityState::Discard,
             MaturingState::Draft => IdentityState::Discard,
+            MaturingState::Replay => IdentityState::Stub,
         }
     }
 }

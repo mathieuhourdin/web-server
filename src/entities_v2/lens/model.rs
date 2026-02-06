@@ -2,12 +2,15 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::entities::resource::maturing_state::MaturingState;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Lens {
     pub id: Uuid,
     pub user_id: Option<Uuid>,
     pub name: String,
     pub description: String,
+    pub processing_state: MaturingState,
     pub fork_landscape_id: Option<Uuid>,
     pub current_landscape_id: Option<Uuid>,
     pub target_trace_id: Uuid,
@@ -22,6 +25,7 @@ pub struct Lens {
 pub struct NewLens {
     pub name: String,
     pub description: String,
+    pub processing_state: MaturingState,
     pub fork_landscape_id: Option<Uuid>,
     pub target_trace_id: Uuid,
     pub current_state_date: NaiveDateTime,
@@ -37,6 +41,7 @@ impl NewLens {
         NewLens {
             name: payload.name.unwrap_or_default(),
             description: payload.description.unwrap_or_default(),
+            processing_state: MaturingState::Draft,
             fork_landscape_id: payload.fork_landscape_id,
             target_trace_id: payload.target_trace_id,
             current_state_date: payload.current_state_date.unwrap_or_default(),
@@ -53,6 +58,7 @@ impl NewLens {
 pub struct NewLensDto {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub processing_state: Option<MaturingState>,
     pub fork_landscape_id: Option<Uuid>,
     pub target_trace_id: Uuid,
     pub current_state_date: Option<NaiveDateTime>,

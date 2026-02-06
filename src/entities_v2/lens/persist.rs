@@ -5,6 +5,7 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::NewInteraction,
     resource_relation::{NewResourceRelation, ResourceRelation},
+    resource::MaturingState,
 };
 use crate::entities_v2::{
     landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
@@ -62,6 +63,12 @@ impl Lens {
         let lens = Lens::find_full_lens(self.id, pool)?;
         Ok(lens)
     }
+    pub fn set_processing_state(self, new_processing_state: MaturingState, pool: &DbPool) -> Result<Lens, PpdcError> {
+        let mut resource = self.to_resource();
+        resource.maturing_state = new_processing_state;
+        let resource = resource.update(pool)?;
+        Ok(Lens::from_resource(resource))
+    }
 }
 
 impl NewLens {
@@ -117,6 +124,7 @@ pub fn create_landscape_placeholders(current_trace_id: Uuid, previous_landscape_
             user_id,
             trace.id,
             Some(previous_id),
+            None,
         ).create(pool)?;
         landscape_analysis_ids.push(new_landscape_analysis.id);
         previous_id = new_landscape_analysis.id;

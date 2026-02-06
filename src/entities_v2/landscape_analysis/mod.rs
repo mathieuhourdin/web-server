@@ -12,7 +12,6 @@ pub use routes::{
     get_analysis_route,
     get_landmarks_route,
     get_last_analysis_route,
-    post_analysis_replay_route,
     post_analysis_route,
     NewAnalysisDto,
 };

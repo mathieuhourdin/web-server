@@ -101,10 +101,10 @@ pub fn create_router() -> Router {
     let analysis_router = Router::new()
         .route("/", post(landscape_analysis::post_analysis_route))
         .route("/:id", delete(landscape_analysis::delete_analysis_route).get(landscape_analysis::get_analysis_route))
-        .route("/:id/replay", post(landscape_analysis::post_analysis_replay_route))
         .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
         .route("/:id/elements", get(landscape_analysis::get_elements_route))
         .route("/:id/parents", get(landscape_analysis::get_analysis_parents_route))
+        .route("/:id/llm_calls", get(llm_call::get_llm_calls_by_analysis_id_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let landmarks_router = Router::new()
         .route("/:id", get(landmark::get_landmark_route))

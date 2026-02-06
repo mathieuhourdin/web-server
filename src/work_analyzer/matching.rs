@@ -68,6 +68,7 @@ pub async fn match_elements<E>(
     landmarks: &Vec<Landmark>,
     system_prompt: Option<&str>,
     log_header: Option<&str>,
+    analysis_id: Uuid,
 ) -> Result<Vec<ElementMatched<E>>, PpdcError>
 where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
 {
@@ -109,7 +110,7 @@ where E: ElementWithIdentifier + Clone + Serialize + DeserializeOwned,
         system_prompt.to_string(),
         &user_prompt,
         Some(serde_json::from_str(&schema).unwrap()),
-        None,
+        Some(analysis_id),
     ).with_log_header(log_header.unwrap_or("analysis_id: unknown"));
     let matching_results: Matches = gpt_request_config.execute().await?;
 
