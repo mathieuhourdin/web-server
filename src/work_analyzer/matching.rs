@@ -171,17 +171,17 @@ impl From<&Landmark> for LandmarkForMatching {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::work_analyzer::trace_broker::landmark_resource_processor::ExtractedElementForResource;
+    use crate::work_analyzer::elements_pipeline::matching::LandmarkMatching;
 
     #[test]
     fn test_basic_matching_with_identifier() {
         // Un élément, un landmark, un match via attach_matching_results_to_elements_with_identifier
-        let element = ExtractedElementForResource {
-            resource_identifier: "My Resource".to_string(),
-            extracted_content: "Some content".to_string(),
-            generated_context: "Some context".to_string(),
-            author: "John Doe".to_string(),
-            theme: Some("Theme".to_string()),
+        let element = LandmarkMatching {
+            temporary_id: "My Resource".to_string(),
+            matching_key: "My Resource".to_string(),
+            landmark_type: LandmarkType::Resource,
+            candidate_id: None,
+            confidence: 0.85,
         };
         let elements = LocalArray::from_vec(vec![element]);
 
@@ -201,7 +201,7 @@ mod tests {
             confidence: 0.85,
         }];
 
-        let result: Vec<ElementMatched<ExtractedElementForResource>> =
+        let result: Vec<ElementMatched<LandmarkMatching>> =
             attach_matching_results_to_elements_with_identifier(
                 matching_results,
                 elements,
