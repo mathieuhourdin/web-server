@@ -30,7 +30,9 @@ pub async fn extract_mirror_header(trace: &Trace, analysis_id: Uuid) -> Result<M
         user_prompt,
         Some(schema),
         Some(analysis_id),
-    ).with_log_header(log_header);
+    )
+    .with_log_header(log_header)
+    .with_display_name("Mirror / Header Extraction");
     config.execute().await
 }
 

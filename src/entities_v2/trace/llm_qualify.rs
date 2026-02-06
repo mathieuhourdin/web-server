@@ -49,7 +49,14 @@ pub async fn qualify_trace(trace: &str) -> Result<(NewResource, Option<NaiveDate
     });
 
     let resource_properties: ResourceExtractionProperties =
-        make_gpt_request(system_prompt, user_prompt, Some(schema), None, None)
+        make_gpt_request(
+            system_prompt,
+            user_prompt,
+            Some(schema),
+            Some("Trace / Qualification"),
+            None,
+            None,
+        )
             .await
             ?;
     let new_resource = NewResource::new(

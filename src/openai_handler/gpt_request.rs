@@ -9,6 +9,7 @@ pub struct GptRequestConfig {
     pub schema: Option<serde_json::Value>,
     pub log_header: Option<String>,
     pub analysis_id: Option<Uuid>,
+    pub display_name: Option<String>,
 }
 
 impl GptRequestConfig {
@@ -26,11 +27,16 @@ impl GptRequestConfig {
             schema,
             log_header: None,
             analysis_id,
+            display_name: None,
         }
     }
 
     pub fn with_log_header(mut self, log_header: impl Into<String>) -> Self {
         self.log_header = Some(log_header.into());
+        self
+    }
+    pub fn with_display_name(mut self, display_name: impl Into<String>) -> Self {
+        self.display_name = Some(display_name.into());
         self
     }
     pub async fn execute<T>(&self) -> Result<T, PpdcError>
@@ -41,6 +47,7 @@ impl GptRequestConfig {
             self.system_prompt.clone(), 
             self.user_prompt.clone(), 
             self.schema.clone(),
+            self.display_name.as_deref(),
             self.log_header.as_deref(),
             self.analysis_id,
         ).await?)

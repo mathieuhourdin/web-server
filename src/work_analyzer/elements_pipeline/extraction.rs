@@ -102,7 +102,9 @@ pub async fn extract_input_elements(_config: &AnalysisConfig, context: &Analysis
         &user_prompt,
         Some(serde_json::from_str::<serde_json::Value>(include_str!("prompts/landmark_resource/extraction/schema.json"))?),
         Some(context.analysis_id),
-    ).with_log_header(log_header.as_str());
+    )
+    .with_log_header(log_header.as_str())
+    .with_display_name("Elements / Extraction");
     let elements: ExtractedInputElements = gpt_request_config.execute().await?;
     Ok(elements.elements.into_iter().enumerate().map(|(index, element)| element.to_extracted_element(format!("el-{}", index))).collect())
 }

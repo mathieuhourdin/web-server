@@ -50,6 +50,11 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
         .collect::<Vec<MatchedElement>>();
 
     for landmark_type in landmark_types {
+        let display_name = match landmark_type {
+            LandmarkType::Resource => "Elements / Matching / Resource",
+            LandmarkType::Theme => "Elements / Matching / Theme",
+            LandmarkType::Author => "Elements / Matching / Author",
+        };
         let landmarks = inputs.previous_landscape_landmarks
             .iter()
             .filter(|landmark| landmark.landmark_type == landmark_type)
@@ -73,6 +78,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
             Some(system_prompt),
             Some(&log_header),
             context.analysis_id,
+            display_name,
         ).await?;
         matching_placeholders = matching_placeholders
             .iter()

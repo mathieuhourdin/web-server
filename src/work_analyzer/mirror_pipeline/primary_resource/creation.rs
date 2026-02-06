@@ -27,7 +27,9 @@ pub async fn run(element: PrimaryResourceMatched, context: &AnalysisContext, log
         &serde_json::to_string(&element)?,
         Some(serde_json::from_str(&schema).unwrap()),
         Some(context.analysis_id),
-    ).with_log_header(log_header);
+    )
+    .with_log_header(log_header)
+    .with_display_name("Mirror / Primary Resource Creation");
     let primary_resource_created = gpt_request_config.execute().await?;
     let new_landmark = create_primary_resource(primary_resource_created, context).await?;
     Ok(new_landmark)

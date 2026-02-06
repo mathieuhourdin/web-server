@@ -46,6 +46,7 @@ diesel::table! {
         status -> Text,
         model -> Text,
         prompt -> Text,
+        display_name -> Text,
         schema -> Text,
         request -> Text,
         request_url -> Text,

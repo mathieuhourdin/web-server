@@ -57,7 +57,9 @@ pub async fn extract(trace: &Trace, analysis_id: Uuid, log_header: &str) -> Resu
             user_prompt,
             Some(schema.clone()),
             Some(analysis_id),
-        ).with_log_header(log_header);
+        )
+        .with_log_header(log_header)
+        .with_display_name("Mirror / Primary Resource Suggestion");
         let result: PrimaryResourceSuggestion = config.execute().await?;
 
         let invalid = invalid_evidence(&result.evidence, &trace_content);

@@ -47,6 +47,7 @@ pub async fn make_gpt_request<T>(
     system_prompt: String,
     user_prompt: String,
     schema: Option<serde_json::Value>,
+    display_name: Option<&str>,
     log_header: Option<&str>,
     analysis_id: Option<Uuid>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
@@ -127,9 +128,10 @@ where
     let resolved_log_header = log_header.unwrap_or("analysis_id: unknown");
     info!(
         target: "work_analyzer",
-        "{} llm_result prompt={} output={}",
+        "{} llm_result name={} prompt={} output={}",
         resolved_log_header,
-        full_prompt,
+        display_name.unwrap_or("unknown"),
+        user_prompt,
         output_text
     );
 
@@ -141,6 +143,7 @@ where
             call_status.clone(),
             "gpt-4.1-mini-2025-04-14".to_string(),
             full_prompt,
+            display_name.unwrap_or("").to_string(),
             schema_json,
             request_json,
             request_url.clone(),

@@ -172,6 +172,11 @@ async fn create_landmark_via_gpt(
     let user_prompt = serde_json::to_string_pretty(input)?;
     let system_prompt = get_system_prompt_for_type(input.landmark_type);
     let schema = get_schema_for_type(input.landmark_type);
+    let display_name = match input.landmark_type {
+        LandmarkType::Resource => "Elements / Creation / Resource",
+        LandmarkType::Theme => "Elements / Creation / Theme",
+        LandmarkType::Author => "Elements / Creation / Author",
+    };
     
     let gpt_config = GptRequestConfig::new(
         "gpt-4.1-nano".to_string(),
@@ -179,7 +184,9 @@ async fn create_landmark_via_gpt(
         &user_prompt,
         Some(schema),
         Some(context.analysis_id),
-    ).with_log_header(log_header.as_str());
+    )
+    .with_log_header(log_header.as_str())
+    .with_display_name(display_name);
     
     // Call GPT and deserialize based on type
     let new_landmark: NewLandmark = match input.landmark_type {

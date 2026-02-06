@@ -23,6 +23,7 @@ pub async fn run(context: &AnalysisContext, element: PrimaryResourceSuggestion, 
         None,
         Some(log_header),
         context.analysis_id,
+        "Primary Resource Matching",
     ).await?;
 
     let matched_element = matched_elements
