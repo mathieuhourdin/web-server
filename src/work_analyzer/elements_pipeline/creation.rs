@@ -325,7 +325,7 @@ async fn process_suggestion(
             if let Some(&child_id) = landmarks_updates.get(&parent_landmark_id) {
                 return Landmark::find(child_id, &context.pool);
             }
-            
+
             // Create a child copy of the existing landmark
             let created_landmark = landmark::create_copy_child_and_return(
                 parent_landmark_id,
@@ -333,10 +333,10 @@ async fn process_suggestion(
                 context.analysis_id,
                 &context.pool,
             )?;
-            
+
             landmarks_updates.insert(parent_landmark_id, created_landmark.id);
             updated_landmark_ids.push(parent_landmark_id);
-            
+
             return Ok(created_landmark);
         }
     }

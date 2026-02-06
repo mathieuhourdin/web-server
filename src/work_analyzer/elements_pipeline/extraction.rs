@@ -81,7 +81,7 @@ impl ExtractedInputElement {
         }
         ExtractedElement {
             temporary_id: temporary_id,
-            title: format!("{:?} - Par {:?} Sur {:?}", self.resource_identifier.clone().unwrap_or_default(), self.author.clone().unwrap_or_default(), self.theme.clone().unwrap_or_default()),
+            title: format!("{} - Par {} Sur {}", self.resource_identifier.clone().unwrap_or_default(), self.author.clone().unwrap_or_default(), self.theme.clone().unwrap_or_default()),
             evidences: self.evidences.clone(),
             extractions: self.extractions.clone(),
             landmark_suggestions,
