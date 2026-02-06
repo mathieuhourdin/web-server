@@ -7,6 +7,73 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-06 Global analysis on trace
+
+At the trace level (To create a trace mirror) i think i should want to differenciate multiple things : 
+
+I need to identify a trace kind. It could be something like : 
+- Execution trace : list of many thing a user did.
+- Reflexion trace : thoughts the user had about something...
+- Reading note trace : summary of a resource or things like that.
+- Introspection trace : things the user thinks about himself, self reflexion...
+
+At the same time I should identify which part of the following pipeline to run.
+For instance : 
+run the input / resource extraction pipeline
+run the output / deliverable extraction pipeline
+run the inside / self reflexion extraction pipeline
+
+Just thinking : inputs and outputs could somehow be some entities.
+There could be some long term inputs (I have read HOM from the begining to the end, I did a long reading note and analysis on it) and short term inputs : I have read half an article from Bidet just to see what she talks about.
+
+While resource / author / theme are objects clearly outside the user, inputs are more relational : they are the open transaction from the user to those objects in the Dewey sense.
+Then I think that I could have a Transaction category for those objects (output and output)
+Somehow, the user can be in a transaction with himself through the self reflexion transaction.
+
+Ok I think I have found something really interesting. Let it take a little bit of maturation time before to think about how to represent it in the platform. But it should come at some point. 
+In a way the current landmarks are public objects. A resource, an author, a theme, they should be shared among different users.
+It is very clear how we can have public resources, authors. We could even think about a list of themes. It should not be that complicated to generate a list of themes actually. Then a transaction could have relations to those objects, with more or less precision in case those are not found (we could for instance have a list of three best match books for what the user has told in its traces).
+
+The new objects I would have are : 
+- References : they are references to public objects, more or less identified. 
+- Transaction : an open (or closed) process between the user and outer entities / himself, entites identified through references.
+
+References could play the same role as options in rust, some kind of a wrapper. It is really fun because it rejoins the theories we have in philosophie for reference, all the discussions about false descriptions references, do they reference anything etc...
+A reference could have multiple states, locked-in, vague... Then the user could be asked to create a trace with desambiguation for the references we did not find while analyzing its work.
+
+Ok all this is beautiful but first we need to implement the main part of the pipeline for the landmarks.
+
+### 2026-02-06 TODO
+
+Check the replay route : when all observability will be ok
+Remove evidence part of extraction : could be done by codex
+Use trace mirror context if it is a note : after observability
+Try RAG : in another life lol
+
+First of all I should make the pipeline very very obvious in the code for anyone looking at it (me first because each time I come back to it I am lost).
+I should have one only method where I have all steps of the pipeline that I can see. It is the only way I could make it evolve easily (add new steps, add observability...)
+I think what I can do is to have a file for each step (creation...) and a file tree for those steps but then all step is called from the main execution function.
+
+### 2026-02-05 Done
+
+I changed the pipeline organisation. We have a config, a context, an input, and a state objects, that are used everywhere in the pipeline.
+### 2026-02-05 TODO
+
+I need to check the replay route.
+I want to check how the pipeline behaves step by step.
+I may want to remove the evidence part of the extraction because it is redondant with extractions.
+I want to use the trace mirror context if it is a note.
+It would be really nice to try a little bit of rag.
+
+For the log storing in different files for different analysis, I think I should think about different things.
+- Maybe the analysis should be passed to every single function of the pipeline.
+- For instance, every LLM calls are related to an analysis. So they should be related to an analysis, and in this way we could display them efficiently.
+- LLM calls should have a system and user prompt because quite often I just want to look at the short user prompt. They also could have a name to make it easier to debug in general.
+
+All of this is about observability. This could be my big work of today. I don't want to run my pipeline and not be able to observe what I do.
+
+I have a doubt about something : should I pass a logger struct around, or should every function own the logic of logging from other inputs vars ?
+
 ### 2026-02-04 stage point
 
 Did a lot of things today. Did not have the time to check on every of them if they were ok.
