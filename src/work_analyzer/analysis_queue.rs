@@ -79,11 +79,13 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         Some(next_trace.id),
     ).create(&pool)?;
     let lens = lens.update_current_landscape(new_analysis.id, &pool)?;
-    let _new_landscape = analysis_processor::create_next_landscape(
-        new_analysis.id, 
-        next_trace.id, 
-        current_landscape_id, 
-        &pool).await?;
+    let processor = analysis_processor::AnalysisProcessor::setup(
+        new_analysis.id,
+        next_trace.id,
+        current_landscape_id,
+        &pool
+    )?;
+    let _new_landscape = processor.process().await?;
     Ok(Some(lens))
 }
 
