@@ -13,8 +13,8 @@ use crate::entities_v2::{
     element::Element,
 };
 use crate::work_analyzer::{
-    trace_broker::{creation, extraction, matching},
     high_level_analysis,
+    elements_pipeline::{self,creation, extraction, matching},
     mirror_pipeline,
 };
 use uuid::Uuid;
@@ -128,11 +128,11 @@ impl AnalysisProcessor {
     }
     async fn run_trace_broker_pipeline(&self, state: AnalysisStateMirror) -> Result<AnalysisStateTraceBroker, PpdcError> {
         let extracted_elements =
-            extraction::extract_elements(&self.config, &self.context, &self.inputs, &state).await?;
+            elements_pipeline::extraction::extract_elements(&self.config, &self.context, &self.inputs, &state).await?;
         let matched_elements =
-            matching::match_elements(&self.config, &self.context, &self.inputs, &state, extracted_elements).await?;
+            elements_pipeline::matching::match_elements(&self.config, &self.context, &self.inputs, &state, extracted_elements).await?;
         let created_elements =
-            creation::create_elements(&self.config, &self.context, &self.inputs, &state, matched_elements).await?;
+            elements_pipeline::creation::create_elements(&self.config, &self.context, &self.inputs, &state, matched_elements).await?;
         let AnalysisStateMirror { current_landscape, trace_mirror } = state;
         Ok(AnalysisStateTraceBroker {
             current_landscape,

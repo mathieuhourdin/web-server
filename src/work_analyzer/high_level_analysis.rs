@@ -46,7 +46,7 @@ pub async fn high_level_analysis_pipeline(previous_context: &String, landscape_a
 }
 
 pub fn get_system_prompt() -> String {
-    include_str!("trace_broker/prompts/landscape_analysis/system.md").to_string()
+    include_str!("elements_pipeline/prompts/landscape_analysis/system.md").to_string()
 }
 
 pub async fn get_high_level_analysis_from_gpt(

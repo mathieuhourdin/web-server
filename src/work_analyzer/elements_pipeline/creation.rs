@@ -5,9 +5,9 @@ use crate::entities_v2::{
     landscape_analysis,
 };
 use crate::openai_handler::GptRequestConfig;
-use crate::work_analyzer::trace_broker::traits::NewLandmarkForExtractedElement;
-use crate::work_analyzer::trace_broker::types::IdentityState;
-use crate::work_analyzer::trace_broker::matching::{MatchedElements, MatchedElement, LandmarkMatching};
+use crate::work_analyzer::elements_pipeline::traits::NewLandmarkForExtractedElement;
+use crate::work_analyzer::elements_pipeline::types::IdentityState;
+use crate::work_analyzer::elements_pipeline::matching::{MatchedElements, MatchedElement, LandmarkMatching};
 use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

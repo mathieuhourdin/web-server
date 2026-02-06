@@ -1,7 +1,7 @@
 pub mod analysis_processor;
 pub mod context_builder;
 //pub mod match_elements_and_landmarks;
-pub mod trace_broker;
+pub mod elements_pipeline;
 //pub mod update_landmarks;
 pub mod high_level_analysis;
 pub mod mirror_pipeline;

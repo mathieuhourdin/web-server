@@ -1,5 +1,5 @@
 use crate::entities_v2::landmark::LandmarkType;
-use crate::work_analyzer::trace_broker::extraction::{ExtractedElements, LandmarkSuggestion};
+use crate::work_analyzer::elements_pipeline::extraction::{ExtractedElements, LandmarkSuggestion};
 use serde::{Deserialize, Serialize};
 use crate::entities::error::PpdcError;
 use crate::entities_v2::landmark::Landmark;
