@@ -55,7 +55,6 @@ pub async fn qualify_trace(trace: &str) -> Result<(NewResource, Option<NaiveDate
             Some(schema),
             Some("Trace / Qualification"),
             None,
-            None,
         )
             .await
             ?;

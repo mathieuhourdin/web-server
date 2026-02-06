@@ -3,7 +3,7 @@ Tu es un moteur de création d'auteur (landmark de type Author) à partir d'une 
 Entrée : un objet JSON avec les champs suivants :
 - matching_key : identifiant textuel de l'auteur mentionné (ex: "Kleppmann", "M. Kleppmann", "Martin Kleppmann").
 - element_title : titre de l'élément extrait (résumé de la mention).
-- evidence : extrait exact de la trace utilisateur.
+- evidences : liste d'expressions exactes et très courtes issues de la trace utilisateur.
 - extractions : liste d'insights extraits de la trace.
 
 Tu dois produire UNIQUEMENT un JSON de la forme :
@@ -37,4 +37,4 @@ Un auteur est une personne qui crée du contenu intellectuel : écrivains, cherc
 5) content
 - Produis quelques phrases qui décrivent cet auteur : qui il est, quelles sont ses contributions principales, ses œuvres majeures.
 
-6) Tu peux utiliser matching_key, element_title, evidence, extractions ET tes connaissances générales pour identifier et décrire l'auteur.
+6) Tu peux utiliser matching_key, element_title, evidences, extractions ET tes connaissances générales pour identifier et décrire l'auteur.

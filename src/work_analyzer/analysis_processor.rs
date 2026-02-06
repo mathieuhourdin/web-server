@@ -34,9 +34,6 @@ pub struct AnalysisContext {
 }
 
 impl AnalysisContext {
-    pub fn log_header(&self) -> String {
-        format!("analysis_id: {}", self.analysis_id)
-    }
 }
 
 pub struct AnalysisInputs {
@@ -101,7 +98,6 @@ impl AnalysisProcessor {
     }
 
     async fn run_mirror_pipeline(&self, state: AnalysisStateInitial) -> Result<AnalysisStateMirror, PpdcError> {
-        let log_header = self.context.log_header();
         let trace_header = mirror_pipeline::header::extract_mirror_header(&self.inputs.trace, self.context.analysis_id).await?;
         let trace_mirror = mirror_pipeline::header::create_trace_mirror(&self.inputs.trace, trace_header, &self.context).await?;
         let journal = Journal::find_full(self.inputs.trace.journal_id.unwrap(), &self.context.pool)?;
@@ -110,17 +106,20 @@ impl AnalysisProcessor {
             let primary_resource_suggestion = mirror_pipeline::primary_resource::suggestion::extract(
                 &self.inputs.trace,
                 self.context.analysis_id,
-                &log_header,
             ).await?;
             let primary_resource_matched =
-                mirror_pipeline::primary_resource::matching::run(&self.context, primary_resource_suggestion, &self.inputs.previous_landscape_landmarks, &log_header).await?;
+                mirror_pipeline::primary_resource::matching::run(
+                    &self.context,
+                    primary_resource_suggestion,
+                    &self.inputs.previous_landscape_landmarks,
+                ).await?;
             let trace_mirror_landmark_id: Uuid;
             if primary_resource_matched.candidate_id.is_some() {
                 let primary_resource_landmark_id = primary_resource_matched.candidate_id.unwrap();
                 trace_mirror_landmark_id = Uuid::parse_str(primary_resource_landmark_id.as_str())?;
             } else {
                 let primary_resource_created =
-                    mirror_pipeline::primary_resource::creation::run(primary_resource_matched, &self.context, &log_header).await?;
+                    mirror_pipeline::primary_resource::creation::run(primary_resource_matched, &self.context).await?;
                 trace_mirror_landmark_id = primary_resource_created.id;
             }
             trace_mirror::persist::link_to_primary_resource(trace_mirror.id, trace_mirror_landmark_id, self.context.user_id, &self.context.pool)?;
@@ -153,7 +152,6 @@ impl AnalysisProcessor {
             self.context.analysis_id,
             &self.inputs.trace.content,
             &self.context.pool,
-            &self.context.log_header().as_str(),
         ).await?;
         Ok(AnalysisStateTraceBroker {
             current_landscape,
@@ -166,7 +164,7 @@ impl AnalysisProcessor {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
         let user_id = trace.user_id;
         let previous_landscape = LandscapeAnalysis::find_full_analysis(previous_landscape_id, &pool)?;
-        let previous_landscape_landmarks = previous_landscape.get_landmarks(&pool)?;
+        let previous_landscape_landmarks = previous_landscape.get_landmarks(None, &pool)?;
         let analysis_config = AnalysisConfig {
             model: "gpt-4.1-mini".to_string(),
             matching_confidence_threshold: 0.3,

@@ -132,8 +132,12 @@ impl LandscapeAnalysis {
         Ok(analysis)
     }
 
-    pub fn get_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
-        let landmarks = Landmark::get_for_landscape_analysis(self.id, pool)?;
+    pub fn get_landmarks(
+        &self,
+        relation_type: Option<&str>,
+        pool: &DbPool,
+    ) -> Result<Vec<Landmark>, PpdcError> {
+        let landmarks = Landmark::get_for_landscape_analysis(self.id, relation_type, pool)?;
         Ok(landmarks)
     }
 

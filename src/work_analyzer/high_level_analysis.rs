@@ -8,12 +8,13 @@ use uuid::Uuid;
 pub async fn get_high_level_analysis(
     previous_context: &String,
     trace: &String,
-    log_header: &str,
+    analysis_id: Uuid,
 ) -> Result<String, PpdcError> {
     let high_level_analysis = get_high_level_analysis_from_gpt(
         previous_context, 
         trace,
-        log_header)
+        analysis_id,
+    )
     .await?;
     Ok(high_level_analysis)
 
@@ -27,7 +28,12 @@ pub struct HighLevelAnalysis {
 }
 
 
-pub async fn high_level_analysis_pipeline(previous_context: &String, landscape_analysis_id: Uuid, full_trace_string: &String, pool: &DbPool, log_header: &str) -> Result<LandscapeAnalysis, PpdcError> {
+pub async fn high_level_analysis_pipeline(
+    previous_context: &String,
+    landscape_analysis_id: Uuid,
+    full_trace_string: &String,
+    pool: &DbPool,
+) -> Result<LandscapeAnalysis, PpdcError> {
     let run_high_level_analysis = false;
     let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
 
@@ -35,7 +41,8 @@ pub async fn high_level_analysis_pipeline(previous_context: &String, landscape_a
     let new_high_level_analysis = get_high_level_analysis(
         previous_context, 
         full_trace_string,
-        log_header)
+        landscape_analysis_id,
+    )
         .await?;
         let mut landscape_analysis = landscape_analysis.clone();
         landscape_analysis.plain_text_state_summary = new_high_level_analysis;
@@ -52,8 +59,9 @@ pub fn get_system_prompt() -> String {
 pub async fn get_high_level_analysis_from_gpt(
     work_context: &String,
     new_trace: &String,
-    log_header: &str,
+    analysis_id: Uuid,
 ) -> Result<String, PpdcError> {
+    let log_header = format!("analysis_id: {}", analysis_id);
     tracing::info!(
         target: "work_analyzer",
         "{} high_level_analysis_llm_start",
@@ -92,8 +100,7 @@ pub async fn get_high_level_analysis_from_gpt(
             user_prompt,
             None,
             Some("Analysis / High-Level Summary"),
-            Some(log_header),
-            None,
+            Some(analysis_id),
         ).await?;
     Ok(high_level_analysis)
 }

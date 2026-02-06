@@ -111,12 +111,19 @@ impl Landmark {
         Ok(analysis)
     }
 
-    pub fn get_for_landscape_analysis(landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+    pub fn get_for_landscape_analysis(
+        landscape_analysis_id: Uuid,
+        relation_type: Option<&str>,
+        pool: &DbPool,
+    ) -> Result<Vec<Landmark>, PpdcError> {
         let resource_relations = ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
         let landmarks = resource_relations
             .into_iter()
             .filter(|relation| {
                 relation.origin_resource.is_landmark()
+                    && relation_type.map_or(true, |relation_type| {
+                        relation.resource_relation.relation_type == relation_type
+                    })
             })
             .map(|relation| Landmark::from_resource(relation.origin_resource))
             .collect::<Vec<Landmark>>();

@@ -39,6 +39,7 @@ pub fn create_router() -> Router {
         .route("/:id/analysis", post(landscape_analysis::post_analysis_route).get(landscape_analysis::get_last_analysis_route))
         .route("/:id/lens", get(lens::get_user_lenses_route))
         .route("/:id/traces", get(trace::get_all_traces_for_user_route))
+        .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let resources_router = Router::new()

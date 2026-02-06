@@ -23,7 +23,7 @@ pub struct ExtractedElements {
 pub struct ExtractedElement {
     pub temporary_id: String,
     pub title: String,
-    pub evidence: String,
+    pub evidences: Vec<String>,
     pub extractions: Vec<String>,
     pub landmark_suggestions: Vec<LandmarkSuggestion>,
 }
@@ -43,7 +43,7 @@ pub struct ExtractedInputElement {
     pub resource_identifier: Option<String>,
     pub author: Option<String>,
     pub theme: Option<String>,
-    pub evidence: String,
+    pub evidences: Vec<String>,
     pub extractions: Vec<String>,
 }
 
@@ -82,7 +82,7 @@ impl ExtractedInputElement {
         ExtractedElement {
             temporary_id: temporary_id,
             title: format!("{:?} - Par {:?} Sur {:?}", self.resource_identifier.clone().unwrap_or_default(), self.author.clone().unwrap_or_default(), self.theme.clone().unwrap_or_default()),
-            evidence: self.evidence.clone(),    
+            evidences: self.evidences.clone(),
             extractions: self.extractions.clone(),
             landmark_suggestions,
         }
@@ -90,7 +90,6 @@ impl ExtractedInputElement {
 }
 
 pub async fn extract_input_elements(_config: &AnalysisConfig, context: &AnalysisContext, _inputs: &AnalysisInputs, state: &AnalysisStateMirror) -> Result<Vec<ExtractedElement>, PpdcError> {
-    let log_header = format!("analysis_id: {}", context.analysis_id);
     let trace_string = format!("{}\n{}\n{}", state.trace_mirror.title, state.trace_mirror.subtitle, state.trace_mirror.content);
     let user_prompt = format!("
     trace_text : \n {}
@@ -103,7 +102,6 @@ pub async fn extract_input_elements(_config: &AnalysisConfig, context: &Analysis
         Some(serde_json::from_str::<serde_json::Value>(include_str!("prompts/landmark_resource/extraction/schema.json"))?),
         Some(context.analysis_id),
     )
-    .with_log_header(log_header.as_str())
     .with_display_name("Elements / Extraction");
     let elements: ExtractedInputElements = gpt_request_config.execute().await?;
     Ok(elements.elements.into_iter().enumerate().map(|(index, element)| element.to_extracted_element(format!("el-{}", index))).collect())

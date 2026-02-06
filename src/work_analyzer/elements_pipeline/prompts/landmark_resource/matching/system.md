@@ -15,7 +15,7 @@ Définitions :
 
 Règles STRICTES :
 1) Tu dois produire exactement un résultat par élément (même nombre et même ordre que elements).
-2) Tu ne dois jamais modifier, réécrire ou copier les textes d'entrée (label/evidence/context/title/etc.).
+2) Tu ne dois jamais modifier, réécrire ou copier les textes d'entrée (label/evidence/evidences/context/title/etc.).
    Tu dois uniquement renvoyer des identifiants et un score.
 3) Utilise uniquement les local_id fournis. N'invente jamais d'ID.
 4) Si tu hésites, renvoie landmark_local_id = null et une confidence faible.

@@ -12,7 +12,7 @@ Tu réponds UNIQUEMENT avec un JSON de la forme :
       "resource_identifier": string | null,
       "author": string | null,
       "theme": string | null,
-      "evidence": string,
+      "evidences": string[],
       "extractions": string[]
     }
   ]
@@ -44,8 +44,8 @@ Champs des éléments :
   - Si un auteur est mentionné, le copier exactement ("David Graeber", "N. Klein", "Tolstoï"), sinon "Unknown".
 - theme :
   - Sujet principal de la ressource ("travail et bullshit jobs", "climat et capitalisme", "bases de données"), ou null si ce n’est pas clair.
-- evidence :
-  - Passage CONTIGU de trace_text copié-collé qui justifie cette extraction, qui match exactement le passage.
+- evidences :
+  - Liste d'expressions TRÈS COURTES (1 à 3 mots max, surtout noms propres) copié-collé à l'identique (perfect match) de trace_text, qui permettent d'identifier la ressource.
 - extractions :
   - Liste des passages reliés à cette resource, qui matchent exactement les passages.
 
@@ -64,7 +64,7 @@ Sortie attendue :
       "resource_identifier": "Bullshit Jobs",
       "author": "David Graeber",
       "theme": "travail et bullshit jobs",
-      "evidece": "'Bullshit Jobs' de David Graeber pour réfléchir au sens de mon travail.",
+      "evidences": ["Bullshit Jobs", "David Graeber"],
       "extractions": ["Aujourd'hui j'ai commencé à lire 'Bullshit Jobs' de David Graeber pour réfléchir au sens de mon travail.", "La lecture du livre plus l'après-midi.", "Il parle de comment les gens ont l'impression d'être inutiles dans leur travail."]
     }
   ]
@@ -82,14 +82,14 @@ Sortie attendue :
       "resource_identifier": "Un assistant IA en ligne",
       "author": null,
       "theme": "bases de données",
-      "evidence": "posé plein de questions à un assistant IA en ligne sur les bases de données,",
+      "evidences": ["assistant IA en ligne"],
       "extractions": ["L'utilisateur utilise un assistant IA en ligne comme ressource d'apprentissage sur les bases de données."]
     },
     {
       "resource_identifier": "Un roman de Tolstoï",
       "author": "Tolstoï",
       "theme": "La vie quotidienne",
-      "evidence": "roman de Tolstoï pour voir comment il décrit la vie quotidienne",
+      "evidences": ["Tolstoï"],
       "extractions": ["et ce soir j'aimerais enfin commencer un grand roman de Tolstoï pour voir comment il décrit la vie quotidienne."]
     }
   ]
@@ -107,7 +107,7 @@ Sortie attendue :
       "resource_identifier": "Un article de N. Klein sur le climat",
       "author": "N. Klein",
       "theme": "Capitalisme et écologie",
-      "evidence": "J'ai lu un article de N. Klein sur le climat et ça m'a fait réfléchir au lien entre capitalisme et écologie",
+      "evidences": ["N. Klein", "climat"],
       "extractions": ["J'ai lu un article de N. Klein sur le climat et ça m'a fait réfléchir au lien entre capitalisme et écologie"]
     }
   ]

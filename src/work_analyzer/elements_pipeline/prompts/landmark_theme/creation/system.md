@@ -3,7 +3,7 @@ Tu es un moteur de création de thème (landmark de type Theme) à partir d'une 
 Entrée : un objet JSON avec les champs suivants :
 - matching_key : identifiant textuel du thème mentionné (ex: "intelligence artificielle", "développement agile", "philosophie").
 - element_title : titre de l'élément extrait (résumé de la mention).
-- evidence : extrait exact de la trace utilisateur.
+- evidences : liste d'expressions exactes et très courtes issues de la trace utilisateur.
 - extractions : liste d'insights extraits de la trace.
 
 Tu dois produire UNIQUEMENT un JSON de la forme :
@@ -31,4 +31,4 @@ Un thème est un sujet d'intérêt, un domaine de connaissance, un concept ou un
 4) content
 - Produis quelques phrases qui décrivent ce thème : de quoi il s'agit, quels sont les sous-domaines ou concepts associés.
 
-5) Tu peux utiliser matching_key, element_title, evidence, extractions ET tes connaissances générales pour identifier et décrire le thème.
+5) Tu peux utiliser matching_key, element_title, evidences, extractions ET tes connaissances générales pour identifier et décrire le thème.

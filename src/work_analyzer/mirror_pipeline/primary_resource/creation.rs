@@ -15,7 +15,7 @@ pub struct PrimaryResourceCreated {
     pub identity_state: String,
 }
 
-pub async fn run(element: PrimaryResourceMatched, context: &AnalysisContext, log_header: &str) -> Result<Landmark, PpdcError> {
+pub async fn run(element: PrimaryResourceMatched, context: &AnalysisContext) -> Result<Landmark, PpdcError> {
     if element.candidate_id.is_some() {
         return Err(PpdcError::new(400, ErrorType::ApiError, "Primary resource already created".to_string()));
     }
@@ -28,7 +28,6 @@ pub async fn run(element: PrimaryResourceMatched, context: &AnalysisContext, log
         Some(serde_json::from_str(&schema).unwrap()),
         Some(context.analysis_id),
     )
-    .with_log_header(log_header)
     .with_display_name("Mirror / Primary Resource Creation");
     let primary_resource_created = gpt_request_config.execute().await?;
     let new_landmark = create_primary_resource(primary_resource_created, context).await?;

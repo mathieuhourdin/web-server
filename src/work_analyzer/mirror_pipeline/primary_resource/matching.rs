@@ -16,14 +16,13 @@ pub struct PrimaryResourceMatched {
 }
 
 
-pub async fn run(context: &AnalysisContext, element: PrimaryResourceSuggestion, landmarks: &Vec<Landmark>, log_header: &str) -> Result<PrimaryResourceMatched, PpdcError> {
+pub async fn run(context: &AnalysisContext, element: PrimaryResourceSuggestion, landmarks: &Vec<Landmark>) -> Result<PrimaryResourceMatched, PpdcError> {
     let matched_elements = matching::match_elements::<PrimaryResourceSuggestion>(
         vec![element],
         landmarks,
         None,
-        Some(log_header),
         context.analysis_id,
-        "Primary Resource Matching",
+        "Mirror / Primary Resource Matching",
     ).await?;
 
     let matched_element = matched_elements

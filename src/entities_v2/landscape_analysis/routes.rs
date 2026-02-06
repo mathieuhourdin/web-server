@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path},
+    extract::{Extension, Json, Path, Query},
 };
 use chrono::{Duration, NaiveDate, Utc};
 use serde::Deserialize;
@@ -22,6 +22,26 @@ use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
 pub struct NewAnalysisDto {
     pub date: Option<NaiveDate>,
     pub user_id: Uuid,
+}
+
+#[derive(Deserialize)]
+pub struct LandmarksQuery {
+    pub kind: Option<String>,
+}
+
+impl LandmarksQuery {
+    pub fn relation_type(&self) -> Result<Option<&'static str>, PpdcError> {
+        match self.kind.as_deref() {
+            None | Some("all") => Ok(None),
+            Some("mentioned") => Ok(Some("ownr")),
+            Some("context") => Ok(Some("refr")),
+            Some(other) => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid landmarks kind: {}", other),
+            )),
+        }
+    }
 }
 
 #[debug_handler]
@@ -107,9 +127,11 @@ pub async fn delete_analysis_route(
 pub async fn get_landmarks_route(
     Extension(pool): Extension<DbPool>,
     Path(id): Path<Uuid>,
+    Query(params): Query<LandmarksQuery>,
 ) -> Result<Json<Vec<Landmark>>, PpdcError> {
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
-    let landmarks = landscape.get_landmarks(&pool)?;
+    let relation_type = params.relation_type()?;
+    let landmarks = landscape.get_landmarks(relation_type, &pool)?;
     Ok(Json(landmarks))
 }
 

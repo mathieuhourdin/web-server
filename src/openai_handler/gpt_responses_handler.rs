@@ -48,7 +48,6 @@ pub async fn make_gpt_request<T>(
     user_prompt: String,
     schema: Option<serde_json::Value>,
     display_name: Option<&str>,
-    log_header: Option<&str>,
     analysis_id: Option<Uuid>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
 where
@@ -125,7 +124,9 @@ where
         })
         .unwrap_or_default();
 
-    let resolved_log_header = log_header.unwrap_or("analysis_id: unknown");
+    let resolved_log_header = analysis_id
+        .map(|id| format!("analysis_id: {}", id))
+        .unwrap_or_else(|| "analysis_id: unknown".to_string());
     info!(
         target: "work_analyzer",
         "{} llm_result name={} prompt={} output={}",
@@ -163,8 +164,9 @@ where
         if let Err(e) = new_call.create(pool) {
             tracing::warn!(
                 target: "work_analyzer",
-                "{} llm_persist_failed error={}",
+                "{} llm_persist_failed name={} error={}",
                 resolved_log_header,
+                display_name.unwrap_or("unknown"),
                 e
             );
         }

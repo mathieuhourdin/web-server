@@ -7,7 +7,6 @@ pub struct GptRequestConfig {
     pub system_prompt: String,
     pub user_prompt: String,
     pub schema: Option<serde_json::Value>,
-    pub log_header: Option<String>,
     pub analysis_id: Option<Uuid>,
     pub display_name: Option<String>,
 }
@@ -25,16 +24,11 @@ impl GptRequestConfig {
             system_prompt: system_prompt.into(),
             user_prompt: user_prompt.into(),
             schema,
-            log_header: None,
             analysis_id,
             display_name: None,
         }
     }
 
-    pub fn with_log_header(mut self, log_header: impl Into<String>) -> Self {
-        self.log_header = Some(log_header.into());
-        self
-    }
     pub fn with_display_name(mut self, display_name: impl Into<String>) -> Self {
         self.display_name = Some(display_name.into());
         self
@@ -48,7 +42,6 @@ impl GptRequestConfig {
             self.user_prompt.clone(), 
             self.schema.clone(),
             self.display_name.as_deref(),
-            self.log_header.as_deref(),
             self.analysis_id,
         ).await?)
     }

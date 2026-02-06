@@ -27,8 +27,8 @@ pub struct LandmarkCreationInput {
     pub landmark_type: LandmarkType,
     /// From parent MatchedElement - title of the element
     pub element_title: String,
-    /// From parent MatchedElement - evidence/citation from the trace
-    pub evidence: String,
+    /// From parent MatchedElement - evidences/citations from the trace
+    pub evidences: Vec<String>,
     /// From parent MatchedElement - extracted insights
     pub extractions: Vec<String>,
 }
@@ -39,7 +39,7 @@ impl LandmarkCreationInput {
             matching_key: suggestion.matching_key.clone(),
             landmark_type: suggestion.landmark_type,
             element_title: element.title.clone(),
-            evidence: element.evidence.clone(),
+            evidences: element.evidences.clone(),
             extractions: element.extractions.clone(),
         }
     }
@@ -168,7 +168,6 @@ async fn create_landmark_via_gpt(
     context: &AnalysisContext,
     input: &LandmarkCreationInput,
 ) -> Result<Landmark, PpdcError> {
-    let log_header = context.log_header();
     let user_prompt = serde_json::to_string_pretty(input)?;
     let system_prompt = get_system_prompt_for_type(input.landmark_type);
     let schema = get_schema_for_type(input.landmark_type);
@@ -185,7 +184,6 @@ async fn create_landmark_via_gpt(
         Some(schema),
         Some(context.analysis_id),
     )
-    .with_log_header(log_header.as_str())
     .with_display_name(display_name);
     
     // Call GPT and deserialize based on type
@@ -240,10 +238,15 @@ async fn run_creation_impl(
     let mut landmarks_updates: HashMap<Uuid, Uuid> = HashMap::new();
     
     for element in &matched.elements {
+        let evidences = if element.evidences.is_empty() {
+            "[]".to_string()
+        } else {
+            element.evidences.join(", ")
+        };
         let new_element = NewElement::new(
             element.title.clone(),
             element.title.clone(),
-            format!("{}\n\nExtractions: {:?}", element.evidence, element.extractions),
+            format!("Evidences: {}\n\nExtractions: {:?}", evidences, element.extractions),
             ElementType::Event,
             inputs.trace.id,
             Some(state.trace_mirror.id),

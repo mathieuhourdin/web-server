@@ -38,7 +38,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
             MatchedElement {
                 temporary_id: element.temporary_id.clone(),
                 title: element.title.clone(),
-                evidence: element.evidence.clone(),
+                evidences: element.evidences.clone(),
                 extractions: element.extractions.clone(),
                 landmark_suggestions: element
                     .landmark_suggestions
@@ -76,7 +76,6 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
             landmark_match_placeholders.clone(),
             &landmarks,
             Some(system_prompt),
-            Some(&log_header),
             context.analysis_id,
             display_name,
         ).await?;
@@ -86,7 +85,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
                 MatchedElement {
                     temporary_id: element.temporary_id.clone(),
                     title: element.title.clone(),
-                    evidence: element.evidence.clone(),
+                    evidences: element.evidences.clone(),
                     extractions: element.extractions.clone(),
                     landmark_suggestions: element
                         .landmark_suggestions
@@ -131,7 +130,7 @@ pub struct MatchedElements {
 pub struct MatchedElement {
     pub temporary_id: String,
     pub title: String,
-    pub evidence: String,
+    pub evidences: Vec<String>,
     pub extractions: Vec<String>,
     pub landmark_suggestions: Vec<LandmarkMatching>,
 }
@@ -153,7 +152,7 @@ pub struct LandmarkGptPayload {
     pub matching_key: String,
     pub landmark_type: LandmarkType,
     pub title: String,
-    pub evidence: String,
+    pub evidences: Vec<String>,
     pub extractions: Vec<String>,
 }
 
@@ -164,7 +163,7 @@ impl LandmarkGptPayload {
             matching_key: suggestion.matching_key.clone(),
             landmark_type: suggestion.landmark_type,
             title: element.title.clone(),
-            evidence: element.evidence.clone(),
+            evidences: element.evidences.clone(),
             extractions: element.extractions.clone(),
         }
     }

@@ -19,13 +19,17 @@
                             }
                         ]
                     },
-                    "evidence": {"type": "string"},
+                    "evidences": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1
+                    },
                     "extractions": {
                         "type": "array",
                         "items": {"type": "string"}
                     }
                 },
-                "required": ["resource_identifier", "author", "theme", "evidence", "extractions"],
+                "required": ["resource_identifier", "author", "theme", "evidences", "extractions"],
                 "additionalProperties": false
             }
         }
