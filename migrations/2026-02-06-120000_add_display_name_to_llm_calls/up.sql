@@ -1,0 +1,1 @@
+ALTER TABLE llm_calls ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
