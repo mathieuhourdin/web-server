@@ -14,6 +14,7 @@ Tu réponds UNIQUEMENT avec un JSON de la forme :
       "theme": string | null,
       "verb": string,
       "status": "DONE" | "INTENDED" | "IN_PROGRESS" | "UNKNOWN",
+      "date_offset": number,
       "evidences": string[],
       "extractions": string[]
     }
@@ -54,6 +55,11 @@ Champs des éléments :
     - INTENDED : intention exprimée.
     - IN_PROGRESS : action en cours.
     - UNKNOWN : statut incertain.
+- date_offset :
+  - Décalage en jours par rapport à la date d’écriture de la trace.
+  - Même jour : 0.
+  - Jour précédent : -1.
+  - Si non déterminable clairement : 0.
 - evidences :
   - Liste d'expressions TRÈS COURTES (1 à 3 mots max, surtout noms propres) copié-collé à l'identique (perfect match) de trace_text, qui permettent d'identifier la ressource.
 - extractions :
@@ -76,6 +82,7 @@ Sortie attendue :
       "theme": "travail et bullshit jobs",
       "verb": "lire",
       "status": "DONE",
+      "date_offset": 0,
       "evidences": ["Bullshit Jobs", "David Graeber"],
       "extractions": ["Aujourd'hui j'ai commencé à lire 'Bullshit Jobs' de David Graeber pour réfléchir au sens de mon travail.", "La lecture du livre plus l'après-midi.", "Il parle de comment les gens ont l'impression d'être inutiles dans leur travail."]
     }
@@ -85,7 +92,7 @@ Sortie attendue :
 [Exemple 2 — Outil de contenu + thème ET ressource souhaitée dans la même phrase]
 
 trace_text :
-"Cet après-midi j'ai posé plein de questions à un assistant IA en ligne sur les bases de données, et ce soir j'aimerais enfin commencer un grand roman de Tolstoï pour voir comment il décrit la vie quotidienne."
+"Hier j'ai posé plein de questions à un assistant IA en ligne sur les bases de données, et ce soir j'aimerais enfin commencer un grand roman de Tolstoï pour voir comment il décrit la vie quotidienne."
 
 Sortie attendue :
 {
@@ -96,6 +103,7 @@ Sortie attendue :
       "theme": "bases de données",
       "verb": "consulter",
       "status": "DONE",
+      "date_offset": -1,
       "evidences": ["assistant IA en ligne"],
       "extractions": ["L'utilisateur utilise un assistant IA en ligne comme ressource d'apprentissage sur les bases de données."]
     },
@@ -105,6 +113,7 @@ Sortie attendue :
       "theme": "La vie quotidienne",
       "verb": "lire",
       "status": "INTENDED",
+      "date_offset": 0,
       "evidences": ["Tolstoï"],
       "extractions": ["et ce soir j'aimerais enfin commencer un grand roman de Tolstoï pour voir comment il décrit la vie quotidienne."]
     }
@@ -125,6 +134,7 @@ Sortie attendue :
       "theme": "Capitalisme et écologie",
       "verb": "lire",
       "status": "DONE",
+      "date_offset": 0,
       "evidences": ["N. Klein", "climat"],
       "extractions": ["J'ai lu un article de N. Klein sur le climat et ça m'a fait réfléchir au lien entre capitalisme et écologie"]
     }

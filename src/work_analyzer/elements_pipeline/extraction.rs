@@ -25,6 +25,7 @@ pub struct ExtractedElement {
     pub title: String,
     pub verb: String,
     pub status: ExtractionStatus,
+    pub date_offset: i32,
     pub evidences: Vec<String>,
     pub extractions: Vec<String>,
     pub landmark_suggestions: Vec<LandmarkSuggestion>,
@@ -47,6 +48,7 @@ pub struct ExtractedInputElement {
     pub theme: Option<String>,
     pub verb: String,
     pub status: ExtractionStatus,
+    pub date_offset: i32,
     pub evidences: Vec<String>,
     pub extractions: Vec<String>,
 }
@@ -129,6 +131,7 @@ impl ExtractedInputElement {
             ),
             verb: status_verb,
             status: self.status,
+            date_offset: self.date_offset,
             evidences: self.evidences.clone(),
             extractions: self.extractions.clone(),
             landmark_suggestions,
@@ -166,6 +169,7 @@ mod tests {
             theme: Some("travail".to_string()),
             verb: " lire ".to_string(),
             status: ExtractionStatus::Done,
+            date_offset: 0,
             evidences: vec!["Bullshit Jobs".to_string()],
             extractions: vec!["J'ai commencé à lire".to_string()],
         };
@@ -174,6 +178,7 @@ mod tests {
 
         assert_eq!(extracted.verb, "DONE - lire");
         assert_eq!(extracted.status, ExtractionStatus::Done);
+        assert_eq!(extracted.date_offset, 0);
         assert!(extracted.title.starts_with("DONE - lire:"));
     }
 }

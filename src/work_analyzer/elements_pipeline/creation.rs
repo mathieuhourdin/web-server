@@ -9,7 +9,7 @@ use crate::work_analyzer::elements_pipeline::traits::NewLandmarkForExtractedElem
 use crate::work_analyzer::elements_pipeline::types::IdentityState;
 use crate::work_analyzer::elements_pipeline::matching::{MatchedElements, MatchedElement, LandmarkMatching};
 use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;
@@ -347,6 +347,7 @@ fn build_new_element_from_matched(
     analysis_id: Uuid,
     user_id: Uuid,
 ) -> NewElement {
+    let adjusted_interaction_date = apply_date_offset(interaction_date, element.date_offset);
     let evidences = if element.evidences.is_empty() {
         "[]".to_string()
     } else {
@@ -359,7 +360,7 @@ fn build_new_element_from_matched(
         format!("Evidences: {}\n\nExtractions: {:?}", evidences, element.extractions),
         ElementType::Event,
         element.verb.clone(),
-        interaction_date,
+        adjusted_interaction_date,
         trace_id,
         Some(trace_mirror_id),
         None,
@@ -368,9 +369,18 @@ fn build_new_element_from_matched(
     )
 }
 
+fn apply_date_offset(interaction_date: Option<NaiveDateTime>, date_offset: i32) -> Option<NaiveDateTime> {
+    interaction_date.map(|interaction_date| {
+        interaction_date
+            .checked_add_signed(Duration::days(i64::from(date_offset)))
+            .unwrap_or(interaction_date)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::build_new_element_from_matched;
+    use chrono::NaiveDate;
     use crate::work_analyzer::elements_pipeline::extraction::ExtractionStatus;
     use crate::work_analyzer::elements_pipeline::matching::MatchedElement;
     use uuid::Uuid;
@@ -382,6 +392,7 @@ mod tests {
             title: "DONE - lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
             verb: "DONE - lire".to_string(),
             status: ExtractionStatus::Done,
+            date_offset: 0,
             evidences: vec!["Bullshit Jobs".to_string()],
             extractions: vec!["J'ai lu Bullshit Jobs".to_string()],
             landmark_suggestions: vec![],
@@ -397,5 +408,38 @@ mod tests {
         );
 
         assert_eq!(new_element.verb, "DONE - lire");
+    }
+
+    #[test]
+    fn build_new_element_from_matched_applies_date_offset_to_interaction_date() {
+        let matched_element = MatchedElement {
+            temporary_id: "el-1".to_string(),
+            title: "DONE - lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
+            verb: "DONE - lire".to_string(),
+            status: ExtractionStatus::Done,
+            date_offset: -1,
+            evidences: vec![],
+            extractions: vec![],
+            landmark_suggestions: vec![],
+        };
+        let interaction_date = NaiveDate::from_ymd_opt(2026, 2, 9)
+            .expect("valid date")
+            .and_hms_opt(9, 30, 0)
+            .expect("valid time");
+
+        let new_element = build_new_element_from_matched(
+            &matched_element,
+            Some(interaction_date),
+            Uuid::nil(),
+            Uuid::nil(),
+            Uuid::nil(),
+            Uuid::nil(),
+        );
+
+        let expected_date = NaiveDate::from_ymd_opt(2026, 2, 8)
+            .expect("valid date")
+            .and_hms_opt(9, 30, 0)
+            .expect("valid time");
+        assert_eq!(new_element.interaction_date, Some(expected_date));
     }
 }

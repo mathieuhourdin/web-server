@@ -75,6 +75,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
                     title: element.title.clone(),
                     verb: element.verb.clone(),
                     status: element.status,
+                    date_offset: element.date_offset,
                     evidences: element.evidences.clone(),
                     extractions: element.extractions.clone(),
                     landmark_suggestions: element
@@ -122,6 +123,7 @@ pub struct MatchedElement {
     pub title: String,
     pub verb: String,
     pub status: ExtractionStatus,
+    pub date_offset: i32,
     pub evidences: Vec<String>,
     pub extractions: Vec<String>,
     pub landmark_suggestions: Vec<LandmarkMatching>,
@@ -193,6 +195,7 @@ fn to_matched_placeholders(extracted: &ExtractedElements) -> Vec<MatchedElement>
             title: element.title.clone(),
             verb: element.verb.clone(),
             status: element.status,
+            date_offset: element.date_offset,
             evidences: element.evidences.clone(),
             extractions: element.extractions.clone(),
             landmark_suggestions: element
@@ -223,6 +226,7 @@ mod tests {
                 title: "DONE - lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
                 verb: "DONE - lire".to_string(),
                 status: ExtractionStatus::Done,
+                date_offset: 0,
                 evidences: vec!["Bullshit Jobs".to_string()],
                 extractions: vec!["J'ai lu Bullshit Jobs".to_string()],
                 landmark_suggestions: vec![LandmarkSuggestion {
@@ -237,5 +241,6 @@ mod tests {
 
         assert_eq!(placeholders[0].verb, "DONE - lire");
         assert_eq!(placeholders[0].status, ExtractionStatus::Done);
+        assert_eq!(placeholders[0].date_offset, 0);
     }
 }

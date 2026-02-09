@@ -24,6 +24,7 @@
                         "type": "string",
                         "enum": ["DONE", "INTENDED", "IN_PROGRESS", "UNKNOWN"]
                     },
+                    "date_offset": {"type": "integer"},
                     "evidences": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -34,7 +35,7 @@
                         "items": {"type": "string"}
                     }
                 },
-                "required": ["resource_identifier", "author", "theme", "verb", "status", "evidences", "extractions"],
+                "required": ["resource_identifier", "author", "theme", "verb", "status", "date_offset", "evidences", "extractions"],
                 "additionalProperties": false
             }
         }
