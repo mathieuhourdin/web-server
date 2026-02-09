@@ -138,6 +138,8 @@ impl AnalysisProcessor {
             elements_pipeline::creation::create_elements(&self.config, &self.context, &self.inputs, &state, matched_elements).await?;
         let refined_elements =
             elements_pipeline::refinement::refine_landmarks(&self.context, created_elements).await?;
+        let refined_elements =
+            elements_pipeline::elements_refinement::refine_elements(&self.context, refined_elements).await?;
         let AnalysisStateMirror { current_landscape, trace_mirror } = state;
         Ok(AnalysisStateTraceBroker {
             current_landscape,
