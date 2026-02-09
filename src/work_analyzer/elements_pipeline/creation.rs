@@ -248,6 +248,7 @@ async fn run_creation_impl(
             element.title.clone(),
             format!("Evidences: {}\n\nExtractions: {:?}", evidences, element.extractions),
             ElementType::Event,
+            inputs.trace.interaction_date,
             inputs.trace.id,
             Some(state.trace_mirror.id),
             None,

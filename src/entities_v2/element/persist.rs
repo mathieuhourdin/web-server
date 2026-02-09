@@ -3,6 +3,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
+    interaction::model::NewInteraction,
     resource_relation::NewResourceRelation,
 };
 
@@ -25,13 +26,14 @@ impl Element {
 
 impl NewElement {
     /// Creates the underlying Resource, then "ownr" -> analysis, "elmt" -> trace,
-    /// and optionally "elmt" -> landmark. Does not create an interaction.
+    /// and optionally "elmt" -> landmark. Also creates an author interaction ("outp").
     pub fn create(self, pool: &DbPool) -> Result<Element, PpdcError> {
         let user_id = self.user_id;
         let analysis_id = self.analysis_id;
         let trace_id = self.trace_id;
         let trace_mirror_id = self.trace_mirror_id;
         let landmark_id = self.landmark_id;
+        let interaction_date = self.interaction_date;
 
         let new_resource = self.to_new_resource();
         let created = new_resource.create(pool)?;
@@ -61,7 +63,15 @@ impl NewElement {
             elmt_landmark.create(pool)?;
         }
 
+        let mut new_interaction = NewInteraction::new(user_id, element.id);
+        new_interaction.interaction_type = Some("outp".to_string());
+        if let Some(interaction_date) = interaction_date {
+            new_interaction.interaction_date = Some(interaction_date);
+        }
+        new_interaction.create(pool)?;
+
         Ok(Element {
+            interaction_date,
             user_id,
             analysis_id,
             trace_id,

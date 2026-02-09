@@ -12,6 +12,7 @@ pub struct Element {
     pub content: String,
     pub extended_content: Option<String>,
     pub element_type: ElementType,
+    pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
     pub analysis_id: Uuid,
     pub trace_id: Uuid,
@@ -83,6 +84,7 @@ pub struct NewElement {
     pub subtitle: String,
     pub content: String,
     pub element_type: ElementType,
+    pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
     pub analysis_id: Uuid,
     pub trace_id: Uuid,
@@ -96,12 +98,13 @@ impl NewElement {
         subtitle: String,
         content: String,
         element_type: ElementType,
+        interaction_date: Option<NaiveDateTime>,
         trace_id: Uuid,
         trace_mirror_id: Option<Uuid>,
         landmark_id: Option<Uuid>,
         analysis_id: Uuid,
         user_id: Uuid,
     ) -> NewElement {
-        NewElement { title, subtitle, content, element_type, user_id, analysis_id, trace_id, trace_mirror_id, landmark_id }
+        NewElement { title, subtitle, content, element_type, interaction_date, user_id, analysis_id, trace_id, trace_mirror_id, landmark_id }
     }
 }

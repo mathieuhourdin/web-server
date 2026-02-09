@@ -31,6 +31,7 @@ impl Element {
             content: resource.content,
             extended_content: None,
             element_type: element_type.into(),
+            interaction_date: None,
             user_id: Uuid::nil(),
             analysis_id: Uuid::nil(),
             trace_id: Uuid::nil(),
@@ -75,6 +76,7 @@ impl Element {
         let interaction = resource.find_resource_author_interaction(pool)?;
         Ok(Element {
             user_id: interaction.interaction_user_id,
+            interaction_date: Some(interaction.interaction_date),
             ..self
         })
     }
