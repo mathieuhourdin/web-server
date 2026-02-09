@@ -31,23 +31,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
     let log_header = format!("analysis_id: {}", context.analysis_id);
     let landmark_types = [LandmarkType::Resource, LandmarkType::Author, LandmarkType::Theme];
 
-    let mut matching_placeholders = extracted
-        .elements
-        .iter()
-        .map(|element| {
-            MatchedElement {
-                temporary_id: element.temporary_id.clone(),
-                title: element.title.clone(),
-                evidences: element.evidences.clone(),
-                extractions: element.extractions.clone(),
-                landmark_suggestions: element
-                    .landmark_suggestions
-                    .iter()
-                    .map(|suggestion| suggestion.into())
-                    .collect::<Vec<LandmarkMatching>>(),
-            }
-        })
-        .collect::<Vec<MatchedElement>>();
+    let mut matching_placeholders = to_matched_placeholders(&extracted);
 
     for landmark_type in landmark_types {
         let display_name = match landmark_type {
@@ -85,6 +69,7 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
                 MatchedElement {
                     temporary_id: element.temporary_id.clone(),
                     title: element.title.clone(),
+                    verb: element.verb.clone(),
                     evidences: element.evidences.clone(),
                     extractions: element.extractions.clone(),
                     landmark_suggestions: element
@@ -130,6 +115,7 @@ pub struct MatchedElements {
 pub struct MatchedElement {
     pub temporary_id: String,
     pub title: String,
+    pub verb: String,
     pub evidences: Vec<String>,
     pub extractions: Vec<String>,
     pub landmark_suggestions: Vec<LandmarkMatching>,
@@ -189,5 +175,57 @@ impl From<&LandmarkSuggestion> for LandmarkMatching {
             candidate_id: None,
             confidence: 0.0,
         }
+    }
+}
+
+fn to_matched_placeholders(extracted: &ExtractedElements) -> Vec<MatchedElement> {
+    extracted
+        .elements
+        .iter()
+        .map(|element| MatchedElement {
+            temporary_id: element.temporary_id.clone(),
+            title: element.title.clone(),
+            verb: element.verb.clone(),
+            evidences: element.evidences.clone(),
+            extractions: element.extractions.clone(),
+            landmark_suggestions: element
+                .landmark_suggestions
+                .iter()
+                .map(|suggestion| suggestion.into())
+                .collect::<Vec<LandmarkMatching>>(),
+        })
+        .collect::<Vec<MatchedElement>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_matched_placeholders;
+    use crate::entities_v2::landmark::LandmarkType;
+    use crate::work_analyzer::elements_pipeline::extraction::{
+        ExtractedElement,
+        ExtractedElements,
+        LandmarkSuggestion,
+    };
+
+    #[test]
+    fn to_matched_placeholders_keeps_verb() {
+        let extracted = ExtractedElements {
+            elements: vec![ExtractedElement {
+                temporary_id: "el-0".to_string(),
+                title: "lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
+                verb: "lire".to_string(),
+                evidences: vec!["Bullshit Jobs".to_string()],
+                extractions: vec!["J'ai lu Bullshit Jobs".to_string()],
+                landmark_suggestions: vec![LandmarkSuggestion {
+                    temporary_id: "el-0-lm-resource-0".to_string(),
+                    matching_key: "Bullshit Jobs".to_string(),
+                    landmark_type: LandmarkType::Resource,
+                }],
+            }],
+        };
+
+        let placeholders = to_matched_placeholders(&extracted);
+
+        assert_eq!(placeholders[0].verb, "lire");
     }
 }

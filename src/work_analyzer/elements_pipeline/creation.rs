@@ -9,6 +9,7 @@ use crate::work_analyzer::elements_pipeline::traits::NewLandmarkForExtractedElem
 use crate::work_analyzer::elements_pipeline::types::IdentityState;
 use crate::work_analyzer::elements_pipeline::matching::{MatchedElements, MatchedElement, LandmarkMatching};
 use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;
@@ -238,20 +239,11 @@ async fn run_creation_impl(
     let mut landmarks_updates: HashMap<Uuid, Uuid> = HashMap::new();
     
     for element in &matched.elements {
-        let evidences = if element.evidences.is_empty() {
-            "[]".to_string()
-        } else {
-            element.evidences.join(", ")
-        };
-        let new_element = NewElement::new(
-            element.title.clone(),
-            element.title.clone(),
-            format!("Evidences: {}\n\nExtractions: {:?}", evidences, element.extractions),
-            ElementType::Event,
+        let new_element = build_new_element_from_matched(
+            element,
             inputs.trace.interaction_date,
             inputs.trace.id,
-            Some(state.trace_mirror.id),
-            None,
+            state.trace_mirror.id,
             context.analysis_id,
             context.user_id,
         );
@@ -345,4 +337,63 @@ async fn process_suggestion(
     // No high-confidence match - create new landmark via GPT
     let input = LandmarkCreationInput::from_matched(element, suggestion);
     create_landmark_via_gpt(context, &input).await
+}
+
+fn build_new_element_from_matched(
+    element: &MatchedElement,
+    interaction_date: Option<NaiveDateTime>,
+    trace_id: Uuid,
+    trace_mirror_id: Uuid,
+    analysis_id: Uuid,
+    user_id: Uuid,
+) -> NewElement {
+    let evidences = if element.evidences.is_empty() {
+        "[]".to_string()
+    } else {
+        element.evidences.join(", ")
+    };
+
+    NewElement::new(
+        element.title.clone(),
+        element.title.clone(),
+        format!("Evidences: {}\n\nExtractions: {:?}", evidences, element.extractions),
+        ElementType::Event,
+        element.verb.clone(),
+        interaction_date,
+        trace_id,
+        Some(trace_mirror_id),
+        None,
+        analysis_id,
+        user_id,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_new_element_from_matched;
+    use crate::work_analyzer::elements_pipeline::matching::MatchedElement;
+    use uuid::Uuid;
+
+    #[test]
+    fn build_new_element_from_matched_keeps_verb() {
+        let matched_element = MatchedElement {
+            temporary_id: "el-0".to_string(),
+            title: "lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
+            verb: "lire".to_string(),
+            evidences: vec!["Bullshit Jobs".to_string()],
+            extractions: vec!["J'ai lu Bullshit Jobs".to_string()],
+            landmark_suggestions: vec![],
+        };
+
+        let new_element = build_new_element_from_matched(
+            &matched_element,
+            None,
+            Uuid::nil(),
+            Uuid::nil(),
+            Uuid::nil(),
+            Uuid::nil(),
+        );
+
+        assert_eq!(new_element.verb, "lire");
+    }
 }

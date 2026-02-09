@@ -13,24 +13,22 @@ use crate::entities::{
     resource_relation::ResourceRelation,
 };
 
-use super::model::{Element, ElementType, NewElement};
+use super::model::{Element, NewElement};
 
 impl Element {
     /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id, trace_mirror_id)
     /// and extended_content must be hydrated via `with_*` / `find_full`.
     pub fn from_resource(resource: Resource) -> Self {
-        let element_type = resource
-            .comment
-            .as_deref()
-            .and_then(ElementType::from_code)
-            .unwrap_or(ElementType::Event);
+        let element_type = resource.resource_type.into();
+        let verb = resource.comment.unwrap_or_default();
         Self {
             id: resource.id,
             title: resource.title,
             subtitle: resource.subtitle,
             content: resource.content,
             extended_content: None,
-            element_type: element_type.into(),
+            element_type,
+            verb,
             interaction_date: None,
             user_id: Uuid::nil(),
             analysis_id: Uuid::nil(),
@@ -51,7 +49,7 @@ impl Element {
             subtitle: self.subtitle.clone(),
             content: self.content.clone(),
             external_content_url: None,
-            comment: Some(self.element_type.to_code().to_string()),
+            comment: Some(self.verb.clone()),
             image_url: None,
             resource_type: self.element_type.into(),
             entity_type: EntityType::Element,
@@ -190,7 +188,7 @@ impl NewElement {
             subtitle: self.subtitle.clone(),
             content: Some(self.content.clone()),
             external_content_url: None,
-            comment: Some(self.element_type.to_code().to_string()),
+            comment: Some(self.verb.clone()),
             image_url: None,
             resource_type: Some(self.element_type.into()),
             entity_type: Some(EntityType::Element),
@@ -205,5 +203,72 @@ impl NewElement {
 impl From<Resource> for Element {
     fn from(resource: Resource) -> Self {
         Element::from_resource(resource)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveDate, NaiveDateTime};
+
+    use crate::entities::resource::{
+        entity_type::EntityType,
+        maturing_state::MaturingState,
+        resource_type::ResourceType,
+        Resource,
+    };
+
+    use super::{Element, NewElement};
+    use crate::entities_v2::element::ElementType;
+
+    fn sample_datetime() -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 1, 1)
+            .expect("valid date")
+            .and_hms_opt(0, 0, 0)
+            .expect("valid time")
+    }
+
+    #[test]
+    fn to_new_resource_persists_verb_in_comment() {
+        let new_element = NewElement::new(
+            "Title".to_string(),
+            "Subtitle".to_string(),
+            "Content".to_string(),
+            ElementType::Event,
+            "écouter".to_string(),
+            None,
+            uuid::Uuid::nil(),
+            None,
+            None,
+            uuid::Uuid::nil(),
+            uuid::Uuid::nil(),
+        );
+
+        let new_resource = new_element.to_new_resource();
+        assert_eq!(new_resource.comment, Some("écouter".to_string()));
+    }
+
+    #[test]
+    fn from_resource_keeps_legacy_comment_raw_as_verb() {
+        let resource = Resource {
+            id: uuid::Uuid::nil(),
+            title: "Title".to_string(),
+            subtitle: "Subtitle".to_string(),
+            content: "Content".to_string(),
+            external_content_url: None,
+            comment: Some("evnt".to_string()),
+            image_url: None,
+            resource_type: ResourceType::Event,
+            maturing_state: MaturingState::Draft,
+            publishing_state: "drft".to_string(),
+            category_id: None,
+            is_external: false,
+            created_at: sample_datetime(),
+            updated_at: sample_datetime(),
+            entity_type: EntityType::Element,
+        };
+
+        let element = Element::from_resource(resource);
+        assert_eq!(element.verb, "evnt");
+        assert_eq!(element.element_type, ElementType::Event);
     }
 }

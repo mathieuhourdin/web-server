@@ -19,6 +19,7 @@
                             }
                         ]
                     },
+                    "verb": {"type": "string"},
                     "evidences": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -29,7 +30,7 @@
                         "items": {"type": "string"}
                     }
                 },
-                "required": ["resource_identifier", "author", "theme", "evidences", "extractions"],
+                "required": ["resource_identifier", "author", "theme", "verb", "evidences", "extractions"],
                 "additionalProperties": false
             }
         }
