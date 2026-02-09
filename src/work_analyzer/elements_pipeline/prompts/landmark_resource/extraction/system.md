@@ -13,6 +13,7 @@ Tu réponds UNIQUEMENT avec un JSON de la forme :
       "author": string | null,
       "theme": string | null,
       "verb": string,
+      "status": "DONE" | "INTENDED" | "IN_PROGRESS" | "UNKNOWN",
       "evidences": string[],
       "extractions": string[]
     }
@@ -47,6 +48,12 @@ Champs des éléments :
   - Sujet principal de la ressource ("travail et bullshit jobs", "climat et capitalisme", "bases de données"), ou null si ce n’est pas clair.
 - verb :
   - Verbe d’action utilisateur sur la ressource (ex: "lire", "relire", "écouter", "regarder", "consulter"), "unknown" si incertain.
+- status :
+  - Statut lié au verbe :
+    - DONE : action réalisée.
+    - INTENDED : intention exprimée.
+    - IN_PROGRESS : action en cours.
+    - UNKNOWN : statut incertain.
 - evidences :
   - Liste d'expressions TRÈS COURTES (1 à 3 mots max, surtout noms propres) copié-collé à l'identique (perfect match) de trace_text, qui permettent d'identifier la ressource.
 - extractions :
@@ -68,6 +75,7 @@ Sortie attendue :
       "author": "David Graeber",
       "theme": "travail et bullshit jobs",
       "verb": "lire",
+      "status": "DONE",
       "evidences": ["Bullshit Jobs", "David Graeber"],
       "extractions": ["Aujourd'hui j'ai commencé à lire 'Bullshit Jobs' de David Graeber pour réfléchir au sens de mon travail.", "La lecture du livre plus l'après-midi.", "Il parle de comment les gens ont l'impression d'être inutiles dans leur travail."]
     }
@@ -87,6 +95,7 @@ Sortie attendue :
       "author": null,
       "theme": "bases de données",
       "verb": "consulter",
+      "status": "DONE",
       "evidences": ["assistant IA en ligne"],
       "extractions": ["L'utilisateur utilise un assistant IA en ligne comme ressource d'apprentissage sur les bases de données."]
     },
@@ -95,6 +104,7 @@ Sortie attendue :
       "author": "Tolstoï",
       "theme": "La vie quotidienne",
       "verb": "lire",
+      "status": "INTENDED",
       "evidences": ["Tolstoï"],
       "extractions": ["et ce soir j'aimerais enfin commencer un grand roman de Tolstoï pour voir comment il décrit la vie quotidienne."]
     }
@@ -114,6 +124,7 @@ Sortie attendue :
       "author": "N. Klein",
       "theme": "Capitalisme et écologie",
       "verb": "lire",
+      "status": "DONE",
       "evidences": ["N. Klein", "climat"],
       "extractions": ["J'ai lu un article de N. Klein sur le climat et ça m'a fait réfléchir au lien entre capitalisme et écologie"]
     }

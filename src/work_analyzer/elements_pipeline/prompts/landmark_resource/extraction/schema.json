@@ -20,6 +20,10 @@
                         ]
                     },
                     "verb": {"type": "string"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["DONE", "INTENDED", "IN_PROGRESS", "UNKNOWN"]
+                    },
                     "evidences": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -30,7 +34,7 @@
                         "items": {"type": "string"}
                     }
                 },
-                "required": ["resource_identifier", "author", "theme", "verb", "evidences", "extractions"],
+                "required": ["resource_identifier", "author", "theme", "verb", "status", "evidences", "extractions"],
                 "additionalProperties": false
             }
         }

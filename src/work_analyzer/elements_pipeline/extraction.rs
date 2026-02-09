@@ -24,6 +24,7 @@ pub struct ExtractedElement {
     pub temporary_id: String,
     pub title: String,
     pub verb: String,
+    pub status: ExtractionStatus,
     pub evidences: Vec<String>,
     pub extractions: Vec<String>,
     pub landmark_suggestions: Vec<LandmarkSuggestion>,
@@ -45,8 +46,29 @@ pub struct ExtractedInputElement {
     pub author: Option<String>,
     pub theme: Option<String>,
     pub verb: String,
+    pub status: ExtractionStatus,
     pub evidences: Vec<String>,
     pub extractions: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ExtractionStatus {
+    Done,
+    Intended,
+    InProgress,
+    Unknown,
+}
+
+impl ExtractionStatus {
+    fn to_label(self) -> &'static str {
+        match self {
+            ExtractionStatus::Done => "DONE",
+            ExtractionStatus::Intended => "INTENDED",
+            ExtractionStatus::InProgress => "IN_PROGRESS",
+            ExtractionStatus::Unknown => "UNKNOWN",
+        }
+    }
 }
 
 impl ExtractedInputElement {
@@ -59,8 +81,13 @@ impl ExtractedInputElement {
         }
     }
 
+    fn compose_status_verb(status: ExtractionStatus, verb: &str) -> String {
+        format!("{} - {}", status.to_label(), verb)
+    }
+
     fn to_extracted_element(&self, temporary_id: String) -> ExtractedElement {
         let normalized_verb = Self::normalize_verb(&self.verb);
+        let status_verb = Self::compose_status_verb(self.status, &normalized_verb);
         let mut landmark_suggestions = vec![];
         let mut counter = 0;
         if let Some(theme) = self.theme.clone() {
@@ -95,12 +122,13 @@ impl ExtractedInputElement {
             temporary_id: temporary_id,
             title: format!(
                 "{}: {} - Par {} Sur {}",
-                normalized_verb,
+                status_verb,
                 self.resource_identifier.clone().unwrap_or_default(),
                 self.author.clone().unwrap_or_default(),
                 self.theme.clone().unwrap_or_default()
             ),
-            verb: normalized_verb,
+            verb: status_verb,
+            status: self.status,
             evidences: self.evidences.clone(),
             extractions: self.extractions.clone(),
             landmark_suggestions,
@@ -128,7 +156,7 @@ pub async fn extract_input_elements(_config: &AnalysisConfig, context: &Analysis
 
 #[cfg(test)]
 mod tests {
-    use super::ExtractedInputElement;
+    use super::{ExtractedInputElement, ExtractionStatus};
 
     #[test]
     fn to_extracted_element_includes_normalized_verb_in_field_and_title() {
@@ -137,13 +165,15 @@ mod tests {
             author: Some("David Graeber".to_string()),
             theme: Some("travail".to_string()),
             verb: " lire ".to_string(),
+            status: ExtractionStatus::Done,
             evidences: vec!["Bullshit Jobs".to_string()],
             extractions: vec!["J'ai commencé à lire".to_string()],
         };
 
         let extracted = extracted_input.to_extracted_element("el-0".to_string());
 
-        assert_eq!(extracted.verb, "lire");
-        assert!(extracted.title.starts_with("lire:"));
+        assert_eq!(extracted.verb, "DONE - lire");
+        assert_eq!(extracted.status, ExtractionStatus::Done);
+        assert!(extracted.title.starts_with("DONE - lire:"));
     }
 }

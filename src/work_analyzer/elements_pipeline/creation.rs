@@ -371,6 +371,7 @@ fn build_new_element_from_matched(
 #[cfg(test)]
 mod tests {
     use super::build_new_element_from_matched;
+    use crate::work_analyzer::elements_pipeline::extraction::ExtractionStatus;
     use crate::work_analyzer::elements_pipeline::matching::MatchedElement;
     use uuid::Uuid;
 
@@ -378,8 +379,9 @@ mod tests {
     fn build_new_element_from_matched_keeps_verb() {
         let matched_element = MatchedElement {
             temporary_id: "el-0".to_string(),
-            title: "lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
-            verb: "lire".to_string(),
+            title: "DONE - lire: Bullshit Jobs - Par David Graeber Sur travail".to_string(),
+            verb: "DONE - lire".to_string(),
+            status: ExtractionStatus::Done,
             evidences: vec!["Bullshit Jobs".to_string()],
             extractions: vec!["J'ai lu Bullshit Jobs".to_string()],
             landmark_suggestions: vec![],
@@ -394,6 +396,6 @@ mod tests {
             Uuid::nil(),
         );
 
-        assert_eq!(new_element.verb, "lire");
+        assert_eq!(new_element.verb, "DONE - lire");
     }
 }
