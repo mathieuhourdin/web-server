@@ -79,6 +79,10 @@ pub fn create_router() -> Router {
         .route("/:id", get(trace::get_trace_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let journals_router = Router::new()
+        .route("/:id/traces", get(trace::get_traces_for_journal_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     let interactions_router = Router::new()
         .route("/", get(interaction::get_interactions_route))
         .route("/:id", put(interaction::put_interaction_route))
@@ -137,6 +141,7 @@ pub fn create_router() -> Router {
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/traces", traces_router)
+        .nest("/journals", journals_router)
         .nest("/interactions", interactions_router)
         .nest("/transcriptions", transcriptions_router)
         .nest("/", relations_router)

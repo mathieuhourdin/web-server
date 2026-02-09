@@ -1,4 +1,5 @@
 use chrono::NaiveDateTime;
+use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -7,7 +8,9 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::Interaction,
     resource::maturing_state::MaturingState,
+    resource::Resource,
 };
+use crate::schema::{interactions, resource_relations, resources};
 
 #[derive(Deserialize)]
 pub struct NewTraceDto {
@@ -89,6 +92,40 @@ impl Trace {
             .into_iter()
             .map(|interaction| Trace::from_resource(interaction.resource))
             .collect();
+        Ok(traces)
+    }
+
+    pub fn get_all_for_journal(journal_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let interactions_with_resources = interactions::table
+            .inner_join(resources::table)
+            .inner_join(
+                resource_relations::table
+                    .on(resources::id.eq(resource_relations::origin_resource_id)),
+            )
+            .filter(resource_relations::target_resource_id.eq(journal_id))
+            .filter(resource_relations::relation_type.eq("jrit"))
+            .filter(resources::resource_type.eq("trce"))
+            .filter(interactions::interaction_type.eq("outp"))
+            .order(interactions::interaction_date.desc())
+            .select((Interaction::as_select(), Resource::as_select()))
+            .load::<(Interaction, Resource)>(&mut conn)?;
+
+        let traces = interactions_with_resources
+            .into_iter()
+            .map(|(interaction, resource)| {
+                let trace = Trace::from_resource(resource);
+                Trace {
+                    interaction_date: Some(interaction.interaction_date),
+                    user_id: interaction.interaction_user_id,
+                    journal_id: Some(journal_id),
+                    ..trace
+                }
+            })
+            .collect::<Vec<Trace>>();
         Ok(traces)
     }
 }

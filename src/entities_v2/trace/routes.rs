@@ -63,3 +63,12 @@ pub async fn get_trace_route(
     let trace = Trace::find_full_trace(id, &pool)?;
     Ok(Json(trace))
 }
+
+#[debug_handler]
+pub async fn get_traces_for_journal_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Trace>>, PpdcError> {
+    let traces = Trace::get_all_for_journal(id, &pool)?;
+    Ok(Json(traces))
+}
