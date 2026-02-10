@@ -4,7 +4,7 @@ use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities::resource::{entity_type::EntityType, NewResource, Resource, resource_type::ResourceType};
 use crate::entities::resource_relation::ResourceRelation;
-
+use crate::entities_v2::element::model::Element;
 use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
 
 
@@ -74,18 +74,18 @@ impl Landmark {
         Ok(parent)
     }
 
-    pub fn find_elements(&self, pool: &DbPool) -> Result<Vec<Resource>, PpdcError> {
+    pub fn find_elements(&self, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
         let resource_relations = ResourceRelation::find_origin_for_resource(self.id, pool)?;
         let elements = resource_relations
             .into_iter()
             .filter(|relation| relation.resource_relation.relation_type == "elmt")
-            .map(|relation| relation.origin_resource);
-        Ok(elements.collect::<Vec<Resource>>())
+            .map(|relation| Element::find_full(relation.origin_resource.id, pool).unwrap());
+        Ok(elements.collect::<Vec<Element>>())
     }
 
     pub fn find_with_parents(id: Uuid, pool: &DbPool) -> Result<LandmarkWithParentsAndElements, PpdcError> {
         let origin_landmark = Landmark::find(id, pool)?;
-        let mut elements: Vec<Resource> = origin_landmark.find_elements(pool)?;
+        let mut elements: Vec<Element> = origin_landmark.find_elements(pool)?;
         let mut parents: Vec<Landmark> = vec![];
         let mut current_landmark = origin_landmark.clone();
         while let Some(parent) = current_landmark.find_parent(pool)? {

@@ -8,6 +8,7 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
     interaction::model::NewInteraction,
 };
+use crate::entities_v2::element::model::Element;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use crate::db::DbPool;
@@ -77,11 +78,11 @@ pub struct LandmarkWithParentsAndElements {
     #[serde(flatten)]
     pub landmark: Landmark,
     pub parent_landmarks: Vec<Landmark>,
-    pub related_elements: Vec<Resource>,
+    pub related_elements: Vec<Element>,
 }
 
 impl LandmarkWithParentsAndElements {
-    pub fn new(landmark: Landmark, parent_landmarks: Vec<Landmark>, related_elements: Vec<Resource>) -> Self {
+    pub fn new(landmark: Landmark, parent_landmarks: Vec<Landmark>, related_elements: Vec<Element>) -> Self {
         Self { landmark, parent_landmarks, related_elements }
     }
 }

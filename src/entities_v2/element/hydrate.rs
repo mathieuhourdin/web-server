@@ -137,6 +137,18 @@ impl Element {
         })
     }
 
+    pub fn with_interaction_date(self, pool: &DbPool) -> Result<Element, PpdcError> {
+        let interaction = self.to_resource().find_resource_author_interaction(pool);
+        if let Ok(interaction) = interaction {
+            Ok(Element {
+                interaction_date: Some(interaction.interaction_date),
+                ..self
+            })
+        } else {
+            Ok(self)
+        }
+    }
+
     /// Finds an Element by id and fully hydrates it (user_id, analysis_id, trace_id, trace_mirror_id, landmark_id).
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
         let resource = Resource::find(id, pool)?;
@@ -145,6 +157,7 @@ impl Element {
         let el = el.with_trace_id(pool)?;
         let el = el.with_trace_mirror_id(pool)?;
         let el = el.with_landmark_id(pool)?;
+        let el = el.with_interaction_date(pool)?;
         let el = match el.clone().with_user_id(pool) {
             Ok(e) => e,
             Err(_) => el,

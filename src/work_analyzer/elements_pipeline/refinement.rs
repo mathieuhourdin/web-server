@@ -3,8 +3,11 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::entities::error::PpdcError;
-use crate::entities::resource::{MaturingState, Resource};
-use crate::entities_v2::landmark::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
+use crate::entities::resource::{MaturingState};
+use crate::entities_v2::{
+    landmark::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark},
+    element::model::Element,
+};
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 use crate::work_analyzer::elements_pipeline::creation::{
@@ -42,12 +45,12 @@ struct ElementContext {
     pub content: String,
 }
 
-impl From<&Resource> for ElementContext {
-    fn from(resource: &Resource) -> Self {
+impl From<&Element> for ElementContext {
+    fn from(element: &Element) -> Self {
         Self {
-            title: resource.title.clone(),
-            subtitle: resource.subtitle.clone(),
-            content: resource.content.clone(),
+            title: element.title.clone(),
+            subtitle: element.subtitle.clone(),
+            content: element.content.clone(),
         }
     }
 }
@@ -102,7 +105,7 @@ fn parse_element_payload(content: &str) -> (Vec<String>, Vec<String>) {
 fn build_refinement_input(
     landmark: &Landmark,
     context: &LandmarkWithParentsAndElements,
-    linked_elements: &[Resource],
+    linked_elements: &[Element],
 ) -> LandmarkRefinementInput {
     let mut evidences = Vec::new();
     let mut extractions = Vec::new();
@@ -144,7 +147,7 @@ fn build_refinement_input(
         related_elements: context
             .related_elements
             .iter()
-            .map(ElementContext::from)
+            .map(|element| ElementContext::from(element))
             .collect(),
     }
 }
