@@ -12,6 +12,7 @@ use crate::entities::{
     },
     resource_relation::ResourceRelation,
 };
+use crate::entities_v2::landmark::Landmark;
 
 use super::model::{Element, NewElement};
 
@@ -135,6 +136,20 @@ impl Element {
             landmark_id,
             ..self
         })
+    }
+
+    /// Finds landmarks linked to this element via "elmt" (element -> landmark).
+    pub fn find_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let landmarks = targets
+            .into_iter()
+            .filter(|t| {
+                t.resource_relation.relation_type == "elmt"
+                    && t.target_resource.is_landmark()
+            })
+            .map(|t| Landmark::from_resource(t.target_resource))
+            .collect::<Vec<Landmark>>();
+        Ok(landmarks)
     }
 
     pub fn with_interaction_date(self, pool: &DbPool) -> Result<Element, PpdcError> {
