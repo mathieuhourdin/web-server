@@ -15,6 +15,7 @@ pub struct LandscapeAnalysis {
     pub parent_analysis_id: Option<Uuid>,
     pub replayed_from_id: Option<Uuid>,
     pub analyzed_trace_id: Option<Uuid>,
+    pub trace_mirror_id: Option<Uuid>,
     pub processing_state: MaturingState,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -30,6 +31,7 @@ pub struct NewLandscapeAnalysis {
     pub parent_analysis_id: Option<Uuid>,
     pub analyzed_trace_id: Option<Uuid>,
     pub replayed_from_id: Option<Uuid>,
+    pub trace_mirror_id: Option<Uuid>,
 }
 
 impl NewLandscapeAnalysis {
@@ -53,6 +55,7 @@ impl NewLandscapeAnalysis {
             parent_analysis_id,
             analyzed_trace_id,
             replayed_from_id,
+            trace_mirror_id: None,
         }
     }
 
@@ -66,6 +69,7 @@ impl NewLandscapeAnalysis {
             parent_analysis_id: parent_landscape_analysis_id,
             analyzed_trace_id: Some(trace_id),
             replayed_from_id,
+            trace_mirror_id: None,
         }
     }
 }

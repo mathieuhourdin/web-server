@@ -117,6 +117,7 @@ impl NewLandscapeAnalysis {
         let parent_analysis_id = self.parent_analysis_id;
         let analyzed_trace_id = self.analyzed_trace_id;
         let replayed_from_id = self.replayed_from_id;
+        let trace_mirror_id = self.trace_mirror_id;
 
         // Create the underlying resource
         let new_resource = self.to_new_resource();
@@ -149,6 +150,13 @@ impl NewLandscapeAnalysis {
             replayed_from_relation.relation_type = Some("rply".to_string());
             replayed_from_relation.user_id = Some(user_id);
             replayed_from_relation.create(pool)?;
+        }
+        if let Some(trace_mirror_id) = trace_mirror_id {
+            let mut trace_mirror_relation =
+                NewResourceRelation::new(trace_mirror_id, created_resource.id);
+            trace_mirror_relation.relation_type = Some("lnds".to_string());
+            trace_mirror_relation.user_id = Some(user_id);
+            trace_mirror_relation.create(pool)?;
         }
 
         // Return the fully hydrated analysis

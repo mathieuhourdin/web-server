@@ -30,6 +30,7 @@ impl LandscapeAnalysis {
             parent_analysis_id: None,
             replayed_from_id: None,
             analyzed_trace_id: None,
+            trace_mirror_id: None,
             processing_state: resource.maturing_state,
             created_at: resource.created_at,
             updated_at: resource.updated_at,
@@ -101,6 +102,20 @@ impl LandscapeAnalysis {
         Ok(LandscapeAnalysis { replayed_from_id, ..self })
     }
 
+    /// Hydrates trace_mirror_id from resource relations.
+    /// Looks for an origin relation of type "lnds" from a trace mirror.
+    pub fn with_trace_mirror(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let origins = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        let trace_mirror_id = origins
+            .into_iter()
+            .find(|origin| {
+                origin.resource_relation.relation_type == "lnds"
+                    && origin.origin_resource.is_trace_mirror()
+            })
+            .map(|origin| origin.origin_resource.id);
+        Ok(LandscapeAnalysis { trace_mirror_id, ..self })
+    }
+
     pub fn find_full_parent(&self, pool: &DbPool) -> Result<Option<LandscapeAnalysis>, PpdcError> {
         let parent_analysis_id = self.parent_analysis_id;
         if let Some(parent_analysis_id) = parent_analysis_id {
@@ -129,6 +144,7 @@ impl LandscapeAnalysis {
         let analysis = analysis.with_parent_analysis(pool)?;
         let analysis = analysis.with_trace(pool)?;
         let analysis = analysis.with_replayed_from(pool)?;
+        let analysis = analysis.with_trace_mirror(pool)?;
         Ok(analysis)
     }
 
