@@ -1,0 +1,42 @@
+[
+    {
+        "id": "lan_1",
+        "title": "Designing Data-Intensive Applications",
+        "content": "Un livre sur les systèmes distribués par Martin Kleppmann",
+        "type": "book",
+        "abbreviation": "DDIA",
+        "used_designations": ["DDIA", "Designing Data-Intensive Applications", "Le livre sur les bases de données"]
+    },
+    {
+        "id": "lan_2",
+        "title": "High Output Management",
+        "content": "Un livre sur le management par Andy Grove",
+        "type": "book",
+        "abbreviation": "HOM",
+        "used_designations": ["HOM", "High Output Management", "Le livre de management"]
+    },
+    {
+        "id": "lan_3",
+        "title": "Mémoire de Sociologie - Philosophie sur le travail",
+        "content": "Un mémoire de philosophie des techniques et de sociologie du travail sur la culture de l'exécution par l'utilisateur",
+        "type": "academic_paper",
+        "abbreviation": "",
+        "used_designations": ["Mon mémoire", "Le projet de mémoire", "La socio"]
+    },
+    {
+        "id": "lan_4",
+        "title": "Le projet de bytecode VM",
+        "content": "Un projet de bytecode VM pour un langage de programmation par l'utilisateur",
+        "type": "project",
+        "abbreviation": "VM",
+        "used_designations": ["Le projet de bytecode VM", "Le projet de VM", "Le projet de langage de programmation"]
+    },
+    {
+        "id": "lan_5",
+        "title": "Marco Saraceno",
+        "content": "Le directeur de mémoire de sociologie philosophie de l'utilisateur",
+        "type": "author",
+        "abbreviation": "MS",
+        "used_designations": ["Marco Saraceno", "MS", "Mon directeur"]
+    }
+]

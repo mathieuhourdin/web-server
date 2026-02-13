@@ -22,22 +22,25 @@
               "THEME"
             ]
           },
-          "theme": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^des_[0-9]+$"
+          "unit_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^des_[0-9]+$"
+            }
           },
           "span": {
-            "type": "string"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "id",
           "object",
           "kind",
-          "theme",
+          "unit_ids",
           "span"
         ]
       }
@@ -81,9 +84,35 @@
           "scope": {
             "type": "string",
             "enum": [
-              "ONE_SHOT",
               "SUBTASK",
               "HIGH_LEVEL_TASK"
+            ]
+          },
+          "life_domain": {
+            "type": "string",
+            "enum": [
+              "WORK",
+              "ADMIN",
+              "HOUSEHOLD",
+              "HEALTH",
+              "SOCIAL",
+              "SPORT",
+              "OTHER"
+            ]
+          },
+          "date_offset": {
+            "type": "string",
+            "enum": [
+              "TODAY",
+              "TODAY_MORNING",
+              "TODAY_AFTERNOON",
+              "YESTERDAY",
+              "TWO_DAYS_AGO",
+              "LAST_WEEK",
+              "NEXT_WEEK",
+              "FAR_FUTURE",
+              "FAR_PAST",
+              "UNKNOWN"
             ]
           },
           "subtask_of": {
@@ -101,7 +130,10 @@
             }
           },
           "span": {
-            "type": "string"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -112,6 +144,8 @@
           "theme",
           "status",
           "scope",
+          "life_domain",
+          "date_offset",
           "subtask_of",
           "related_transactions",
           "span"
@@ -128,14 +162,10 @@
             "type": "string",
             "pattern": "^nor_[0-9]+$"
           },
-          "kind": {
-            "type": "string"
-          },
           "force": {
             "type": "string",
             "enum": [
               "PLAN",
-              "TODO_LIST",
               "OBLIGATION",
               "RECOMMENDATION",
               "PRINCIPLE"
@@ -156,12 +186,14 @@
             }
           },
           "span": {
-            "type": "string"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "id",
-          "kind",
           "force",
           "polarity",
           "applies_to",
@@ -215,7 +247,10 @@
             }
           },
           "span": {
-            "type": "string"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

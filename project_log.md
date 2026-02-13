@@ -7,6 +7,200 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-13 Ideas about desambiguation
+
+Abbreviations matching could work like this :
+- We have a list of known abbreviations for references/landmark/objects (Reference entity could be what we need !)
+- In a new trace, we look for all matches between all known references and text substring. We take those landmarks and add them to context.
+- We also load a hot context with the landmarks referenced very often.
+- We also may load existing references that have not found their landmarks.
+- Then we make a desambiguation matching prompt.
+
+Hot landmarks with exact match for abbreviations could be automatically matched without llm call but not sure it is a great improvement if we are going to do the call anyway. Maybe if we do this match first, then make the classification call that says what it is talking about, which could evaluate if we need more desambiguation, and then we process or not, with also filters for the the context with the classification result.
+
+After desambiguation, we retrieve new references for existing landmarks (new way to refer to a landmark) and references with no landmark ("A fun book with abbreviation HP"). Then we can do deeper search (External/Internal RAG) to identify those, and create new landmarks.
+
+
+### 2026-02-13 step point
+
+I have a really good prompt for the extraction now.
+What should I do next ?
+
+1. work on desambiguation on first prompt.
+2. Identify landmarks in the claims to reference them.
+3. See how I persist the claims.
+- They should be in elements
+- Multiple types of elements
+- Stop
+
+lets work on desambiguation. It could help a lot for the rest of the pipeline.
+
+### 2026-02-13 List of errors in the prompt
+
+- Normative kind is not really defined -> Should have a reframe maybe.
+- Normative span : should it take the transactions spans ? 
+- Descriptive theme & span : should the theme span be something ? The whole sequence about this matter ? Including the evaluative / ... ? Should theme be a separate category ?
+
+### 2026-02-13 Extraction evolution
+
+Made a lot of work on extraction that I have not noted here.
+I'm shifting toward a more gramatical extraction. Try to extract all sentences by unit of sens (claims).
+I distinguish between DESCRIPTIVES, TRANSACTIONS (with INPUT, OUTPUT, TRANSFORMATION and QUESTION variants), NORMATIVES and EVALUATIVES.
+This is works pretty nice, already better than the previous extraction only for resources / Input. However I still have some missed things, and I have a new level of expectations on the text analysis. So I want to do some more work on it.
+What I need to focus on is : 
+- No missed transaction
+- Good identification of high level transaction and descriptives (projects...) that will help do some long term matching. Need to think about first pass on trace to add focus on such things.
+- reproducibility
+
+I could still try to implement the new extraction in the platform, at least to show the progress in the interface.
+
+### 2026-02-12 Ideas for extraction
+
+I have multiple approaches in mind to explore the extraction field.
+
+- Take a given trace and write precisely what I expect to get. I need to know precisely what I want before to ask it to the LLM. Maybe try to make the request with this precise example then.
+- Ask for multiple way to make the extraction to a LLM : Try it with only IO then with internals, with mixed IO or separated, with flatten target or not... Maybe I could use a different directory for those prompts. The risk with this approach is that none of the prompt would be good enougth if I don't work on them individually.
+
+But first of all, I really need to work on what general output i expect from one trace. It should be paper and pen work I think. Ideally I would print those traces.
+I think I also should test a trace chunking just to see if the extraction can do something good.
+
+### 2026-02-11 Small point
+
+- I start to have a nice interface
+- I start to enter into the all kind of elements pipeline problem.
+
+Need to keep on working on that now to have a very nice extraction of elements.
+
+### 2026-02-11 Thoughts about the pipeline
+
+I have a few ideas.
+First there is the basic issue with abbreviations and very implicit references of often manipulated landmarks.
+
+What I see as solutions : 
+
+Abbreviations :
+- We should identifie some often used abbreviations in the users traces (DDIA, MS) and store it as known_abbreviations 
+- When a new trace is analyzed, we could look for landmarks with known_abbreviations in the user's landmarks.
+- Then we replace the abbreviations with a short description of the landmark in the trace_mirror content. It could be some kind of encoding, to keep the abbreviation and have the explaination on hover in the interface.
+
+Implicit references : 
+- Most of the time, they are related to very "hot" landmarks (keep on reading the management book -> the is a good signifier of an implicite reference to a frequently seen book).
+- We could use a desambiguation LLM prompt to make the reference to the object explicit.
+- The general qualification call could tell us if we need to put them 
+
+Actually I really need to have a high level projects entity type : the high level project for me currently are Matiere Grise, Mémoire, Find a job.
+We also have the high level spaces. We could call them spaces actually. Like for me Sociology, Tech, Perso, Sport.
+Maybe we should have a 
+
+
+Training could be a given type of transaction. About a given competence. A training has a targeted_competence, an exercise, a volume, a level of difficulty... 
+
+
+Just to remind me I have : 
+I/O
+- inputs : ingestion from resources. Could even be the food the person eats !
+- outputs : production of artefacts. I don't want to continue the analogy.
+
+Internals
+- states : how i feel, competences evaluations etc
+- trainings : exercises i make to change my competences
+- behaviors : how I behave, the schemes in my activity (is it different from states ?)
+
+### 2026-02-10 Tests with new extraction prompt
+
+Extraction prompt with input, output and internals
+It gives too much weight to the internals.
+I should add a constraint like internals are only for references to self.
+
+### 2026-02-09 Landmarks and transaction evolution
+
+After thinking a little bit, it seems that landmarks should not be moving entities. Currently they are created by a first element, and then they are duplicated each time an element is related to them. However here we don't want the landmark to evolve in time : If they are stable entities such as resource, author, theme... they are fix entities.
+What moves is the transaction. A user transaction with it's environment evolves in time (it can add some new resources to its context, etc.)
+
+What could move for a certain time is the reference object that we could have : it could take some time to find the reference of a transaction. But then it is found with enough precision we should be able to know exactly what object it references even for old elements.
+
+
+### 2026-02-09 On the extraction pipeline
+
+A few reflections about pipeline model.
+
+I have two kinds of traces : 
+- Journal traces that are mostly relational : the user is strongly involved, and it talks a lot about its actions (I read this, I wrote that, I realized this about me...), with mostly timed actions.
+- Note traces are about external objects, with few relation to the user. It's more like : this book is interesting for this theme, etc...
+
+Then I think we should have two different prompts for extraction between those two pipelines. Then the rest of the pipeline could be quite the same to match landmarks with existing ones or to create a new one.
+What should be different is if we create a long term transaction and we want to do matching with this. Transaction matching should not be run for the note pipeline branch.
+
+One the other hand I have changed my mind for the journal pipeline : we should do altogether an extraction for the input, output and internal elementary events.
+They have a similar structure : 
+
+Fields of jounal extractions : 
+- referenced_objects (resource, author, theme, deliverable...)
+- verb
+- status (done, intended)
+- time_offset (-1, -2... (yesterday I did this))
+- evidences, extractions...
+
+Fields of note extractions :
+- subject
+- predicates (cites, recommends, critcizes, defines...)
+- object (the resource...)
+- qualifier (quote, chapter...)
+- evidences / extractions
+
+
+### 2026-02-09 Objectivs of the week
+
+I want to make the mental model of the platform crystal clear for any user that gets in.
+I also want to cover enougth of the traces content to have a big picture (inputs + outputs + selfs)
+I want to make it clean. That means work on the onboarding (do i keep the beginning with missions ?), finish the database migration (what remain unclear in the model ? transactions and relations between landmarks I think.)
+I may want to implement some checks/retries on the pipeline... to make it more like a professional AI agent pipeline.
+
+
+### 2026-02-06 ROle of journals
+
+Journals could have a very interesting role on being the integration support of distant journals : a google doc, a md file in a project, something in a github....
+
+### 2026-02-06 End of the week status
+
+I have added the refinement stage but I have not tested it yet (need to think about how to test such a stage).
+Today I have made very big improvements
+The pipeline is finally clear, with all the stages visible in the analysis_processor.
+
+
+### 2026-02-06 Few ideas on transations 
+
+Transactions should always have a verb. 
+It is a verb (reading, watching... for inputs, thought, wrote, shipped... for output) with other static objects.
+
+### 2026-02-06 Next steps 
+
+What could I do now that i have a pipeline that works more or less fine ?
+
+- Quality of existing stages of the pipeline : Checks on perfect matches, retries, timeouts.
+- Introduce some RAG.
+- Clean of the pipeline : remove the logger param passed everywhere, remove evidence and keep extraction (or ask for very short extracts/words for evidence, that could be used for the RAG)...
+- Pipeline refinements : make new mentions of non identified landmarks trigger a gpt request for better identification
+- Display refinement : display landmarks with their types in the analysis view, display links based on events, separate old landmarks and mentionned landmarks...
+- Add the output / self reflexion pipelines.
+
+This afternoon i can do : 
+- Remove logger : ask codex -> Done
+- change evidence for words extracts : Ask codex also maybe -> Done
+- Alignement between mirror and elements extraction call : look then ask codex -> Ca a l'air bien en fait.
+- Refinement pipeline stage : I could do it too -> Done
+- Display type : Codex in front -> Done
+- Mentioned landmarks vs last days context : allow a param in the get landscape landmarks route -> Done
+- 
+
+### 2026-02-06 Ideas about self reflexion
+
+For the self reflexion part, I have a few ideas of categories.
+
+- Moods / Emotions / Feelings : not in a good mood today, tired...
+- Self Knowledges : I realize that I have hard times doing things with anticipation
+- Self praxis : I do a review writing every morning.
+
 ### 2026-02-06 Global analysis on trace
 
 At the trace level (To create a trace mirror) i think i should want to differenciate multiple things : 
@@ -42,6 +236,8 @@ References could play the same role as options in rust, some kind of a wrapper. 
 A reference could have multiple states, locked-in, vague... Then the user could be asked to create a trace with desambiguation for the references we did not find while analyzing its work.
 
 Ok all this is beautiful but first we need to implement the main part of the pipeline for the landmarks.
+
+For now, I think we should see the transaction into the resource landmark type.
 
 ### 2026-02-06 TODO
 

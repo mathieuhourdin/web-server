@@ -119,7 +119,7 @@ where
                 content: user_prompt.clone(),
             },
         ],
-        max_output_tokens: 8500,
+        max_output_tokens: 22500,
         temperature: 0.1,
         text: schema.clone().map(|schema| serde_json::json!({
             "format": {

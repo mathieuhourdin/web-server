@@ -7,11 +7,16 @@ use web_server::openai_handler::GptRequestConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), PpdcError> {
-    let system_prompt = include_str!("prompts/gramatical_extraction/v2/system.md").to_string();
-    let trace_text = include_str!("prompts/test_traces/trace_1.md");
-    let user_prompt = format!("trace_text:\n{}", trace_text);
+    let system_prompt = include_str!("prompts/desambiguation/prompt.md").to_string();
+    let trace_text = include_str!("prompts/test_traces/trace.md");
+    let landmarks = include_str!("prompts/desambiguation/landmarks.json");
+    let user_prompt = format!(
+        "User text:\n{}\n\nLandmarks:\n{}",
+        trace_text,
+        landmarks
+    );
     let schema = serde_json::from_str::<serde_json::Value>(include_str!(
-        "prompts/gramatical_extraction/v2/schema.json"
+        "prompts/desambiguation/schema.json"
     ))?;
 
     let request = GptRequestConfig::new(
@@ -21,18 +26,18 @@ async fn main() -> Result<(), PpdcError> {
         Some(schema),
         None,
     )
-    .with_display_name("Gramatical extraction / Playground");
+    .with_display_name("Desambiguation / Playground");
 
     let result: serde_json::Value = request.execute().await?;
     let output_json = serde_json::to_string_pretty(&result)?;
     println!("{}", output_json);
 
-    let mut log_path = "logs/gramatical_extraction.log";
+    let mut log_path = "logs/desambiguation.log";
     let mut log_file = if create_dir_all("logs").is_ok() {
         match OpenOptions::new().create(true).append(true).open(log_path) {
             Ok(file) => file,
             Err(_) => {
-                log_path = "gramatical_extraction.log";
+                log_path = "desambiguation.log";
                 OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -43,7 +48,7 @@ async fn main() -> Result<(), PpdcError> {
             }
         }
     } else {
-        log_path = "gramatical_extraction.log";
+        log_path = "desambiguation.log";
         OpenOptions::new()
             .create(true)
             .append(true)
@@ -55,7 +60,7 @@ async fn main() -> Result<(), PpdcError> {
 
     writeln!(
         log_file,
-        "===== gramatical_extraction {} =====\nSYSTEM PROMPT:\n{}\n\nUSER PROMPT:\n{}\n\nOUTPUT:\n{}\n",
+        "===== desambiguation {} =====\nSYSTEM PROMPT:\n{}\n\nUSER PROMPT:\n{}\n\nOUTPUT:\n{}\n",
         Utc::now().to_rfc3339(),
         request.system_prompt,
         request.user_prompt,
