@@ -1,0 +1,239 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "descriptives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^des_[0-9]+$"
+          },
+          "object": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "UNIT",
+              "THEME"
+            ]
+          },
+          "theme": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^des_[0-9]+$"
+          },
+          "span": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "kind",
+          "theme",
+          "span"
+        ]
+      }
+    },
+    "transactions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^tra_[0-9]+$"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "INPUT",
+              "OUTPUT",
+              "TRANSFORMATION",
+              "QUESTION"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DONE",
+              "IN_PROGRESS",
+              "INTENDED"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "ONE_SHOT",
+              "SUBTASK",
+              "HIGH_LEVEL_TASK"
+            ]
+          },
+          "subtask_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^tra_[0-9]+$"
+          },
+          "related_transactions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^tra_[0-9]+$"
+            }
+          },
+          "span": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "verb",
+          "kind",
+          "target",
+          "theme",
+          "status",
+          "scope",
+          "subtask_of",
+          "related_transactions",
+          "span"
+        ]
+      }
+    },
+    "normatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^nor_[0-9]+$"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "force": {
+            "type": "string",
+            "enum": [
+              "PLAN",
+              "TODO_LIST",
+              "OBLIGATION",
+              "RECOMMENDATION",
+              "PRINCIPLE"
+            ]
+          },
+          "polarity": {
+            "type": "string",
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE"
+            ]
+          },
+          "applies_to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^tra_[0-9]+$"
+            }
+          },
+          "span": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "force",
+          "polarity",
+          "applies_to",
+          "span"
+        ]
+      }
+    },
+    "evaluatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^eva_[0-9]+$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "EMOTION",
+              "ENERGY",
+              "INTEREST",
+              "QUALITY"
+            ]
+          },
+          "polarity": {
+            "type": "string",
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE"
+            ]
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "descriptive_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^des_[0-9]+$"
+            }
+          },
+          "transaction_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^tra_[0-9]+$"
+            }
+          },
+          "span": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "polarity",
+          "level",
+          "descriptive_ids",
+          "transaction_ids",
+          "span"
+        ]
+      }
+    }
+  },
+  "required": [
+    "descriptives",
+    "transactions",
+    "normatives",
+    "evaluatives"
+  ]
+}

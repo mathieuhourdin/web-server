@@ -43,6 +43,7 @@ pub struct OutputTarget {
     pub output_identifier: String,
     pub output_type: OutputType,
     pub theme: Option<String>,
+    pub about_resource_identifier: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

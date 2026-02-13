@@ -68,9 +68,15 @@
                   { "type": "string" },
                   { "type": "null" }
                 ]
+              },
+              "about_resource_identifier": {
+                "anyOf": [
+                  { "type": "string" },
+                  { "type": "null" }
+                ]
               }
             },
-            "required": ["output_identifier", "output_type", "theme"],
+            "required": ["output_identifier", "output_type", "theme", "about_resource_identifier"],
             "additionalProperties": false
           },
           "verb": {

@@ -1,0 +1,135 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "descriptives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^des_[0-9]+$"
+          },
+          "meaning": {
+            "type": "string"
+          },
+          "span": {
+            "type": "string"
+          },
+          "object_domain": {
+            "type": "string",
+            "enum": [
+              "INPUT",
+              "OUTPUT",
+              "INTERNAL_STATE",
+              "INTERNAL_HABITS",
+              "GENERAL",
+              "END"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DONE",
+              "IN_PROGRESS",
+              "INTENDED"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "LOCAL",
+              "EXTENDED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "meaning",
+          "span",
+          "object_domain",
+          "status",
+          "scope"
+        ]
+      }
+    },
+    "evaluatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^eva_[0-9]+$"
+          },
+          "meaning": {
+            "type": "string"
+          },
+          "span": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "QUALITY",
+              "PRIORITY",
+              "PLEASURE"
+            ]
+          },
+          "level": {
+            "type": "integer",
+            "minimum": -5,
+            "maximum": 5
+          }
+        },
+        "required": [
+          "id",
+          "meaning",
+          "span",
+          "kind",
+          "level"
+        ]
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "type": "string",
+            "pattern": "^(des|eva)_[0-9]+$"
+          },
+          "head": {
+            "type": "string",
+            "pattern": "^(des|eva)_[0-9]+$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ABOUT",
+              "INCLUDED",
+              "IDENTITY",
+              "CONSEQUENCE",
+              "CRITERION"
+            ]
+          }
+        },
+        "required": [
+          "base",
+          "head",
+          "kind"
+        ]
+      }
+    }
+  },
+  "required": [
+    "descriptives",
+    "evaluatives",
+    "links"
+  ]
+}
