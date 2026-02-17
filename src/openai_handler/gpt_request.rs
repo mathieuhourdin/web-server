@@ -38,11 +38,12 @@ impl GptRequestConfig {
         T: for<'de> serde::Deserialize<'de>,
     {
         Ok(make_gpt_request(
-            self.system_prompt.clone(), 
-            self.user_prompt.clone(), 
+            self.system_prompt.clone(),
+            self.user_prompt.clone(),
             self.schema.clone(),
             self.display_name.as_deref(),
             self.analysis_id,
-        ).await?)
+        )
+        .await?)
     }
 }

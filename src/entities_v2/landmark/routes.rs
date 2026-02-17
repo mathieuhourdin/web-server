@@ -1,4 +1,7 @@
-use axum::{debug_handler, extract::{Extension, Json, Path}};
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path},
+};
 use uuid::Uuid;
 
 use crate::db::DbPool;

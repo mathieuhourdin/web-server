@@ -5,11 +5,8 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::Interaction,
     resource::{
-        entity_type::EntityType,
-        maturing_state::MaturingState,
-        resource_type::ResourceType,
-        NewResource,
-        Resource,
+        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
+        NewResource, Resource,
     },
     resource_relation::ResourceRelation,
 };
@@ -102,7 +99,10 @@ impl TraceMirror {
             .find(|target| target.resource_relation.relation_type == "lnds")
             .map(|target| target.target_resource.id)
             .unwrap_or(Uuid::nil());
-        Ok(TraceMirror { landscape_analysis_id, ..self })
+        Ok(TraceMirror {
+            landscape_analysis_id,
+            ..self
+        })
     }
 
     /// Hydrates primary_resource_id from resource relations.
@@ -113,7 +113,10 @@ impl TraceMirror {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "prir")
             .map(|target| target.target_resource.id);
-        Ok(TraceMirror { primary_resource_id, ..self })
+        Ok(TraceMirror {
+            primary_resource_id,
+            ..self
+        })
     }
 
     /// Hydrates primary_theme_id from resource relations.
@@ -124,7 +127,10 @@ impl TraceMirror {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "prit")
             .map(|target| target.target_resource.id);
-        Ok(TraceMirror { primary_theme_id, ..self })
+        Ok(TraceMirror {
+            primary_theme_id,
+            ..self
+        })
     }
 
     /// Finds a TraceMirror by id and fully hydrates it from the database.
@@ -172,13 +178,8 @@ impl TraceMirror {
 
     /// Get all trace mirrors for a user
     pub fn find_by_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        let interactions = Interaction::find_paginated_outputs_for_user(
-            0,
-            1000,
-            user_id,
-            "trcm",
-            pool,
-        )?;
+        let interactions =
+            Interaction::find_paginated_outputs_for_user(0, 1000, user_id, "trcm", pool)?;
         let trace_mirrors: Vec<TraceMirror> = interactions
             .into_iter()
             .map(|interaction| TraceMirror::find_full_trace_mirror(interaction.resource.id, pool))

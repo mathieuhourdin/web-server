@@ -1,7 +1,9 @@
 use crate::entities::error::PpdcError;
 use crate::entities_v2::landmark::LandmarkType;
 use crate::openai_handler::GptRequestConfig;
-use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
+use crate::work_analyzer::analysis_processor::{
+    AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror,
+};
 use serde::{Deserialize, Serialize};
 
 pub async fn extract_elements(
@@ -11,11 +13,8 @@ pub async fn extract_elements(
     state: &AnalysisStateMirror,
 ) -> Result<ExtractedElements, PpdcError> {
     let elements = extract_input_elements(_config, context, inputs, state).await?;
-    Ok(ExtractedElements {
-        elements,
-    })
+    Ok(ExtractedElements { elements })
 }
-
 
 pub struct ExtractedElements {
     pub elements: Vec<ExtractedElement>,
@@ -35,7 +34,6 @@ pub struct LandmarkSuggestion {
     pub matching_key: String,
     pub landmark_type: LandmarkType,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExtractedInputElements {
@@ -104,7 +102,7 @@ impl ExtractedInputElement {
         }
         if let Some(resource_identifier) = self.resource_identifier.clone() {
             if !resource_identifier.is_empty() {
-            landmark_suggestions.push(LandmarkSuggestion {
+                landmark_suggestions.push(LandmarkSuggestion {
                     temporary_id: format!("{}-lm-resource-{}", temporary_id, counter),
                     matching_key: resource_identifier,
                     landmark_type: LandmarkType::Resource,
@@ -139,22 +137,39 @@ impl ExtractedInputElement {
     }
 }
 
-pub async fn extract_input_elements(_config: &AnalysisConfig, context: &AnalysisContext, _inputs: &AnalysisInputs, state: &AnalysisStateMirror) -> Result<Vec<ExtractedElement>, PpdcError> {
-    let trace_string = format!("{}\n{}\n{}", state.trace_mirror.title, state.trace_mirror.subtitle, state.trace_mirror.content);
-    let user_prompt = format!("
+pub async fn extract_input_elements(
+    _config: &AnalysisConfig,
+    context: &AnalysisContext,
+    _inputs: &AnalysisInputs,
+    state: &AnalysisStateMirror,
+) -> Result<Vec<ExtractedElement>, PpdcError> {
+    let trace_string = format!(
+        "{}\n{}\n{}",
+        state.trace_mirror.title, state.trace_mirror.subtitle, state.trace_mirror.content
+    );
+    let user_prompt = format!(
+        "
     trace_text : \n {}
     ",
-    trace_string);
+        trace_string
+    );
     let gpt_request_config = GptRequestConfig::new(
         "gpt-4.1-nano".to_string(),
         include_str!("prompts/landmark_resource/extraction/system.md").to_string(),
         &user_prompt,
-        Some(serde_json::from_str::<serde_json::Value>(include_str!("prompts/landmark_resource/extraction/schema.json"))?),
+        Some(serde_json::from_str::<serde_json::Value>(include_str!(
+            "prompts/landmark_resource/extraction/schema.json"
+        ))?),
         Some(context.analysis_id),
     )
     .with_display_name("Elements / Extraction");
     let elements: ExtractedInputElements = gpt_request_config.execute().await?;
-    Ok(elements.elements.into_iter().enumerate().map(|(index, element)| element.to_extracted_element(format!("el-{}", index))).collect())
+    Ok(elements
+        .elements
+        .into_iter()
+        .enumerate()
+        .map(|(index, element)| element.to_extracted_element(format!("el-{}", index)))
+        .collect())
 }
 
 #[cfg(test)]

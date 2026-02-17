@@ -53,10 +53,9 @@ where
     );
 
     let system_prompt_with_metadata = format!(
-    "{}\n\n
+        "{}\n\n
     Metadata:\n{}",
-    system_prompt,
-    metadata
+        system_prompt, metadata
     );
 
     let gpt_request = GPTRequest {

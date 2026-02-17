@@ -1,11 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 
-use web_server::openai_handler::gpt_responses_handler::{
-    make_gpt_request,
-}; // ou le bon module
-// use your_crate_name::environment; // si besoin pour la clé, etc.
+use web_server::openai_handler::gpt_responses_handler::make_gpt_request; // ou le bon module
+                                                                         // use your_crate_name::environment; // si besoin pour la clé, etc.
 
 #[derive(Debug, Deserialize)]
 struct ExtractOutput {
@@ -27,9 +25,15 @@ fn read_to_string<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 1) Charger les fichiers
-    let system_prompt = read_to_string("src/work_analyzer/trace_mirror/prompts/primary_resource_suggestion/system.md")?;
-    let user_trace = read_to_string("src/work_analyzer/trace_mirror/prompts/primary_resource_suggestion/test_trace.md")?;
-    let schema_str = read_to_string("src/work_analyzer/trace_mirror/prompts/primary_resource_suggestion/schema.json")?;
+    let system_prompt = read_to_string(
+        "src/work_analyzer/trace_mirror/prompts/primary_resource_suggestion/system.md",
+    )?;
+    let user_trace = read_to_string(
+        "src/work_analyzer/trace_mirror/prompts/primary_resource_suggestion/test_trace.md",
+    )?;
+    let schema_str = read_to_string(
+        "src/work_analyzer/trace_mirror/prompts/primary_resource_suggestion/schema.json",
+    )?;
     let schema_json: serde_json::Value = serde_json::from_str(&schema_str)?;
 
     // 2) Construire le "user_prompt"
@@ -46,7 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(schema_json),
         None,
         None,
-    ).await?;
+    )
+    .await?;
 
     // 4) Afficher le résultat joliment
     println!("=== RAW RESULT ===");
@@ -56,7 +61,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("\n=== QUICK EVIDENCE CHECK ===");
     for (i, el) in result.evidence.iter().enumerate() {
         let check_result = user_trace.contains(el.as_str());
-        println!("- element #{i}: value = {:?}, check_result = {:?}", serde_json::to_string_pretty(el).unwrap(), check_result);
+        println!(
+            "- element #{i}: value = {:?}, check_result = {:?}",
+            serde_json::to_string_pretty(el).unwrap(),
+            check_result
+        );
     }
 
     Ok(())

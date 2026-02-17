@@ -35,12 +35,7 @@ pub async fn refine_elements(
     let created_elements = created
         .created_elements
         .into_iter()
-        .map(|element| {
-            updated_by_id
-                .get(&element.id)
-                .cloned()
-                .unwrap_or(element)
-        })
+        .map(|element| updated_by_id.get(&element.id).cloned().unwrap_or(element))
         .collect::<Vec<Element>>();
 
     Ok(CreatedElements {
@@ -109,11 +104,7 @@ fn parse_title_components(title: &str) -> Option<(String, String, String)> {
     let (_, after_verb) = title.split_once(": ")?;
     let (resource, after_resource) = after_verb.split_once(" - Par ")?;
     let (author, theme) = after_resource.split_once(" Sur ")?;
-    Some((
-        resource.to_string(),
-        author.to_string(),
-        theme.to_string(),
-    ))
+    Some((resource.to_string(), author.to_string(), theme.to_string()))
 }
 
 #[cfg(test)]

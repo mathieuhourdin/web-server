@@ -1,5 +1,5 @@
 use crate::entities::error::PpdcError;
-use crate::entities::resource::{NewResource, resource_type::ResourceType};
+use crate::entities::resource::{resource_type::ResourceType, NewResource};
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use chrono::NaiveDate;
 
@@ -48,16 +48,14 @@ pub async fn qualify_trace(trace: &str) -> Result<(NewResource, Option<NaiveDate
         "additionalProperties": false
     });
 
-    let resource_properties: ResourceExtractionProperties =
-        make_gpt_request(
-            system_prompt,
-            user_prompt,
-            Some(schema),
-            Some("Trace / Qualification"),
-            None,
-        )
-            .await
-            ?;
+    let resource_properties: ResourceExtractionProperties = make_gpt_request(
+        system_prompt,
+        user_prompt,
+        Some(schema),
+        Some("Trace / Qualification"),
+        None,
+    )
+    .await?;
     let new_resource = NewResource::new(
         resource_properties.title,
         resource_properties.subtitle,

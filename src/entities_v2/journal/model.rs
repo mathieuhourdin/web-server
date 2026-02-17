@@ -13,7 +13,7 @@ pub struct Journal {
     pub user_id: Uuid,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub journal_type: JournalType,  
+    pub journal_type: JournalType,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]

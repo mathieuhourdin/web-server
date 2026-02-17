@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
-    resource::{NewResource, Resource, resource_type::ResourceType},
+    resource::{resource_type::ResourceType, NewResource, Resource},
     user::User,
 };
 use crate::schema::*;
@@ -142,8 +142,7 @@ impl Interaction {
         Interaction::load_paginated(
             offset,
             limit,
-            Interaction::filter_outputs()
-                .filter(interactions::interaction_user_id.eq(user_id)),
+            Interaction::filter_outputs().filter(interactions::interaction_user_id.eq(user_id)),
             "all",
             resource_type,
             pool,

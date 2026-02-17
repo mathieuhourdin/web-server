@@ -1,10 +1,8 @@
 use crate::entities::error::{ErrorType, PpdcError};
-use serde::{Deserialize, Serialize};
+use crate::entities::resource::maturing_state::MaturingState;
 use serde::de::{self, Deserializer};
 use serde::Serializer;
-use crate::entities::resource::maturing_state::MaturingState;
-
-
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy)]
 pub enum IdentityState {
@@ -26,7 +24,11 @@ impl IdentityState {
             "identified" => Ok(IdentityState::Identified),
             "stub" => Ok(IdentityState::Stub),
             "discard" => Ok(IdentityState::Discard),
-            _ => Err(PpdcError::new(400, ErrorType::ApiError, "Invalid identity state".to_string())),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Invalid identity state".to_string(),
+            )),
         }
     }
 }

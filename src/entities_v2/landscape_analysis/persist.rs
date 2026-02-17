@@ -7,6 +7,7 @@ use crate::entities::{
     resource::{maturing_state::MaturingState, NewResource},
     resource_relation::NewResourceRelation,
 };
+use crate::entities_v2::reference::Reference;
 
 use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
 
@@ -27,7 +28,11 @@ impl LandscapeAnalysis {
     }
 
     /// Updates the processing state of the analysis.
-    pub fn set_processing_state(mut self, state: MaturingState, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+    pub fn set_processing_state(
+        mut self,
+        state: MaturingState,
+        pool: &DbPool,
+    ) -> Result<LandscapeAnalysis, PpdcError> {
         self.processing_state = state;
         self.update(pool)
     }
@@ -146,7 +151,8 @@ impl NewLandscapeAnalysis {
             trace_relation.create(pool)?;
         }
         if let Some(replayed_from_id) = replayed_from_id {
-            let mut replayed_from_relation = NewResourceRelation::new(created_resource.id, replayed_from_id);
+            let mut replayed_from_relation =
+                NewResourceRelation::new(created_resource.id, replayed_from_id);
             replayed_from_relation.relation_type = Some("rply".to_string());
             replayed_from_relation.user_id = Some(user_id);
             replayed_from_relation.create(pool)?;
@@ -172,29 +178,37 @@ pub fn delete_leaf_and_cleanup(
     let landscape_analysis = LandscapeAnalysis::find_full_analysis(id, pool)?;
     println!("Landscape analysis: {:?}", landscape_analysis);
     let children_landscape_analyses = landscape_analysis.get_children_landscape_analyses(pool)?;
-    println!("Children landscape analyses: {:?}", children_landscape_analyses);
+    println!(
+        "Children landscape analyses: {:?}",
+        children_landscape_analyses
+    );
     let heading_lens = landscape_analysis.get_heading_lens(pool)?;
     println!("Heading lens: {:?}", heading_lens);
     if children_landscape_analyses.len() > 0 || heading_lens.len() > 0 {
         println!("Children landscape analyses or heading lens found, not deleting");
         return Ok(None);
     }
+    Reference::delete_for_landscape_analysis(id, pool)?;
     println!("Analysis: {:?}", landscape_analysis);
-    let related_resources = crate::entities::resource_relation::ResourceRelation::find_origin_for_resource(id, pool)?;
+    let related_resources =
+        crate::entities::resource_relation::ResourceRelation::find_origin_for_resource(id, pool)?;
     println!("Related resources: {:?}", related_resources);
     for resource_relation in related_resources {
         println!("Resource relation: {:?}", resource_relation);
         if resource_relation.origin_resource.is_trace_mirror() {
-            println!("Deleting trace mirror: {:?}", resource_relation.origin_resource);
+            println!(
+                "Deleting trace mirror: {:?}",
+                resource_relation.origin_resource
+            );
             resource_relation.origin_resource.delete(pool)?;
             continue;
         }
         // check if the resource is owned by the analysis (for elements and entities)
-        if resource_relation.resource_relation.relation_type == "ownr".to_string() 
+        if resource_relation.resource_relation.relation_type == "ownr".to_string()
             && !resource_relation.origin_resource.is_trace()
             && !resource_relation.origin_resource.is_lens()
             && !resource_relation.origin_resource.is_landscape_analysis()
-            {
+        {
             println!("Deleting resource: {:?}", resource_relation.origin_resource);
             resource_relation.origin_resource.delete(pool)?;
         } else if resource_relation.origin_resource.is_trace() {

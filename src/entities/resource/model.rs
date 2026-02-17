@@ -15,8 +15,8 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::resource::maturing_state::MaturingState;
 use crate::entities::resource::entity_type::EntityType;
+use crate::entities::resource::maturing_state::MaturingState;
 use crate::entities::resource::resource_type::ResourceType;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, AsChangeset, Debug)]
@@ -179,7 +179,9 @@ impl NewResource {
 
     pub fn create(mut self, pool: &DbPool) -> Result<Resource, PpdcError> {
         if self.entity_type.is_none() {
-            self.entity_type = self.resource_type.map(|resource_type| resource_type.to_entity_type());
+            self.entity_type = self
+                .resource_type
+                .map(|resource_type| resource_type.to_entity_type());
         }
         let mut conn = pool
             .get()

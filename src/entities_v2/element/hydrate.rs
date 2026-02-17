@@ -4,11 +4,8 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{
-        entity_type::EntityType,
-        maturing_state::MaturingState,
-        NewResource,
-        Resource,
-        resource_type::ResourceType,
+        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
+        NewResource, Resource,
     },
     resource_relation::ResourceRelation,
 };
@@ -98,10 +95,7 @@ impl Element {
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
         let trace_id = targets
             .into_iter()
-            .find(|t| {
-                t.resource_relation.relation_type == "elmt"
-                    && t.target_resource.is_trace()
-            })
+            .find(|t| t.resource_relation.relation_type == "elmt" && t.target_resource.is_trace())
             .map(|t| t.target_resource.id);
         Ok(Element {
             trace_id: trace_id.unwrap_or(Uuid::nil()),
@@ -127,10 +121,7 @@ impl Element {
         let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
         let landmark_id = targets
             .into_iter()
-            .find(|t| {
-                t.resource_relation.relation_type == "elmt"
-                    && !t.target_resource.is_trace()
-            })
+            .find(|t| t.resource_relation.relation_type == "elmt" && !t.target_resource.is_trace())
             .map(|t| t.target_resource.id);
         Ok(Element {
             landmark_id,
@@ -144,8 +135,7 @@ impl Element {
         let landmarks = targets
             .into_iter()
             .filter(|t| {
-                t.resource_relation.relation_type == "elmt"
-                    && t.target_resource.is_landmark()
+                t.resource_relation.relation_type == "elmt" && t.target_resource.is_landmark()
             })
             .map(|t| Landmark::from_resource(t.target_resource))
             .collect::<Vec<Landmark>>();
@@ -239,9 +229,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
 
     use crate::entities::resource::{
-        entity_type::EntityType,
-        maturing_state::MaturingState,
-        resource_type::ResourceType,
+        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
         Resource,
     };
 

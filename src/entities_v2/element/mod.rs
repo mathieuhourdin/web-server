@@ -1,5 +1,5 @@
-pub mod model;
 pub mod hydrate;
+pub mod model;
 pub mod persist;
 pub mod routes;
 

@@ -3,19 +3,29 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError,
-    interaction::model::NewInteraction,
+    error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
     resource_relation::NewResourceRelation,
 };
 
 use super::model::{NewTraceMirror, TraceMirror};
+
+impl TraceMirror {
+    /// Updates the TraceMirror resource fields in the database.
+    pub fn update(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
+        let resource = self.to_resource();
+        let _updated_resource = NewResource::from(resource).update(&self.id, pool)?;
+        TraceMirror::find_full_trace_mirror(self.id, pool)
+    }
+}
 
 impl NewTraceMirror {
     /// Creates the TraceMirror in the database.
     /// This creates the underlying Resource, Interaction, and ResourceRelations.
     pub fn create(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
         let user_id = self.user_id;
-        let interaction_date = self.interaction_date.unwrap_or_else(|| Utc::now().naive_utc());
+        let interaction_date = self
+            .interaction_date
+            .unwrap_or_else(|| Utc::now().naive_utc());
         let trace_id = self.trace_id;
         let landscape_analysis_id = self.landscape_analysis_id;
         let primary_resource_id = self.primary_resource_id;
@@ -67,7 +77,12 @@ impl NewTraceMirror {
 }
 
 /// Links a trace mirror to its primary resource landmark
-pub fn link_to_primary_resource(trace_mirror_id: Uuid, primary_resource_id: Uuid, user_id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
+pub fn link_to_primary_resource(
+    trace_mirror_id: Uuid,
+    primary_resource_id: Uuid,
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<Uuid, PpdcError> {
     let mut mirror_resource = NewResourceRelation::new(trace_mirror_id, primary_resource_id);
     mirror_resource.relation_type = Some("prir".to_string());
     mirror_resource.user_id = Some(user_id);

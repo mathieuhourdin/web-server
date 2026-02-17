@@ -1,18 +1,22 @@
 use crate::entities::error::PpdcError;
 use crate::entities_v2::{
-    landmark::{self, Landmark, LandmarkType, NewLandmark},
     element::{link_to_landmark, Element, ElementType, NewElement},
+    landmark::{self, Landmark, LandmarkType, NewLandmark},
     landscape_analysis,
 };
 use crate::openai_handler::GptRequestConfig;
+use crate::work_analyzer::analysis_processor::{
+    AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror,
+};
+use crate::work_analyzer::elements_pipeline::matching::{
+    LandmarkMatching, MatchedElement, MatchedElements,
+};
 use crate::work_analyzer::elements_pipeline::traits::NewLandmarkForExtractedElement;
 use crate::work_analyzer::elements_pipeline::types::IdentityState;
-use crate::work_analyzer::elements_pipeline::matching::{MatchedElements, MatchedElement, LandmarkMatching};
-use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 // ============================================================================
 // GPT Input Struct
@@ -146,17 +150,32 @@ pub struct CreatedElements {
 
 fn get_system_prompt_for_type(landmark_type: LandmarkType) -> String {
     match landmark_type {
-        LandmarkType::Resource => include_str!("prompts/landmark_resource/creation/system.md").to_string(),
-        LandmarkType::Theme => include_str!("prompts/landmark_theme/creation/system.md").to_string(),
-        LandmarkType::Author => include_str!("prompts/landmark_author/creation/system.md").to_string(),
+        LandmarkType::Resource => {
+            include_str!("prompts/landmark_resource/creation/system.md").to_string()
+        }
+        LandmarkType::Theme => {
+            include_str!("prompts/landmark_theme/creation/system.md").to_string()
+        }
+        LandmarkType::Author => {
+            include_str!("prompts/landmark_author/creation/system.md").to_string()
+        }
     }
 }
 
 fn get_schema_for_type(landmark_type: LandmarkType) -> serde_json::Value {
     match landmark_type {
-        LandmarkType::Resource => serde_json::from_str(include_str!("prompts/landmark_resource/creation/schema.json")).unwrap(),
-        LandmarkType::Theme => serde_json::from_str(include_str!("prompts/landmark_theme/creation/schema.json")).unwrap(),
-        LandmarkType::Author => serde_json::from_str(include_str!("prompts/landmark_author/creation/schema.json")).unwrap(),
+        LandmarkType::Resource => serde_json::from_str(include_str!(
+            "prompts/landmark_resource/creation/schema.json"
+        ))
+        .unwrap(),
+        LandmarkType::Theme => {
+            serde_json::from_str(include_str!("prompts/landmark_theme/creation/schema.json"))
+                .unwrap()
+        }
+        LandmarkType::Author => {
+            serde_json::from_str(include_str!("prompts/landmark_author/creation/schema.json"))
+                .unwrap()
+        }
     }
 }
 
@@ -177,7 +196,7 @@ async fn create_landmark_via_gpt(
         LandmarkType::Theme => "Elements / Creation / Theme",
         LandmarkType::Author => "Elements / Creation / Author",
     };
-    
+
     let gpt_config = GptRequestConfig::new(
         "gpt-4.1-nano".to_string(),
         &system_prompt,
@@ -186,7 +205,7 @@ async fn create_landmark_via_gpt(
         Some(context.analysis_id),
     )
     .with_display_name(display_name);
-    
+
     // Call GPT and deserialize based on type
     let new_landmark: NewLandmark = match input.landmark_type {
         LandmarkType::Resource => {
@@ -202,7 +221,7 @@ async fn create_landmark_via_gpt(
             result.to_new_landmark(context.analysis_id, context.user_id, None)
         }
     };
-    
+
     let created_landmark = new_landmark.create(&context.pool)?;
     Ok(created_landmark)
 }
@@ -229,15 +248,15 @@ async fn run_creation_impl(
     matched: MatchedElements,
 ) -> Result<CreatedElements, PpdcError> {
     let log_header = format!("analysis_id: {}", context.analysis_id);
-    
+
     let mut created_landmarks: Vec<Landmark> = vec![];
     let mut created_elements: Vec<Element> = vec![];
-    
+
     // Track which parent landmarks were updated (to avoid duplicate refs)
     let mut updated_landmark_ids: Vec<Uuid> = vec![];
     // Map from parent landmark ID to created child landmark ID
     let mut landmarks_updates: HashMap<Uuid, Uuid> = HashMap::new();
-    
+
     for element in &matched.elements {
         let new_element = build_new_element_from_matched(
             element,
@@ -261,8 +280,9 @@ async fn run_creation_impl(
                 suggestion,
                 &mut landmarks_updates,
                 &mut updated_landmark_ids,
-            ).await?;
-            
+            )
+            .await?;
+
             link_to_landmark(
                 created_element.id,
                 created_landmark.id,
@@ -272,7 +292,7 @@ async fn run_creation_impl(
             created_landmarks.push(created_landmark);
         }
     }
-    
+
     // Add landmark refs for landmarks that were not updated
     for landmark in &inputs.previous_landscape_landmarks {
         if !updated_landmark_ids.contains(&landmark.id) {
@@ -313,7 +333,7 @@ async fn process_suggestion(
     if let Some(ref candidate_id_str) = suggestion.candidate_id {
         if suggestion.confidence >= config.matching_confidence_threshold {
             let parent_landmark_id = Uuid::parse_str(candidate_id_str)?;
-            
+
             // Check if we already created a child for this parent
             if let Some(&child_id) = landmarks_updates.get(&parent_landmark_id) {
                 return Landmark::find(child_id, &context.pool);
@@ -333,7 +353,7 @@ async fn process_suggestion(
             return Ok(created_landmark);
         }
     }
-    
+
     // No high-confidence match - create new landmark via GPT
     let input = LandmarkCreationInput::from_matched(element, suggestion);
     create_landmark_via_gpt(context, &input).await
@@ -357,7 +377,10 @@ fn build_new_element_from_matched(
     NewElement::new(
         element.title.clone(),
         element.title.clone(),
-        format!("Evidences: {}\n\nExtractions: {:?}", evidences, element.extractions),
+        format!(
+            "Evidences: {}\n\nExtractions: {:?}",
+            evidences, element.extractions
+        ),
         ElementType::Event,
         element.verb.clone(),
         adjusted_interaction_date,
@@ -369,7 +392,10 @@ fn build_new_element_from_matched(
     )
 }
 
-fn apply_date_offset(interaction_date: Option<NaiveDateTime>, date_offset: i32) -> Option<NaiveDateTime> {
+fn apply_date_offset(
+    interaction_date: Option<NaiveDateTime>,
+    date_offset: i32,
+) -> Option<NaiveDateTime> {
     interaction_date.map(|interaction_date| {
         interaction_date
             .checked_add_signed(Duration::days(i64::from(date_offset)))
@@ -380,9 +406,9 @@ fn apply_date_offset(interaction_date: Option<NaiveDateTime>, date_offset: i32) 
 #[cfg(test)]
 mod tests {
     use super::build_new_element_from_matched;
-    use chrono::NaiveDate;
     use crate::work_analyzer::elements_pipeline::extraction::ExtractionStatus;
     use crate::work_analyzer::elements_pipeline::matching::MatchedElement;
+    use chrono::NaiveDate;
     use uuid::Uuid;
 
     #[test]

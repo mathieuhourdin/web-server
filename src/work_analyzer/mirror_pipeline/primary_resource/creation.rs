@@ -1,10 +1,10 @@
+use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities::resource::MaturingState;
+use crate::entities_v2::landmark::{Landmark, LandmarkType, NewLandmark};
+use crate::openai_handler::GptRequestConfig;
+use crate::work_analyzer::analysis_processor::AnalysisContext;
 use crate::work_analyzer::mirror_pipeline::primary_resource::matching::PrimaryResourceMatched;
 use serde::{Deserialize, Serialize};
-use crate::openai_handler::GptRequestConfig;
-use crate::entities::error::{PpdcError, ErrorType};
-use crate::entities_v2::landmark::{Landmark, LandmarkType, NewLandmark};
-use crate::entities::resource::MaturingState;
-use crate::work_analyzer::analysis_processor::AnalysisContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrimaryResourceCreated {
@@ -15,9 +15,16 @@ pub struct PrimaryResourceCreated {
     pub identity_state: String,
 }
 
-pub async fn run(element: PrimaryResourceMatched, context: &AnalysisContext) -> Result<Landmark, PpdcError> {
+pub async fn run(
+    element: PrimaryResourceMatched,
+    context: &AnalysisContext,
+) -> Result<Landmark, PpdcError> {
     if element.candidate_id.is_some() {
-        return Err(PpdcError::new(400, ErrorType::ApiError, "Primary resource already created".to_string()));
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Primary resource already created".to_string(),
+        ));
     }
     let system_prompt = include_str!("../prompts/primary_resource/creation/system.md").to_string();
     let schema = include_str!("../prompts/primary_resource/creation/schema.json").to_string();
@@ -34,16 +41,23 @@ pub async fn run(element: PrimaryResourceMatched, context: &AnalysisContext) -> 
     Ok(new_landmark)
 }
 
-pub async fn create_primary_resource(primary_resource_created: PrimaryResourceCreated, context: &AnalysisContext) -> Result<Landmark, PpdcError> {
+pub async fn create_primary_resource(
+    primary_resource_created: PrimaryResourceCreated,
+    context: &AnalysisContext,
+) -> Result<Landmark, PpdcError> {
     let new_landmark = NewLandmark::new(
         primary_resource_created.title,
-        format!("Par {} sur {}", primary_resource_created.author.unwrap_or("".to_string()), primary_resource_created.theme.unwrap_or("".to_string())),
+        format!(
+            "Par {} sur {}",
+            primary_resource_created.author.unwrap_or("".to_string()),
+            primary_resource_created.theme.unwrap_or("".to_string())
+        ),
         primary_resource_created.content,
         LandmarkType::Resource,
         MaturingState::Draft,
         context.analysis_id,
         context.user_id,
-        None
+        None,
     );
     let new_landmark = new_landmark.create(&context.pool)?;
     Ok(new_landmark)

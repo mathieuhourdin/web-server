@@ -3,9 +3,7 @@ use crate::entities::{
     error::{ErrorType, PpdcError},
     interaction::model::NewInteraction,
     resource::{
-        entity_type::EntityType,
-        maturing_state::MaturingState,
-        resource_type::ResourceType,
+        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
         NewResource,
     },
     session::Session,
@@ -307,16 +305,19 @@ fn find_latest_meta_journal_id_for_user(
     Ok(journal_id)
 }
 
-fn create_bio_trace_for_user(user_id: Uuid, biography: String, pool: &DbPool) -> Result<(), PpdcError> {
+fn create_bio_trace_for_user(
+    user_id: Uuid,
+    biography: String,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
     ensure_user_has_meta_journal(user_id, pool)?;
-    let journal_id = find_latest_meta_journal_id_for_user(user_id, pool)?
-        .ok_or_else(|| {
-            PpdcError::new(
-                500,
-                ErrorType::InternalError,
-                "Meta journal not found after ensure".to_string(),
-            )
-        })?;
+    let journal_id = find_latest_meta_journal_id_for_user(user_id, pool)?.ok_or_else(|| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            "Meta journal not found after ensure".to_string(),
+        )
+    })?;
 
     let mut new_trace = NewTrace::new(
         "Biography Update".to_string(),
@@ -423,7 +424,8 @@ pub async fn post_user(
     let created_user = payload.create(&pool)?;
     if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
         if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id))).execute(&mut conn);
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
+                .execute(&mut conn);
         }
         return Err(err);
     }
@@ -440,7 +442,8 @@ pub async fn put_user_route(
     let session_user_id = session.user_id.unwrap();
     let existing_user = User::find(&id, &pool)?;
     let new_biography = payload.biography.clone();
-    let biography_changed = new_biography.as_ref()
+    let biography_changed = new_biography
+        .as_ref()
         .map(|bio| existing_user.biography.as_ref() != Some(bio))
         .unwrap_or(false);
 

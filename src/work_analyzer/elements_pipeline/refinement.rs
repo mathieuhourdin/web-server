@@ -3,18 +3,15 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 use crate::entities::error::PpdcError;
-use crate::entities::resource::{MaturingState};
+use crate::entities::resource::MaturingState;
 use crate::entities_v2::{
-    landmark::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark},
     element::model::Element,
+    landmark::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark},
 };
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 use crate::work_analyzer::elements_pipeline::creation::{
-    CreatedElements,
-    NewAuthorLandmark,
-    NewResourceLandmark,
-    NewThemeLandmark,
+    CreatedElements, NewAuthorLandmark, NewResourceLandmark, NewThemeLandmark,
 };
 use crate::work_analyzer::elements_pipeline::traits::NewLandmarkForExtractedElement;
 use crate::work_analyzer::elements_pipeline::types::IdentityState;
@@ -154,22 +151,31 @@ fn build_refinement_input(
 
 fn get_refinement_system_prompt_for_type(landmark_type: LandmarkType) -> String {
     match landmark_type {
-        LandmarkType::Resource => include_str!("prompts/landmark_resource/refinement/system.md").to_string(),
-        LandmarkType::Theme => include_str!("prompts/landmark_theme/refinement/system.md").to_string(),
-        LandmarkType::Author => include_str!("prompts/landmark_author/refinement/system.md").to_string(),
+        LandmarkType::Resource => {
+            include_str!("prompts/landmark_resource/refinement/system.md").to_string()
+        }
+        LandmarkType::Theme => {
+            include_str!("prompts/landmark_theme/refinement/system.md").to_string()
+        }
+        LandmarkType::Author => {
+            include_str!("prompts/landmark_author/refinement/system.md").to_string()
+        }
     }
 }
 
 fn get_schema_for_type(landmark_type: LandmarkType) -> serde_json::Value {
     match landmark_type {
-        LandmarkType::Resource => {
-            serde_json::from_str(include_str!("prompts/landmark_resource/creation/schema.json")).unwrap()
-        }
+        LandmarkType::Resource => serde_json::from_str(include_str!(
+            "prompts/landmark_resource/creation/schema.json"
+        ))
+        .unwrap(),
         LandmarkType::Theme => {
-            serde_json::from_str(include_str!("prompts/landmark_theme/creation/schema.json")).unwrap()
+            serde_json::from_str(include_str!("prompts/landmark_theme/creation/schema.json"))
+                .unwrap()
         }
         LandmarkType::Author => {
-            serde_json::from_str(include_str!("prompts/landmark_author/creation/schema.json")).unwrap()
+            serde_json::from_str(include_str!("prompts/landmark_author/creation/schema.json"))
+                .unwrap()
         }
     }
 }
@@ -304,7 +310,8 @@ pub async fn refine_landmarks(
 
         let linked_elements = landmark.find_elements(&context.pool)?;
         let landmark_context = Landmark::find_with_parents(landmark.id, &context.pool)?;
-        let refinement_input = build_refinement_input(landmark, &landmark_context, &linked_elements);
+        let refinement_input =
+            build_refinement_input(landmark, &landmark_context, &linked_elements);
 
         match refine_landmark_via_gpt(
             context,

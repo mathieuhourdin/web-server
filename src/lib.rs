@@ -1,9 +1,10 @@
 pub mod db;
 pub mod entities;
+pub mod entities_v2;
 pub mod environment;
-pub mod logging;
 pub mod http;
 pub mod link_preview;
+pub mod logging;
 pub mod openai_handler;
 pub mod pagination;
 pub mod router;
@@ -11,4 +12,3 @@ pub mod schema;
 pub mod sessions_service;
 pub mod threadpool;
 pub mod work_analyzer;
-pub mod entities_v2;

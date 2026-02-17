@@ -14,8 +14,8 @@ use crate::entities::{
 };
 
 use super::{
-    model::{NewTraceDto, Trace},
     llm_qualify,
+    model::{NewTraceDto, Trace},
 };
 
 #[debug_handler]
@@ -27,7 +27,8 @@ pub async fn post_trace_route(
     let journal_interaction =
         Interaction::find_user_journal(session.user_id.unwrap(), payload.journal_id, &pool)?;
 
-    let (new_resource, interaction_date) = llm_qualify::qualify_trace(payload.content.as_str()).await?;
+    let (new_resource, interaction_date) =
+        llm_qualify::qualify_trace(payload.content.as_str()).await?;
 
     let resource = new_resource.create(&pool)?;
     let mut new_interaction = NewInteraction::new(session.user_id.unwrap(), resource.id);

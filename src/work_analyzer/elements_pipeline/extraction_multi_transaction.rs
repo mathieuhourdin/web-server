@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 
 use crate::entities::error::PpdcError;
@@ -132,7 +131,8 @@ pub enum InternalPolarity {
 
 pub async fn extract_multi_transaction_from_test_trace(
 ) -> Result<MultiTransactionExtraction, PpdcError> {
-    let trace_text = include_str!("prompts/landmark_resource/extraction/multi_transaction_test_trace.md");
+    let trace_text =
+        include_str!("prompts/landmark_resource/extraction/multi_transaction_test_trace.md");
     let user_prompt = format!(
         "
         trace_text : \n {}

@@ -5,11 +5,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError,
-    interaction::model::Interaction,
-    resource::maturing_state::MaturingState,
-    resource::resource_type::ResourceType,
-    resource::Resource,
+    error::PpdcError, interaction::model::Interaction, resource::maturing_state::MaturingState,
+    resource::resource_type::ResourceType, resource::Resource,
 };
 use crate::schema::{interactions, resource_relations, resources};
 
@@ -65,7 +62,10 @@ impl From<TraceType> for ResourceType {
 }
 
 impl Trace {
-    pub fn get_most_recent_for_user(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
+    pub fn get_most_recent_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Trace>, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -90,15 +90,20 @@ impl Trace {
         }
     }
 
-    pub fn get_between(user_id: Uuid, start_trace_id: Uuid, end_trace_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+    pub fn get_between(
+        user_id: Uuid,
+        start_trace_id: Uuid,
+        end_trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Trace>, PpdcError> {
         let start_trace = Trace::find_full_trace(start_trace_id, pool)?;
         let end_trace = Trace::find_full_trace(end_trace_id, pool)?;
 
         let interactions = Interaction::find_all_traces_for_user_between(
-            user_id, 
-            start_trace.interaction_date.unwrap(), 
-            end_trace.interaction_date.unwrap(), 
-            pool
+            user_id,
+            start_trace.interaction_date.unwrap(),
+            end_trace.interaction_date.unwrap(),
+            pool,
         )?;
 
         let traces = interactions
@@ -110,9 +115,17 @@ impl Trace {
         Ok(traces)
     }
 
-    pub fn get_before(user_id: Uuid, trace_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+    pub fn get_before(
+        user_id: Uuid,
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
-        let interactions = Interaction::find_all_traces_for_user_before_date(user_id, trace.interaction_date.unwrap(), pool)?;
+        let interactions = Interaction::find_all_traces_for_user_before_date(
+            user_id,
+            trace.interaction_date.unwrap(),
+            pool,
+        )?;
         let traces = interactions
             .into_iter()
             .map(|interaction| Trace::from_resource(interaction.resource))
@@ -148,17 +161,27 @@ impl Trace {
         }
     }
 
-    pub fn get_next(user_id: Uuid, trace_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
+    pub fn get_next(
+        user_id: Uuid,
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
         if trace.trace_type == TraceType::BioTrace {
             let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
             return match first_user_trace {
-                Some(interaction) => Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?)),
+                Some(interaction) => {
+                    Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?))
+                }
                 None => Ok(None),
             };
         }
 
-        let interactions = Interaction::find_all_traces_for_user_after_date(user_id, trace.interaction_date.unwrap(), pool)?;
+        let interactions = Interaction::find_all_traces_for_user_after_date(
+            user_id,
+            trace.interaction_date.unwrap(),
+            pool,
+        )?;
         let next_trace = interactions
             .into_iter()
             .map(|interaction| Trace::from_resource(interaction.resource))

@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use crate::entities::{error::PpdcError};
-use crate::openai_handler::gpt_responses_handler::make_gpt_request;
-use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::db::DbPool;
+use crate::entities::error::PpdcError;
+use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
+use crate::openai_handler::gpt_responses_handler::make_gpt_request;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub async fn get_high_level_analysis(
@@ -10,14 +10,9 @@ pub async fn get_high_level_analysis(
     trace: &String,
     analysis_id: Uuid,
 ) -> Result<String, PpdcError> {
-    let high_level_analysis = get_high_level_analysis_from_gpt(
-        previous_context, 
-        trace,
-        analysis_id,
-    )
-    .await?;
+    let high_level_analysis =
+        get_high_level_analysis_from_gpt(previous_context, trace, analysis_id).await?;
     Ok(high_level_analysis)
-
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,7 +22,6 @@ pub struct HighLevelAnalysis {
     pub content: String,
 }
 
-
 pub async fn high_level_analysis_pipeline(
     previous_context: &String,
     landscape_analysis_id: Uuid,
@@ -35,15 +29,13 @@ pub async fn high_level_analysis_pipeline(
     pool: &DbPool,
 ) -> Result<LandscapeAnalysis, PpdcError> {
     let run_high_level_analysis = false;
-    let landscape_analysis: LandscapeAnalysis = LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
+    let landscape_analysis: LandscapeAnalysis =
+        LandscapeAnalysis::find_full_analysis(landscape_analysis_id, &pool)?;
 
     if run_high_level_analysis {
-    let new_high_level_analysis = get_high_level_analysis(
-        previous_context, 
-        full_trace_string,
-        landscape_analysis_id,
-    )
-        .await?;
+        let new_high_level_analysis =
+            get_high_level_analysis(previous_context, full_trace_string, landscape_analysis_id)
+                .await?;
         let mut landscape_analysis = landscape_analysis.clone();
         landscape_analysis.plain_text_state_summary = new_high_level_analysis;
         let landscape_analysis = landscape_analysis.update(&pool)?;
@@ -70,7 +62,8 @@ pub async fn get_high_level_analysis_from_gpt(
 
     let system_prompt = get_system_prompt();
 
-    let user_prompt = format!("
+    let user_prompt = format!(
+        "
         previous_summary :
         <<<
          {}
@@ -79,8 +72,7 @@ pub async fn get_high_level_analysis_from_gpt(
         <<<
          {}
          >>>\n\n",
-        work_context,
-        new_trace
+        work_context, new_trace
     );
 
     let _schema = serde_json::json!({
@@ -94,13 +86,13 @@ pub async fn get_high_level_analysis_from_gpt(
         "additionalProperties": false
     });
 
-    let high_level_analysis: String =
-        make_gpt_request(
-            system_prompt,
-            user_prompt,
-            None,
-            Some("Analysis / High-Level Summary"),
-            Some(analysis_id),
-        ).await?;
+    let high_level_analysis: String = make_gpt_request(
+        system_prompt,
+        user_prompt,
+        None,
+        Some("Analysis / High-Level Summary"),
+        Some(analysis_id),
+    )
+    .await?;
     Ok(high_level_analysis)
 }

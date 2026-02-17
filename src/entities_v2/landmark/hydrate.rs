@@ -1,12 +1,13 @@
 use uuid::Uuid;
 
+use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
 use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::resource::{entity_type::EntityType, NewResource, Resource, resource_type::ResourceType};
+use crate::entities::resource::{
+    entity_type::EntityType, resource_type::ResourceType, NewResource, Resource,
+};
 use crate::entities::resource_relation::ResourceRelation;
 use crate::entities_v2::element::model::Element;
-use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
-
 
 impl LandmarkType {
     pub fn from_resource_type(resource_type: ResourceType) -> LandmarkType {
@@ -14,7 +15,7 @@ impl LandmarkType {
             ResourceType::Resource => LandmarkType::Resource,
             ResourceType::Theme => LandmarkType::Theme,
             ResourceType::Author => LandmarkType::Author,
-            _ => LandmarkType::Resource
+            _ => LandmarkType::Resource,
         }
     }
     pub fn to_resource_type(self) -> ResourceType {
@@ -83,7 +84,10 @@ impl Landmark {
         Ok(elements.collect::<Vec<Element>>())
     }
 
-    pub fn find_with_parents(id: Uuid, pool: &DbPool) -> Result<LandmarkWithParentsAndElements, PpdcError> {
+    pub fn find_with_parents(
+        id: Uuid,
+        pool: &DbPool,
+    ) -> Result<LandmarkWithParentsAndElements, PpdcError> {
         let origin_landmark = Landmark::find(id, pool)?;
         let mut elements: Vec<Element> = origin_landmark.find_elements(pool)?;
         let mut parents: Vec<Landmark> = vec![];
@@ -94,7 +98,11 @@ impl Landmark {
             parents.push(parent.clone());
             current_landmark = parent;
         }
-        Ok(LandmarkWithParentsAndElements::new(origin_landmark, parents, elements))
+        Ok(LandmarkWithParentsAndElements::new(
+            origin_landmark,
+            parents,
+            elements,
+        ))
     }
 
     pub fn get_analysis(self, pool: &DbPool) -> Result<Resource, PpdcError> {
@@ -103,11 +111,14 @@ impl Landmark {
             .into_iter()
             .find(|relation| {
                 relation.resource_relation.relation_type == "ownr".to_string()
-                && relation.target_resource.is_landscape_analysis()
+                    && relation.target_resource.is_landscape_analysis()
             })
             .map(|relation| relation.target_resource)
-            .ok_or(PpdcError::new(400, ErrorType::ApiError, "Analysis not found".to_string()))
-            ?;
+            .ok_or(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Analysis not found".to_string(),
+            ))?;
         Ok(analysis)
     }
 
@@ -116,7 +127,8 @@ impl Landmark {
         relation_type: Option<&str>,
         pool: &DbPool,
     ) -> Result<Vec<Landmark>, PpdcError> {
-        let resource_relations = ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
+        let resource_relations =
+            ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
         let landmarks = resource_relations
             .into_iter()
             .filter(|relation| {

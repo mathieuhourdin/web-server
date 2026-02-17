@@ -4,8 +4,8 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     interaction::model::NewInteraction,
-    resource_relation::{NewResourceRelation, ResourceRelation},
     resource::MaturingState,
+    resource_relation::{NewResourceRelation, ResourceRelation},
 };
 use crate::entities_v2::{
     landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
@@ -21,15 +21,20 @@ impl Lens {
         Ok(Lens::from_resource(deleted_resource))
     }
 
-    pub fn update_current_landscape(self, new_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
+    pub fn update_current_landscape(
+        self,
+        new_landscape_analysis_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Lens, PpdcError> {
         // Get the new landscape to retrieve its trace_id
-        let _new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
+        let _new_landscape =
+            LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
 
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        
+
         // Find and separate the landscape and trace relations
         let mut current_landscape_relation = None;
-        
+
         for relation in relations {
             match relation.resource_relation.relation_type.as_str() {
                 "head" => current_landscape_relation = Some(relation.resource_relation),
@@ -41,7 +46,8 @@ impl Lens {
         if current_landscape_relation.is_some() {
             current_landscape_relation.unwrap().delete(pool)?;
         }
-        let mut new_current_landscape_relation = NewResourceRelation::new(self.id, new_landscape_analysis_id);
+        let mut new_current_landscape_relation =
+            NewResourceRelation::new(self.id, new_landscape_analysis_id);
         new_current_landscape_relation.relation_type = Some("head".to_string());
         new_current_landscape_relation.user_id = Some(self.user_id.unwrap());
         new_current_landscape_relation.create(pool)?;
@@ -49,7 +55,11 @@ impl Lens {
         let lens = Lens::find_full_lens(self.id, pool)?;
         Ok(lens)
     }
-    pub fn update_target_trace(self, new_target_trace_id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
+    pub fn update_target_trace(
+        self,
+        new_target_trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Lens, PpdcError> {
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
         for relation in relations {
             if relation.resource_relation.relation_type == "trgt".to_string() {
@@ -63,7 +73,11 @@ impl Lens {
         let lens = Lens::find_full_lens(self.id, pool)?;
         Ok(lens)
     }
-    pub fn set_processing_state(self, new_processing_state: MaturingState, pool: &DbPool) -> Result<Lens, PpdcError> {
+    pub fn set_processing_state(
+        self,
+        new_processing_state: MaturingState,
+        pool: &DbPool,
+    ) -> Result<Lens, PpdcError> {
         let mut resource = self.to_resource();
         resource.maturing_state = new_processing_state;
         let resource = resource.update(pool)?;
@@ -73,7 +87,6 @@ impl Lens {
 
 impl NewLens {
     pub fn create(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-
         let user_id = self.user_id;
         let current_state_date = self.current_state_date;
         let target_trace_id = self.target_trace_id;
@@ -88,13 +101,15 @@ impl NewLens {
         new_interaction.interaction_progress = 0;
         new_interaction.create(pool)?;
         if let Some(fork_landscape_id) = fork_landscape_id {
-            let mut new_fork_relation = NewResourceRelation::new(created_resource.id, fork_landscape_id);
+            let mut new_fork_relation =
+                NewResourceRelation::new(created_resource.id, fork_landscape_id);
             new_fork_relation.relation_type = Some("fork".to_string());
             new_fork_relation.user_id = Some(user_id);
             new_fork_relation.create(pool)?;
         }
         if let Some(current_landscape_id) = current_landscape_id {
-            let mut new_landscape_relation = NewResourceRelation::new(created_resource.id, current_landscape_id);
+            let mut new_landscape_relation =
+                NewResourceRelation::new(created_resource.id, current_landscape_id);
             new_landscape_relation.relation_type = Some("head".to_string());
             new_landscape_relation.user_id = Some(user_id);
             new_landscape_relation.create(pool)?;
@@ -108,24 +123,31 @@ impl NewLens {
     }
 }
 
-pub fn create_landscape_placeholders(current_trace_id: Uuid, previous_landscape_analysis_id: Uuid, pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
-    let previous_landscape = LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, pool)?;
+pub fn create_landscape_placeholders(
+    current_trace_id: Uuid,
+    previous_landscape_analysis_id: Uuid,
+    pool: &DbPool,
+) -> Result<Vec<Uuid>, PpdcError> {
+    let previous_landscape =
+        LandscapeAnalysis::find_full_analysis(previous_landscape_analysis_id, pool)?;
     let user_id = previous_landscape.user_id;
     let traces: Vec<Trace>;
     if previous_landscape.analyzed_trace_id.is_none() {
         traces = Trace::get_before(user_id, current_trace_id, pool)?;
     } else {
-        traces = Trace::get_between(user_id, previous_landscape.analyzed_trace_id.unwrap(), current_trace_id, pool)?;
+        traces = Trace::get_between(
+            user_id,
+            previous_landscape.analyzed_trace_id.unwrap(),
+            current_trace_id,
+            pool,
+        )?;
     }
     let mut landscape_analysis_ids = vec![previous_landscape_analysis_id];
     let mut previous_id = previous_landscape_analysis_id;
     for trace in traces {
-        let new_landscape_analysis = NewLandscapeAnalysis::new_placeholder(
-            user_id,
-            trace.id,
-            Some(previous_id),
-            None,
-        ).create(pool)?;
+        let new_landscape_analysis =
+            NewLandscapeAnalysis::new_placeholder(user_id, trace.id, Some(previous_id), None)
+                .create(pool)?;
         landscape_analysis_ids.push(new_landscape_analysis.id);
         previous_id = new_landscape_analysis.id;
     }
@@ -140,10 +162,16 @@ pub fn delete_lens_and_landscapes(id: Uuid, pool: &DbPool) -> Result<Lens, PpdcE
     while let Some(id) = landscape_analysis_id {
         println!("Deleting landscape analysis: {:?}", id);
         let current_landscape_analysis = LandscapeAnalysis::find_full_analysis(id, pool)?;
-        println!("Current landscape analysis: {:?}", current_landscape_analysis);
+        println!(
+            "Current landscape analysis: {:?}",
+            current_landscape_analysis
+        );
         if let Some(parent_analysis_id) = current_landscape_analysis.parent_analysis_id {
             // update head to the parent landscape_analysis before to delete the current landscape_analysis
-            println!("Updating head to parent landscape analysis: {:?}", parent_analysis_id);
+            println!(
+                "Updating head to parent landscape analysis: {:?}",
+                parent_analysis_id
+            );
             lens = lens.update_current_landscape(parent_analysis_id, pool)?;
         } else {
             // we reached last landscape_analysis, delete the lens before deleting the root landscape_analysis
@@ -152,13 +180,16 @@ pub fn delete_lens_and_landscapes(id: Uuid, pool: &DbPool) -> Result<Lens, PpdcE
             landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, pool)?;
             return Ok(lens);
         }
-        println!("Deleting landscape analysis: {:?}", current_landscape_analysis.id);
-        let deletion_option = landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, pool)?;
+        println!(
+            "Deleting landscape analysis: {:?}",
+            current_landscape_analysis.id
+        );
+        let deletion_option =
+            landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, pool)?;
         println!("Deletion option: {:?}", deletion_option);
         if let Some(_deletion_option) = deletion_option {
             // deletion succeded, continue with the parent.
             landscape_analysis_id = current_landscape_analysis.parent_analysis_id;
-
         } else {
             // we reached a landscape analysis referenced by other lens or landscape_analysis, just delete the lens
             println!("Reached a landscape analysis referenced by other lens or landscape_analysis, just deleting the lens");

@@ -1,8 +1,6 @@
-use crate::entities_v2::{
-    landmark::NewLandmark,
-};
-use uuid::Uuid;
+use crate::entities_v2::landmark::NewLandmark;
 use crate::work_analyzer::elements_pipeline::types::IdentityState;
+use uuid::Uuid;
 
 pub trait NewLandmarkForExtractedElement {
     fn title(&self) -> String;
@@ -29,5 +27,3 @@ pub trait NewLandmarkForExtractedElement {
         )
     }
 }
-
-

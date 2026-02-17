@@ -13,17 +13,13 @@ use tower_http::{
 use crate::entities::resource_relation;
 use crate::entities::transcription;
 use crate::entities::{
-    comment, interaction::interaction_routes as interaction, resource, user,
-    error::{PpdcError, ErrorType},
+    comment,
+    error::{ErrorType, PpdcError},
+    interaction::interaction_routes as interaction,
+    resource, user,
 };
 use crate::entities_v2::{
-    element,
-    trace,
-    landscape_analysis,
-    llm_call,
-    landmark,
-    lens,
-    trace_mirror,
+    element, landmark, landscape_analysis, lens, llm_call, trace, trace_mirror,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -37,7 +33,11 @@ pub fn create_router() -> Router {
     let users_router = Router::new()
         .route("/", get(user::get_users).post(user::post_user))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
-        .route("/:id/analysis", post(landscape_analysis::post_analysis_route).get(landscape_analysis::get_last_analysis_route))
+        .route(
+            "/:id/analysis",
+            post(landscape_analysis::post_analysis_route)
+                .get(landscape_analysis::get_last_analysis_route),
+        )
         .route("/:id/lens", get(lens::get_user_lenses_route))
         .route("/:id/traces", get(trace::get_all_traces_for_user_route))
         .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
@@ -106,11 +106,24 @@ pub fn create_router() -> Router {
 
     let analysis_router = Router::new()
         .route("/", post(landscape_analysis::post_analysis_route))
-        .route("/:id", delete(landscape_analysis::delete_analysis_route).get(landscape_analysis::get_analysis_route))
-        .route("/:id/landmarks", get(landscape_analysis::get_landmarks_route))
+        .route(
+            "/:id",
+            delete(landscape_analysis::delete_analysis_route)
+                .get(landscape_analysis::get_analysis_route),
+        )
+        .route(
+            "/:id/landmarks",
+            get(landscape_analysis::get_landmarks_route),
+        )
         .route("/:id/elements", get(landscape_analysis::get_elements_route))
-        .route("/:id/parents", get(landscape_analysis::get_analysis_parents_route))
-        .route("/:id/llm_calls", get(llm_call::get_llm_calls_by_analysis_id_route))
+        .route(
+            "/:id/parents",
+            get(landscape_analysis::get_analysis_parents_route),
+        )
+        .route(
+            "/:id/llm_calls",
+            get(llm_call::get_llm_calls_by_analysis_id_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let landmarks_router = Router::new()
         .route("/:id", get(landmark::get_landmark_route))
@@ -121,7 +134,10 @@ pub fn create_router() -> Router {
 
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
-        .route("/:id", delete(lens::delete_lens_route).put(lens::put_lens_route))
+        .route(
+            "/:id",
+            delete(lens::delete_lens_route).put(lens::put_lens_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let llm_calls_router = Router::new()
@@ -132,8 +148,14 @@ pub fn create_router() -> Router {
     let trace_mirrors_router = Router::new()
         .route("/", get(trace_mirror::get_user_trace_mirrors_route))
         .route("/:id", get(trace_mirror::get_trace_mirror_route))
-        .route("/landscape/:landscape_id", get(trace_mirror::get_trace_mirrors_by_landscape_route))
-        .route("/trace/:trace_id", get(trace_mirror::get_trace_mirrors_by_trace_route))
+        .route(
+            "/landscape/:landscape_id",
+            get(trace_mirror::get_trace_mirrors_by_landscape_route),
+        )
+        .route(
+            "/trace/:trace_id",
+            get(trace_mirror::get_trace_mirrors_by_trace_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let sessions_router = Router::new().route(
@@ -166,7 +188,10 @@ pub fn create_router() -> Router {
 }
 
 async fn fallback_handler() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, PpdcError::new(404, ErrorType::ApiError, "404 Not Found".to_string()))
+    (
+        StatusCode::NOT_FOUND,
+        PpdcError::new(404, ErrorType::ApiError, "404 Not Found".to_string()),
+    )
 }
 async fn root_handler() -> impl IntoResponse {
     (StatusCode::OK, "Ok")

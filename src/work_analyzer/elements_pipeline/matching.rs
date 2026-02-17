@@ -1,15 +1,15 @@
-use crate::entities_v2::landmark::LandmarkType;
-use crate::work_analyzer::elements_pipeline::extraction::{
-    ExtractedElements,
-    ExtractionStatus,
-    LandmarkSuggestion,
-};
-use serde::{Deserialize, Serialize};
 use crate::entities::error::PpdcError;
 use crate::entities_v2::landmark::Landmark;
+use crate::entities_v2::landmark::LandmarkType;
+use crate::work_analyzer::analysis_processor::{
+    AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror,
+};
+use crate::work_analyzer::elements_pipeline::extraction::{
+    ExtractedElements, ExtractionStatus, LandmarkSuggestion,
+};
 use crate::work_analyzer::matching;
 use crate::work_analyzer::matching::ElementWithIdentifier;
-use crate::work_analyzer::analysis_processor::{AnalysisConfig, AnalysisContext, AnalysisInputs, AnalysisStateMirror};
+use serde::{Deserialize, Serialize};
 
 /// Get the system prompt for matching based on landmark type
 fn get_matching_system_prompt(landmark_type: LandmarkType) -> &'static str {
@@ -19,7 +19,6 @@ fn get_matching_system_prompt(landmark_type: LandmarkType) -> &'static str {
         LandmarkType::Author => include_str!("prompts/landmark_author/matching/system.md"),
     }
 }
-
 
 pub async fn match_elements(
     config: &AnalysisConfig,
@@ -31,9 +30,19 @@ pub async fn match_elements(
     run_matching_impl(config, context, inputs, state, extracted).await
 }
 
-async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, inputs: &AnalysisInputs, _state: &AnalysisStateMirror, extracted: ExtractedElements) -> Result<MatchedElements, PpdcError> {
+async fn run_matching_impl(
+    _config: &AnalysisConfig,
+    context: &AnalysisContext,
+    inputs: &AnalysisInputs,
+    _state: &AnalysisStateMirror,
+    extracted: ExtractedElements,
+) -> Result<MatchedElements, PpdcError> {
     let log_header = format!("analysis_id: {}", context.analysis_id);
-    let landmark_types = [LandmarkType::Resource, LandmarkType::Author, LandmarkType::Theme];
+    let landmark_types = [
+        LandmarkType::Resource,
+        LandmarkType::Author,
+        LandmarkType::Theme,
+    ];
 
     let mut matching_placeholders = to_matched_placeholders(&extracted);
 
@@ -43,7 +52,8 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
             LandmarkType::Theme => "Elements / Matching / Theme",
             LandmarkType::Author => "Elements / Matching / Author",
         };
-        let landmarks = inputs.previous_landscape_landmarks
+        let landmarks = inputs
+            .previous_landscape_landmarks
             .iter()
             .filter(|landmark| landmark.landmark_type == landmark_type)
             .cloned()
@@ -56,7 +66,11 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
                     .landmark_suggestions
                     .iter()
                     .find(|suggestion| suggestion.landmark_type == landmark_type)
-                    .map(|suggestion| LandmarkGptPayload::from_matched_element_and_suggestion(&element, suggestion))
+                    .map(|suggestion| {
+                        LandmarkGptPayload::from_matched_element_and_suggestion(
+                            &element, suggestion,
+                        )
+                    })
             })
             .collect::<Vec<LandmarkGptPayload>>();
         let system_prompt = get_matching_system_prompt(landmark_type);
@@ -66,39 +80,38 @@ async fn run_matching_impl(_config: &AnalysisConfig, context: &AnalysisContext, 
             Some(system_prompt),
             context.analysis_id,
             display_name,
-        ).await?;
+        )
+        .await?;
         matching_placeholders = matching_placeholders
             .iter()
-            .map(|element| {
-                MatchedElement {
-                    temporary_id: element.temporary_id.clone(),
-                    title: element.title.clone(),
-                    verb: element.verb.clone(),
-                    status: element.status,
-                    date_offset: element.date_offset,
-                    evidences: element.evidences.clone(),
-                    extractions: element.extractions.clone(),
-                    landmark_suggestions: element
-                        .landmark_suggestions
-                        .iter()
-                        .map(|suggestion| {
-                            if let Some(result) = matching_results
-                                .iter()
-                                .find(|result| result.element.temporary_id == suggestion.temporary_id)
-                            {
-                                LandmarkMatching {
-                                    temporary_id: suggestion.temporary_id.clone(),
-                                    matching_key: suggestion.matching_key.clone(),
-                                    landmark_type: suggestion.landmark_type,
-                                    candidate_id: result.candidate_id.clone(),
-                                    confidence: result.confidence,
-                                }
-                            } else {
-                                suggestion.clone()
+            .map(|element| MatchedElement {
+                temporary_id: element.temporary_id.clone(),
+                title: element.title.clone(),
+                verb: element.verb.clone(),
+                status: element.status,
+                date_offset: element.date_offset,
+                evidences: element.evidences.clone(),
+                extractions: element.extractions.clone(),
+                landmark_suggestions: element
+                    .landmark_suggestions
+                    .iter()
+                    .map(|suggestion| {
+                        if let Some(result) = matching_results
+                            .iter()
+                            .find(|result| result.element.temporary_id == suggestion.temporary_id)
+                        {
+                            LandmarkMatching {
+                                temporary_id: suggestion.temporary_id.clone(),
+                                matching_key: suggestion.matching_key.clone(),
+                                landmark_type: suggestion.landmark_type,
+                                candidate_id: result.candidate_id.clone(),
+                                confidence: result.confidence,
                             }
-                        })
-                        .collect::<Vec<LandmarkMatching>>(),
-                }
+                        } else {
+                            suggestion.clone()
+                        }
+                    })
+                    .collect::<Vec<LandmarkMatching>>(),
             })
             .collect::<Vec<MatchedElement>>();
     }
@@ -138,7 +151,6 @@ pub struct LandmarkMatching {
     pub confidence: f32,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LandmarkGptPayload {
     #[serde(skip_serializing)]
@@ -151,7 +163,10 @@ pub struct LandmarkGptPayload {
 }
 
 impl LandmarkGptPayload {
-    pub fn from_matched_element_and_suggestion(element: &MatchedElement, suggestion: &LandmarkMatching) -> Self {
+    pub fn from_matched_element_and_suggestion(
+        element: &MatchedElement,
+        suggestion: &LandmarkMatching,
+    ) -> Self {
         Self {
             temporary_id: suggestion.temporary_id.clone(),
             matching_key: suggestion.matching_key.clone(),
@@ -212,10 +227,7 @@ mod tests {
     use super::to_matched_placeholders;
     use crate::entities_v2::landmark::LandmarkType;
     use crate::work_analyzer::elements_pipeline::extraction::{
-        ExtractedElement,
-        ExtractedElements,
-        ExtractionStatus,
-        LandmarkSuggestion,
+        ExtractedElement, ExtractedElements, ExtractionStatus, LandmarkSuggestion,
     };
 
     #[test]

@@ -3,11 +3,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
-    resource::{
-        entity_type::EntityType,
-        maturing_state::MaturingState,
-        Resource,
-    },
+    resource::{entity_type::EntityType, maturing_state::MaturingState, Resource},
 };
 
 use super::model::Journal;

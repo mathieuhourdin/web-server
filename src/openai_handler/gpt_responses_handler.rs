@@ -1,9 +1,9 @@
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use tracing::info;
 use crate::db;
 use crate::entities_v2::llm_call::NewLlmCall;
 use crate::environment;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use tracing::info;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -121,14 +121,19 @@ where
         ],
         max_output_tokens: 22500,
         temperature: 0.1,
-        text: schema.clone().map(|schema| serde_json::json!({
-            "format": {
-                "type": "json_schema",
-                "name": "reference_schema",
-                "schema": schema.clone(),
-                "strict": true
-            }
-        })).unwrap_or_default(),
+        text: schema
+            .clone()
+            .map(|schema| {
+                serde_json::json!({
+                    "format": {
+                        "type": "json_schema",
+                        "name": "reference_schema",
+                        "schema": schema.clone(),
+                        "strict": true
+                    }
+                })
+            })
+            .unwrap_or_default(),
     };
 
     // Serialize request to JSON string for persistence
@@ -186,9 +191,9 @@ where
             request_url.clone(),
             body.clone(),
             output_text.clone(),
-            0, // input_tokens_used - not available in current response structure
-            0, // reasoning_tokens_used - not available in current response structure
-            0, // output_tokens_used - not available in current response structure
+            0,                 // input_tokens_used - not available in current response structure
+            0,   // reasoning_tokens_used - not available in current response structure
+            0,   // output_tokens_used - not available in current response structure
             0.0, // price - not available in current response structure
             "USD".to_string(), // currency - default
             analysis_id.unwrap(),
@@ -206,7 +211,6 @@ where
                 e
             );
         }
-
     }
 
     if !status.is_success() {

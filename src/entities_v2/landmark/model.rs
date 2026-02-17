@@ -1,17 +1,14 @@
-use uuid::Uuid;
+use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    resource::{
-        Resource,
-        maturing_state::MaturingState,
-    },
-    resource_relation::NewResourceRelation,
     interaction::model::NewInteraction,
+    resource::{maturing_state::MaturingState, Resource},
+    resource_relation::NewResourceRelation,
 };
 use crate::entities_v2::element::model::Element;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use crate::db::DbPool;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Landmark {
@@ -51,7 +48,11 @@ impl LandmarkType {
             "rsrc" => Ok(LandmarkType::Resource),
             "them" => Ok(LandmarkType::Theme),
             "autr" => Ok(LandmarkType::Author),
-            _ => Err(PpdcError::new(400, ErrorType::ApiError, "Invalid landmark type".to_string())),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Invalid landmark type".to_string(),
+            )),
         }
     }
 }
@@ -82,8 +83,16 @@ pub struct LandmarkWithParentsAndElements {
 }
 
 impl LandmarkWithParentsAndElements {
-    pub fn new(landmark: Landmark, parent_landmarks: Vec<Landmark>, related_elements: Vec<Element>) -> Self {
-        Self { landmark, parent_landmarks, related_elements }
+    pub fn new(
+        landmark: Landmark,
+        parent_landmarks: Vec<Landmark>,
+        related_elements: Vec<Element>,
+    ) -> Self {
+        Self {
+            landmark,
+            parent_landmarks,
+            related_elements,
+        }
     }
 }
 
@@ -114,10 +123,10 @@ impl Landmark {
 
 impl NewLandmark {
     pub fn new(
-        title: String, 
-        subtitle: String, 
-        content: String, 
-        landmark_type: LandmarkType, 
+        title: String,
+        subtitle: String,
+        content: String,
+        landmark_type: LandmarkType,
         maturing_state: MaturingState,
         analysis_id: Uuid,
         user_id: Uuid,
@@ -132,7 +141,7 @@ impl NewLandmark {
             publishing_state: "pbsh".to_string(),
             analysis_id,
             user_id,
-            parent_id
+            parent_id,
         }
     }
 
@@ -153,9 +162,7 @@ impl NewLandmark {
         new_resource_relation.user_id = Some(user_id);
         new_resource_relation.create(pool)?;
 
-
         if let Some(parent_id) = parent_id {
-
             // create the parent relation to the parent landmark
             let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_id);
             new_resource_relation.relation_type = Some("prnt".to_string());

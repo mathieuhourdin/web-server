@@ -48,9 +48,7 @@ async fn main() -> Result<(), PpdcError> {
             .create(true)
             .append(true)
             .open(log_path)
-            .map_err(|e| {
-                PpdcError::from(Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-            })?
+            .map_err(|e| PpdcError::from(Box::new(e) as Box<dyn std::error::Error + Send + Sync>))?
     };
 
     writeln!(

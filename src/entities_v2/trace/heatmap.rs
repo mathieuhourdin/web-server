@@ -1,15 +1,15 @@
-use chrono::{Duration, NaiveDate, Utc};
-use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Date, Uuid as SqlUuid};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::db::DbPool;
+use crate::entities::error::PpdcError;
 use axum::{
     debug_handler,
     extract::{Extension, Path, Query},
     Json,
 };
-use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use chrono::{Duration, NaiveDate, Utc};
+use diesel::prelude::*;
+use diesel::sql_types::{BigInt, Date, Uuid as SqlUuid};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, QueryableByName, Serialize)]
 pub struct HeatmapRow {
@@ -18,7 +18,6 @@ pub struct HeatmapRow {
     #[diesel(sql_type = BigInt)]
     pub value: i64,
 }
-
 
 pub fn heatmap_sum_trace_content_len_join_direct(
     conn: &mut PgConnection,
@@ -77,12 +76,9 @@ pub async fn get_user_heatmap_route(
             "`from` must be <= `to`".to_string(),
         ));
     }
-    let mut conn = pool.get().expect("Failed to get a connection from the pool");
-    let rows = heatmap_sum_trace_content_len_join_direct(
-        &mut conn,
-        from,
-        to,
-        user_id,
-    )?;
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    let rows = heatmap_sum_trace_content_len_join_direct(&mut conn, from, to, user_id)?;
     Ok(Json(rows))
 }

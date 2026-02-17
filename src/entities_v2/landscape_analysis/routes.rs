@@ -59,7 +59,9 @@ pub async fn post_analysis_route(
     let analysis_title = match &last_analysis {
         Some(last_analysis) => {
             if last_analysis.interaction.interaction_date.clone()
-                > (date - Duration::days(1)).and_hms_opt(12, 0, 0).expect("Date should be valid")
+                > (date - Duration::days(1))
+                    .and_hms_opt(12, 0, 0)
+                    .expect("Date should be valid")
             {
                 return Err(PpdcError::new(
                     400,
@@ -150,7 +152,10 @@ pub async fn get_last_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
 ) -> Result<Json<InteractionWithResource>, PpdcError> {
-    println!("Getting last analysis for user: {:?}", session.user_id.unwrap());
+    println!(
+        "Getting last analysis for user: {:?}",
+        session.user_id.unwrap()
+    );
     let last_analysis = find_last_analysis_resource(session.user_id.unwrap(), &pool)?;
     Ok(Json(last_analysis.expect("No last analysis found")))
 }

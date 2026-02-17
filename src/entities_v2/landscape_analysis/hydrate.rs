@@ -4,11 +4,8 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{
-        entity_type::EntityType,
-        maturing_state::MaturingState,
-        resource_type::ResourceType,
-        NewResource,
-        Resource,
+        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
+        NewResource, Resource,
     },
     resource_relation::ResourceRelation,
 };
@@ -77,7 +74,10 @@ impl LandscapeAnalysis {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "prnt")
             .map(|target| target.target_resource.id);
-        Ok(LandscapeAnalysis { parent_analysis_id, ..self })
+        Ok(LandscapeAnalysis {
+            parent_analysis_id,
+            ..self
+        })
     }
 
     /// Hydrates trace_id from resource relations.
@@ -88,7 +88,10 @@ impl LandscapeAnalysis {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "trce")
             .map(|target| target.target_resource.id);
-        Ok(LandscapeAnalysis { analyzed_trace_id, ..self })
+        Ok(LandscapeAnalysis {
+            analyzed_trace_id,
+            ..self
+        })
     }
 
     /// Hydrates replayed_from_id from resource relations.
@@ -99,7 +102,10 @@ impl LandscapeAnalysis {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "rply")
             .map(|target| target.target_resource.id);
-        Ok(LandscapeAnalysis { replayed_from_id, ..self })
+        Ok(LandscapeAnalysis {
+            replayed_from_id,
+            ..self
+        })
     }
 
     /// Hydrates trace_mirror_id from resource relations.
@@ -113,7 +119,10 @@ impl LandscapeAnalysis {
                     && origin.origin_resource.is_trace_mirror()
             })
             .map(|origin| origin.origin_resource.id);
-        Ok(LandscapeAnalysis { trace_mirror_id, ..self })
+        Ok(LandscapeAnalysis {
+            trace_mirror_id,
+            ..self
+        })
     }
 
     pub fn find_full_parent(&self, pool: &DbPool) -> Result<Option<LandscapeAnalysis>, PpdcError> {
@@ -170,13 +179,17 @@ impl LandscapeAnalysis {
         Ok(elements)
     }
 
-    pub fn get_children_landscape_analyses(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-        let children_landscape_analyses = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+    pub fn get_children_landscape_analyses(
+        &self,
+        pool: &DbPool,
+    ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+        let children_landscape_analyses =
+            ResourceRelation::find_origin_for_resource(self.id, pool)?;
         let children_landscape_analyses = children_landscape_analyses
             .into_iter()
             .filter(|relation| {
                 relation.resource_relation.relation_type == "prnt"
-                && relation.origin_resource.is_landscape_analysis()
+                    && relation.origin_resource.is_landscape_analysis()
             })
             .map(|relation| LandscapeAnalysis::from_resource(relation.origin_resource))
             .collect::<Vec<LandscapeAnalysis>>();
@@ -189,7 +202,7 @@ impl LandscapeAnalysis {
             .into_iter()
             .filter(|relation| {
                 relation.resource_relation.relation_type == "head"
-                && relation.origin_resource.is_lens()
+                    && relation.origin_resource.is_lens()
             })
             .map(|relation| Lens::from_resource(relation.origin_resource))
             .collect::<Vec<Lens>>();

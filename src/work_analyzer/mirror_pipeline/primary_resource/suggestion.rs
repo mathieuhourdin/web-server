@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
+use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities_v2::trace::Trace;
-use uuid::Uuid;
-use crate::entities::error::{PpdcError, ErrorType};
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::matching::ElementWithIdentifier;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 const MAX_RETRIES: u32 = 3;
 
@@ -30,8 +30,12 @@ fn invalid_evidence(evidence: &[String], trace_content: &str) -> Vec<String> {
         .collect()
 }
 
-pub async fn extract(trace: &Trace, analysis_id: Uuid) -> Result<PrimaryResourceSuggestion, PpdcError> {
-    let system_prompt = include_str!("../prompts/primary_resource/suggestion/system.md").to_string();
+pub async fn extract(
+    trace: &Trace,
+    analysis_id: Uuid,
+) -> Result<PrimaryResourceSuggestion, PpdcError> {
+    let system_prompt =
+        include_str!("../prompts/primary_resource/suggestion/system.md").to_string();
     let schema_str = include_str!("../prompts/primary_resource/suggestion/schema.json");
     let schema: serde_json::Value = serde_json::from_str(schema_str)?;
     let trace_content = trace.content.clone();

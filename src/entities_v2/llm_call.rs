@@ -1,13 +1,17 @@
-use axum::{debug_handler, extract::{Extension, Path, Query}, Json};
-use chrono::NaiveDateTime;
-use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::error::PpdcError;
 use crate::pagination::PaginationParams;
 use crate::schema::llm_calls;
+use axum::{
+    debug_handler,
+    extract::{Extension, Path, Query},
+    Json,
+};
+use chrono::NaiveDateTime;
 use diesel;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset, Clone)]
 #[diesel(table_name = crate::schema::llm_calls)]
@@ -84,22 +88,22 @@ impl LlmCall {
 
 impl NewLlmCall {
     pub fn new(
-        status: String, 
-        model: String, 
-        prompt: String, 
+        status: String,
+        model: String,
+        prompt: String,
         display_name: String,
-        schema: String, 
-        request: String, 
-        request_url: String, 
-        response: String, 
-        output: String, 
-        input_tokens_used: i32, 
-        reasoning_tokens_used: i32, 
-        output_tokens_used: i32, 
-        price: f64, 
-        currency: String, 
-        analysis_id: Uuid, 
-        system_prompt: String, 
+        schema: String,
+        request: String,
+        request_url: String,
+        response: String,
+        output: String,
+        input_tokens_used: i32,
+        reasoning_tokens_used: i32,
+        output_tokens_used: i32,
+        price: f64,
+        currency: String,
+        analysis_id: Uuid,
+        system_prompt: String,
         user_prompt: String,
     ) -> Self {
         Self {
@@ -122,7 +126,7 @@ impl NewLlmCall {
             user_prompt,
         }
     }
-    
+
     pub fn create(self, db: &DbPool) -> Result<LlmCall, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
         let llm_call = diesel::insert_into(llm_calls::table)

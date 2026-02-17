@@ -13,43 +13,43 @@ use serde::{Deserialize, Serialize, Serializer};
 #[derive(Clone, Debug, Copy, AsExpression, PartialEq, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Text)]
 pub enum ResourceType {
-    Book, // public post
-    ReadingNote, // public post
-    ResourceList, // public post
-    Problem, // public post
-    ResearchArticle, //public post
-    NewsArticle, // public post
-    OpinionArticle, // public post
-    Movie, // public post
-    Video, // public post
-    Podcast, // public post
-    Song, // public post
-    Course, // public post
-    Idea, // public post
-    Journal, // Journal 
-    WorkLogJournal, // Journal
+    Book,               // public post
+    ReadingNote,        // public post
+    ResourceList,       // public post
+    Problem,            // public post
+    ResearchArticle,    //public post
+    NewsArticle,        // public post
+    OpinionArticle,     // public post
+    Movie,              // public post
+    Video,              // public post
+    Podcast,            // public post
+    Song,               // public post
+    Course,             // public post
+    Idea,               // public post
+    Journal,            // Journal
+    WorkLogJournal,     // Journal
     ReadingNoteJournal, // Journal
-    JournalItem, // public post
-    Trace, // Legacy Trace
-    UserTrace, // Trace
-    BioTrace, // Trace
-    WorkspaceTrace, // Trace
-    Mission, // Landmark
-    Element, // Element
-    Task, // Landmark
-    Question, // Landmark
-    Deliverable, // Landmark
-    Process, // Landmark
-    Resource, // Landmark
-    Analysis, // LandscapeAnalysis
-    Event, // Element
-    GeneralComment, // Element
-    Feeling, // Element
-    Theme, // Landmark
-    Lens, // Lens
-    TraceMirror, // TraceMirror 
-    Author, // Landmark
-    MetaJournal, // Journal
+    JournalItem,        // public post
+    Trace,              // Legacy Trace
+    UserTrace,          // Trace
+    BioTrace,           // Trace
+    WorkspaceTrace,     // Trace
+    Mission,            // Landmark
+    Element,            // Element
+    Task,               // Landmark
+    Question,           // Landmark
+    Deliverable,        // Landmark
+    Process,            // Landmark
+    Resource,           // Landmark
+    Analysis,           // LandscapeAnalysis
+    Event,              // Element
+    GeneralComment,     // Element
+    Feeling,            // Element
+    Theme,              // Landmark
+    Lens,               // Lens
+    TraceMirror,        // TraceMirror
+    Author,             // Landmark
+    MetaJournal,        // Journal
 }
 
 impl ResourceType {

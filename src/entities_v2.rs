@@ -1,8 +1,9 @@
-pub mod journal;
-pub mod trace;
 pub mod element;
-pub mod landscape_analysis;
-pub mod llm_call;
+pub mod journal;
 pub mod landmark;
+pub mod landscape_analysis;
 pub mod lens;
+pub mod llm_call;
+pub mod reference;
+pub mod trace;
 pub mod trace_mirror;

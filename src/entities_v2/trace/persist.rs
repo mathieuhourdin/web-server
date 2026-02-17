@@ -1,8 +1,6 @@
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError,
-    interaction::model::NewInteraction,
-    resource::NewResource,
+    error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
     resource_relation::NewResourceRelation,
 };
 
@@ -24,7 +22,11 @@ impl Trace {
     }
 
     /// Updates the maturing state of the trace.
-    pub fn set_maturing_state(mut self, state: crate::entities::resource::maturing_state::MaturingState, pool: &DbPool) -> Result<Trace, PpdcError> {
+    pub fn set_maturing_state(
+        mut self,
+        state: crate::entities::resource::maturing_state::MaturingState,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
         self.maturing_state = state;
         self.update(pool)
     }
@@ -53,7 +55,10 @@ impl NewTrace {
         new_interaction.create(pool)?;
 
         // Create journal relation
-        println!("Creating journal relation with resource id: {} and journal id: {}", created_resource.id, journal_id);
+        println!(
+            "Creating journal relation with resource id: {} and journal id: {}",
+            created_resource.id, journal_id
+        );
         let mut journal_relation = NewResourceRelation::new(created_resource.id, journal_id);
         journal_relation.relation_type = Some("jrit".to_string());
         journal_relation.user_id = Some(user_id);

@@ -1,13 +1,13 @@
-use uuid::Uuid;
+use crate::db::{get_global_pool, DbPool};
 use crate::entities::{error::PpdcError, resource::MaturingState};
 use crate::entities_v2::{
     landscape_analysis::{LandscapeAnalysis, NewLandscapeAnalysis},
     lens::Lens,
-    trace::Trace
+    trace::Trace,
 };
-use crate::db::{DbPool, get_global_pool};
 use crate::work_analyzer::analysis_processor;
 use chrono::Utc;
+use uuid::Uuid;
 
 /*pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uuid>) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
     println!("run_analysis_pipeline_for_landscapes: {:?}", landscape_analysis_ids);
@@ -52,13 +52,17 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
 
     // check the replay case first.
     if current_landscape_id.is_some() {
-        let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
+        let current_landscape =
+            LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
         if current_landscape.analyzed_trace_id == Some(lens.target_trace_id) {
             // The lens is up to date, no need to run the pipeline.
             // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
             if lens.processing_state == MaturingState::Replay {
                 let new_analysis = NewLandscapeAnalysis::new(
-                    format!("Replay de l'Analyse de la trace {}", current_landscape.analyzed_trace_id.unwrap()),
+                    format!(
+                        "Replay de l'Analyse de la trace {}",
+                        current_landscape.analyzed_trace_id.unwrap()
+                    ),
                     String::new(),
                     String::new(),
                     lens.user_id.expect("User id is required"),
@@ -66,16 +70,17 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
                     current_landscape.parent_analysis_id,
                     current_landscape.analyzed_trace_id,
                     Some(current_landscape.id),
-                ).create(&pool)?;
+                )
+                .create(&pool)?;
                 let _lens = lens.update_current_landscape(new_analysis.id, &pool)?;
                 let processor = analysis_processor::AnalysisProcessor::setup(
                     new_analysis.id,
                     current_landscape.analyzed_trace_id.unwrap(),
                     current_landscape_id,
-                    &pool
+                    &pool,
                 )?;
                 let _new_landscape = processor.process().await?;
-            } 
+            }
             // This should stop the pipeline if we have reached the target trace.
             return Ok(None);
         }
@@ -87,8 +92,13 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         next_trace = Trace::get_first(lens.user_id.expect("User id is required"), &pool)?;
         title = String::from("Premiere analyse ");
     } else {
-        let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
-        next_trace = Trace::get_next(lens.user_id.expect("User id is required"), current_landscape.analyzed_trace_id.unwrap(), &pool)?;
+        let current_landscape =
+            LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
+        next_trace = Trace::get_next(
+            lens.user_id.expect("User id is required"),
+            current_landscape.analyzed_trace_id.unwrap(),
+            &pool,
+        )?;
         title = String::from("Analyse de la trace suivante ");
     }
     if next_trace.is_none() {
@@ -96,7 +106,15 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         return Ok(None);
     }
     let next_trace = next_trace.unwrap();
-    let analysis_title = format!("{} {}", title, next_trace.interaction_date.unwrap().format("%Y-%m-%d").to_string());
+    let analysis_title = format!(
+        "{} {}",
+        title,
+        next_trace
+            .interaction_date
+            .unwrap()
+            .format("%Y-%m-%d")
+            .to_string()
+    );
     let new_analysis = NewLandscapeAnalysis::new(
         analysis_title,
         String::new(),
@@ -106,20 +124,23 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         current_landscape_id,
         Some(next_trace.id),
         None,
-    ).create(&pool)?;
+    )
+    .create(&pool)?;
     let lens = lens.update_current_landscape(new_analysis.id, &pool)?;
     let processor = analysis_processor::AnalysisProcessor::setup(
         new_analysis.id,
         next_trace.id,
         current_landscape_id,
-        &pool
+        &pool,
     )?;
     let _new_landscape = processor.process().await?;
     Ok(Some(lens))
 }
 
-pub async fn create_first_landscape(user_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-
+pub async fn create_first_landscape(
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<LandscapeAnalysis, PpdcError> {
     let initial_landscape = NewLandscapeAnalysis::new(
         "Analyse de la biographie".to_string(),
         "Analyse de la biographie".to_string(),
@@ -129,7 +150,7 @@ pub async fn create_first_landscape(user_id: Uuid, pool: &DbPool) -> Result<Land
         None,
         None,
         None,
-    ).create(&pool)?;
+    )
+    .create(&pool)?;
     Ok(initial_landscape)
 }
-    

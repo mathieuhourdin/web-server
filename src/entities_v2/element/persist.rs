@@ -2,9 +2,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError,
-    interaction::model::NewInteraction,
-    resource_relation::NewResourceRelation,
+    error::PpdcError, interaction::model::NewInteraction, resource_relation::NewResourceRelation,
 };
 
 use super::model::{Element, NewElement};
@@ -82,7 +80,12 @@ impl NewElement {
     }
 }
 
-pub fn link_to_landmark(element_id: Uuid, landmark_id: Uuid, user_id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
+pub fn link_to_landmark(
+    element_id: Uuid,
+    landmark_id: Uuid,
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<Uuid, PpdcError> {
     let mut elmt_landmark = NewResourceRelation::new(element_id, landmark_id);
     elmt_landmark.relation_type = Some("elmt".to_string());
     elmt_landmark.user_id = Some(user_id);

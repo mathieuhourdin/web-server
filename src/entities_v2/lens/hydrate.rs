@@ -5,12 +5,7 @@ use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
     interaction::model::Interaction,
-    resource::{
-        EntityType,
-        NewResource,
-        Resource,
-        ResourceType,
-    },
+    resource::{EntityType, NewResource, Resource, ResourceType},
     resource_relation::ResourceRelation,
 };
 
@@ -68,28 +63,44 @@ impl Lens {
     }
     pub fn with_forked_landscape(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let targets = ResourceRelation::find_target_for_resource(self.id, &pool)?;
-        let fork_landscape_id = targets.into_iter()
+        let fork_landscape_id = targets
+            .into_iter()
             .find(|target| target.resource_relation.relation_type == "fork".to_string())
             .map(|target| target.target_resource.id);
-        Ok(Lens { fork_landscape_id, ..self })
+        Ok(Lens {
+            fork_landscape_id,
+            ..self
+        })
     }
     pub fn with_current_landscape(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let targets = ResourceRelation::find_target_for_resource(self.id, &pool)?;
-        let current_landscape_id = targets.into_iter()
+        let current_landscape_id = targets
+            .into_iter()
             .find(|target| target.resource_relation.relation_type == "head".to_string())
             .map(|target| target.target_resource.id);
-        Ok(Lens { current_landscape_id, ..self })
+        Ok(Lens {
+            current_landscape_id,
+            ..self
+        })
     }
     pub fn with_target_trace(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let targets = ResourceRelation::find_target_for_resource(self.id, &pool)?;
-        let target_trace_id = targets.into_iter()
+        let target_trace_id = targets
+            .into_iter()
             .find(|target| target.resource_relation.relation_type == "trgt".to_string())
             .map(|target| target.target_resource.id);
         if target_trace_id.is_none() {
-            return Err(PpdcError::new(404, ErrorType::ApiError, "Target trace not found".to_string()));
+            return Err(PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Target trace not found".to_string(),
+            ));
         }
         let target_trace_id = target_trace_id.unwrap();
-        Ok(Lens { target_trace_id, ..self })
+        Ok(Lens {
+            target_trace_id,
+            ..self
+        })
     }
     pub fn find_full_lens(id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
         let lens = Resource::find(id, pool)?;
@@ -103,7 +114,8 @@ impl Lens {
 
     pub fn get_user_lenses(user_id: Uuid, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
         let lenses = Interaction::find_paginated_outputs_for_user(0, 200, user_id, "lens", pool)?;
-        let lenses = lenses.into_iter()
+        let lenses = lenses
+            .into_iter()
             .map(|interaction| Lens::find_full_lens(interaction.resource.id, pool).unwrap())
             .collect::<Vec<Lens>>();
         Ok(lenses)

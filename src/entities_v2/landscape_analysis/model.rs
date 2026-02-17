@@ -59,7 +59,12 @@ impl NewLandscapeAnalysis {
         }
     }
 
-    pub fn new_placeholder(user_id: Uuid, trace_id: Uuid, parent_landscape_analysis_id: Option<Uuid>, replayed_from_id: Option<Uuid>) -> NewLandscapeAnalysis {
+    pub fn new_placeholder(
+        user_id: Uuid,
+        trace_id: Uuid,
+        parent_landscape_analysis_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
+    ) -> NewLandscapeAnalysis {
         NewLandscapeAnalysis {
             title: format!("Analyse de la trace {}", trace_id),
             subtitle: "Analyse".to_string(),

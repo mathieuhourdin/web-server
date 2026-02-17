@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisEvent {
@@ -13,11 +13,23 @@ pub struct AnalysisEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum AnalysisEventData {
-    StepStarted { step: String },
-    StepFinished { step: String, summary: Option<String> },
+    StepStarted {
+        step: String,
+    },
+    StepFinished {
+        step: String,
+        summary: Option<String>,
+    },
 
-    LlmCallStarted { step: String, llm_call_id: String },
-    LlmCallFinished { step: String, llm_call_id: String, ok: bool },
+    LlmCallStarted {
+        step: String,
+        llm_call_id: String,
+    },
+    LlmCallFinished {
+        step: String,
+        llm_call_id: String,
+        ok: bool,
+    },
 
     CandidatesRetrieved {
         step: String,

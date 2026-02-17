@@ -12,8 +12,8 @@ pub fn init_tracing() {
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
     let _ = TRACING_GUARD.set(guard);
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("work_analyzer=info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("work_analyzer=info"));
 
     let fmt_layer = fmt::layer()
         .with_writer(non_blocking)

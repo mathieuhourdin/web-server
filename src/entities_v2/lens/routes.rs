@@ -1,11 +1,15 @@
-use axum::{debug_handler, extract::{Extension, Json, Path}};
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path},
+};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{error::PpdcError, session::Session, resource::maturing_state::MaturingState};
+use crate::entities::{
+    error::PpdcError, resource::maturing_state::MaturingState, session::Session,
+};
 use crate::entities_v2::trace::Trace;
 use crate::work_analyzer;
-
 
 use super::model::{Lens, NewLens, NewLensDto};
 use super::persist::delete_lens_and_landscapes;
@@ -16,12 +20,7 @@ pub async fn post_lens_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
-    let lens = NewLens::new(
-        payload, 
-        None,
-        session.user_id.unwrap()
-    )
-        .create(&pool)?;
+    let lens = NewLens::new(payload, None, session.user_id.unwrap()).create(&pool)?;
     let lens = Lens::find_full_lens(lens.id, &pool)?;
 
     tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
@@ -47,7 +46,9 @@ pub async fn put_lens_route(
         }
     }
     if payload.processing_state.is_some() {
-        if lens.processing_state == MaturingState::Finished && payload.processing_state.unwrap() == MaturingState::Replay {
+        if lens.processing_state == MaturingState::Finished
+            && payload.processing_state.unwrap() == MaturingState::Replay
+        {
             lens = lens.set_processing_state(payload.processing_state.unwrap(), &pool)?;
             tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
         }

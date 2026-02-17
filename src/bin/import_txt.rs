@@ -1,21 +1,38 @@
+use chrono::{Duration, NaiveDate, NaiveDateTime};
+use regex::{self, Regex};
+use serde::Serialize;
+use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::Path;
-use regex::{Regex, self};
-use serde::Serialize;
-use std::fmt;
-use chrono::{NaiveDateTime, NaiveDate, Duration};
-use std::collections::HashMap;
-use web_server::entities_v2::trace::NewTrace;
 use uuid::Uuid;
 use web_server::db;
 use web_server::db::DbPool;
+use web_server::entities_v2::trace::NewTrace;
 
 const USER_ID: Uuid = uuid::uuid!("a647a452-3a80-4a94-97d0-8a36c1c752c1");
 const JOURNAL_ID: Uuid = uuid::uuid!("95bacf39-5ca7-4a9f-99c1-eb6d440dade1");
 
-const DAYS: [&str; 7] = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-const MONTHS: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
-const YEARS: [&str; 8] = ["2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027"];
+const DAYS: [&str; 7] = [
+    "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche",
+];
+const MONTHS: [&str; 12] = [
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+];
+const YEARS: [&str; 8] = [
+    "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027",
+];
 
 fn read_to_string<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
     Ok(fs::read_to_string(path)?)
@@ -30,12 +47,20 @@ pub struct Block {
 
 impl Block {
     pub fn new() -> Self {
-        Self { header: String::new(), content: String::new(), date: None }
+        Self {
+            header: String::new(),
+            content: String::new(),
+            date: None,
+        }
     }
 }
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Header: {}\n\nContent: {}\n\nDate: {:?}\n\n", self.header, self.content, self.date)
+        write!(
+            f,
+            "Header: {}\n\nContent: {}\n\nDate: {:?}\n\n",
+            self.header, self.content, self.date
+        )
     }
 }
 
@@ -109,17 +134,25 @@ fn get_block_date(line: &str) -> Option<String> {
     } else if let Some(date) = french_date_regex.captures(line) {
         println!("Date: {:?}", date);
         if let (Some(hour), Some(minute)) = (date.name("hour"), date.name("minute")) {
-            return Some(format!("{}-{}-{} {}:{}", 
-            date.name("year").map(|y| y.as_str()).unwrap_or(year_from_month(&date["month"]).unwrap()), 
-            months_map().get(&date["month"]).unwrap_or(&0), 
-            date["day"].to_string(),
-            hour.as_str(),
-            minute.as_str()));
+            return Some(format!(
+                "{}-{}-{} {}:{}",
+                date.name("year")
+                    .map(|y| y.as_str())
+                    .unwrap_or(year_from_month(&date["month"]).unwrap()),
+                months_map().get(&date["month"]).unwrap_or(&0),
+                date["day"].to_string(),
+                hour.as_str(),
+                minute.as_str()
+            ));
         } else {
-            return Some(format!("{}-{}-{}", 
-            date.name("year").map(|y| y.as_str()).unwrap_or(year_from_month(&date["month"]).unwrap()), 
-            months_map().get(&date["month"]).unwrap_or(&0), 
-            date["day"].to_string()));
+            return Some(format!(
+                "{}-{}-{}",
+                date.name("year")
+                    .map(|y| y.as_str())
+                    .unwrap_or(year_from_month(&date["month"]).unwrap()),
+                months_map().get(&date["month"]).unwrap_or(&0),
+                date["day"].to_string()
+            ));
         }
     } else {
         return None;
@@ -135,7 +168,12 @@ fn extract_blocks(lines: Vec<&str>) -> Vec<Block> {
         println!("Line: {}", line);
         println!("Last empty: {}", last_empty);
         println!("Line starts with ###: {}", line.starts_with("###"));
-        println!("French date regex {:?} matches line {:?}: {}", french_date_regex, line, french_date_regex.is_match(line));
+        println!(
+            "French date regex {:?} matches line {:?}: {}",
+            french_date_regex,
+            line,
+            french_date_regex.is_match(line)
+        );
         if line.is_empty() {
             last_empty = true;
             continue;
@@ -184,10 +222,16 @@ fn blocks_to_traces(blocks: Vec<Block>) -> Vec<NewTrace> {
     traces
 }
 
-fn create_traces(traces: Vec<NewTrace>, pool: &DbPool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn create_traces(
+    traces: Vec<NewTrace>,
+    pool: &DbPool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for trace in traces {
-        println!("Creating trace with user id: {} and journal id: {}", trace.user_id, trace.journal_id);
-        let result =trace.create(pool);
+        println!(
+            "Creating trace with user id: {} and journal id: {}",
+            trace.user_id, trace.journal_id
+        );
+        let result = trace.create(pool);
         match result {
             Ok(_) => println!("Trace created successfully"),
             Err(e) => println!("Error creating trace: {:?}", e),
@@ -198,7 +242,6 @@ fn create_traces(traces: Vec<NewTrace>, pool: &DbPool) -> Result<(), Box<dyn std
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
     let pool = db::create_pool();
     db::init_global_pool(pool.clone());
 
@@ -213,14 +256,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_extract_blocks() {
-        let lines = vec!["### 2026-02-04", "Mardi 3 décembre", "Mardi 2 décembre 2026", "This is a test", "### 2026-02-05", "This is a test", "### 2026-02-06", "This is a test"];
+        let lines = vec![
+            "### 2026-02-04",
+            "Mardi 3 décembre",
+            "Mardi 2 décembre 2026",
+            "This is a test",
+            "### 2026-02-05",
+            "This is a test",
+            "### 2026-02-06",
+            "This is a test",
+        ];
         let date = get_block_date(lines[1]);
         println!("Date: {:?}", date);
         assert_eq!(date, Some("2025-12-3".to_string()));
