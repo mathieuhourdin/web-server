@@ -195,7 +195,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.lt(date.and_hms_opt(12, 0, 0).unwrap()))
                 .order(interactions::interaction_date.asc()),
             "drft",
-            "trce",
+            ResourceType::UserTrace.to_code(),
             pool,
         )
     }
@@ -215,7 +215,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.gt(end_date))
                 .order(interactions::interaction_date.asc()),
             "drft",
-            "trce",
+            ResourceType::UserTrace.to_code(),
             pool,
         )
     }
@@ -232,7 +232,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.lt(date))
                 .order(interactions::interaction_date.asc()),
             "all",
-            "trce",
+            ResourceType::UserTrace.to_code(),
             pool,
         )
     }
@@ -250,7 +250,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.gt(date))
                 .order(interactions::interaction_date.asc()),
             "all",
-            "trce",
+            ResourceType::UserTrace.to_code(),
             pool,
         )
     }
@@ -266,7 +266,7 @@ impl Interaction {
                 .filter(interactions::interaction_user_id.eq(user_id))
                 .order(interactions::interaction_date.asc()),
             "all",
-            "trce",
+            ResourceType::UserTrace.to_code(),
             pool,
         )?;
         Ok(interactions.into_iter().next())
@@ -284,7 +284,7 @@ impl Interaction {
                 .filter(interactions::interaction_user_id.eq(user_id))
                 .order(interactions::interaction_date.desc()),
             "all",
-            "trce",
+            ResourceType::UserTrace.to_code(),
             pool,
         )
     }

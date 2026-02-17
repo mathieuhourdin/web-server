@@ -1,10 +1,18 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
+    interaction::model::NewInteraction,
+    resource::{
+        entity_type::EntityType,
+        maturing_state::MaturingState,
+        resource_type::ResourceType,
+        NewResource,
+    },
     session::Session,
 };
+use crate::entities_v2::trace::model::{NewTrace, TraceType};
 use crate::pagination::PaginationParams;
-use crate::schema::users;
+use crate::schema::{interactions, resources, users};
 use argon2::Config;
 use axum::{
     debug_handler,
@@ -237,6 +245,92 @@ impl User {
     }
 }
 
+pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let has_meta_journal = diesel::select(diesel::dsl::exists(
+        interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(resources::resource_type.eq(ResourceType::MetaJournal)),
+    ))
+    .get_result::<bool>(&mut conn)?;
+
+    if has_meta_journal {
+        return Ok(());
+    }
+
+    let meta_journal = NewResource {
+        title: "Meta Journal".to_string(),
+        subtitle: "".to_string(),
+        content: Some("".to_string()),
+        external_content_url: None,
+        comment: None,
+        image_url: None,
+        resource_type: Some(ResourceType::MetaJournal),
+        maturing_state: Some(MaturingState::Draft),
+        publishing_state: Some("drft".to_string()),
+        category_id: None,
+        is_external: Some(false),
+        entity_type: Some(EntityType::Journal),
+    }
+    .create(pool)?;
+
+    let mut meta_journal_interaction = NewInteraction::new(user_id, meta_journal.id);
+    meta_journal_interaction.interaction_type = Some("outp".to_string());
+    meta_journal_interaction.create(pool)?;
+
+    Ok(())
+}
+
+fn find_latest_meta_journal_id_for_user(
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<Option<Uuid>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let journal_id = interactions::table
+        .inner_join(resources::table)
+        .filter(interactions::interaction_user_id.eq(user_id))
+        .filter(interactions::interaction_type.eq("outp"))
+        .filter(resources::resource_type.eq(ResourceType::MetaJournal))
+        .order(interactions::created_at.desc())
+        .select(resources::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+
+    Ok(journal_id)
+}
+
+fn create_bio_trace_for_user(user_id: Uuid, biography: String, pool: &DbPool) -> Result<(), PpdcError> {
+    ensure_user_has_meta_journal(user_id, pool)?;
+    let journal_id = find_latest_meta_journal_id_for_user(user_id, pool)?
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "Meta journal not found after ensure".to_string(),
+            )
+        })?;
+
+    let mut new_trace = NewTrace::new(
+        "Biography Update".to_string(),
+        "".to_string(),
+        biography,
+        None,
+        user_id,
+        journal_id,
+    );
+    new_trace.trace_type = TraceType::BioTrace;
+    new_trace.create(pool)?;
+    Ok(())
+}
+
 #[derive(QueryableByName)]
 struct Row {
     #[diesel(sql_type = SqlUuid)]
@@ -327,6 +421,12 @@ pub async fn post_user(
 ) -> Result<Json<User>, PpdcError> {
     payload.hash_password().unwrap();
     let created_user = payload.create(&pool)?;
+    if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id))).execute(&mut conn);
+        }
+        return Err(err);
+    }
     Ok(Json(created_user))
 }
 
@@ -339,11 +439,23 @@ pub async fn put_user_route(
 ) -> Result<Json<User>, PpdcError> {
     let session_user_id = session.user_id.unwrap();
     let existing_user = User::find(&id, &pool)?;
+    let new_biography = payload.biography.clone();
+    let biography_changed = new_biography.as_ref()
+        .map(|bio| existing_user.biography.as_ref() != Some(bio))
+        .unwrap_or(false);
 
     if &session_user_id != &id && existing_user.is_platform_user {
         return Err(PpdcError::unauthorized());
     }
-    Ok(Json(payload.update(&id, &pool)?))
+    let updated_user = payload.update(&id, &pool)?;
+
+    if biography_changed {
+        if let Some(biography) = new_biography {
+            create_bio_trace_for_user(id, biography, &pool)?;
+        }
+    }
+
+    Ok(Json(updated_user))
 }
 
 #[debug_handler]

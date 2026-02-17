@@ -6,7 +6,6 @@ use crate::entities::{
     resource::{
         entity_type::EntityType,
         maturing_state::MaturingState,
-        resource_type::ResourceType,
         Resource,
     },
 };
@@ -25,6 +24,7 @@ impl Journal {
             user_id: Uuid::nil(),
             created_at: resource.created_at,
             updated_at: resource.updated_at,
+            journal_type: resource.resource_type.into(),
         }
     }
 
@@ -38,7 +38,7 @@ impl Journal {
             external_content_url: None,
             comment: None,
             image_url: None,
-            resource_type: ResourceType::Journal,
+            resource_type: self.journal_type.into(),
             entity_type: EntityType::Journal,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),

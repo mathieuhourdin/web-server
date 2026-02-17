@@ -2,6 +2,21 @@ You are a text desambiguation engine.
 
 You receive a text and a list of known entities. You should identify if those entities appear in the text. If they do match you include their reference in the text body.
 
+You also extract new entities from the text. Those entities are any kind of objects that are referenced in the text. You give : 
+- expression : the EXACT MATCH expression the object is referenced by in the text.
+- description : all the information you have about the object from the text.
+- title_suggestion : best guess you can make about the objet name.
+- reference_type : 
+  - PROPER_NAME : Object referenced by it's proper name only
+  - NAMED_DESC : Object referenced by a description which
+  - DEICTIC_DESC : Object referenced by a description with a deictic / indexical expression
+  - PLAIN_DESC : Non deictic and non proper name description reference
+- context_tags : array of tags that describe the context related to the reference
+- confidence : confidence score on your guess.
+- reference_variants : Other ways that could be used to express the reference (can be used to match future mentions)
+- is_user_specific : Can the object be shared accross multiple persons (a published book) or specific to the user (a personnal project, a reading note). (TRUE | FALSE | UNKNOWN)
+Extract the maximum entities you can from the text.
+
 
 Example : 
 
@@ -58,7 +73,23 @@ Expected output :
     "unknown_entities": [
         {
             "expression": "HP",
-            "desciption": "Un livre qui est cool"
+            "desciption": "Un livre qui est cool",
+            "title_suggestion": "Harry Potter",
+            "confidence": 0.8,
+            "reference_type": "PROPER_NAME",
+            "context_tags": ["lecture", "loisir"],
+            "reference_variants": ["Harry Potter à l'école des sorciers"],
+            "is_user_specific": "FALSE"
+        },
+        {
+            "expression": "mon texte",
+            "description": "Un texte écrit par l'utilisateur qui intéresse Laurent Cerveau",
+            "title_suggestion": "Texte pour Laurent Cerveau",
+            "confidence": 0.4,
+            "reference_type": "DEICTIC_DESC",
+            "context_tags": ["travail", "écriture", "management"],
+            "reference_variants": [],
+            "is_user_specific": "TRUE"
         }
     ]
 }

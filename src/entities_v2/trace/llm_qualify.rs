@@ -62,7 +62,7 @@ pub async fn qualify_trace(trace: &str) -> Result<(NewResource, Option<NaiveDate
         resource_properties.title,
         resource_properties.subtitle,
         trace.to_string(),
-        ResourceType::Trace,
+        ResourceType::UserTrace,
     );
     Ok((new_resource, resource_properties.interaction_date))
 }

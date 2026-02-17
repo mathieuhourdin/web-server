@@ -39,65 +39,71 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
     let lens = Lens::find_full_lens(lens_id, &pool)?;
     println!("lens: {:?}", lens);
     let current_landscape_id = lens.current_landscape_id;
-    if current_landscape_id.is_none() {
+    /*if current_landscape_id.is_none() {
         println!("Creating first landscape");
         let initial_landscape = create_first_landscape(lens.user_id.expect("User id is required"), &pool).await?;
         let lens = lens.update_current_landscape(initial_landscape.id, &pool)?;
         println!("Lens updated with first landscape: {:?}", lens);
         return Ok(Some(lens));
-    } 
-    let current_landscape_id = current_landscape_id.expect("Current landscape id is required");
-    let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id, &pool)?;
-    let current_trace_id = current_landscape.analyzed_trace_id;
-    if current_trace_id == Some(lens.target_trace_id) {
-        // The lens is up to date, no need to run the pipeline.
-        // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
-        if lens.processing_state == MaturingState::Replay {
-            let new_analysis = NewLandscapeAnalysis::new(
-                format!("Replay de l'Analyse de la trace {}", current_trace_id.unwrap()),
-                String::new(),
-                String::new(),
-                lens.user_id.expect("User id is required"),
-                Utc::now().naive_utc(),
-                current_landscape.parent_analysis_id,
-                Some(current_trace_id.unwrap()),
-                Some(current_landscape.id),
-            ).create(&pool)?;
-            let _lens = lens.update_current_landscape(new_analysis.id, &pool)?;
-            let processor = analysis_processor::AnalysisProcessor::setup(
-                new_analysis.id,
-                current_trace_id.unwrap(),
-                current_landscape_id,
-                &pool
-            )?;
-            let _new_landscape = processor.process().await?;
-        } 
-        return Ok(None);
+    } */
+    //let current_landscape_id = current_landscape_id.expect("Current landscape id is required");
+    //let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id, &pool)?;
+    //let current_trace_id = current_landscape.analyzed_trace_id;
+
+    // check the replay case first.
+    if current_landscape_id.is_some() {
+        let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
+        if current_landscape.analyzed_trace_id == Some(lens.target_trace_id) {
+            // The lens is up to date, no need to run the pipeline.
+            // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
+            if lens.processing_state == MaturingState::Replay {
+                let new_analysis = NewLandscapeAnalysis::new(
+                    format!("Replay de l'Analyse de la trace {}", current_landscape.analyzed_trace_id.unwrap()),
+                    String::new(),
+                    String::new(),
+                    lens.user_id.expect("User id is required"),
+                    Utc::now().naive_utc(),
+                    current_landscape.parent_analysis_id,
+                    current_landscape.analyzed_trace_id,
+                    Some(current_landscape.id),
+                ).create(&pool)?;
+                let _lens = lens.update_current_landscape(new_analysis.id, &pool)?;
+                let processor = analysis_processor::AnalysisProcessor::setup(
+                    new_analysis.id,
+                    current_landscape.analyzed_trace_id.unwrap(),
+                    current_landscape_id,
+                    &pool
+                )?;
+                let _new_landscape = processor.process().await?;
+            } 
+            // This should stop the pipeline if we have reached the target trace.
+            return Ok(None);
+        }
     }
     // The lens is not up to date, run the pipeline.
     let next_trace: Option<Trace>;
-    if current_trace_id.is_none() {
+    let title: String;
+    if current_landscape_id.is_none() {
         next_trace = Trace::get_first(lens.user_id.expect("User id is required"), &pool)?;
+        title = String::from("Premiere analyse ");
     } else {
-        next_trace = Trace::get_next(lens.user_id.expect("User id is required"), current_trace_id.unwrap(), &pool)?;
+        let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
+        next_trace = Trace::get_next(lens.user_id.expect("User id is required"), current_landscape.analyzed_trace_id.unwrap(), &pool)?;
+        title = String::from("Analyse de la trace suivante ");
     }
     if next_trace.is_none() {
         // It should not happen, but if it does, we should stop the pipeline.
         return Ok(None);
     }
     let next_trace = next_trace.unwrap();
-    if Some(next_trace.id) == current_trace_id {
-        // The next trace is the same as the current trace, we should stop the pipeline.
-        return Ok(None);
-    }
-    let analysis_title = format!("Analyse de la trace du {}", next_trace.interaction_date.unwrap().format("%Y-%m-%d").to_string());
+    let analysis_title = format!("{} {}", title, next_trace.interaction_date.unwrap().format("%Y-%m-%d").to_string());
     let new_analysis = NewLandscapeAnalysis::new(
         analysis_title,
         String::new(),
         String::new(),
         lens.user_id.expect("User id is required"),
         Utc::now().naive_utc(),
-        Some(current_landscape_id),
+        current_landscape_id,
         Some(next_trace.id),
         None,
     ).create(&pool)?;

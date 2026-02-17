@@ -27,8 +27,13 @@ pub enum ResourceType {
     Course, // public post
     Idea, // public post
     Journal, // Journal 
+    WorkLogJournal, // Journal
+    ReadingNoteJournal, // Journal
     JournalItem, // public post
-    Trace, // Trace
+    Trace, // Legacy Trace
+    UserTrace, // Trace
+    BioTrace, // Trace
+    WorkspaceTrace, // Trace
     Mission, // Landmark
     Element, // Element
     Task, // Landmark
@@ -44,6 +49,7 @@ pub enum ResourceType {
     Lens, // Lens
     TraceMirror, // TraceMirror 
     Author, // Landmark
+    MetaJournal, // Journal
 }
 
 impl ResourceType {
@@ -63,8 +69,13 @@ impl ResourceType {
             "curs" => Ok(ResourceType::Course),
             "idea" => Ok(ResourceType::Idea),
             "jrnl" => Ok(ResourceType::Journal),
+            "wjnl" => Ok(ResourceType::WorkLogJournal),
+            "rjnl" => Ok(ResourceType::ReadingNoteJournal),
             "jrit" => Ok(ResourceType::JournalItem),
-            "trce" => Ok(ResourceType::Trace),
+            "trce" => Ok(ResourceType::UserTrace),
+            "utrc" => Ok(ResourceType::UserTrace),
+            "btrc" => Ok(ResourceType::BioTrace),
+            "wtrc" => Ok(ResourceType::WorkspaceTrace),
             "atcl" => Ok(ResourceType::OpinionArticle),
             "miss" => Ok(ResourceType::Mission),
             "elmt" => Ok(ResourceType::Element),
@@ -81,6 +92,7 @@ impl ResourceType {
             "lens" => Ok(ResourceType::Lens),
             "trcm" => Ok(ResourceType::TraceMirror),
             "autr" => Ok(ResourceType::Author),
+            "meta" => Ok(ResourceType::MetaJournal),
             &_ => {
                 return Err(PpdcError::new(
                     404,
@@ -106,8 +118,13 @@ impl ResourceType {
             ResourceType::Course => "curs",
             ResourceType::Idea => "idea",
             ResourceType::Journal => "jrnl",
+            ResourceType::WorkLogJournal => "wjnl",
+            ResourceType::ReadingNoteJournal => "rjnl",
             ResourceType::JournalItem => "jrit",
             ResourceType::Trace => "trce",
+            ResourceType::UserTrace => "trce",
+            ResourceType::BioTrace => "btrc",
+            ResourceType::WorkspaceTrace => "wtrc",
             ResourceType::Mission => "miss",
             ResourceType::Element => "elmt",
             ResourceType::Task => "task",
@@ -123,6 +140,7 @@ impl ResourceType {
             ResourceType::Lens => "lens",
             ResourceType::TraceMirror => "trcm",
             ResourceType::Author => "autr",
+            ResourceType::MetaJournal => "meta",
         }
     }
     pub fn to_full_text(&self) -> &str {
@@ -141,8 +159,13 @@ impl ResourceType {
             ResourceType::Course => "Course",
             ResourceType::Idea => "Idea",
             ResourceType::Journal => "Journal",
+            ResourceType::WorkLogJournal => "Work Log Journal",
+            ResourceType::ReadingNoteJournal => "Reading Note Journal",
             ResourceType::JournalItem => "Journal Item",
             ResourceType::Trace => "Trace",
+            ResourceType::UserTrace => "User Trace",
+            ResourceType::BioTrace => "Bio Trace",
+            ResourceType::WorkspaceTrace => "Workspace Trace",
             ResourceType::Mission => "Mission",
             ResourceType::Element => "Element",
             ResourceType::Task => "Task",
@@ -158,6 +181,7 @@ impl ResourceType {
             ResourceType::Lens => "Lens",
             ResourceType::TraceMirror => "Trace Mirror",
             ResourceType::Author => "Author",
+            ResourceType::MetaJournal => "Meta Journal",
         }
     }
     pub fn from_full_text(full_text: &str) -> Result<ResourceType, PpdcError> {
@@ -176,8 +200,13 @@ impl ResourceType {
             "Course" => Ok(ResourceType::Course),
             "Idea" => Ok(ResourceType::Idea),
             "Journal" => Ok(ResourceType::Journal),
+            "Work Log Journal" => Ok(ResourceType::WorkLogJournal),
+            "Reading Note Journal" => Ok(ResourceType::ReadingNoteJournal),
             "Journal Item" => Ok(ResourceType::JournalItem),
-            "Trace" => Ok(ResourceType::Trace),
+            "Trace" => Ok(ResourceType::UserTrace),
+            "User Trace" => Ok(ResourceType::UserTrace),
+            "Bio Trace" => Ok(ResourceType::BioTrace),
+            "Workspace Trace" => Ok(ResourceType::WorkspaceTrace),
             "Mission" => Ok(ResourceType::Mission),
             "Element" => Ok(ResourceType::Element),
             "Task" => Ok(ResourceType::Task),
@@ -193,6 +222,7 @@ impl ResourceType {
             "Lens" => Ok(ResourceType::Lens),
             "Trace Mirror" => Ok(ResourceType::TraceMirror),
             "Author" => Ok(ResourceType::Author),
+            "Meta Journal" => Ok(ResourceType::MetaJournal),
             &_ => Err(PpdcError::new(
                 404,
                 ErrorType::ApiError,
@@ -225,8 +255,13 @@ impl ResourceType {
             | ResourceType::Course
             | ResourceType::Idea
             | ResourceType::JournalItem => EntityType::PublicPost,
-            ResourceType::Journal => EntityType::Journal,
-            ResourceType::Trace => EntityType::Trace,
+            ResourceType::Journal
+            | ResourceType::WorkLogJournal
+            | ResourceType::ReadingNoteJournal => EntityType::Journal,
+            ResourceType::Trace
+            | ResourceType::UserTrace
+            | ResourceType::BioTrace
+            | ResourceType::WorkspaceTrace => EntityType::Trace,
             ResourceType::TraceMirror => EntityType::TraceMirror,
             ResourceType::Element
             | ResourceType::Event
@@ -242,6 +277,7 @@ impl ResourceType {
             | ResourceType::Author => EntityType::Landmark,
             ResourceType::Analysis => EntityType::LandscapeAnalysis,
             ResourceType::Lens => EntityType::Lens,
+            ResourceType::MetaJournal => EntityType::Journal,
         }
     }
 }

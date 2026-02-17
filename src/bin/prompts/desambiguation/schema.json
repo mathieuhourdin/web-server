@@ -39,13 +39,56 @@
           "expression": {
             "type": "string"
           },
-          "desciption": {
+          "description": {
             "type": "string"
+          },
+          "title_suggestion": {
+            "type": "string"
+          },
+          "reference_type": {
+            "type": "string",
+            "enum": [
+              "PROPER_NAME",
+              "NAMED_DESC",
+              "DEICTIC_DESC",
+              "PLAIN_DESC"
+            ]
+          },
+          "context_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reference_variants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_user_specific": {
+            "type": "string",
+            "enum": [
+              "TRUE",
+              "FALSE",
+              "UNKNOWN"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         },
         "required": [
           "expression",
-          "desciption"
+          "description",
+          "title_suggestion",
+          "reference_type",
+          "context_tags",
+          "reference_variants",
+          "is_user_specific",
+          "confidence"
         ]
       }
     }

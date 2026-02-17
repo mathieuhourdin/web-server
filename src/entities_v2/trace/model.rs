@@ -8,6 +8,7 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::Interaction,
     resource::maturing_state::MaturingState,
+    resource::resource_type::ResourceType,
     resource::Resource,
 };
 use crate::schema::{interactions, resource_relations, resources};
@@ -27,12 +28,68 @@ pub struct Trace {
     pub content: String,
     pub journal_id: Option<Uuid>,
     pub user_id: Uuid,
+    pub trace_type: TraceType,
     pub maturing_state: MaturingState,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceType {
+    BioTrace,
+    WorkspaceTrace,
+    UserTrace,
+}
+
+impl From<ResourceType> for TraceType {
+    fn from(resource_type: ResourceType) -> Self {
+        match resource_type {
+            ResourceType::BioTrace => TraceType::BioTrace,
+            ResourceType::WorkspaceTrace => TraceType::WorkspaceTrace,
+            ResourceType::UserTrace => TraceType::UserTrace,
+            // Backward compatibility for existing trace rows.
+            ResourceType::Trace => TraceType::UserTrace,
+            _ => TraceType::UserTrace,
+        }
+    }
+}
+
+impl From<TraceType> for ResourceType {
+    fn from(trace_type: TraceType) -> Self {
+        match trace_type {
+            TraceType::BioTrace => ResourceType::BioTrace,
+            TraceType::WorkspaceTrace => ResourceType::WorkspaceTrace,
+            TraceType::UserTrace => ResourceType::UserTrace,
+        }
+    }
+}
+
 impl Trace {
+    pub fn get_most_recent_for_user(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let latest_trace = interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(resources::resource_type.eq_any(vec![
+                ResourceType::UserTrace,
+                ResourceType::BioTrace,
+                ResourceType::WorkspaceTrace,
+            ]))
+            .order(interactions::interaction_date.desc())
+            .select((Interaction::as_select(), Resource::as_select()))
+            .first::<(Interaction, Resource)>(&mut conn)
+            .optional()?;
+
+        match latest_trace {
+            Some((_, resource)) => Ok(Some(Trace::find_full_trace(resource.id, pool)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_between(user_id: Uuid, start_trace_id: Uuid, end_trace_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
         let start_trace = Trace::find_full_trace(start_trace_id, pool)?;
         let end_trace = Trace::find_full_trace(end_trace_id, pool)?;
@@ -66,8 +123,26 @@ impl Trace {
     }
 
     pub fn get_first(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
-        let interaction = Interaction::find_first_trace_for_user(user_id, pool)?;
-        match interaction {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let latest_bio_trace = interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(resources::resource_type.eq(ResourceType::BioTrace))
+            .order(interactions::interaction_date.desc())
+            .select((Interaction::as_select(), Resource::as_select()))
+            .first::<(Interaction, Resource)>(&mut conn)
+            .optional()?;
+
+        if let Some((_, resource)) = latest_bio_trace {
+            return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
+        }
+
+        let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
+        match first_user_trace {
             Some(interaction) => Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?)),
             None => Ok(None),
         }
@@ -75,6 +150,14 @@ impl Trace {
 
     pub fn get_next(user_id: Uuid, trace_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.trace_type == TraceType::BioTrace {
+            let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
+            return match first_user_trace {
+                Some(interaction) => Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?)),
+                None => Ok(None),
+            };
+        }
+
         let interactions = Interaction::find_all_traces_for_user_after_date(user_id, trace.interaction_date.unwrap(), pool)?;
         let next_trace = interactions
             .into_iter()
@@ -108,7 +191,11 @@ impl Trace {
             )
             .filter(resource_relations::target_resource_id.eq(journal_id))
             .filter(resource_relations::relation_type.eq("jrit"))
-            .filter(resources::resource_type.eq("trce"))
+            .filter(resources::resource_type.eq_any(vec![
+                ResourceType::UserTrace,
+                ResourceType::BioTrace,
+                ResourceType::WorkspaceTrace,
+            ]))
             .filter(interactions::interaction_type.eq("outp"))
             .order(interactions::interaction_date.desc())
             .select((Interaction::as_select(), Resource::as_select()))
@@ -138,6 +225,7 @@ pub struct NewTrace {
     pub content: String,
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
+    pub trace_type: TraceType,
     pub journal_id: Uuid,
 }
 
@@ -157,6 +245,7 @@ impl NewTrace {
             content,
             interaction_date,
             user_id,
+            trace_type: TraceType::UserTrace,
             journal_id,
         }
     }

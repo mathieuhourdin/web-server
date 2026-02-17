@@ -38,7 +38,7 @@ impl AnalysisContext {
 
 pub struct AnalysisInputs {
     pub trace: Trace,
-    pub previous_landscape: LandscapeAnalysis,
+    pub previous_landscape: Option<LandscapeAnalysis>,
     pub previous_landscape_landmarks: Vec<Landmark>,
 }
 
@@ -164,11 +164,17 @@ impl AnalysisProcessor {
             current_elements,
         })
     }
-    pub fn setup(analysis_id: Uuid, trace_id: Uuid, previous_landscape_id: Uuid, pool: &DbPool) -> Result<AnalysisProcessor, PpdcError> {
+    pub fn setup(analysis_id: Uuid, trace_id: Uuid, previous_landscape_id: Option<Uuid>, pool: &DbPool) -> Result<AnalysisProcessor, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
         let user_id = trace.user_id;
-        let previous_landscape = LandscapeAnalysis::find_full_analysis(previous_landscape_id, &pool)?;
-        let previous_landscape_landmarks = previous_landscape.get_landmarks(None, &pool)?;
+        let (previous_landscape, previous_landscape_landmarks) = match previous_landscape_id {
+            Some(previous_landscape_id) => {
+                let previous_landscape = LandscapeAnalysis::find_full_analysis(previous_landscape_id, &pool)?;
+                let previous_landscape_landmarks = previous_landscape.get_landmarks(None, &pool)?;
+                (Some(previous_landscape), previous_landscape_landmarks)
+            }
+            None => (None, vec![]),
+        };
         let analysis_config = AnalysisConfig {
             model: "gpt-4.1-mini".to_string(),
             matching_confidence_threshold: 0.3,
