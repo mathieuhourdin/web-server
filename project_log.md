@@ -7,6 +7,71 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-17 TODAY FOCUS
+
+I need to create the new pipeline today.
+I can still delay the data migration I think. What i could use is : resource_relation between landmarks and resource trace for the reference. Maybe i create a reference entity v2 for this that persists in the resource_relation, with a json in relation_comment for now.
+
+Then I should also work on the fact to put the user's Bio in a separated journal. What I need here is to choose the way the invariant 1 user - 1 Meta journal is respected, and to make the different traces have different roles in this journal.
+
+Then I work on using this trace as the first trace analyzed for a new lens.
+
+The next step would be to create the object reference pipeline step in the trace analysis pipeline.
+
+Then we add the new extraction pipeline.
+
+### 2026-02-16 New pipeline
+
+The new pipeline should have the following steps
+
+If first trace : create landmarks from bio. Actually I wonder if Bio shouldn't be a type of trace. But what would be this trace journal ? Bio journal ?
+
+So the flow is : 
+- Desambiguation from existing landmarks
+- Extraction of elements
+- Matching of long term elements -> where should it happen ? / Classification of the found elements
+
+I need to work a little bit more on what to extract in landmarks to make the matching. The abbreviation list.
+The trace mirror should also have relation to a list of landmarks.
+
+Trace : Full text
+|   desambiguation
+v
+Trace mirror : 
+- Text with references desambiguation
+- List of landmarks referenced (resource_relations, or reference objects). Reference objects could be : id, local_id, trace_mirror_id, landmark_id (could be empty ?), reference, reference_type (direct|description)
+
+|
+v
+
+Is there a landmark matching / Creation here ?? Maybe. We should have a standalone matching / creation step I think.
+
+| Extraction of elements
+v
+
+Elements :
+- List of elements (Descriptive, Transaction, Normative, Evaluatives)
+- Elements reference existing landmarks.
+
+| Matching of elements with long term transactions ... The matching could be either on the landmarks or on some long term transaction entities. What long term entities ? Projects most of all : make progress in computer science, sociology project...
+v
+
+
+Doing the maximum of objects extraction and matching with the full text is good because I can rely on the full context. It should work if i have a limited size of trace.
+
+
+### 2026-02-16 Next steps
+
+- I want to work a little bit on the UI (make everything as clean as possible for demos to persons close to me).
+- I could even make a small part of social in the UI, just for demo purposes : like a share button on elements, to post things like "I have discovered this new book I think it's great".
+- I should finish the migration of data, and for that I need to work on a precise design for the analytical entities.
+- Try to implement the new pipeline with desambiguation and referencing first, and then global extraction.
+
+UI done.
+Try to work on the workflow now. 
+
+
+
 ### 2026-02-13 Ideas about desambiguation
 
 Abbreviations matching could work like this :
