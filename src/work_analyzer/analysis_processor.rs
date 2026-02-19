@@ -5,13 +5,13 @@ use crate::entities_v2::{
     journal::Journal,
     landmark::Landmark,
     landscape_analysis::LandscapeAnalysis,
-    trace::Trace,
+    trace::{Trace, TraceType},
     trace_mirror::{self, TraceMirror},
 };
 use crate::work_analyzer::{
     elements_pipeline::{self},
     element_pipeline_v2,
-    high_level_analysis, mirror_pipeline,
+    high_level_analysis, mirror_pipeline, hlp_pipeline,
 };
 use uuid::Uuid;
 
@@ -98,17 +98,24 @@ impl AnalysisProcessor {
         &self,
         state: AnalysisStateInitial,
     ) -> Result<AnalysisStateMirror, PpdcError> {
-        let trace_header = mirror_pipeline::header::extract_mirror_header(
-            &self.inputs.trace,
-            self.context.analysis_id,
-        )
-        .await?;
-        let trace_mirror = mirror_pipeline::header::create_trace_mirror(
-            &self.inputs.trace,
-            trace_header,
-            &self.context,
-        )
-        .await?;
+        let trace_mirror: TraceMirror;
+        if self.inputs.trace.trace_type == TraceType::HighLevelProjectsDefinition {
+            let hlp_pipeline_output = hlp_pipeline::run(
+                &self.context,
+                &self.inputs.trace,
+            )
+            .await?;
+            trace_mirror = hlp_pipeline_output.trace_mirror;
+        } else {
+            let user_high_level_projects =
+                Landmark::find_high_level_projects_for_user(self.context.user_id, &self.context.pool)?;
+            trace_mirror = mirror_pipeline::header::run(
+                &self.inputs.trace,
+                &user_high_level_projects,
+                &self.context,
+            )
+            .await?;
+        }
         let trace_mirror = mirror_pipeline::references_extraction::extraction::run(
             self.context.analysis_id,
             trace_mirror.id,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::db::DbPool;
 use crate::entities::error::PpdcError;
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
@@ -54,17 +56,30 @@ pub struct ReferenceContextItem {
     pub context_tags: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct HighLevelProjectContextItem {
+    #[serde(skip_serializing)]
+    pub uuid: Uuid,
+    pub id: i32,
+    pub title: String,
+    pub subtitle: String,
+    pub content: String,
+}
+
 pub async fn get_references_drafts(
     text: &str,
     context: &[LandmarkReferenceContextItem],
+    high_level_projects: &[HighLevelProjectContextItem],
     analysis_id: Uuid,
 ) -> Result<ReferencesExtractionResult, PpdcError> {
     let system_prompt = include_str!("../prompts/references_extraction/system.md").to_string();
     let user_prompt = format!(
         "trace_text : {}\n\n
-        landmarks_to_match : {}",
+        landmarks_to_match : {}\n\n
+        high_level_projects : {}",
         text,
-        serde_json::to_string(context)?
+        serde_json::to_string(context)?,
+        serde_json::to_string(high_level_projects)?
     );
     let schema = include_str!("../prompts/references_extraction/schema.json").to_string();
     let gpt_request_config = GptRequestConfig::new(
@@ -109,4 +124,29 @@ pub fn build_context(
         landmark_index += 1;
     }
     Ok(context)
+}
+
+pub fn build_high_level_projects_context(
+    high_level_projects: &[Landmark],
+) -> Vec<HighLevelProjectContextItem> {
+    high_level_projects
+        .iter()
+        .enumerate()
+        .map(|(index, hlp)| HighLevelProjectContextItem {
+            uuid: hlp.id,
+            id: index as i32,
+            title: hlp.title.clone(),
+            subtitle: hlp.subtitle.clone(),
+            content: hlp.content.clone(),
+        })
+        .collect()
+}
+
+pub fn build_high_level_project_index_map(
+    high_level_projects: &[HighLevelProjectContextItem],
+) -> HashMap<i32, Uuid> {
+    high_level_projects
+        .iter()
+        .map(|hlp| (hlp.id, hlp.uuid))
+        .collect::<HashMap<_, _>>()
 }

@@ -3,6 +3,7 @@ use uuid::Uuid;
 use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements, NewLandmark};
 use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities::interaction::model::Interaction;
 use crate::entities::resource::{
     entity_type::EntityType, resource_type::ResourceType, NewResource, Resource,
 };
@@ -16,6 +17,7 @@ impl LandmarkType {
             ResourceType::Topic => LandmarkType::Topic,
             ResourceType::Person => LandmarkType::Person,
             ResourceType::Mission => LandmarkType::Project,
+            ResourceType::HighLevelProject => LandmarkType::HighLevelProject,
             ResourceType::Deliverable => LandmarkType::Deliverable,
             ResourceType::Question => LandmarkType::Question,
             _ => LandmarkType::Resource,
@@ -27,6 +29,7 @@ impl LandmarkType {
             LandmarkType::Topic => ResourceType::Topic,
             LandmarkType::Person => ResourceType::Person,
             LandmarkType::Project => ResourceType::Mission,
+            LandmarkType::HighLevelProject => ResourceType::HighLevelProject,
             LandmarkType::Deliverable => ResourceType::Deliverable,
             LandmarkType::Question => ResourceType::Question,
             LandmarkType::Organization
@@ -151,6 +154,19 @@ impl Landmark {
                     })
             })
             .map(|relation| Landmark::from_resource(relation.origin_resource))
+            .collect::<Vec<Landmark>>();
+        Ok(landmarks)
+    }
+
+    pub fn find_high_level_projects_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Landmark>, PpdcError> {
+        let interactions =
+            Interaction::find_landmarks_for_user_by_type(user_id, ResourceType::HighLevelProject, pool)?;
+        let landmarks = interactions
+            .into_iter()
+            .map(|interaction| Landmark::from_resource(interaction.resource))
             .collect::<Vec<Landmark>>();
         Ok(landmarks)
     }

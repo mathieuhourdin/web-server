@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -10,6 +12,8 @@ use crate::entities::{
     },
     resource_relation::ResourceRelation,
 };
+use crate::entities_v2::landmark::{Landmark, LandmarkType};
+use crate::entities_v2::reference::Reference;
 
 use super::model::{NewTraceMirror, TraceMirror};
 
@@ -186,6 +190,36 @@ impl TraceMirror {
             .map(|interaction| TraceMirror::find_full_trace_mirror(interaction.resource.id, pool))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(trace_mirrors)
+    }
+
+    pub fn get_high_level_projects(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+        let mut projects = Vec::new();
+        let mut seen = HashSet::new();
+
+        // Source of truth: references from trace mirror -> high level project landmarks.
+        let references = Reference::find_for_trace_mirror(self.id, pool)?;
+        for reference in references {
+            let Some(landmark_id) = reference.landmark_id else {
+                continue;
+            };
+            if !seen.insert(landmark_id) {
+                continue;
+            }
+            let landmark = Landmark::find(landmark_id, pool)?;
+            if landmark.landmark_type == LandmarkType::HighLevelProject {
+                projects.push(landmark);
+            }
+        }
+
+        Ok(projects)
+    }
+
+    pub fn find_high_level_projects(
+        trace_mirror_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Landmark>, PpdcError> {
+        let trace_mirror = TraceMirror::find_full_trace_mirror(trace_mirror_id, pool)?;
+        trace_mirror.get_high_level_projects(pool)
     }
 }
 

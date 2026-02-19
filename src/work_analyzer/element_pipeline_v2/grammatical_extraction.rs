@@ -15,9 +15,15 @@ pub async fn run(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
 ) -> Result<GrammaticalStageOutput, PpdcError> {
-    let (raw_extraction, tag_to_landmark_id) = request_extraction(context, trace_mirror).await?;
-    let created_elements =
-        persist_extraction(context, trace_mirror, &raw_extraction, &tag_to_landmark_id)?;
+    let (raw_extraction, tag_to_landmark_id, hlp_id_to_uuid) =
+        request_extraction(context, trace_mirror).await?;
+    let created_elements = persist_extraction(
+        context,
+        trace_mirror,
+        &raw_extraction,
+        &tag_to_landmark_id,
+        &hlp_id_to_uuid,
+    )?;
 
     Ok(GrammaticalStageOutput {
         created_elements,

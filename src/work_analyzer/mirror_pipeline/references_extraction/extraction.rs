@@ -4,12 +4,15 @@ use crate::entities_v2::{landmark::Landmark, trace_mirror::TraceMirror};
 use uuid::Uuid;
 
 use super::{
-    gpt_request::{build_context, get_references_drafts},
+    gpt_request::{
+        build_context, build_high_level_project_index_map, build_high_level_projects_context,
+        get_references_drafts,
+    },
     persistence::persist_references_and_landmarks,
 };
 
 pub use super::gpt_request::{
-    IdentificationStatus, LandmarkReferenceContextItem, ReferenceContextItem,
+    HighLevelProjectContextItem, IdentificationStatus, LandmarkReferenceContextItem, ReferenceContextItem,
     ReferencesExtractionResult, ReferencesExtractionResultItem,
 };
 
@@ -21,8 +24,17 @@ pub async fn run(
 ) -> Result<TraceMirror, PpdcError> {
     let trace_mirror = TraceMirror::find_full_trace_mirror(trace_mirror_id, pool)?;
     let context = build_context(landmarks, pool)?;
-    let extraction_result =
-        get_references_drafts(&trace_mirror.content, &context, analysis_id).await?;
+    let trace_mirror_high_level_projects = trace_mirror.get_high_level_projects(pool)?;
+    let high_level_projects_context =
+        build_high_level_projects_context(&trace_mirror_high_level_projects);
+    let hlp_index_to_uuid = build_high_level_project_index_map(&high_level_projects_context);
+    let extraction_result = get_references_drafts(
+        &trace_mirror.content,
+        &context,
+        &high_level_projects_context,
+        analysis_id,
+    )
+    .await?;
     let ReferencesExtractionResult {
         references,
         tagged_text,
@@ -33,6 +45,7 @@ pub async fn run(
         &trace_mirror,
         landmarks,
         &context,
+        &hlp_index_to_uuid,
         &references,
         pool,
     )?;

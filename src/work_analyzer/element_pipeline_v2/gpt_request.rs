@@ -5,7 +5,11 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::entities::error::PpdcError;
-use crate::entities_v2::{landmark::Landmark, reference::Reference, trace_mirror::TraceMirror};
+use crate::entities_v2::{
+    landmark::{Landmark, LandmarkType},
+    reference::Reference,
+    trace_mirror::TraceMirror,
+};
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 
@@ -24,9 +28,19 @@ struct ReferencePromptItem {
 }
 
 #[derive(Debug, Serialize)]
+struct HighLevelProjectPromptItem {
+    id: i32,
+    title: String,
+    subtitle: String,
+    content: String,
+    spans: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct GrammaticalPromptInput {
     trace_text: String,
     references: Vec<ReferencePromptItem>,
+    high_level_projects: Vec<HighLevelProjectPromptItem>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -70,6 +84,8 @@ pub struct TransactionClaim {
     pub related_transactions: Vec<String>,
     #[serde(alias = "span")]
     pub spans: Vec<String>,
+    #[serde(default)]
+    pub high_level_project_ids: Vec<i32>,
     pub references_tags_id: Vec<i32>,
 }
 
@@ -99,6 +115,8 @@ pub struct DescriptiveClaim {
     pub unit_ids: Vec<String>,
     #[serde(alias = "span")]
     pub spans: Vec<String>,
+    #[serde(default)]
+    pub high_level_project_ids: Vec<i32>,
     pub references_tags_id: Vec<i32>,
 }
 
@@ -167,8 +185,16 @@ pub struct EvaluativeClaim {
 pub async fn request_extraction(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
-) -> Result<(GrammaticalExtractionOutput, HashMap<i32, Uuid>), PpdcError> {
-    let (prompt_input, tag_to_landmark_id) = build_prompt_input(context, trace_mirror)?;
+) -> Result<
+    (
+        GrammaticalExtractionOutput,
+        HashMap<i32, Uuid>,
+        HashMap<i32, Uuid>,
+    ),
+    PpdcError,
+> {
+    let (prompt_input, tag_to_landmark_id, hlp_id_to_uuid) =
+        build_prompt_input(context, trace_mirror)?;
     let system_prompt =
         include_str!("prompts/gramatical_extraction/v2/system.md").to_string();
     let user_prompt = serde_json::to_string_pretty(&prompt_input)?;
@@ -186,16 +212,26 @@ pub async fn request_extraction(
     .with_display_name("Element Pipeline V2 / Grammatical Extraction");
 
     let raw_extraction: GrammaticalExtractionOutput = request.execute().await?;
-    Ok((raw_extraction, tag_to_landmark_id))
+    Ok((raw_extraction, tag_to_landmark_id, hlp_id_to_uuid))
 }
 
 fn build_prompt_input(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
-) -> Result<(GrammaticalPromptInput, HashMap<i32, Uuid>), PpdcError> {
+) -> Result<
+    (
+        GrammaticalPromptInput,
+        HashMap<i32, Uuid>,
+        HashMap<i32, Uuid>,
+    ),
+    PpdcError,
+> {
     let references = Reference::find_for_trace_mirror(trace_mirror.id, &context.pool)?;
     let mut prompt_references = Vec::new();
     let mut tag_to_landmark_id = HashMap::new();
+    let mut hlp_id_to_uuid = HashMap::new();
+    let mut high_level_projects: Vec<HighLevelProjectPromptItem> = Vec::new();
+    let mut high_level_project_index_by_landmark_id: HashMap<Uuid, usize> = HashMap::new();
 
     for reference in references {
         let Some(landmark_id) = reference.landmark_id else {
@@ -235,6 +271,29 @@ fn build_prompt_input(
         }
 
         tag_to_landmark_id.insert(reference.tag_id, landmark_id);
+        if landmark.landmark_type == LandmarkType::HighLevelProject {
+            if let Some(existing_index) =
+                high_level_project_index_by_landmark_id.get(&landmark_id).copied()
+            {
+                let spans = &mut high_level_projects[existing_index].spans;
+                if !spans.iter().any(|span| span == &reference.mention) {
+                    spans.push(reference.mention.clone());
+                }
+            } else {
+                let hlp_prompt_id = high_level_projects.len() as i32;
+                high_level_project_index_by_landmark_id
+                    .insert(landmark_id, high_level_projects.len());
+                hlp_id_to_uuid.insert(hlp_prompt_id, landmark_id);
+                high_level_projects.push(HighLevelProjectPromptItem {
+                    id: hlp_prompt_id,
+                    title: landmark.title.clone(),
+                    subtitle: landmark.subtitle.clone(),
+                    content: landmark.content.clone(),
+                    spans: vec![reference.mention.clone()],
+                });
+            }
+        }
+
         prompt_references.push(ReferencePromptItem {
             tag_id: reference.tag_id,
             mention: reference.mention,
@@ -250,7 +309,9 @@ fn build_prompt_input(
         GrammaticalPromptInput {
             trace_text: trace_mirror.content.clone(),
             references: prompt_references,
+            high_level_projects,
         },
         tag_to_landmark_id,
+        hlp_id_to_uuid,
     ))
 }

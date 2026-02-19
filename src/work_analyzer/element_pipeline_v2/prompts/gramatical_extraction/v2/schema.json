@@ -36,6 +36,12 @@
               "type": "string"
             }
           },
+          "high_level_project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
           "references_tags_id": {
             "type": "array",
             "items": {
@@ -47,6 +53,7 @@
           "id",
           "kind",
           "object",
+          "high_level_project_ids",
           "references_tags_id",
           "spans",
           "unit_ids"
@@ -142,6 +149,12 @@
               "type": "string"
             }
           },
+          "high_level_project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
           "references_tags_id": {
             "type": "array",
             "items": {
@@ -162,7 +175,8 @@
           "subtask_of",
           "related_transactions",
           "spans",
-          "references_tags_id"
+          "references_tags_id",
+          "high_level_project_ids"
         ]
       }
     },

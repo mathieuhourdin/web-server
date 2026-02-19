@@ -48,6 +48,7 @@
               "PERSON",
               "RESOURCE",
               "PROJECT",
+              "HIGH_LEVEL_PROJECT",
               "ORGANIZATION",
               "DELIVERABLE",
               "TOPIC",
@@ -78,6 +79,12 @@
               "type": "string"
             }
           },
+          "high_level_projects": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
           "same_object_tag_id": {
             "type": [
               "integer",
@@ -103,6 +110,7 @@
           "reference_variants",
           "context_tags",
           "same_object_tag_id",
+          "high_level_projects",
           "confidence"
         ]
       }

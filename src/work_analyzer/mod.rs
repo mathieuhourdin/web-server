@@ -6,6 +6,7 @@ pub mod element_pipeline_v2;
 //pub mod update_landmarks;
 pub mod analysis_queue;
 pub mod high_level_analysis;
+pub mod hlp_pipeline;
 pub mod matching;
 pub mod mirror_pipeline;
 pub mod observability;

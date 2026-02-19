@@ -34,6 +34,7 @@ pub enum ResourceType {
     UserTrace,          // Trace
     BioTrace,           // Trace
     WorkspaceTrace,     // Trace
+    HighLevelProjectsDefinitionTrace, // Trace
     Mission,            // Landmark
     Element,            // Element
     Task,               // Landmark
@@ -49,6 +50,7 @@ pub enum ResourceType {
     Lens,               // Lens
     TraceMirror,        // TraceMirror
     Person,             // Landmark
+    HighLevelProject,   // Landmark
     MetaJournal,        // Journal
 }
 
@@ -76,6 +78,7 @@ impl ResourceType {
             "utrc" => Ok(ResourceType::UserTrace),
             "btrc" => Ok(ResourceType::BioTrace),
             "wtrc" => Ok(ResourceType::WorkspaceTrace),
+            "hlpd" => Ok(ResourceType::HighLevelProjectsDefinitionTrace),
             "atcl" => Ok(ResourceType::OpinionArticle),
             "miss" => Ok(ResourceType::Mission),
             "elmt" => Ok(ResourceType::Element),
@@ -92,6 +95,7 @@ impl ResourceType {
             "lens" => Ok(ResourceType::Lens),
             "trcm" => Ok(ResourceType::TraceMirror),
             "autr" => Ok(ResourceType::Person),
+            "hlpr" => Ok(ResourceType::HighLevelProject),
             "meta" => Ok(ResourceType::MetaJournal),
             &_ => {
                 return Err(PpdcError::new(
@@ -125,6 +129,7 @@ impl ResourceType {
             ResourceType::UserTrace => "trce",
             ResourceType::BioTrace => "btrc",
             ResourceType::WorkspaceTrace => "wtrc",
+            ResourceType::HighLevelProjectsDefinitionTrace => "hlpd",
             ResourceType::Mission => "miss",
             ResourceType::Element => "elmt",
             ResourceType::Task => "task",
@@ -140,6 +145,7 @@ impl ResourceType {
             ResourceType::Lens => "lens",
             ResourceType::TraceMirror => "trcm",
             ResourceType::Person => "autr",
+            ResourceType::HighLevelProject => "hlpr",
             ResourceType::MetaJournal => "meta",
         }
     }
@@ -166,6 +172,7 @@ impl ResourceType {
             ResourceType::UserTrace => "User Trace",
             ResourceType::BioTrace => "Bio Trace",
             ResourceType::WorkspaceTrace => "Workspace Trace",
+            ResourceType::HighLevelProjectsDefinitionTrace => "High Level Projects Definition Trace",
             ResourceType::Mission => "Mission",
             ResourceType::Element => "Element",
             ResourceType::Task => "Task",
@@ -181,6 +188,7 @@ impl ResourceType {
             ResourceType::Lens => "Lens",
             ResourceType::TraceMirror => "Trace Mirror",
             ResourceType::Person => "Person",
+            ResourceType::HighLevelProject => "High Level Project",
             ResourceType::MetaJournal => "Meta Journal",
         }
     }
@@ -207,6 +215,9 @@ impl ResourceType {
             "User Trace" => Ok(ResourceType::UserTrace),
             "Bio Trace" => Ok(ResourceType::BioTrace),
             "Workspace Trace" => Ok(ResourceType::WorkspaceTrace),
+            "High Level Projects Definition Trace" => {
+                Ok(ResourceType::HighLevelProjectsDefinitionTrace)
+            }
             "Mission" => Ok(ResourceType::Mission),
             "Element" => Ok(ResourceType::Element),
             "Task" => Ok(ResourceType::Task),
@@ -224,6 +235,7 @@ impl ResourceType {
             "Trace Mirror" => Ok(ResourceType::TraceMirror),
             "Author" => Ok(ResourceType::Person),
             "Person" => Ok(ResourceType::Person),
+            "High Level Project" => Ok(ResourceType::HighLevelProject),
             "Meta Journal" => Ok(ResourceType::MetaJournal),
             &_ => Err(PpdcError::new(
                 404,
@@ -263,7 +275,8 @@ impl ResourceType {
             ResourceType::Trace
             | ResourceType::UserTrace
             | ResourceType::BioTrace
-            | ResourceType::WorkspaceTrace => EntityType::Trace,
+            | ResourceType::WorkspaceTrace
+            | ResourceType::HighLevelProjectsDefinitionTrace => EntityType::Trace,
             ResourceType::TraceMirror => EntityType::TraceMirror,
             ResourceType::Element
             | ResourceType::Event
@@ -276,7 +289,8 @@ impl ResourceType {
             | ResourceType::Process
             | ResourceType::Resource
             | ResourceType::Topic
-            | ResourceType::Person => EntityType::Landmark,
+            | ResourceType::Person
+            | ResourceType::HighLevelProject => EntityType::Landmark,
             ResourceType::Analysis => EntityType::LandscapeAnalysis,
             ResourceType::Lens => EntityType::Lens,
             ResourceType::MetaJournal => EntityType::Journal,

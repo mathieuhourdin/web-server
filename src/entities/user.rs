@@ -41,6 +41,7 @@ pub struct User {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
+    pub high_level_projects_definition: Option<String>,
     pub pseudonym: String,
     pub pseudonymized: bool,
 }
@@ -75,6 +76,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
+    pub high_level_projects_definition: Option<String>,
     pub pseudonymized: bool,
     pub display_name: String,
 }
@@ -92,6 +94,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             profile_picture_url: user.profile_picture_url.clone(),
             is_platform_user: user.is_platform_user.clone(),
             biography: user.biography.clone(),
+            high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
@@ -111,6 +114,7 @@ pub struct UserPseudonymizedResponse {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
+    pub high_level_projects_definition: Option<String>,
     pub pseudonymized: bool,
     pub display_name: String,
 }
@@ -125,6 +129,7 @@ impl From<&User> for UserPseudonymizedResponse {
             profile_picture_url: user.profile_picture_url.clone(),
             is_platform_user: user.is_platform_user.clone(),
             biography: user.biography.clone(),
+            high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
@@ -146,6 +151,7 @@ pub struct NewUser {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: Option<bool>,
     pub biography: Option<String>,
+    pub high_level_projects_definition: Option<String>,
     pub pseudonym: Option<String>,
     pub pseudonymized: Option<bool>,
 }
@@ -333,6 +339,33 @@ fn create_bio_trace_for_user(
     Ok(())
 }
 
+fn create_high_level_projects_definition_trace_for_user(
+    user_id: Uuid,
+    high_level_projects_definition: String,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    ensure_user_has_meta_journal(user_id, pool)?;
+    let journal_id = find_latest_meta_journal_id_for_user(user_id, pool)?.ok_or_else(|| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            "Meta journal not found after ensure".to_string(),
+        )
+    })?;
+
+    let mut new_trace = NewTrace::new(
+        "High Level Projects Definition Update".to_string(),
+        "".to_string(),
+        high_level_projects_definition,
+        None,
+        user_id,
+        journal_id,
+    );
+    new_trace.trace_type = TraceType::HighLevelProjectsDefinition;
+    new_trace.create(pool)?;
+    Ok(())
+}
+
 #[derive(QueryableByName)]
 struct Row {
     #[diesel(sql_type = SqlUuid)]
@@ -447,6 +480,11 @@ pub async fn put_user_route(
         .as_ref()
         .map(|bio| existing_user.biography.as_ref() != Some(bio))
         .unwrap_or(false);
+    let new_hlp_definition = payload.high_level_projects_definition.clone();
+    let hlp_definition_changed = new_hlp_definition
+        .as_ref()
+        .map(|definition| existing_user.high_level_projects_definition.as_ref() != Some(definition))
+        .unwrap_or(false);
 
     if &session_user_id != &id && existing_user.is_platform_user {
         return Err(PpdcError::unauthorized());
@@ -456,6 +494,15 @@ pub async fn put_user_route(
     if biography_changed {
         if let Some(biography) = new_biography {
             create_bio_trace_for_user(id, biography, &pool)?;
+        }
+    }
+    if hlp_definition_changed {
+        if let Some(high_level_projects_definition) = new_hlp_definition {
+            create_high_level_projects_definition_trace_for_user(
+                id,
+                high_level_projects_definition,
+                &pool,
+            )?;
         }
     }
 
@@ -493,6 +540,7 @@ mod tests {
             profile_picture_url: None,
             is_platform_user: None,
             biography: None,
+            high_level_projects_definition: None,
             pseudonym: None,
             pseudonymized: Some(false),
         };

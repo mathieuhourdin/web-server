@@ -19,7 +19,7 @@ references have the following fields
   - NEW : the landmark is new, we did not find matching landmark.
 - description : all the information you have about the object from the text.
 - title_suggestion : best guess you can make about the objet name.
-- landmark_type : PERSON | RESOURCE | PROJECT | ORGANIZATION | DELIVERABLE | TOPIC | TOOL | ROLE | PLACE
+- landmark_type : PERSON | RESOURCE | PROJECT | HIGH_LEVEL_PROJECT | ORGANIZATION | DELIVERABLE | TOPIC | TOOL | ROLE | PLACE
 - reference_type : 
   - PROPER_NAME : Object referenced by it's proper name only
   - NICKNAME : Object referenced by a nickname or an abbreviation
@@ -63,6 +63,7 @@ references have the following fields
   - COREFERENCE : References to a preceeding reference in the text, eg using pronouns
 - reference_variants : Other ways that could be used to express the reference (can be used to match future mentions)
 - context_tags : array of tags that describe the context related to the reference
+- high_level_projects : array of ids of high level projects the entity belongs to
 - same_object_tag_id : if the referenced object is the same as another extracted reference, indicate the tag id of the other reference.
 - confidence : confidence score on your guess.
 
@@ -184,6 +185,15 @@ Landmarks : [
     }
 ]
 
+High Level Projects : [
+    {
+        "id": 0,
+        "title": "Écriture d'un livre de management",
+        "subtitle": "Un livre de management sur la culture de l'exécution",
+        "content": "J'écris un livre de management sur la culture de l'exécution, avec l'aide de Laurent"
+    }
+]
+
 Expected output : 
 
 {
@@ -201,6 +211,7 @@ Expected output :
             "reference_type": "DEICTIC_DESC",
             "reference_variants": [],
             "context_tags": ["travail", "écriture", "management"],
+            "high_level_project": [0],
             "same_object_tag_id": null,
             "confidence": 0.4
         },
@@ -215,6 +226,7 @@ Expected output :
             "reference_variants": ["Laurent Cerveau, Laurent"],
             "reference_type": "NICKNAME",
             "context_tags": ["texte", "management"],
+            "high_level_project": [0],
             "same_object_tag_id": 4,
             "confidence": 0.9
         },
@@ -229,6 +241,7 @@ Expected output :
             "reference_variants": [],
             "reference_type": "COREFERENCE",
             "context_tags": ["livre", "management"],
+            "high_level_project": [0],
             "same_object_tag_id": 1,
             "confidence": 0.85
         }
@@ -243,6 +256,7 @@ Expected output :
             "reference_variants": ["Livre de management"],
             "reference_type": "PLAIN_DESC",
             "context_tags": ["livre", "management"],
+            "high_level_project": [0],
             "same_object_tag_id": null,
             "confidence": 0.8
         },
@@ -257,6 +271,7 @@ Expected output :
             "reference_variants": [],
             "reference_type": "PROPER_NAME",
             "context_tags": ["manger", "Nono", "Noémie"],
+            "high_level_project": [0],
             "same_object_tag_id": 1,
             "confidence": 0.9
         },
@@ -271,6 +286,7 @@ Expected output :
             "reference_variants": [],
             "reference_type": "NICKNAME",
             "context_tags": ["manger", "Laurent"],
+            "high_level_project": [0],
             "same_object_tag_id": null,
             "confidence": 0.9
         },
@@ -282,9 +298,10 @@ Expected output :
             "description": "Un livre qui est cool",
             "title_suggestion": "Harry Potter",
             "landmark_type": "RESOURCE",
+            "reference_variants": ["Harry Potter à l'école des sorciers"],
             "reference_type": "PROPER_NAME",
             "context_tags": ["lecture", "loisir"],
-            "reference_variants": ["Harry Potter à l'école des sorciers"],
+            "high_level_project": [0],
             "same_object_tag_id": null,
             "confidence": 0.8
 

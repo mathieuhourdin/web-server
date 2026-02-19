@@ -112,7 +112,16 @@ impl Interaction {
             query = query.filter(resources::maturing_state.eq(resource_maturing_state));
         }
         if resource_type != "all" {
-            query = query.filter(resources::resource_type.eq(resource_type));
+            if resource_type == "trace" {
+                query = query.filter(resources::resource_type.eq_any(vec![
+                    ResourceType::UserTrace.to_code(),
+                    ResourceType::BioTrace.to_code(),
+                    ResourceType::WorkspaceTrace.to_code(),
+                    ResourceType::HighLevelProjectsDefinitionTrace.to_code(),
+                ]));
+            } else {
+                query = query.filter(resources::resource_type.eq(resource_type));
+            }
         }
         println!("{}", debug_query::<Pg, _>(&query));
         let thought_outputs = query
@@ -194,7 +203,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.lt(date.and_hms_opt(12, 0, 0).unwrap()))
                 .order(interactions::interaction_date.asc()),
             "drft",
-            ResourceType::UserTrace.to_code(),
+            "trace",
             pool,
         )
     }
@@ -214,7 +223,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.gt(end_date))
                 .order(interactions::interaction_date.asc()),
             "drft",
-            ResourceType::UserTrace.to_code(),
+            "trace",
             pool,
         )
     }
@@ -231,7 +240,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.lt(date))
                 .order(interactions::interaction_date.asc()),
             "all",
-            ResourceType::UserTrace.to_code(),
+            "trace",
             pool,
         )
     }
@@ -249,7 +258,7 @@ impl Interaction {
                 .filter(interactions::interaction_date.gt(date))
                 .order(interactions::interaction_date.asc()),
             "all",
-            ResourceType::UserTrace.to_code(),
+            "trace",
             pool,
         )
     }
@@ -265,7 +274,7 @@ impl Interaction {
                 .filter(interactions::interaction_user_id.eq(user_id))
                 .order(interactions::interaction_date.asc()),
             "all",
-            ResourceType::UserTrace.to_code(),
+            "trace",
             pool,
         )?;
         Ok(interactions.into_iter().next())
@@ -283,7 +292,7 @@ impl Interaction {
                 .filter(interactions::interaction_user_id.eq(user_id))
                 .order(interactions::interaction_date.desc()),
             "all",
-            ResourceType::UserTrace.to_code(),
+            "trace",
             pool,
         )
     }
@@ -319,7 +328,7 @@ impl Interaction {
                 .into_boxed()
                 .filter(interactions::interaction_user_id.eq(user_id))
                 .filter(interactions::interaction_type.eq("anly")),
-            "fnsh",
+            "all",
             landmark_type.to_code(),
             pool,
         )?;

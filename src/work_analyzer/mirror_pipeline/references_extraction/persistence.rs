@@ -7,6 +7,7 @@ use crate::entities_v2::landmark::{Landmark, NewLandmark};
 use crate::entities_v2::landscape_analysis;
 use crate::entities_v2::reference::model::NewReference;
 use crate::entities_v2::trace_mirror::TraceMirror;
+use tracing::warn;
 use uuid::Uuid;
 
 use super::gpt_request::{
@@ -18,6 +19,7 @@ pub fn persist_references_and_landmarks(
     trace_mirror: &TraceMirror,
     previous_landscape_landmarks: &[Landmark],
     context: &[LandmarkReferenceContextItem],
+    hlp_index_to_uuid: &HashMap<i32, Uuid>,
     references: &[ReferencesExtractionResultItem],
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
@@ -34,9 +36,22 @@ pub fn persist_references_and_landmarks(
             let reference = &references[*index];
             if reference.identification_status == IdentificationStatus::Matched {
                 if let Some(local_landmark_id) = reference.landmark_id {
-                    let landmark_uuid = context_landmark_uuid(local_landmark_id, context)?;
-                    group_landmark_id = Some(landmark_uuid);
-                    break;
+                    if let Ok(landmark_uuid) = context_landmark_uuid(local_landmark_id, context) {
+                        group_landmark_id = Some(landmark_uuid);
+                        break;
+                    }
+
+                    if let Some(hlp_uuid) = hlp_index_to_uuid.get(&local_landmark_id).copied() {
+                        group_landmark_id = Some(hlp_uuid);
+                        break;
+                    }
+
+                    warn!(
+                        trace_mirror_id = %trace_mirror.id,
+                        tag_id = reference.tag_id,
+                        landmark_id = local_landmark_id,
+                        "Matched reference landmark_id not found in landmarks or high_level_projects context; falling back to NEW handling"
+                    );
                 }
             }
         }

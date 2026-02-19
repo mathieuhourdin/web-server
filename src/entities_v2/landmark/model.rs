@@ -38,6 +38,7 @@ pub enum LandmarkTypeLegacy {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LandmarkType {
     Project,
+    HighLevelProject,
     Deliverable,
     Resource,
     Person,
@@ -56,6 +57,7 @@ impl LandmarkType {
         match self {
             LandmarkType::Resource => "RESOURCE",
             LandmarkType::Project => "PROJECT",
+            LandmarkType::HighLevelProject => "HIGH_LEVEL_PROJECT",
             LandmarkType::Deliverable => "DELIVERABLE",
             LandmarkType::Person => "PERSON",
             LandmarkType::Organization => "ORGANIZATION",
@@ -75,6 +77,7 @@ impl LandmarkType {
             "autr" => Ok(LandmarkType::Person),
             "RESOURCE" => Ok(LandmarkType::Resource),
             "PROJECT" => Ok(LandmarkType::Project),
+            "HIGH_LEVEL_PROJECT" => Ok(LandmarkType::HighLevelProject),
             "DELIVERABLE" => Ok(LandmarkType::Deliverable),
             "PERSON" => Ok(LandmarkType::Person),
             "ORGANIZATION" => Ok(LandmarkType::Organization),
@@ -85,6 +88,7 @@ impl LandmarkType {
             "ROLE" => Ok(LandmarkType::Role),
             "SKILL" => Ok(LandmarkType::Skill),
             "PLACE" => Ok(LandmarkType::Place),
+            "hlpr" => Ok(LandmarkType::HighLevelProject),
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,

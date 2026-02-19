@@ -36,6 +36,8 @@ pub enum TraceType {
     BioTrace,
     WorkspaceTrace,
     UserTrace,
+    #[serde(rename = "HIGH_LEVEL_PROJECTS_DEFINITION")]
+    HighLevelProjectsDefinition,
 }
 
 impl From<ResourceType> for TraceType {
@@ -44,6 +46,9 @@ impl From<ResourceType> for TraceType {
             ResourceType::BioTrace => TraceType::BioTrace,
             ResourceType::WorkspaceTrace => TraceType::WorkspaceTrace,
             ResourceType::UserTrace => TraceType::UserTrace,
+            ResourceType::HighLevelProjectsDefinitionTrace => {
+                TraceType::HighLevelProjectsDefinition
+            }
             // Backward compatibility for existing trace rows.
             ResourceType::Trace => TraceType::UserTrace,
             _ => TraceType::UserTrace,
@@ -57,6 +62,9 @@ impl From<TraceType> for ResourceType {
             TraceType::BioTrace => ResourceType::BioTrace,
             TraceType::WorkspaceTrace => ResourceType::WorkspaceTrace,
             TraceType::UserTrace => ResourceType::UserTrace,
+            TraceType::HighLevelProjectsDefinition => {
+                ResourceType::HighLevelProjectsDefinitionTrace
+            }
         }
     }
 }
@@ -78,6 +86,7 @@ impl Trace {
                 ResourceType::UserTrace,
                 ResourceType::BioTrace,
                 ResourceType::WorkspaceTrace,
+                ResourceType::HighLevelProjectsDefinitionTrace,
             ]))
             .order(interactions::interaction_date.desc())
             .select((Interaction::as_select(), Resource::as_select()))
@@ -140,6 +149,22 @@ impl Trace {
             .get()
             .expect("Failed to get a connection from the pool");
 
+        let latest_hlp_trace = interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(
+                resources::resource_type.eq(ResourceType::HighLevelProjectsDefinitionTrace),
+            )
+            .order(interactions::interaction_date.desc())
+            .select((Interaction::as_select(), Resource::as_select()))
+            .first::<(Interaction, Resource)>(&mut conn)
+            .optional()?;
+
+        if let Some((_, resource)) = latest_hlp_trace {
+            return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
+        }
+
         let latest_bio_trace = interactions::table
             .inner_join(resources::table)
             .filter(interactions::interaction_user_id.eq(user_id))
@@ -167,6 +192,33 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.trace_type == TraceType::HighLevelProjectsDefinition {
+            let mut conn = pool
+                .get()
+                .expect("Failed to get a connection from the pool");
+            let latest_bio_trace = interactions::table
+                .inner_join(resources::table)
+                .filter(interactions::interaction_user_id.eq(user_id))
+                .filter(interactions::interaction_type.eq("outp"))
+                .filter(resources::resource_type.eq(ResourceType::BioTrace))
+                .order(interactions::interaction_date.desc())
+                .select((Interaction::as_select(), Resource::as_select()))
+                .first::<(Interaction, Resource)>(&mut conn)
+                .optional()?;
+
+            if let Some((_, resource)) = latest_bio_trace {
+                return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
+            }
+
+            let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
+            return match first_user_trace {
+                Some(interaction) => {
+                    Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?))
+                }
+                None => Ok(None),
+            };
+        }
+
         if trace.trace_type == TraceType::BioTrace {
             let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
             return match first_user_trace {
@@ -218,6 +270,7 @@ impl Trace {
                 ResourceType::UserTrace,
                 ResourceType::BioTrace,
                 ResourceType::WorkspaceTrace,
+                ResourceType::HighLevelProjectsDefinitionTrace,
             ]))
             .filter(interactions::interaction_type.eq("outp"))
             .order(interactions::interaction_date.desc())

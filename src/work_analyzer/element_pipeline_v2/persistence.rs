@@ -35,9 +35,15 @@ pub fn persist_extraction(
     trace_mirror: &TraceMirror,
     extraction: &GrammaticalExtractionOutput,
     tag_to_landmark_id: &HashMap<i32, Uuid>,
+    hlp_id_to_uuid: &HashMap<i32, Uuid>,
 ) -> Result<Vec<Element>, PpdcError> {
     let default_interaction_date = find_trace_interaction_date(trace_mirror, context)?;
-    let nodes = build_claim_nodes(extraction, tag_to_landmark_id, default_interaction_date)?;
+    let nodes = build_claim_nodes(
+        extraction,
+        tag_to_landmark_id,
+        hlp_id_to_uuid,
+        default_interaction_date,
+    )?;
     let effective_landmarks = compute_effective_landmark_ids(&nodes);
     persist_nodes(context, trace_mirror, nodes, effective_landmarks)
 }
@@ -45,6 +51,7 @@ pub fn persist_extraction(
 fn build_claim_nodes(
     extraction: &GrammaticalExtractionOutput,
     tag_to_landmark_id: &HashMap<i32, Uuid>,
+    hlp_id_to_uuid: &HashMap<i32, Uuid>,
     default_interaction_date: Option<NaiveDateTime>,
 ) -> Result<Vec<ClaimNode>, PpdcError> {
     let mut nodes = Vec::new();
@@ -68,6 +75,14 @@ fn build_claim_nodes(
             neighbors.insert(subtask_of.clone());
         }
 
+        let mut direct_landmark_ids =
+            landmark_ids_from_tags(&claim.id, &claim.references_tags_id, tag_to_landmark_id);
+        direct_landmark_ids.extend(landmark_ids_from_high_level_projects(
+            &claim.id,
+            &claim.high_level_project_ids,
+            hlp_id_to_uuid,
+        ));
+
         nodes.push(ClaimNode {
             claim_id: claim.id.clone(),
             title,
@@ -77,11 +92,7 @@ fn build_claim_nodes(
             interaction_date: apply_date_offset(default_interaction_date, &claim.date_offset),
             element_type: ElementType::Transaction,
             element_subtype: map_transaction_kind(claim.kind),
-            direct_landmark_ids: landmark_ids_from_tags(
-                &claim.id,
-                &claim.references_tags_id,
-                tag_to_landmark_id,
-            ),
+            direct_landmark_ids,
             neighbors,
         });
     }
@@ -96,6 +107,14 @@ fn build_claim_nodes(
             HashSet::new()
         };
 
+        let mut direct_landmark_ids =
+            landmark_ids_from_tags(&claim.id, &claim.references_tags_id, tag_to_landmark_id);
+        direct_landmark_ids.extend(landmark_ids_from_high_level_projects(
+            &claim.id,
+            &claim.high_level_project_ids,
+            hlp_id_to_uuid,
+        ));
+
         nodes.push(ClaimNode {
             claim_id: claim.id.clone(),
             title,
@@ -105,11 +124,7 @@ fn build_claim_nodes(
             interaction_date: default_interaction_date,
             element_type: ElementType::Descriptive,
             element_subtype: map_descriptive_kind(claim.kind),
-            direct_landmark_ids: landmark_ids_from_tags(
-                &claim.id,
-                &claim.references_tags_id,
-                tag_to_landmark_id,
-            ),
+            direct_landmark_ids,
             neighbors,
         });
     }
@@ -178,6 +193,29 @@ fn landmark_ids_from_tags(
         }
     }
     direct_landmark_ids
+}
+
+fn landmark_ids_from_high_level_projects(
+    claim_id: &str,
+    high_level_project_ids: &[i32],
+    hlp_id_to_uuid: &HashMap<i32, Uuid>,
+) -> HashSet<Uuid> {
+    let mut landmark_ids = HashSet::new();
+    for hlp_id in high_level_project_ids {
+        match hlp_id_to_uuid.get(hlp_id) {
+            Some(landmark_id) => {
+                landmark_ids.insert(*landmark_id);
+            }
+            None => {
+                warn!(
+                    claim_id = claim_id,
+                    hlp_id = *hlp_id,
+                    "Skipping unknown high_level_project_id while mapping claim landmarks"
+                );
+            }
+        }
+    }
+    landmark_ids
 }
 
 fn compute_effective_landmark_ids(nodes: &[ClaimNode]) -> Vec<HashSet<Uuid>> {
@@ -410,8 +448,14 @@ mod tests {
         let landmark_id = Uuid::new_v4();
         let tag_to_landmark_id = HashMap::from([(1, landmark_id)]);
 
-        let nodes = build_claim_nodes(&extraction, &tag_to_landmark_id, Some(sample_datetime()))
-            .expect("build nodes");
+        let hlp_id_to_uuid = HashMap::new();
+        let nodes = build_claim_nodes(
+            &extraction,
+            &tag_to_landmark_id,
+            &hlp_id_to_uuid,
+            Some(sample_datetime()),
+        )
+        .expect("build nodes");
         let by_id = nodes
             .iter()
             .map(|node| (node.claim_id.as_str(), node))
@@ -494,8 +538,14 @@ mod tests {
         let extraction: GrammaticalExtractionOutput =
             serde_json::from_str(sample_extraction_json()).expect("sample extraction must parse");
         let tag_to_landmark_id = HashMap::new();
-        let nodes = build_claim_nodes(&extraction, &tag_to_landmark_id, Some(sample_datetime()))
-            .expect("build nodes");
+        let hlp_id_to_uuid = HashMap::new();
+        let nodes = build_claim_nodes(
+            &extraction,
+            &tag_to_landmark_id,
+            &hlp_id_to_uuid,
+            Some(sample_datetime()),
+        )
+        .expect("build nodes");
         let transaction = nodes
             .iter()
             .find(|node| node.claim_id == "tra_1")
@@ -504,13 +554,65 @@ mod tests {
     }
 
     #[test]
+    fn high_level_project_ids_link_to_landmarks() {
+        let extraction: GrammaticalExtractionOutput = serde_json::from_str(
+            r#"{
+                "transactions": [
+                    {
+                        "id": "tra_1",
+                        "verb": "work",
+                        "kind": "OUTPUT",
+                        "target": "project task",
+                        "theme": "execution",
+                        "status": "IN_PROGRESS",
+                        "scope": "SUBTASK",
+                        "life_domain": "WORK",
+                        "date_offset": "TODAY",
+                        "subtask_of": null,
+                        "related_transactions": [],
+                        "spans": ["I worked on the project"],
+                        "high_level_project_ids": [0],
+                        "references_tags_id": []
+                    }
+                ],
+                "descriptives": [],
+                "normatives": [],
+                "evaluatives": []
+            }"#,
+        )
+        .expect("sample extraction must parse");
+        let tag_to_landmark_id = HashMap::new();
+        let hlp_landmark_id = Uuid::new_v4();
+        let hlp_id_to_uuid = HashMap::from([(0, hlp_landmark_id)]);
+        let nodes = build_claim_nodes(
+            &extraction,
+            &tag_to_landmark_id,
+            &hlp_id_to_uuid,
+            Some(sample_datetime()),
+        )
+        .expect("build nodes");
+
+        let transaction = nodes
+            .iter()
+            .find(|node| node.claim_id == "tra_1")
+            .expect("transaction node");
+        assert!(transaction.direct_landmark_ids.contains(&hlp_landmark_id));
+    }
+
+    #[test]
     fn propagation_does_not_flow_to_normative_or_evaluative() {
         let extraction: GrammaticalExtractionOutput =
             serde_json::from_str(sample_extraction_json()).expect("sample extraction must parse");
         let landmark_id = Uuid::new_v4();
         let tag_to_landmark_id = HashMap::from([(1, landmark_id)]);
-        let nodes = build_claim_nodes(&extraction, &tag_to_landmark_id, Some(sample_datetime()))
-            .expect("build nodes");
+        let hlp_id_to_uuid = HashMap::new();
+        let nodes = build_claim_nodes(
+            &extraction,
+            &tag_to_landmark_id,
+            &hlp_id_to_uuid,
+            Some(sample_datetime()),
+        )
+        .expect("build nodes");
         let effective = compute_effective_landmark_ids(&nodes);
 
         let effective_by_id = nodes
@@ -559,8 +661,14 @@ mod tests {
         .expect("sample extraction must parse");
         let landmark_id = Uuid::new_v4();
         let tag_to_landmark_id = HashMap::from([(1, landmark_id)]);
-        let nodes = build_claim_nodes(&extraction, &tag_to_landmark_id, Some(sample_datetime()))
-            .expect("build nodes");
+        let hlp_id_to_uuid = HashMap::new();
+        let nodes = build_claim_nodes(
+            &extraction,
+            &tag_to_landmark_id,
+            &hlp_id_to_uuid,
+            Some(sample_datetime()),
+        )
+        .expect("build nodes");
         let effective = compute_effective_landmark_ids(&nodes);
 
         let effective_by_id = nodes

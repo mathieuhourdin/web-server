@@ -6,8 +6,20 @@
         "tags": {
             "type": "array",
             "items": { "type": "string" }
+        },
+        "high_level_projects": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "span": { "type": "string" }
+                },
+                "required": ["id", "span"],
+                "additionalProperties": false
+            }
         }
     },
-    "required": ["title", "subtitle", "tags"],
+    "required": ["title", "subtitle", "tags", "high_level_projects"],
     "additionalProperties": false
 }
