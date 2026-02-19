@@ -170,10 +170,10 @@ pub async fn request_extraction(
 ) -> Result<(GrammaticalExtractionOutput, HashMap<i32, Uuid>), PpdcError> {
     let (prompt_input, tag_to_landmark_id) = build_prompt_input(context, trace_mirror)?;
     let system_prompt =
-        include_str!("../../bin/prompts/gramatical_extraction/v2/system.md").to_string();
+        include_str!("prompts/gramatical_extraction/v2/system.md").to_string();
     let user_prompt = serde_json::to_string_pretty(&prompt_input)?;
     let schema = serde_json::from_str(include_str!(
-        "../../bin/prompts/gramatical_extraction/v2/schema.json"
+        "prompts/gramatical_extraction/v2/schema.json"
     ))?;
 
     let request = GptRequestConfig::new(

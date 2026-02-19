@@ -116,7 +116,7 @@ mod tests {
     use crate::entities_v2::landmark::LandmarkType;
 
     use super::{build_title_with_landmarks, Element, Landmark};
-    use crate::entities_v2::element::ElementType;
+    use crate::entities_v2::element::{ElementSubtype, ElementType};
 
     fn sample_datetime() -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 1, 1)
@@ -133,7 +133,8 @@ mod tests {
             subtitle: "".to_string(),
             content: "".to_string(),
             extended_content: None,
-            element_type: ElementType::TransactionOutput,
+            element_type: ElementType::Transaction,
+            element_subtype: ElementSubtype::Output,
             verb: "lire".to_string(),
             interaction_date: None,
             user_id: uuid::Uuid::nil(),

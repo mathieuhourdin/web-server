@@ -1,6 +1,6 @@
 use crate::entities::error::PpdcError;
 use crate::entities_v2::{
-    element::{link_to_landmark, Element, ElementType, NewElement},
+    element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
     landmark::{self, Landmark, LandmarkType, NewLandmark},
     landscape_analysis,
 };
@@ -391,7 +391,8 @@ fn build_new_element_from_matched(
             "Evidences: {}\n\nExtractions: {:?}",
             evidences, element.extractions
         ),
-        ElementType::TransactionOutput,
+        ElementType::Transaction,
+        ElementSubtype::Output,
         element.verb.clone(),
         adjusted_interaction_date,
         trace_id,

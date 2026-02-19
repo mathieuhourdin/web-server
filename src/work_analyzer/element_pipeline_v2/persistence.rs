@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::entities::error::PpdcError;
 use crate::entities_v2::{
-    element::{link_to_landmark, Element, ElementType, NewElement},
+    element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
     trace::Trace,
     trace_mirror::TraceMirror,
 };
@@ -25,6 +25,7 @@ struct ClaimNode {
     verb: String,
     interaction_date: Option<NaiveDateTime>,
     element_type: ElementType,
+    element_subtype: ElementSubtype,
     direct_landmark_ids: HashSet<Uuid>,
     neighbors: HashSet<String>,
 }
@@ -74,7 +75,8 @@ fn build_claim_nodes(
             content,
             verb: claim.verb.clone(),
             interaction_date: apply_date_offset(default_interaction_date, &claim.date_offset),
-            element_type: map_transaction_kind(claim.kind),
+            element_type: ElementType::Transaction,
+            element_subtype: map_transaction_kind(claim.kind),
             direct_landmark_ids: landmark_ids_from_tags(
                 &claim.id,
                 &claim.references_tags_id,
@@ -101,7 +103,8 @@ fn build_claim_nodes(
             content,
             verb: "describe".to_string(),
             interaction_date: default_interaction_date,
-            element_type: map_descriptive_kind(claim.kind),
+            element_type: ElementType::Descriptive,
+            element_subtype: map_descriptive_kind(claim.kind),
             direct_landmark_ids: landmark_ids_from_tags(
                 &claim.id,
                 &claim.references_tags_id,
@@ -124,7 +127,8 @@ fn build_claim_nodes(
             content,
             verb: "normative".to_string(),
             interaction_date: default_interaction_date,
-            element_type: map_normative_force(claim.force),
+            element_type: ElementType::Normative,
+            element_subtype: map_normative_force(claim.force),
             direct_landmark_ids: HashSet::new(),
             neighbors,
         });
@@ -143,7 +147,8 @@ fn build_claim_nodes(
             content,
             verb: "evaluate".to_string(),
             interaction_date: default_interaction_date,
-            element_type: map_evaluative_kind(claim.kind),
+            element_type: ElementType::Evaluative,
+            element_subtype: map_evaluative_kind(claim.kind),
             direct_landmark_ids: HashSet::new(),
             neighbors,
         });
@@ -251,6 +256,7 @@ fn persist_nodes(
             node.subtitle,
             node.content,
             node.element_type,
+            node.element_subtype,
             node.verb,
             node.interaction_date,
             trace_mirror.trace_id,
@@ -298,37 +304,37 @@ fn apply_date_offset(
     }
 }
 
-fn map_transaction_kind(kind: TransactionKind) -> ElementType {
+fn map_transaction_kind(kind: TransactionKind) -> ElementSubtype {
     match kind {
-        TransactionKind::Input => ElementType::TransactionInput,
-        TransactionKind::Output => ElementType::TransactionOutput,
-        TransactionKind::Transformation => ElementType::TransactionTransformation,
+        TransactionKind::Input => ElementSubtype::Input,
+        TransactionKind::Output => ElementSubtype::Output,
+        TransactionKind::Transformation => ElementSubtype::Transformation,
     }
 }
 
-fn map_descriptive_kind(kind: DescriptiveKind) -> ElementType {
+fn map_descriptive_kind(kind: DescriptiveKind) -> ElementSubtype {
     match kind {
-        DescriptiveKind::Unit => ElementType::DescriptiveUnit,
-        DescriptiveKind::Question => ElementType::DescriptiveQuestion,
-        DescriptiveKind::Theme => ElementType::DescriptiveTheme,
+        DescriptiveKind::Unit => ElementSubtype::Unit,
+        DescriptiveKind::Question => ElementSubtype::DescriptiveQuestion,
+        DescriptiveKind::Theme => ElementSubtype::Theme,
     }
 }
 
-fn map_normative_force(force: NormativeForce) -> ElementType {
+fn map_normative_force(force: NormativeForce) -> ElementSubtype {
     match force {
-        NormativeForce::Plan => ElementType::NormativePlan,
-        NormativeForce::Obligation => ElementType::NormativeObligation,
-        NormativeForce::Recommendation => ElementType::NormativeRecommendation,
-        NormativeForce::Principle => ElementType::NormativePrinciple,
+        NormativeForce::Plan => ElementSubtype::Plan,
+        NormativeForce::Obligation => ElementSubtype::Obligation,
+        NormativeForce::Recommendation => ElementSubtype::Recommendation,
+        NormativeForce::Principle => ElementSubtype::Principle,
     }
 }
 
-fn map_evaluative_kind(kind: EvaluativeKind) -> ElementType {
+fn map_evaluative_kind(kind: EvaluativeKind) -> ElementSubtype {
     match kind {
-        EvaluativeKind::Emotion => ElementType::EvaluativeEmotion,
-        EvaluativeKind::Energy => ElementType::EvaluativeEnergy,
-        EvaluativeKind::Quality => ElementType::EvaluativeQuality,
-        EvaluativeKind::Interest => ElementType::EvaluativeInterest,
+        EvaluativeKind::Emotion => ElementSubtype::Emotion,
+        EvaluativeKind::Energy => ElementSubtype::Energy,
+        EvaluativeKind::Quality => ElementSubtype::Quality,
+        EvaluativeKind::Interest => ElementSubtype::Interest,
     }
 }
 
@@ -412,7 +418,8 @@ mod tests {
             .collect::<HashMap<_, _>>();
 
         let transaction = by_id.get("tra_1").expect("transaction node");
-        assert_eq!(transaction.element_type, ElementType::TransactionInput);
+        assert_eq!(transaction.element_type, ElementType::Transaction);
+        assert_eq!(transaction.element_subtype, ElementSubtype::Input);
         assert!(transaction.title.starts_with("tra_1:"));
         assert!(transaction.direct_landmark_ids.contains(&landmark_id));
         assert_eq!(
@@ -424,13 +431,16 @@ mod tests {
         );
 
         let descriptive = by_id.get("des_1").expect("descriptive node");
-        assert_eq!(descriptive.element_type, ElementType::DescriptiveQuestion);
+        assert_eq!(descriptive.element_type, ElementType::Descriptive);
+        assert_eq!(descriptive.element_subtype, ElementSubtype::DescriptiveQuestion);
 
         let normative = by_id.get("nor_1").expect("normative node");
-        assert_eq!(normative.element_type, ElementType::NormativePlan);
+        assert_eq!(normative.element_type, ElementType::Normative);
+        assert_eq!(normative.element_subtype, ElementSubtype::Plan);
 
         let evaluative = by_id.get("eva_1").expect("evaluative node");
-        assert_eq!(evaluative.element_type, ElementType::EvaluativeInterest);
+        assert_eq!(evaluative.element_type, ElementType::Evaluative);
+        assert_eq!(evaluative.element_subtype, ElementSubtype::Interest);
     }
 
     #[test]
@@ -443,7 +453,8 @@ mod tests {
             content: "".to_string(),
             verb: "".to_string(),
             interaction_date: None,
-            element_type: ElementType::TransactionInput,
+            element_type: ElementType::Transaction,
+            element_subtype: ElementSubtype::Input,
             direct_landmark_ids: HashSet::from([landmark_id]),
             neighbors: HashSet::from(["tra_2".to_string()]),
         };
@@ -454,7 +465,8 @@ mod tests {
             content: "".to_string(),
             verb: "".to_string(),
             interaction_date: None,
-            element_type: ElementType::TransactionOutput,
+            element_type: ElementType::Transaction,
+            element_subtype: ElementSubtype::Output,
             direct_landmark_ids: HashSet::new(),
             neighbors: HashSet::from(["tra_3".to_string()]),
         };
@@ -465,7 +477,8 @@ mod tests {
             content: "".to_string(),
             verb: "".to_string(),
             interaction_date: None,
-            element_type: ElementType::TransactionOutput,
+            element_type: ElementType::Transaction,
+            element_subtype: ElementSubtype::Output,
             direct_landmark_ids: HashSet::new(),
             neighbors: HashSet::new(),
         };

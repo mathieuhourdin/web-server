@@ -43,6 +43,7 @@ pub struct LandmarkReferenceContextItem {
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    pub landmark_type: LandmarkType,
     pub existing_references: Vec<ReferenceContextItem>,
 }
 
@@ -91,6 +92,7 @@ pub fn build_context(
             title: landmark.title.clone(),
             subtitle: landmark.subtitle.clone(),
             content: landmark.content.clone(),
+            landmark_type: landmark.landmark_type,
             existing_references: Vec::new(),
         };
         let existing_references = Reference::find_for_landmark(landmark.id, pool)?;

@@ -37,6 +37,7 @@ pub struct Resource {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub entity_type: EntityType,
+    pub resource_subtype: Option<String>,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
@@ -54,6 +55,7 @@ pub struct NewResource {
     pub category_id: Option<Uuid>,
     pub is_external: Option<bool>,
     pub entity_type: Option<EntityType>,
+    pub resource_subtype: Option<String>,
 }
 
 #[derive(Deserialize, Insertable, Queryable, AsChangeset)]
@@ -71,6 +73,7 @@ pub struct NewResourceDto {
     pub category_id: Option<Uuid>,
     pub is_external: Option<bool>,
     pub entity_type: Option<EntityType>,
+    pub resource_subtype: Option<String>,
 }
 
 impl Resource {
@@ -174,6 +177,7 @@ impl NewResource {
             publishing_state: Some("pbsh".to_string()),
             category_id: None,
             is_external: Some(false),
+            resource_subtype: None,
         }
     }
 
@@ -221,6 +225,7 @@ impl From<Resource> for NewResource {
             publishing_state: Some(resource.publishing_state),
             category_id: resource.category_id,
             is_external: Some(resource.is_external),
+            resource_subtype: resource.resource_subtype,
         }
     }
 }

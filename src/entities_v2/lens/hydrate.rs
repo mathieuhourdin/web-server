@@ -48,6 +48,7 @@ impl Lens {
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            resource_subtype: None,
         }
     }
     pub fn with_user_id(self, pool: &DbPool) -> Result<Lens, PpdcError> {
@@ -137,6 +138,7 @@ impl NewLens {
             external_content_url: None,
             comment: None,
             image_url: None,
+            resource_subtype: None,
         }
     }
 }

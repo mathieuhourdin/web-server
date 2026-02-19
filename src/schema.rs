@@ -95,6 +95,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         entity_type -> Text,
+        resource_subtype -> Nullable<Text>,
     }
 }
 

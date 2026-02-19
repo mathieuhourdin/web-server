@@ -52,6 +52,7 @@ impl LandscapeAnalysis {
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            resource_subtype: None,
         }
     }
 
@@ -226,6 +227,7 @@ impl NewLandscapeAnalysis {
             external_content_url: None,
             comment: None,
             image_url: None,
+            resource_subtype: None,
         }
     }
 }

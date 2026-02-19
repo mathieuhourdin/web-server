@@ -4,20 +4,25 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{
-        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
-        NewResource, Resource,
+        entity_type::EntityType, maturing_state::MaturingState, NewResource, Resource,
     },
     resource_relation::ResourceRelation,
 };
 use crate::entities_v2::landmark::Landmark;
 
-use super::model::{Element, NewElement};
+use super::model::{Element, ElementSubtype, ElementType, NewElement};
 
 impl Element {
     /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id, trace_mirror_id)
     /// and extended_content must be hydrated via `with_*` / `find_full`.
     pub fn from_resource(resource: Resource) -> Self {
-        let element_type = resource.resource_type.into();
+        let fallback_type: ElementType = resource.resource_type.into();
+        let element_subtype = resource
+            .resource_subtype
+            .as_deref()
+            .and_then(ElementSubtype::from_code)
+            .unwrap_or_else(|| ElementSubtype::default_for_type(fallback_type));
+        let element_type = element_subtype.element_type();
         let verb = resource.comment.unwrap_or_default();
         Self {
             id: resource.id,
@@ -26,6 +31,7 @@ impl Element {
             content: resource.content,
             extended_content: None,
             element_type,
+            element_subtype,
             verb,
             interaction_date: None,
             user_id: Uuid::nil(),
@@ -57,6 +63,7 @@ impl Element {
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            resource_subtype: Some(self.element_subtype.to_code().to_string()),
         }
     }
 
@@ -176,8 +183,7 @@ impl Element {
         let elements = rels
             .into_iter()
             .filter(|r| {
-                r.resource_relation.relation_type == "elmt"
-                    && r.origin_resource.resource_type == ResourceType::Event
+                r.resource_relation.relation_type == "elmt" && r.origin_resource.is_element()
             })
             .map(|r| Element::from_resource(r.origin_resource))
             .collect();
@@ -190,8 +196,7 @@ impl Element {
         let elements = rels
             .into_iter()
             .filter(|r| {
-                r.resource_relation.relation_type == "elmt"
-                    && r.origin_resource.resource_type == ResourceType::Event
+                r.resource_relation.relation_type == "elmt" && r.origin_resource.is_element()
             })
             .map(|r| Element::from_resource(r.origin_resource))
             .collect();
@@ -214,6 +219,7 @@ impl NewElement {
             publishing_state: Some("drft".to_string()),
             category_id: None,
             is_external: Some(false),
+            resource_subtype: Some(self.element_subtype.to_code().to_string()),
         }
     }
 }
@@ -234,7 +240,7 @@ mod tests {
     };
 
     use super::{Element, NewElement};
-    use crate::entities_v2::element::ElementType;
+    use crate::entities_v2::element::{ElementSubtype, ElementType};
 
     fn sample_datetime() -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 1, 1)
@@ -249,7 +255,8 @@ mod tests {
             "Title".to_string(),
             "Subtitle".to_string(),
             "Content".to_string(),
-            ElementType::TransactionOutput,
+            ElementType::Transaction,
+            ElementSubtype::Output,
             "écouter".to_string(),
             None,
             uuid::Uuid::nil(),
@@ -261,6 +268,7 @@ mod tests {
 
         let new_resource = new_element.to_new_resource();
         assert_eq!(new_resource.comment, Some("écouter".to_string()));
+        assert_eq!(new_resource.resource_subtype, Some("output".to_string()));
     }
 
     #[test]
@@ -281,10 +289,12 @@ mod tests {
             created_at: sample_datetime(),
             updated_at: sample_datetime(),
             entity_type: EntityType::Element,
+            resource_subtype: Some("output".to_string()),
         };
 
         let element = Element::from_resource(resource);
         assert_eq!(element.verb, "evnt");
-        assert_eq!(element.element_type, ElementType::TransactionOutput);
+        assert_eq!(element.element_type, ElementType::Transaction);
+        assert_eq!(element.element_subtype, ElementSubtype::Output);
     }
 }

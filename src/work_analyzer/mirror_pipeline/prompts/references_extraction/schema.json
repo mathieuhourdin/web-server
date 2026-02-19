@@ -23,6 +23,12 @@
               "null"
             ]
           },
+          "related_landmarks_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
           "identification_status": {
             "type": "string",
             "enum": [
@@ -88,6 +94,7 @@
           "tag_id",
           "mention",
           "landmark_id",
+          "related_landmarks_ids",
           "identification_status",
           "description",
           "title_suggestion",

@@ -7,18 +7,121 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-19 Point
+
+My pipeline is working more or less ok.
+I must not overoptimize now.
+
+Let's do some work on High Level Projects then.
+
+### 2026-02-19 Today todo
+
+Landmarks don't display -> Ok
+Links between elements -> through Landmarks for now
+
+It seems interaction_date of elements are not the right one.
+Descriptives should have a more structured output, to know what is asserted of what.
+Maybe work on element display in the UI so that I can see what has to be done.
+
+Theme in extraction sometime take far too much things, about diverse matters
+
+
+I could have two dates on elements : one would be enonciation date, the other one the action date. However the enonciation date is supposed to be the trace's date.
+
+Idea :
+We should have a strong_relationship between landmarks.
+A strong relationship is, for instance : 
+- Andy Grove and HOM
+- Small loop ISA implementation and My bytecode VM project (user specific projects)
+
+In those situations, we want to be able to look at the elements related to the two landmarks together.
+We could have two signs that landmarks are related : 
+- A lot of elements refer to them two
+- When they are created they come together
+When they are strongly related they could come together in the context, to avoid missing things (we need to know andy grove = HOM when we extract references and match to landmarks)
+
+### 2026-02-18 next steps
+
+What I should do now :
+- Fix the new pipeline implementation :
+  - Why landmarks dont display
+  - Links between elements..
+- High level landmarks
+  - Think about a high level project definition trace in the user settings
+  - Create a first extraction step for the high level landmarks
+- Migration of the data model
+
+### 2026-02-18 Model evolutions
+
+To persist the whole data present in the extraction, we should create some more links between analytic entities.
+For instance, Evaluatives / Normatives elements can be about Transactions.
+Should they be different kind of objects / data tables ? It could make sense because they have different ways to report to each other.
+We could have somthing like subject predicate complement for descriptives...
+
+
+### 2026-02-18 Thoughts about the pipeline
+
+I really should extract high level projects/themes/worspaces in a first round of the pipeline.
+Then every sub landmark/element.. would be related to those high level entities.
+
+Extract/Match of high level entites allow : 
+- Match on fewer entities because we have few high level entites
+- Better context for low level matching, because we can filter using the high level entites for low level extraction and matching.
+
+### 2026-02-18 Today
+
+- Implement the retrieval logic for a reference extraction
+- Display the retrieval in the UI for visualization.
+- Adapt grammatical call for an input with extracted references
+- Use the grammatical call in the pipeline
+- Adapt the post grammatical call landmark matching
+
+
+### 2026-02-17 Result of the day
+
+Good job doing the reference extraction.
+I still could make more things about the landmark identification. 
+I also have no context filtering based on matches in the trace. But it is ok.
+
+Tomorrow we will add the grammatical extraction.
+When everything will work fine, we will proceed to the full db migration.
+
+I also think I missed something I wanted to note somewhere. It will come back.
+
+### 2026-02-17 Afternoon focus
+
+1, 2 and 3 are ok.
+
+I need to work on 4 and 5.
+
+4 : 
+I want to identify references in a trace.
+I have multiple things to do : 
+- Have a context that I propose for the matching -> first, take the full context
+- Insert the context in the user prompt
+- Ask for the right output format
+- Create new references for existing landmarks
+- Create new landmarks for new references -> Create new landmarks.
+
+Questions that remain : 
+- Do we need to pass all references that we have, or just the landmarks ?
+- Do we need to create new references every time a landmark is mentioned ?
+
+I think that first I could try to pass only the landmarks, and to keep references for latter. Or just create a condensed view of the known references for this landmark.
+
+
 ### 2026-02-17 TODAY FOCUS
 
 I need to create the new pipeline today.
-I can still delay the data migration I think. What i could use is : resource_relation between landmarks and resource trace for the reference. Maybe i create a reference entity v2 for this that persists in the resource_relation, with a json in relation_comment for now.
+1 I can still delay the data migration I think. What i could use is : resource_relation between landmarks and resource trace for the reference. Maybe i create a reference entity v2 for this that persists in the resource_relation, with a json in relation_comment for now.
 
-Then I should also work on the fact to put the user's Bio in a separated journal. What I need here is to choose the way the invariant 1 user - 1 Meta journal is respected, and to make the different traces have different roles in this journal.
+2 Then I should also work on the fact to put the user's Bio in a separated journal. What I need here is to choose the way the invariant 1 user - 1 Meta journal is respected, and to make the different traces have different roles in this journal.
 
-Then I work on using this trace as the first trace analyzed for a new lens.
+3 Then I work on using this trace as the first trace analyzed for a new lens.
 
-The next step would be to create the object reference pipeline step in the trace analysis pipeline.
+4 The next step would be to create the object reference pipeline step in the trace analysis pipeline.
 
-Then we add the new extraction pipeline.
+5 Then we add the new extraction pipeline.
 
 ### 2026-02-16 New pipeline
 

@@ -274,6 +274,7 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
         category_id: None,
         is_external: Some(false),
         entity_type: Some(EntityType::Journal),
+        resource_subtype: None,
     }
     .create(pool)?;
 

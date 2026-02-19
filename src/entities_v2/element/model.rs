@@ -12,6 +12,7 @@ pub struct Element {
     pub content: String,
     pub extended_content: Option<String>,
     pub element_type: ElementType,
+    pub element_subtype: ElementSubtype,
     pub verb: String,
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
@@ -23,66 +24,30 @@ pub struct Element {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementType {
-    TraceMirror,
-    TransactionInput,
-    TransactionOutput,
-    TransactionTransformation,
-    TransactionQuestion,
-    DescriptiveUnit,
-    DescriptiveQuestion,
-    DescriptiveTheme,
-    NormativePlan,
-    NormativeObligation,
-    NormativeRecommendation,
-    NormativePrinciple,
-    EvaluativeEmotion,
-    EvaluativeEnergy,
-    EvaluativeQuality,
-    EvaluativeInterest,
+    Transaction,
+    Descriptive,
+    Normative,
+    Evaluative,
 }
 
 impl ElementType {
     pub fn to_code(self) -> &'static str {
         match self {
-            ElementType::TraceMirror => "trcm",
-            ElementType::TransactionInput => "trin",
-            ElementType::TransactionOutput => "trou",
-            ElementType::TransactionTransformation => "trtf",
-            ElementType::TransactionQuestion => "trqs",
-            ElementType::DescriptiveUnit => "dsun",
-            ElementType::DescriptiveQuestion => "dsqs",
-            ElementType::DescriptiveTheme => "dsth",
-            ElementType::NormativePlan => "nrpl",
-            ElementType::NormativeObligation => "nrob",
-            ElementType::NormativeRecommendation => "nrrc",
-            ElementType::NormativePrinciple => "nrpr",
-            ElementType::EvaluativeEmotion => "evem",
-            ElementType::EvaluativeEnergy => "even",
-            ElementType::EvaluativeQuality => "evql",
-            ElementType::EvaluativeInterest => "evin",
+            ElementType::Transaction => "tran",
+            ElementType::Descriptive => "desc",
+            ElementType::Normative => "norm",
+            ElementType::Evaluative => "eval",
         }
     }
 
     pub fn from_code(code: &str) -> Option<ElementType> {
         match code {
-            "trcm" => Some(ElementType::TraceMirror),
-            "trin" => Some(ElementType::TransactionInput),
-            "trou" => Some(ElementType::TransactionOutput),
-            "trtf" => Some(ElementType::TransactionTransformation),
-            "trqs" => Some(ElementType::TransactionQuestion),
-            "dsun" => Some(ElementType::DescriptiveUnit),
-            "dsqs" => Some(ElementType::DescriptiveQuestion),
-            "dsth" => Some(ElementType::DescriptiveTheme),
-            "nrpl" => Some(ElementType::NormativePlan),
-            "nrob" => Some(ElementType::NormativeObligation),
-            "nrrc" => Some(ElementType::NormativeRecommendation),
-            "nrpr" => Some(ElementType::NormativePrinciple),
-            "evem" => Some(ElementType::EvaluativeEmotion),
-            "even" => Some(ElementType::EvaluativeEnergy),
-            "evql" => Some(ElementType::EvaluativeQuality),
-            "evin" => Some(ElementType::EvaluativeInterest),
+            "tran" => Some(ElementType::Transaction),
+            "desc" => Some(ElementType::Descriptive),
+            "norm" => Some(ElementType::Normative),
+            "eval" => Some(ElementType::Evaluative),
             _ => None,
         }
     }
@@ -91,8 +56,11 @@ impl ElementType {
 impl From<ResourceType> for ElementType {
     fn from(resource_type: ResourceType) -> Self {
         match resource_type {
-            ResourceType::TraceMirror => ElementType::TraceMirror,
-            _ => ElementType::TransactionOutput,
+            ResourceType::Event => ElementType::Transaction,
+            ResourceType::GeneralComment => ElementType::Descriptive,
+            ResourceType::Element => ElementType::Normative,
+            ResourceType::Feeling => ElementType::Evaluative,
+            _ => ElementType::Transaction,
         }
     }
 }
@@ -100,8 +68,101 @@ impl From<ResourceType> for ElementType {
 impl From<ElementType> for ResourceType {
     fn from(element_type: ElementType) -> Self {
         match element_type {
-            ElementType::TraceMirror => ResourceType::TraceMirror,
-            _ => ResourceType::Event,
+            ElementType::Transaction => ResourceType::Event,
+            ElementType::Descriptive => ResourceType::GeneralComment,
+            ElementType::Normative => ResourceType::Element,
+            ElementType::Evaluative => ResourceType::Feeling,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElementSubtype {
+    Input,
+    Output,
+    Transformation,
+    TransactionQuestion,
+    Unit,
+    DescriptiveQuestion,
+    Theme,
+    Plan,
+    Obligation,
+    Recommendation,
+    Principle,
+    Emotion,
+    Energy,
+    Quality,
+    Interest,
+}
+
+impl ElementSubtype {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            ElementSubtype::Input => "input",
+            ElementSubtype::Output => "output",
+            ElementSubtype::Transformation => "transformation",
+            ElementSubtype::TransactionQuestion => "transaction_question",
+            ElementSubtype::Unit => "unit",
+            ElementSubtype::DescriptiveQuestion => "descriptive_question",
+            ElementSubtype::Theme => "theme",
+            ElementSubtype::Plan => "plan",
+            ElementSubtype::Obligation => "obligation",
+            ElementSubtype::Recommendation => "recommendation",
+            ElementSubtype::Principle => "principle",
+            ElementSubtype::Emotion => "emotion",
+            ElementSubtype::Energy => "energy",
+            ElementSubtype::Quality => "quality",
+            ElementSubtype::Interest => "interest",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<ElementSubtype> {
+        match code {
+            "input" => Some(ElementSubtype::Input),
+            "output" => Some(ElementSubtype::Output),
+            "transformation" => Some(ElementSubtype::Transformation),
+            "transaction_question" => Some(ElementSubtype::TransactionQuestion),
+            "unit" => Some(ElementSubtype::Unit),
+            "descriptive_question" => Some(ElementSubtype::DescriptiveQuestion),
+            "theme" => Some(ElementSubtype::Theme),
+            "plan" => Some(ElementSubtype::Plan),
+            "obligation" => Some(ElementSubtype::Obligation),
+            "recommendation" => Some(ElementSubtype::Recommendation),
+            "principle" => Some(ElementSubtype::Principle),
+            "emotion" => Some(ElementSubtype::Emotion),
+            "energy" => Some(ElementSubtype::Energy),
+            "quality" => Some(ElementSubtype::Quality),
+            "interest" => Some(ElementSubtype::Interest),
+            _ => None,
+        }
+    }
+
+    pub fn element_type(self) -> ElementType {
+        match self {
+            ElementSubtype::Input
+            | ElementSubtype::Output
+            | ElementSubtype::Transformation
+            | ElementSubtype::TransactionQuestion => ElementType::Transaction,
+            ElementSubtype::Unit
+            | ElementSubtype::DescriptiveQuestion
+            | ElementSubtype::Theme => ElementType::Descriptive,
+            ElementSubtype::Plan
+            | ElementSubtype::Obligation
+            | ElementSubtype::Recommendation
+            | ElementSubtype::Principle => ElementType::Normative,
+            ElementSubtype::Emotion
+            | ElementSubtype::Energy
+            | ElementSubtype::Quality
+            | ElementSubtype::Interest => ElementType::Evaluative,
+        }
+    }
+
+    pub fn default_for_type(element_type: ElementType) -> ElementSubtype {
+        match element_type {
+            ElementType::Transaction => ElementSubtype::Output,
+            ElementType::Descriptive => ElementSubtype::Unit,
+            ElementType::Normative => ElementSubtype::Plan,
+            ElementType::Evaluative => ElementSubtype::Emotion,
         }
     }
 }
@@ -112,6 +173,7 @@ pub struct NewElement {
     pub subtitle: String,
     pub content: String,
     pub element_type: ElementType,
+    pub element_subtype: ElementSubtype,
     pub verb: String,
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
@@ -122,11 +184,13 @@ pub struct NewElement {
 }
 
 impl NewElement {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         title: String,
         subtitle: String,
         content: String,
         element_type: ElementType,
+        element_subtype: ElementSubtype,
         verb: String,
         interaction_date: Option<NaiveDateTime>,
         trace_id: Uuid,
@@ -140,6 +204,7 @@ impl NewElement {
             subtitle,
             content,
             element_type,
+            element_subtype,
             verb,
             interaction_date,
             user_id,

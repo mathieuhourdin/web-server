@@ -56,6 +56,7 @@ impl Landmark {
             is_external: self.is_external,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            resource_subtype: None,
         }
     }
 
@@ -170,6 +171,7 @@ impl NewLandmark {
             publishing_state: Some(self.publishing_state),
             category_id: None,
             is_external: None,
+            resource_subtype: None,
         }
     }
 }

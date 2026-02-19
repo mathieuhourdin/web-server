@@ -65,6 +65,7 @@ impl TraceMirror {
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            resource_subtype: None,
         }
     }
 
@@ -206,6 +207,7 @@ impl NewTraceMirror {
             external_content_url: None,
             comment: Some(tags_json),
             image_url: None,
+            resource_subtype: None,
         }
     }
 }

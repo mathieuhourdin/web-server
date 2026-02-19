@@ -96,8 +96,11 @@ A transaction can only contain one action (expressed by one verb). If a sentence
 - simultaneous actions : If a sentence contains "and" word for two verbs, split in two transactions : "I read and filed my course". Create two transactions with verbs "read" and "filed".
 - task decomposition : If a sentence contains both HIGH_LEVEL_TASK and a concrete step SUBTASK, you MUST split the sentence in two elements with a subtask_of link. Example : "Restart project A, by doing B" -> "Restart project A", "Do B".
 
-4 TRANSACTION EXHAUSTIVITY
-All external resources mentioned and all project mentioned MUST appear in a transation ("I read book A", "I will work on B"). If an author or a resource title appears in the text, there MUST be an INPUT transaction for it, with the resource title and author in the target field.
+4 TRANSACTION VS DESCRIPTIVE **IMPORTANT**
+- ACTIVE VERB TRANSACTION **IMPORTANT** : If a span contains an explicit USER ACTION (ACTIVE verb, "I do X", "I discovered X", "I will do X", "I read X"...) it MUST be extracted as a TRANSACTION, never as a DESCRIPTIVE. The extraction MUST be exhaustive : every ACTIVE verb MUST be extracted in a given transaction. It MUST be a TRANSACTION even if the user is relating past events.
+- STATE DESCRIPTION DESCRIPTIVE : STATE verbs of the user ("I am X") CAN be extracted as DESCRIPTIVE if it seems more natural to you.
+- NO OVERLAP : NEVER extract a DESCRIPTIVE for a span you extracted as TRANSACTION.
+- TRANSACTION PRIORITY : If you hesitate between TRANSACTION and DESCRIPTIVE, choose TRANSACTION
 
 5 NORMATIVES EXHAUSTIVITY
 All mentions of Objectivs, or plans, or todo, MUST appear in NORMATIVES.
@@ -118,8 +121,11 @@ A DESCRIPTIVE with kind THEME MUST be about a defined matter. "How LLMs work" is
 8 SPAN PERFECT MATCH
 spans should be a perfect Match of the given text. If needed, give multiple spans but ALWAYS keep each one a PERFECT MATCH, you will be evaluated on this.
 
-9 LANGUAGE ANSWER
-You answer in the same language as the user's trace.
+9 NO DATE EXTRACTION
+Date should NEVER be extracted as claims. When the text starts with a date, it MUST NOT be extracted as a NORMATIVE.
+
+10 LANGUAGE ANSWER
+You answer in the same language as the user's trace for all free text fields.
 
 
 Example : 
