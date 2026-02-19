@@ -75,16 +75,17 @@ fn build_title_with_landmarks(element: &Element, landmarks: &[Landmark]) -> Stri
                     resource_title = Some(landmark.title.clone());
                 }
             }
-            LandmarkType::Author => {
+            LandmarkType::Person => {
                 if author_title.is_none() {
                     author_title = Some(landmark.title.clone());
                 }
             }
-            LandmarkType::Theme => {
+            LandmarkType::Topic => {
                 if theme_title.is_none() {
                     theme_title = Some(landmark.title.clone());
                 }
             }
+            _ => {}
         }
     }
 
@@ -132,7 +133,7 @@ mod tests {
             subtitle: "".to_string(),
             content: "".to_string(),
             extended_content: None,
-            element_type: ElementType::Event,
+            element_type: ElementType::TransactionOutput,
             verb: "lire".to_string(),
             interaction_date: None,
             user_id: uuid::Uuid::nil(),
@@ -168,7 +169,7 @@ mod tests {
             external_content_url: None,
             comment: None,
             image_url: None,
-            landmark_type: LandmarkType::Author,
+            landmark_type: LandmarkType::Person,
             maturing_state: MaturingState::Finished,
             publishing_state: "pbsh".to_string(),
             category_id: None,
@@ -184,7 +185,7 @@ mod tests {
             external_content_url: None,
             comment: None,
             image_url: None,
-            landmark_type: LandmarkType::Theme,
+            landmark_type: LandmarkType::Topic,
             maturing_state: MaturingState::Finished,
             publishing_state: "pbsh".to_string(),
             category_id: None,

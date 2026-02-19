@@ -95,7 +95,7 @@ impl ExtractedInputElement {
                 landmark_suggestions.push(LandmarkSuggestion {
                     temporary_id: format!("{}-lm-theme-{}", temporary_id, counter),
                     matching_key: theme,
-                    landmark_type: LandmarkType::Theme,
+                    landmark_type: LandmarkType::Topic,
                 });
                 counter += 1;
             }
@@ -114,7 +114,7 @@ impl ExtractedInputElement {
                 landmark_suggestions.push(LandmarkSuggestion {
                     temporary_id: format!("{}-lm-author-{}", temporary_id, counter),
                     matching_key: author,
-                    landmark_type: LandmarkType::Author,
+                    landmark_type: LandmarkType::Person,
                 });
             }
         }

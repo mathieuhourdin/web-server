@@ -103,7 +103,7 @@ impl NewLandmarkForExtractedElement for NewThemeLandmark {
         self.identity_state
     }
     fn landmark_type(&self) -> LandmarkType {
-        LandmarkType::Theme
+        LandmarkType::Topic
     }
 }
 
@@ -130,7 +130,7 @@ impl NewLandmarkForExtractedElement for NewAuthorLandmark {
         self.identity_state
     }
     fn landmark_type(&self) -> LandmarkType {
-        LandmarkType::Author
+        LandmarkType::Person
     }
 }
 
@@ -153,12 +153,13 @@ fn get_system_prompt_for_type(landmark_type: LandmarkType) -> String {
         LandmarkType::Resource => {
             include_str!("prompts/landmark_resource/creation/system.md").to_string()
         }
-        LandmarkType::Theme => {
+        LandmarkType::Topic => {
             include_str!("prompts/landmark_theme/creation/system.md").to_string()
         }
-        LandmarkType::Author => {
+        LandmarkType::Person => {
             include_str!("prompts/landmark_author/creation/system.md").to_string()
         }
+        _ => include_str!("prompts/landmark_resource/creation/system.md").to_string(),
     }
 }
 
@@ -168,14 +169,18 @@ fn get_schema_for_type(landmark_type: LandmarkType) -> serde_json::Value {
             "prompts/landmark_resource/creation/schema.json"
         ))
         .unwrap(),
-        LandmarkType::Theme => {
+        LandmarkType::Topic => {
             serde_json::from_str(include_str!("prompts/landmark_theme/creation/schema.json"))
                 .unwrap()
         }
-        LandmarkType::Author => {
+        LandmarkType::Person => {
             serde_json::from_str(include_str!("prompts/landmark_author/creation/schema.json"))
                 .unwrap()
         }
+        _ => serde_json::from_str(include_str!(
+            "prompts/landmark_resource/creation/schema.json"
+        ))
+        .unwrap(),
     }
 }
 
@@ -193,8 +198,9 @@ async fn create_landmark_via_gpt(
     let schema = get_schema_for_type(input.landmark_type);
     let display_name = match input.landmark_type {
         LandmarkType::Resource => "Elements / Creation / Resource",
-        LandmarkType::Theme => "Elements / Creation / Theme",
-        LandmarkType::Author => "Elements / Creation / Author",
+        LandmarkType::Topic => "Elements / Creation / Topic",
+        LandmarkType::Person => "Elements / Creation / Person",
+        _ => "Elements / Creation / Resource",
     };
 
     let gpt_config = GptRequestConfig::new(
@@ -212,12 +218,16 @@ async fn create_landmark_via_gpt(
             let result: NewResourceLandmark = gpt_config.execute().await?;
             result.to_new_landmark(context.analysis_id, context.user_id, None)
         }
-        LandmarkType::Theme => {
+        LandmarkType::Topic => {
             let result: NewThemeLandmark = gpt_config.execute().await?;
             result.to_new_landmark(context.analysis_id, context.user_id, None)
         }
-        LandmarkType::Author => {
+        LandmarkType::Person => {
             let result: NewAuthorLandmark = gpt_config.execute().await?;
+            result.to_new_landmark(context.analysis_id, context.user_id, None)
+        }
+        _ => {
+            let result: NewResourceLandmark = gpt_config.execute().await?;
             result.to_new_landmark(context.analysis_id, context.user_id, None)
         }
     };
@@ -381,7 +391,7 @@ fn build_new_element_from_matched(
             "Evidences: {}\n\nExtractions: {:?}",
             evidences, element.extractions
         ),
-        ElementType::Event,
+        ElementType::TransactionOutput,
         element.verb.clone(),
         adjusted_interaction_date,
         trace_id,

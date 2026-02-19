@@ -1,0 +1,368 @@
+[
+  {
+    "id": "7e4da113-7138-4886-a688-7cac48389c03",
+    "tag_id": 0,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "5ae2412a-41b4-4354-a8a5-722d5cb40d6e",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "bobs",
+    "reference_type": "PROPER_NAME",
+    "context_tags": [
+      "emploi",
+      "travail"
+    ],
+    "reference_variants": [
+      "Bob's",
+      "Bobs"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.507814",
+    "updated_at": "2026-02-18T09:31:23.507814",
+    "landmark": {
+      "id": "5ae2412a-41b4-4354-a8a5-722d5cb40d6e",
+      "title": "Bobs (lieu de travail)",
+      "subtitle": "",
+      "content": "Travail effectué le matin chez Bobs",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "PLACE",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.504060",
+      "updated_at": "2026-02-18T09:31:23.504060",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "d1861d51-83a1-4b5a-85c2-8ec6fc7ccce1",
+    "tag_id": 1,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "f0d026f3-d495-4e7a-817c-e405766ae244",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "technos cloud",
+    "reference_type": "PLAIN_DESC",
+    "context_tags": [
+      "technologie",
+      "cloud",
+      "recherche"
+    ],
+    "reference_variants": [
+      "technologies cloud",
+      "cloud technologies"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.513662",
+    "updated_at": "2026-02-18T09:31:23.513662",
+    "landmark": {
+      "id": "f0d026f3-d495-4e7a-817c-e405766ae244",
+      "title": "Technologies cloud",
+      "subtitle": "",
+      "content": "Recherches sur les technologies cloud",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "TOPIC",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.510513",
+      "updated_at": "2026-02-18T09:31:23.510513",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "20a1848f-2c34-45d8-bf97-ef3d1bfd88e5",
+    "tag_id": 2,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "1be961a7-093e-4301-ad9a-55136281a9ff",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "OVH",
+    "reference_type": "PROPER_NAME",
+    "context_tags": [
+      "cloud",
+      "infrastructure",
+      "entreprise"
+    ],
+    "reference_variants": [
+      "OVHcloud"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.519728",
+    "updated_at": "2026-02-18T09:31:23.519728",
+    "landmark": {
+      "id": "1be961a7-093e-4301-ad9a-55136281a9ff",
+      "title": "OVH",
+      "subtitle": "",
+      "content": "OVH, un fournisseur français de cloud souverain",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "ORGANIZATION",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.515930",
+      "updated_at": "2026-02-18T09:31:23.515930",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "21ef47d8-b52d-4fa2-95e7-c1d71cacaf69",
+    "tag_id": 3,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "3cef0075-d47b-44c3-8b6f-c5c9ddd4a803",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "OpenStack",
+    "reference_type": "PROPER_NAME",
+    "context_tags": [
+      "cloud",
+      "infrastructure",
+      "logiciel"
+    ],
+    "reference_variants": [
+      "Open Stack"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.525226",
+    "updated_at": "2026-02-18T09:31:23.525226",
+    "landmark": {
+      "id": "3cef0075-d47b-44c3-8b6f-c5c9ddd4a803",
+      "title": "OpenStack",
+      "subtitle": "",
+      "content": "OpenStack utilisé par OVH pour gérer le cloud",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "TOOL",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.522061",
+      "updated_at": "2026-02-18T09:31:23.522061",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "4e8303e9-9210-44ce-83fb-ae2071967ccb",
+    "tag_id": 4,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "e201c680-572d-4067-8c36-6bd39ba00a14",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "hyperscalers",
+    "reference_type": "PLAIN_DESC",
+    "context_tags": [
+      "emploi",
+      "hyperscalers",
+      "cloud"
+    ],
+    "reference_variants": [
+      "grands fournisseurs de cloud",
+      "hyperscale cloud providers"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.529519",
+    "updated_at": "2026-02-18T09:31:23.529519",
+    "landmark": {
+      "id": "e201c680-572d-4067-8c36-6bd39ba00a14",
+      "title": "Hyperscalers",
+      "subtitle": "",
+      "content": "Hyperscalers, grands fournisseurs de cloud",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "TOPIC",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.527023",
+      "updated_at": "2026-02-18T09:31:23.527023",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "7920faff-fec7-4c7f-ab25-b2bff4cd6ea9",
+    "tag_id": 5,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "2eaa952d-431e-48b7-a876-423e73362d07",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "entreprises françaises avec mentalité US sur l’exécution",
+    "reference_type": "PLAIN_DESC",
+    "context_tags": [
+      "emploi",
+      "entreprise",
+      "culture"
+    ],
+    "reference_variants": [
+      "entreprises françaises à culture américaine",
+      "French companies with US execution mindset"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.533997",
+    "updated_at": "2026-02-18T09:31:23.533997",
+    "landmark": {
+      "id": "2eaa952d-431e-48b7-a876-423e73362d07",
+      "title": "Entreprises françaises à culture US",
+      "subtitle": "",
+      "content": "Entreprises françaises avec mentalité US sur l’exécution",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "TOPIC",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.531141",
+      "updated_at": "2026-02-18T09:31:23.531141",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "e4e45164-e527-4942-9041-6114fb077981",
+    "tag_id": 6,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "76204882-4fd7-4b34-ad67-ae8ebcd05325",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "C",
+    "reference_type": "PROPER_NAME",
+    "context_tags": [
+      "apprentissage",
+      "informatique",
+      "programmation"
+    ],
+    "reference_variants": [
+      "langage C",
+      "C programming language"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.539741",
+    "updated_at": "2026-02-18T09:31:23.539741",
+    "landmark": {
+      "id": "76204882-4fd7-4b34-ad67-ae8ebcd05325",
+      "title": "Langage C",
+      "subtitle": "",
+      "content": "Langage de programmation C utilisé pour exercices d'apprentissage",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "TOOL",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.536519",
+      "updated_at": "2026-02-18T09:31:23.536519",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "5410fdff-4523-4620-ae36-94c23e10fd1a",
+    "tag_id": 7,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "6480680f-3a3e-485e-90c5-8a82d5249963",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "Rust",
+    "reference_type": "PROPER_NAME",
+    "context_tags": [
+      "apprentissage",
+      "informatique",
+      "programmation"
+    ],
+    "reference_variants": [
+      "langage Rust",
+      "Rust programming language"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.544623",
+    "updated_at": "2026-02-18T09:31:23.544623",
+    "landmark": {
+      "id": "6480680f-3a3e-485e-90c5-8a82d5249963",
+      "title": "Langage Rust",
+      "subtitle": "",
+      "content": "Langage de programmation Rust, compilé",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "RESOURCE",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:31:23.542036",
+      "updated_at": "2026-02-18T09:31:23.542036",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  },
+  {
+    "id": "0b21e938-124b-4e18-84b8-95dd03318e5c",
+    "tag_id": 8,
+    "trace_mirror_id": "0fd6b38c-9dd7-491d-93d4-af144d7f37b4",
+    "landmark_id": "1393a187-e44e-4939-9bbe-1e72024bac5b",
+    "landscape_analysis_id": "3844a10b-8ed6-4b6d-9cd1-ac8a8dd6b0b3",
+    "user_id": "a647a452-3a80-4a94-97d0-8a36c1c752c1",
+    "mention": "High Output Management",
+    "reference_type": "PROPER_NAME",
+    "context_tags": [
+      "lecture",
+      "management",
+      "livre"
+    ],
+    "reference_variants": [
+      "HOM",
+      "High Output Management de Andrew Grove"
+    ],
+    "parent_reference_id": null,
+    "is_user_specific": false,
+    "created_at": "2026-02-18T09:31:23.547012",
+    "updated_at": "2026-02-18T09:31:23.547012",
+    "landmark": {
+      "id": "1393a187-e44e-4939-9bbe-1e72024bac5b",
+      "title": "Travail de recherche en philosophie des techniques et sociologie du travail",
+      "subtitle": "",
+      "content": "Travail de recherche mêlant philosophie des techniques, sociologie du travail, sciences de gestion/management",
+      "external_content_url": null,
+      "comment": null,
+      "image_url": null,
+      "landmark_type": "PROJECT",
+      "maturing_state": "drft",
+      "publishing_state": "pbsh",
+      "category_id": null,
+      "is_external": false,
+      "created_at": "2026-02-18T09:30:52.985969",
+      "updated_at": "2026-02-18T09:30:52.985969",
+      "parent_landmarks": [],
+      "related_elements": []
+    }
+  }
+]

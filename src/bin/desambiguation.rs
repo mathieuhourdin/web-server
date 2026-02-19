@@ -8,7 +8,7 @@ use web_server::openai_handler::GptRequestConfig;
 #[tokio::main]
 async fn main() -> Result<(), PpdcError> {
     let system_prompt = include_str!("prompts/desambiguation/prompt.md").to_string();
-    let trace_text = include_str!("prompts/test_traces/trace.md");
+    let trace_text = include_str!("prompts/test_traces/trace_6.md");
     let landmarks = include_str!("prompts/desambiguation/landmarks.json");
     let user_prompt = format!("User text:\n{}\n\nLandmarks:\n{}", trace_text, landmarks);
     let schema = serde_json::from_str::<serde_json::Value>(include_str!(

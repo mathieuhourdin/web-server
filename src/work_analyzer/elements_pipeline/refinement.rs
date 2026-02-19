@@ -154,12 +154,13 @@ fn get_refinement_system_prompt_for_type(landmark_type: LandmarkType) -> String 
         LandmarkType::Resource => {
             include_str!("prompts/landmark_resource/refinement/system.md").to_string()
         }
-        LandmarkType::Theme => {
+        LandmarkType::Topic => {
             include_str!("prompts/landmark_theme/refinement/system.md").to_string()
         }
-        LandmarkType::Author => {
+        LandmarkType::Person => {
             include_str!("prompts/landmark_author/refinement/system.md").to_string()
         }
+        _ => include_str!("prompts/landmark_resource/refinement/system.md").to_string(),
     }
 }
 
@@ -169,14 +170,18 @@ fn get_schema_for_type(landmark_type: LandmarkType) -> serde_json::Value {
             "prompts/landmark_resource/creation/schema.json"
         ))
         .unwrap(),
-        LandmarkType::Theme => {
+        LandmarkType::Topic => {
             serde_json::from_str(include_str!("prompts/landmark_theme/creation/schema.json"))
                 .unwrap()
         }
-        LandmarkType::Author => {
+        LandmarkType::Person => {
             serde_json::from_str(include_str!("prompts/landmark_author/creation/schema.json"))
                 .unwrap()
         }
+        _ => serde_json::from_str(include_str!(
+            "prompts/landmark_resource/creation/schema.json"
+        ))
+        .unwrap(),
     }
 }
 
@@ -191,8 +196,9 @@ async fn refine_landmark_via_gpt(
     let schema = get_schema_for_type(landmark_type);
     let display_name = match landmark_type {
         LandmarkType::Resource => "Elements / Refinement / Resource",
-        LandmarkType::Theme => "Elements / Refinement / Theme",
-        LandmarkType::Author => "Elements / Refinement / Author",
+        LandmarkType::Topic => "Elements / Refinement / Topic",
+        LandmarkType::Person => "Elements / Refinement / Person",
+        _ => "Elements / Refinement / Resource",
     };
 
     let gpt_config = GptRequestConfig::new(
@@ -216,7 +222,7 @@ async fn refine_landmark_via_gpt(
                 result.identity_state(),
             )
         }
-        LandmarkType::Theme => {
+        LandmarkType::Topic => {
             let result: NewThemeLandmark = gpt_config.execute().await?;
             (
                 result.to_new_landmark(
@@ -227,8 +233,19 @@ async fn refine_landmark_via_gpt(
                 result.identity_state(),
             )
         }
-        LandmarkType::Author => {
+        LandmarkType::Person => {
             let result: NewAuthorLandmark = gpt_config.execute().await?;
+            (
+                result.to_new_landmark(
+                    context.analysis_id,
+                    context.user_id,
+                    Some(parent_landmark_id),
+                ),
+                result.identity_state(),
+            )
+        }
+        _ => {
+            let result: NewResourceLandmark = gpt_config.execute().await?;
             (
                 result.to_new_landmark(
                     context.analysis_id,

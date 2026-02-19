@@ -19,6 +19,7 @@
             "type": "string",
             "enum": [
               "UNIT",
+              "QUESTION",
               "THEME"
             ]
           },
@@ -29,10 +30,16 @@
               "pattern": "^des_[0-9]+$"
             }
           },
-          "span": {
+          "spans": {
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "references_tags_id": {
+            "type": "array",
+            "items": {
+              "type": "integer"
             }
           }
         },
@@ -41,7 +48,8 @@
           "object",
           "kind",
           "unit_ids",
-          "span"
+          "spans",
+          "references_tags_id"
         ]
       }
     },
@@ -63,8 +71,7 @@
             "enum": [
               "INPUT",
               "OUTPUT",
-              "TRANSFORMATION",
-              "QUESTION"
+              "TRANSFORMATION"
             ]
           },
           "target": {
@@ -129,10 +136,16 @@
               "pattern": "^tra_[0-9]+$"
             }
           },
-          "span": {
+          "spans": {
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "references_tags_id": {
+            "type": "array",
+            "items": {
+              "type": "integer"
             }
           }
         },
@@ -148,7 +161,8 @@
           "date_offset",
           "subtask_of",
           "related_transactions",
-          "span"
+          "spans",
+          "references_tags_id"
         ]
       }
     },
@@ -185,7 +199,7 @@
               "pattern": "^tra_[0-9]+$"
             }
           },
-          "span": {
+          "spans": {
             "type": "array",
             "items": {
               "type": "string"
@@ -197,7 +211,7 @@
           "force",
           "polarity",
           "applies_to",
-          "span"
+          "spans"
         ]
       }
     },
@@ -246,7 +260,7 @@
               "pattern": "^tra_[0-9]+$"
             }
           },
-          "span": {
+          "spans": {
             "type": "array",
             "items": {
               "type": "string"
@@ -260,7 +274,7 @@
           "level",
           "descriptive_ids",
           "transaction_ids",
-          "span"
+          "spans"
         ]
       }
     }

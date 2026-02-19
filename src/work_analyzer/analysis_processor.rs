@@ -10,6 +10,7 @@ use crate::entities_v2::{
 };
 use crate::work_analyzer::{
     elements_pipeline::{self},
+    element_pipeline_v2,
     high_level_analysis, mirror_pipeline,
 };
 use uuid::Uuid;
@@ -71,7 +72,7 @@ impl AnalysisProcessor {
         let state = self.run_mirror_pipeline(state).await?;
 
         // run trace broker pipeline
-        let state = self.run_trace_broker_pipeline(state).await?;
+        let state = self.run_grammatical_extraction_pipeline(state).await?;
 
         // run high level analysis pipeline
         self.run_high_level_analysis_pipeline(state).await?;
@@ -154,6 +155,22 @@ impl AnalysisProcessor {
         Ok(AnalysisStateMirror {
             current_landscape: state.current_landscape.clone(),
             trace_mirror: trace_mirror,
+        })
+    }
+    async fn run_grammatical_extraction_pipeline(
+        &self,
+        state: AnalysisStateMirror,
+    ) -> Result<AnalysisStateTraceBroker, PpdcError> {
+        let grammatical_extraction = element_pipeline_v2::grammatical_extraction::run(
+            &self.context,
+            &state.trace_mirror,
+        )
+        .await?;
+        Ok(AnalysisStateTraceBroker {
+            current_landscape: state.current_landscape.clone(),
+            current_trace_mirror: state.trace_mirror,
+            current_landmarks: vec![],
+            current_elements: grammatical_extraction.created_elements.clone(),
         })
     }
     async fn run_trace_broker_pipeline(

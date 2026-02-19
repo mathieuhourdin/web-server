@@ -19,7 +19,7 @@ use crate::entities::{
     resource, user,
 };
 use crate::entities_v2::{
-    element, landmark, landscape_analysis, lens, llm_call, trace, trace_mirror,
+    element, landmark, landscape_analysis, lens, llm_call, reference, trace, trace_mirror,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -148,6 +148,10 @@ pub fn create_router() -> Router {
     let trace_mirrors_router = Router::new()
         .route("/", get(trace_mirror::get_user_trace_mirrors_route))
         .route("/:id", get(trace_mirror::get_trace_mirror_route))
+        .route(
+            "/:id/references",
+            get(reference::get_trace_mirror_references_route),
+        )
         .route(
             "/landscape/:landscape_id",
             get(trace_mirror::get_trace_mirrors_by_landscape_route),

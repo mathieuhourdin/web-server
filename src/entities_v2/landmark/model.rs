@@ -29,25 +29,62 @@ pub struct Landmark {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LandmarkType {
+pub enum LandmarkTypeLegacy {
     Resource,
     Theme,
     Author,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LandmarkType {
+    Project,
+    Deliverable,
+    Resource,
+    Person,
+    Organization,
+    Topic,
+    Tool,
+    Question,
+    Habit,
+    Role,
+    Skill,
+    Place,
+}
+
 impl LandmarkType {
     pub fn to_code(&self) -> &'static str {
         match self {
-            LandmarkType::Resource => "rsrc",
-            LandmarkType::Theme => "them",
-            LandmarkType::Author => "autr",
+            LandmarkType::Resource => "RESOURCE",
+            LandmarkType::Project => "PROJECT",
+            LandmarkType::Deliverable => "DELIVERABLE",
+            LandmarkType::Person => "PERSON",
+            LandmarkType::Organization => "ORGANIZATION",
+            LandmarkType::Topic => "TOPIC",
+            LandmarkType::Tool => "TOOL",
+            LandmarkType::Question => "QUESTION",
+            LandmarkType::Habit => "HABIT",
+            LandmarkType::Role => "ROLE",
+            LandmarkType::Skill => "SKILL",
+            LandmarkType::Place => "PLACE",
         }
     }
     pub fn from_code(code: &str) -> Result<Self, PpdcError> {
         match code {
             "rsrc" => Ok(LandmarkType::Resource),
-            "them" => Ok(LandmarkType::Theme),
-            "autr" => Ok(LandmarkType::Author),
+            "them" => Ok(LandmarkType::Topic),
+            "autr" => Ok(LandmarkType::Person),
+            "RESOURCE" => Ok(LandmarkType::Resource),
+            "PROJECT" => Ok(LandmarkType::Project),
+            "DELIVERABLE" => Ok(LandmarkType::Deliverable),
+            "PERSON" => Ok(LandmarkType::Person),
+            "ORGANIZATION" => Ok(LandmarkType::Organization),
+            "TOPIC" => Ok(LandmarkType::Topic),
+            "TOOL" => Ok(LandmarkType::Tool),
+            "QUESTION" => Ok(LandmarkType::Question),
+            "HABIT" => Ok(LandmarkType::Habit),
+            "ROLE" => Ok(LandmarkType::Role),
+            "SKILL" => Ok(LandmarkType::Skill),
+            "PLACE" => Ok(LandmarkType::Place),
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,

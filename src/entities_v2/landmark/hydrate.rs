@@ -13,16 +13,28 @@ impl LandmarkType {
     pub fn from_resource_type(resource_type: ResourceType) -> LandmarkType {
         match resource_type {
             ResourceType::Resource => LandmarkType::Resource,
-            ResourceType::Theme => LandmarkType::Theme,
-            ResourceType::Author => LandmarkType::Author,
+            ResourceType::Topic => LandmarkType::Topic,
+            ResourceType::Person => LandmarkType::Person,
+            ResourceType::Mission => LandmarkType::Project,
+            ResourceType::Deliverable => LandmarkType::Deliverable,
+            ResourceType::Question => LandmarkType::Question,
             _ => LandmarkType::Resource,
         }
     }
     pub fn to_resource_type(self) -> ResourceType {
         match self {
             LandmarkType::Resource => ResourceType::Resource,
-            LandmarkType::Theme => ResourceType::Theme,
-            LandmarkType::Author => ResourceType::Author,
+            LandmarkType::Topic => ResourceType::Topic,
+            LandmarkType::Person => ResourceType::Person,
+            LandmarkType::Project => ResourceType::Mission,
+            LandmarkType::Deliverable => ResourceType::Deliverable,
+            LandmarkType::Question => ResourceType::Question,
+            LandmarkType::Organization
+            | LandmarkType::Tool
+            | LandmarkType::Habit
+            | LandmarkType::Role
+            | LandmarkType::Skill
+            | LandmarkType::Place => ResourceType::Resource,
         }
     }
 }

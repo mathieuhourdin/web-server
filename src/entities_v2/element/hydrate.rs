@@ -249,7 +249,7 @@ mod tests {
             "Title".to_string(),
             "Subtitle".to_string(),
             "Content".to_string(),
-            ElementType::Event,
+            ElementType::TransactionOutput,
             "écouter".to_string(),
             None,
             uuid::Uuid::nil(),
@@ -285,6 +285,6 @@ mod tests {
 
         let element = Element::from_resource(resource);
         assert_eq!(element.verb, "evnt");
-        assert_eq!(element.element_type, ElementType::Event);
+        assert_eq!(element.element_type, ElementType::TransactionOutput);
     }
 }

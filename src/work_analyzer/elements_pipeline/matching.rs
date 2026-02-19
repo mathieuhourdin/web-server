@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 fn get_matching_system_prompt(landmark_type: LandmarkType) -> &'static str {
     match landmark_type {
         LandmarkType::Resource => include_str!("prompts/landmark_resource/matching/system.md"),
-        LandmarkType::Theme => include_str!("prompts/landmark_theme/matching/system.md"),
-        LandmarkType::Author => include_str!("prompts/landmark_author/matching/system.md"),
+        LandmarkType::Topic => include_str!("prompts/landmark_theme/matching/system.md"),
+        LandmarkType::Person => include_str!("prompts/landmark_author/matching/system.md"),
+        _ => include_str!("prompts/landmark_resource/matching/system.md"),
     }
 }
 
@@ -40,8 +41,8 @@ async fn run_matching_impl(
     let log_header = format!("analysis_id: {}", context.analysis_id);
     let landmark_types = [
         LandmarkType::Resource,
-        LandmarkType::Author,
-        LandmarkType::Theme,
+        LandmarkType::Person,
+        LandmarkType::Topic,
     ];
 
     let mut matching_placeholders = to_matched_placeholders(&extracted);
@@ -49,8 +50,9 @@ async fn run_matching_impl(
     for landmark_type in landmark_types {
         let display_name = match landmark_type {
             LandmarkType::Resource => "Elements / Matching / Resource",
-            LandmarkType::Theme => "Elements / Matching / Theme",
-            LandmarkType::Author => "Elements / Matching / Author",
+            LandmarkType::Topic => "Elements / Matching / Topic",
+            LandmarkType::Person => "Elements / Matching / Person",
+            _ => "Elements / Matching / Resource",
         };
         let landmarks = inputs
             .previous_landscape_landmarks

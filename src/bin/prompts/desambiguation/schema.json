@@ -43,7 +43,11 @@
               "RESOURCE",
               "PROJECT",
               "ORGANIZATION",
-              "TEXT"
+              "DELIVERABLE",
+              "TOPIC",
+              "TOOL",
+              "ROLE",
+              "PLACE"
             ]
           },
           "reference_type": {
@@ -53,7 +57,8 @@
               "NICKNAME",
               "NAMED_DESC",
               "DEICTIC_DESC",
-              "PLAIN_DESC"
+              "PLAIN_DESC",
+              "COREFERENCE"
             ]
           },
           "reference_variants": {
@@ -67,6 +72,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "same_object_tag_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "confidence": {
             "type": "number",
@@ -85,6 +96,7 @@
           "reference_type",
           "reference_variants",
           "context_tags",
+          "same_object_tag_id",
           "confidence"
         ]
       }
@@ -95,3 +107,5 @@
     "references"
   ]
 }
+
+

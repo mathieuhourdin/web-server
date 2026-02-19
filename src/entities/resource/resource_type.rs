@@ -45,10 +45,10 @@ pub enum ResourceType {
     Event,              // Element
     GeneralComment,     // Element
     Feeling,            // Element
-    Theme,              // Landmark
+    Topic,              // Landmark
     Lens,               // Lens
     TraceMirror,        // TraceMirror
-    Author,             // Landmark
+    Person,             // Landmark
     MetaJournal,        // Journal
 }
 
@@ -88,10 +88,10 @@ impl ResourceType {
             "evnt" => Ok(ResourceType::Event),
             "cmnt" => Ok(ResourceType::GeneralComment),
             "feln" => Ok(ResourceType::Feeling),
-            "them" => Ok(ResourceType::Theme),
+            "them" => Ok(ResourceType::Topic),
             "lens" => Ok(ResourceType::Lens),
             "trcm" => Ok(ResourceType::TraceMirror),
-            "autr" => Ok(ResourceType::Author),
+            "autr" => Ok(ResourceType::Person),
             "meta" => Ok(ResourceType::MetaJournal),
             &_ => {
                 return Err(PpdcError::new(
@@ -136,10 +136,10 @@ impl ResourceType {
             ResourceType::Event => "evnt",
             ResourceType::GeneralComment => "cmnt",
             ResourceType::Feeling => "feln",
-            ResourceType::Theme => "them",
+            ResourceType::Topic => "them",
             ResourceType::Lens => "lens",
             ResourceType::TraceMirror => "trcm",
-            ResourceType::Author => "autr",
+            ResourceType::Person => "autr",
             ResourceType::MetaJournal => "meta",
         }
     }
@@ -177,10 +177,10 @@ impl ResourceType {
             ResourceType::Event => "Event",
             ResourceType::GeneralComment => "GeneralComment",
             ResourceType::Feeling => "Feeling",
-            ResourceType::Theme => "Theme",
+            ResourceType::Topic => "Topic",
             ResourceType::Lens => "Lens",
             ResourceType::TraceMirror => "Trace Mirror",
-            ResourceType::Author => "Author",
+            ResourceType::Person => "Person",
             ResourceType::MetaJournal => "Meta Journal",
         }
     }
@@ -218,10 +218,12 @@ impl ResourceType {
             "Event" => Ok(ResourceType::Event),
             "GeneralComment" => Ok(ResourceType::GeneralComment),
             "Feeling" => Ok(ResourceType::Feeling),
-            "Theme" => Ok(ResourceType::Theme),
+            "Theme" => Ok(ResourceType::Topic),
+            "Topic" => Ok(ResourceType::Topic),
             "Lens" => Ok(ResourceType::Lens),
             "Trace Mirror" => Ok(ResourceType::TraceMirror),
-            "Author" => Ok(ResourceType::Author),
+            "Author" => Ok(ResourceType::Person),
+            "Person" => Ok(ResourceType::Person),
             "Meta Journal" => Ok(ResourceType::MetaJournal),
             &_ => Err(PpdcError::new(
                 404,
@@ -273,8 +275,8 @@ impl ResourceType {
             | ResourceType::Deliverable
             | ResourceType::Process
             | ResourceType::Resource
-            | ResourceType::Theme
-            | ResourceType::Author => EntityType::Landmark,
+            | ResourceType::Topic
+            | ResourceType::Person => EntityType::Landmark,
             ResourceType::Analysis => EntityType::LandscapeAnalysis,
             ResourceType::Lens => EntityType::Lens,
             ResourceType::MetaJournal => EntityType::Journal,

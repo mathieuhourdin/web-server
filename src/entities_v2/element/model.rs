@@ -26,36 +26,63 @@ pub struct Element {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub enum ElementType {
     TraceMirror,
-    Action,
-    Event,
-    Idea,
-    Quote,
-    Emotion,
-    Fact,
+    TransactionInput,
+    TransactionOutput,
+    TransactionTransformation,
+    TransactionQuestion,
+    DescriptiveUnit,
+    DescriptiveQuestion,
+    DescriptiveTheme,
+    NormativePlan,
+    NormativeObligation,
+    NormativeRecommendation,
+    NormativePrinciple,
+    EvaluativeEmotion,
+    EvaluativeEnergy,
+    EvaluativeQuality,
+    EvaluativeInterest,
 }
 
 impl ElementType {
     pub fn to_code(self) -> &'static str {
         match self {
             ElementType::TraceMirror => "trcm",
-            ElementType::Action => "actn",
-            ElementType::Event => "evnt",
-            ElementType::Idea => "idea",
-            ElementType::Quote => "quot",
-            ElementType::Emotion => "emot",
-            ElementType::Fact => "fact",
+            ElementType::TransactionInput => "trin",
+            ElementType::TransactionOutput => "trou",
+            ElementType::TransactionTransformation => "trtf",
+            ElementType::TransactionQuestion => "trqs",
+            ElementType::DescriptiveUnit => "dsun",
+            ElementType::DescriptiveQuestion => "dsqs",
+            ElementType::DescriptiveTheme => "dsth",
+            ElementType::NormativePlan => "nrpl",
+            ElementType::NormativeObligation => "nrob",
+            ElementType::NormativeRecommendation => "nrrc",
+            ElementType::NormativePrinciple => "nrpr",
+            ElementType::EvaluativeEmotion => "evem",
+            ElementType::EvaluativeEnergy => "even",
+            ElementType::EvaluativeQuality => "evql",
+            ElementType::EvaluativeInterest => "evin",
         }
     }
 
     pub fn from_code(code: &str) -> Option<ElementType> {
         match code {
             "trcm" => Some(ElementType::TraceMirror),
-            "actn" => Some(ElementType::Action),
-            "evnt" => Some(ElementType::Event),
-            "idea" => Some(ElementType::Idea),
-            "quot" => Some(ElementType::Quote),
-            "emot" => Some(ElementType::Emotion),
-            "fact" => Some(ElementType::Fact),
+            "trin" => Some(ElementType::TransactionInput),
+            "trou" => Some(ElementType::TransactionOutput),
+            "trtf" => Some(ElementType::TransactionTransformation),
+            "trqs" => Some(ElementType::TransactionQuestion),
+            "dsun" => Some(ElementType::DescriptiveUnit),
+            "dsqs" => Some(ElementType::DescriptiveQuestion),
+            "dsth" => Some(ElementType::DescriptiveTheme),
+            "nrpl" => Some(ElementType::NormativePlan),
+            "nrob" => Some(ElementType::NormativeObligation),
+            "nrrc" => Some(ElementType::NormativeRecommendation),
+            "nrpr" => Some(ElementType::NormativePrinciple),
+            "evem" => Some(ElementType::EvaluativeEmotion),
+            "even" => Some(ElementType::EvaluativeEnergy),
+            "evql" => Some(ElementType::EvaluativeQuality),
+            "evin" => Some(ElementType::EvaluativeInterest),
             _ => None,
         }
     }
@@ -65,7 +92,7 @@ impl From<ResourceType> for ElementType {
     fn from(resource_type: ResourceType) -> Self {
         match resource_type {
             ResourceType::TraceMirror => ElementType::TraceMirror,
-            _ => ElementType::Event,
+            _ => ElementType::TransactionOutput,
         }
     }
 }
