@@ -70,6 +70,34 @@ impl From<TraceType> for ResourceType {
 }
 
 impl Trace {
+    fn find_first_user_trace_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Trace>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let first_user_trace = interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(resources::resource_type.eq_any(vec![
+                ResourceType::UserTrace,
+                // Backward compatibility for legacy trace rows.
+                ResourceType::Trace,
+            ]))
+            .order(interactions::interaction_date.asc())
+            .select((Interaction::as_select(), Resource::as_select()))
+            .first::<(Interaction, Resource)>(&mut conn)
+            .optional()?;
+
+        match first_user_trace {
+            Some((_, resource)) => Ok(Some(Trace::find_full_trace(resource.id, pool)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_most_recent_for_user(
         user_id: Uuid,
         pool: &DbPool,
@@ -179,11 +207,7 @@ impl Trace {
             return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
         }
 
-        let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
-        match first_user_trace {
-            Some(interaction) => Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?)),
-            None => Ok(None),
-        }
+        Trace::find_first_user_trace_for_user(user_id, pool)
     }
 
     pub fn get_next(
@@ -210,23 +234,11 @@ impl Trace {
                 return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
             }
 
-            let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
-            return match first_user_trace {
-                Some(interaction) => {
-                    Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?))
-                }
-                None => Ok(None),
-            };
+            return Trace::find_first_user_trace_for_user(user_id, pool);
         }
 
         if trace.trace_type == TraceType::BioTrace {
-            let first_user_trace = Interaction::find_first_trace_for_user(user_id, pool)?;
-            return match first_user_trace {
-                Some(interaction) => {
-                    Ok(Some(Trace::find_full_trace(interaction.resource.id, pool)?))
-                }
-                None => Ok(None),
-            };
+            return Trace::find_first_user_trace_for_user(user_id, pool);
         }
 
         let interactions = Interaction::find_all_traces_for_user_after_date(
@@ -237,6 +249,7 @@ impl Trace {
         let next_trace = interactions
             .into_iter()
             .map(|interaction| Trace::from_resource(interaction.resource))
+            .filter(|candidate| candidate.trace_type == TraceType::UserTrace)
             .next();
         match next_trace {
             Some(next_trace) => Ok(Some(Trace::find_full_trace(next_trace.id, pool)?)),

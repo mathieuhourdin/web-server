@@ -12,6 +12,8 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
     session::Session,
 };
+use crate::entities_v2::lens::Lens;
+use crate::work_analyzer;
 
 use super::{
     llm_qualify,
@@ -24,14 +26,14 @@ pub async fn post_trace_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewTraceDto>,
 ) -> Result<Json<Resource>, PpdcError> {
-    let journal_interaction =
-        Interaction::find_user_journal(session.user_id.unwrap(), payload.journal_id, &pool)?;
+    let user_id = session.user_id.unwrap();
+    let journal_interaction = Interaction::find_user_journal(user_id, payload.journal_id, &pool)?;
 
     let (new_resource, interaction_date) =
         llm_qualify::qualify_trace(payload.content.as_str()).await?;
 
     let resource = new_resource.create(&pool)?;
-    let mut new_interaction = NewInteraction::new(session.user_id.unwrap(), resource.id);
+    let mut new_interaction = NewInteraction::new(user_id, resource.id);
 
     if let Some(interaction_date) = interaction_date {
         new_interaction.interaction_date = Some(interaction_date.and_hms_opt(12, 0, 0).unwrap());
@@ -40,9 +42,19 @@ pub async fn post_trace_route(
 
     let mut new_resource_relation =
         NewResourceRelation::new(resource.id, journal_interaction.resource_id.unwrap());
-    new_resource_relation.user_id = session.user_id;
+    new_resource_relation.user_id = Some(user_id);
     new_resource_relation.relation_type = Some("jrit".to_string());
     new_resource_relation.create(&pool)?;
+
+    let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
+    for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
+        let lens = if lens.target_trace_id != resource.id {
+            lens.update_target_trace(resource.id, &pool)?
+        } else {
+            lens
+        };
+        tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+    }
 
     Ok(Json(resource))
 }

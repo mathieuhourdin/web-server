@@ -9,6 +9,7 @@ use crate::entities::{
     session::Session,
 };
 use crate::entities_v2::trace::model::{NewTrace, TraceType};
+use crate::entities_v2::lens::NewLens;
 use crate::pagination::PaginationParams;
 use crate::schema::{interactions, resources, users};
 use argon2::Config;
@@ -19,6 +20,7 @@ use axum::{
     response::IntoResponse,
 };
 use chrono::NaiveDateTime;
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Float, Text, Uuid as SqlUuid};
@@ -291,6 +293,51 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
     Ok(())
 }
 
+pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let has_autoplay_lens = diesel::select(diesel::dsl::exists(
+        interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(resources::resource_type.eq(ResourceType::Lens))
+            .filter(resources::is_external.eq(true)),
+    ))
+    .get_result::<bool>(&mut conn)?;
+
+    if has_autoplay_lens {
+        return Ok(());
+    }
+
+    ensure_user_has_meta_journal(user_id, pool)?;
+    let placeholder_target_id = find_latest_meta_journal_id_for_user(user_id, pool)?.ok_or_else(|| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            "Meta journal not found after ensure".to_string(),
+        )
+    })?;
+
+    let autoplay_lens = NewLens {
+        name: "Autoplay Lens".to_string(),
+        description: "".to_string(),
+        processing_state: MaturingState::Draft,
+        fork_landscape_id: None,
+        target_trace_id: placeholder_target_id,
+        current_state_date: Utc::now().naive_utc(),
+        current_landscape_id: None,
+        model_version: "".to_string(),
+        autoplay: true,
+        is_primary: false,
+        user_id,
+    };
+    autoplay_lens.create(pool)?;
+    Ok(())
+}
+
 fn find_latest_meta_journal_id_for_user(
     user_id: Uuid,
     pool: &DbPool,
@@ -457,6 +504,13 @@ pub async fn post_user(
     payload.hash_password().unwrap();
     let created_user = payload.create(&pool)?;
     if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
+                .execute(&mut conn);
+        }
+        return Err(err);
+    }
+    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
         if let Ok(mut conn) = pool.get() {
             let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
                 .execute(&mut conn);

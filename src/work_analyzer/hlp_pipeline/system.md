@@ -36,3 +36,5 @@ General rules:
 3. If no normal landmark exists, return `"landmarks": []`.
 4. Do not invent details not grounded in the trace.
 5. Normal landmarks should be parts of High level projects (person related to the project, deliverables, subtasks...). Do not repeat high level projects in the normal landmarks.
+6. You also extract High level projects that are about the personal life of the user if any.
+7. Every distinct section in this trace are supposed to be High Level Project
