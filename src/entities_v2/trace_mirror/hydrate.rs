@@ -13,7 +13,31 @@ use crate::entities::{
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::entities_v2::reference::Reference;
 
-use super::model::{NewTraceMirror, TraceMirror};
+use super::model::{NewTraceMirror, TraceMirror, TraceMirrorType};
+
+impl TraceMirrorType {
+    pub fn from_entity_type(entity_type: EntityType) -> TraceMirrorType {
+        match entity_type {
+            EntityType::TraceMirrorJournal => TraceMirrorType::Journal,
+            EntityType::TraceMirrorBio => TraceMirrorType::Bio,
+            EntityType::TraceMirrorHighLevelProjectsDefinition => {
+                TraceMirrorType::HighLevelProjects
+            }
+            _ => TraceMirrorType::Note,
+        }
+    }
+
+    pub fn to_entity_type(self) -> EntityType {
+        match self {
+            TraceMirrorType::Note => EntityType::TraceMirror,
+            TraceMirrorType::Journal => EntityType::TraceMirrorJournal,
+            TraceMirrorType::Bio => EntityType::TraceMirrorBio,
+            TraceMirrorType::HighLevelProjects => {
+                EntityType::TraceMirrorHighLevelProjectsDefinition
+            }
+        }
+    }
+}
 
 impl TraceMirror {
     /// Creates a TraceMirror from a Resource with default/placeholder values
@@ -35,6 +59,7 @@ impl TraceMirror {
             title: resource.title,
             subtitle: resource.subtitle,
             content: resource.content,
+            trace_mirror_type: TraceMirrorType::from_entity_type(resource.entity_type),
             tags,
             trace_id: Uuid::nil(),
             landscape_analysis_id: Uuid::nil(),
@@ -60,7 +85,7 @@ impl TraceMirror {
             comment: Some(tags_json),
             image_url: None,
             resource_type: ResourceType::TraceMirror,
-            entity_type: EntityType::TraceMirror,
+            entity_type: self.trace_mirror_type.to_entity_type(),
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
             category_id: None,
@@ -230,7 +255,7 @@ impl NewTraceMirror {
             subtitle: self.subtitle.clone(),
             content: Some(self.content.clone()),
             resource_type: Some(ResourceType::TraceMirror),
-            entity_type: Some(EntityType::TraceMirror),
+            entity_type: Some(self.trace_mirror_type.to_entity_type()),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
             category_id: None,

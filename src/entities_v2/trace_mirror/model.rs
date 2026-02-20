@@ -2,12 +2,21 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceMirrorType {
+    Note,
+    Journal,
+    HighLevelProjects,
+    Bio,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceMirror {
     pub id: Uuid,
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    pub trace_mirror_type: TraceMirrorType,
     pub tags: Vec<String>,
     pub trace_id: Uuid,
     pub landscape_analysis_id: Uuid,
@@ -23,6 +32,7 @@ pub struct NewTraceMirror {
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    pub trace_mirror_type: TraceMirrorType,
     pub tags: Vec<String>,
     pub trace_id: Uuid,
     pub landscape_analysis_id: Uuid,
@@ -38,6 +48,7 @@ impl NewTraceMirror {
         title: String,
         subtitle: String,
         content: String,
+        trace_mirror_type: TraceMirrorType,
         tags: Vec<String>,
         trace_id: Uuid,
         landscape_analysis_id: Uuid,
@@ -50,6 +61,7 @@ impl NewTraceMirror {
             title,
             subtitle,
             content,
+            trace_mirror_type,
             tags,
             trace_id,
             landscape_analysis_id,

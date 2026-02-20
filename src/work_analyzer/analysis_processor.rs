@@ -2,11 +2,10 @@ use crate::db::DbPool;
 use crate::entities::{error::PpdcError, resource::MaturingState};
 use crate::entities_v2::{
     element::Element,
-    journal::Journal,
     landmark::{Landmark, LandmarkType},
     landscape_analysis::LandscapeAnalysis,
     trace::{Trace, TraceType},
-    trace_mirror::{self, TraceMirror},
+    trace_mirror::{self, TraceMirror, TraceMirrorType},
 };
 use crate::work_analyzer::{
     active_context_filtering,
@@ -128,10 +127,7 @@ impl AnalysisProcessor {
         )
         .await?;
 
-        let journal =
-            Journal::find_full(self.inputs.trace.journal_id.unwrap(), &self.context.pool)?;
-        let journal_subtitle = journal.subtitle;
-        if journal_subtitle == "note" {
+        if trace_mirror.trace_mirror_type == TraceMirrorType::Note {
             let primary_resource_suggestion =
                 mirror_pipeline::primary_resource::suggestion::extract(
                     &self.inputs.trace,

@@ -11,8 +11,19 @@ use crate::openai_handler::GptRequestConfig;
 pub struct MirrorHeader {
     pub title: String,
     pub subtitle: String,
+    pub trace_mirror_type: MirrorHeaderTraceMirrorType,
     pub tags: Vec<String>,
     pub high_level_projects: Vec<SelectedHighLevelProject>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum MirrorHeaderTraceMirrorType {
+    #[serde(alias = "BIO")]
+    Bio,
+    #[serde(alias = "JOURNAL")]
+    Journal,
+    #[serde(alias = "NOTE")]
+    Note,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

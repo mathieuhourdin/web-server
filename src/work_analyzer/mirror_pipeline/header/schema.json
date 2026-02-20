@@ -3,6 +3,10 @@
     "properties": {
         "title": { "type": "string" },
         "subtitle": { "type": "string" },
+        "trace_mirror_type": {
+            "type": "string",
+            "enum": ["Bio", "Journal", "Note", "BIO", "JOURNAL", "NOTE"]
+        },
         "tags": {
             "type": "array",
             "items": { "type": "string" }
@@ -20,6 +24,6 @@
             }
         }
     },
-    "required": ["title", "subtitle", "tags", "high_level_projects"],
+    "required": ["title", "subtitle", "trace_mirror_type", "tags", "high_level_projects"],
     "additionalProperties": false
 }

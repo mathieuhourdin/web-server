@@ -15,6 +15,9 @@ pub enum EntityType {
     Journal,
     Trace,
     TraceMirror,
+    TraceMirrorJournal,
+    TraceMirrorBio,
+    TraceMirrorHighLevelProjectsDefinition,
     Element,
     Landmark,
     LandscapeAnalysis,
@@ -28,6 +31,9 @@ impl EntityType {
             "jrnl" => Ok(EntityType::Journal),
             "trce" => Ok(EntityType::Trace),
             "trcm" => Ok(EntityType::TraceMirror),
+            "trmj" => Ok(EntityType::TraceMirrorJournal),
+            "trmb" => Ok(EntityType::TraceMirrorBio),
+            "trmh" => Ok(EntityType::TraceMirrorHighLevelProjectsDefinition),
             "elmt" => Ok(EntityType::Element),
             "lndm" => Ok(EntityType::Landmark),
             "lnds" => Ok(EntityType::LandscapeAnalysis),
@@ -48,6 +54,9 @@ impl EntityType {
             EntityType::Journal => "jrnl",
             EntityType::Trace => "trce",
             EntityType::TraceMirror => "trcm",
+            EntityType::TraceMirrorJournal => "trmj",
+            EntityType::TraceMirrorBio => "trmb",
+            EntityType::TraceMirrorHighLevelProjectsDefinition => "trmh",
             EntityType::Element => "elmt",
             EntityType::Landmark => "lndm",
             EntityType::LandscapeAnalysis => "lnds",
@@ -60,7 +69,12 @@ impl EntityType {
         match self {
             EntityType::Journal => "Journal",
             EntityType::Trace => "Trace",
-            EntityType::TraceMirror => "Trace Mirror",
+            EntityType::TraceMirror => "Trace Mirror Note",
+            EntityType::TraceMirrorJournal => "Trace Mirror Journal",
+            EntityType::TraceMirrorBio => "Trace Mirror Bio",
+            EntityType::TraceMirrorHighLevelProjectsDefinition => {
+                "Trace Mirror High Level Projects"
+            }
             EntityType::Element => "Element",
             EntityType::Landmark => "Landmark",
             EntityType::LandscapeAnalysis => "Landscape Analysis",
@@ -74,6 +88,15 @@ impl EntityType {
             "Journal" => Ok(EntityType::Journal),
             "Trace" => Ok(EntityType::Trace),
             "Trace Mirror" => Ok(EntityType::TraceMirror),
+            "Trace Mirror Note" => Ok(EntityType::TraceMirror),
+            "Trace Mirror Journal" => Ok(EntityType::TraceMirrorJournal),
+            "Trace Mirror Bio" => Ok(EntityType::TraceMirrorBio),
+            "Trace Mirror High Level Projects Definition" => {
+                Ok(EntityType::TraceMirrorHighLevelProjectsDefinition)
+            }
+            "Trace Mirror High Level Projects" => {
+                Ok(EntityType::TraceMirrorHighLevelProjectsDefinition)
+            }
             "Element" => Ok(EntityType::Element),
             "Landmark" => Ok(EntityType::Landmark),
             "Landscape Analysis" => Ok(EntityType::LandscapeAnalysis),

@@ -7,7 +7,7 @@ use crate::entities_v2::{
     landmark::{Landmark, LandmarkType, NewLandmark},
     reference::{NewReference, ReferenceType},
     trace::Trace,
-    trace_mirror::{NewTraceMirror, TraceMirror},
+    trace_mirror::{NewTraceMirror, TraceMirror, TraceMirrorType},
 };
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 
@@ -25,6 +25,7 @@ pub fn persist_hlp_entities(
         "High Level Project Definition".to_string(),
         "".to_string(),
         trace.content.clone(),
+        TraceMirrorType::HighLevelProjects,
         Vec::new(),
         trace.id,
         context.analysis_id,

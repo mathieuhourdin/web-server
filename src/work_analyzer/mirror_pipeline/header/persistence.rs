@@ -4,21 +4,27 @@ use crate::entities::error::PpdcError;
 use crate::entities_v2::{
     reference::{NewReference, ReferenceType},
     trace::Trace,
-    trace_mirror::{model::NewTraceMirror, TraceMirror},
+    trace_mirror::{model::NewTraceMirror, TraceMirror, TraceMirrorType},
 };
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 
-use super::gpt_request::{MirrorHeader, SelectedHighLevelProject};
+use super::gpt_request::{MirrorHeader, MirrorHeaderTraceMirrorType, SelectedHighLevelProject};
 
 pub fn create_trace_mirror(
     trace: &Trace,
     header: &MirrorHeader,
     context: &AnalysisContext,
 ) -> Result<TraceMirror, PpdcError> {
+    let trace_mirror_type = match header.trace_mirror_type {
+        MirrorHeaderTraceMirrorType::Bio => TraceMirrorType::Bio,
+        MirrorHeaderTraceMirrorType::Journal => TraceMirrorType::Journal,
+        MirrorHeaderTraceMirrorType::Note => TraceMirrorType::Note,
+    };
     let trace_mirror = NewTraceMirror::new(
         header.title.clone(),
         header.subtitle.clone(),
         trace.content.clone(),
+        trace_mirror_type,
         header.tags.clone(),
         trace.id,
         context.analysis_id,
