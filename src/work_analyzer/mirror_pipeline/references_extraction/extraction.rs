@@ -21,11 +21,11 @@ pub use super::gpt_request::{
 pub async fn run(
     analysis_id: Uuid,
     trace_mirror_id: Uuid,
-    landmarks: &Vec<Landmark>,
+    previous_landscape_landmarks: &Vec<Landmark>,
     pool: &DbPool,
 ) -> Result<TraceMirror, PpdcError> {
     let trace_mirror = TraceMirror::find_full_trace_mirror(trace_mirror_id, pool)?;
-    let context = build_context(landmarks, pool)?;
+    let context = build_context(previous_landscape_landmarks, pool)?;
     let trace_mirror_high_level_projects_references =
         trace_mirror.get_high_level_projects_references(pool)?;
     let high_level_projects_context =
@@ -58,7 +58,7 @@ pub async fn run(
     persist_references_and_landmarks(
         analysis_id,
         &trace_mirror,
-        landmarks,
+        previous_landscape_landmarks,
         &context,
         &hlp_index_to_uuid,
         &references,

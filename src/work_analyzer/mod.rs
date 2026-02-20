@@ -11,5 +11,6 @@ pub mod hlp_pipeline;
 pub mod matching;
 pub mod mirror_pipeline;
 pub mod observability;
+pub mod plausible_landmarks_context;
 
 pub use analysis_queue::run_lens;
