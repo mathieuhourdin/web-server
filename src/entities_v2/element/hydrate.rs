@@ -1,4 +1,5 @@
 use uuid::Uuid;
+use std::collections::HashSet;
 
 use crate::db::DbPool;
 use crate::entities::{
@@ -10,7 +11,7 @@ use crate::entities::{
 };
 use crate::entities_v2::landmark::Landmark;
 
-use super::model::{Element, ElementSubtype, ElementType, NewElement};
+use super::model::{Element, ElementRelationWithRelatedElement, ElementSubtype, ElementType, NewElement};
 
 impl Element {
     /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id, trace_mirror_id)
@@ -201,6 +202,56 @@ impl Element {
             .map(|r| Element::from_resource(r.origin_resource))
             .collect();
         Ok(elements)
+    }
+
+    pub fn find_related_elements(
+        &self,
+        pool: &DbPool,
+    ) -> Result<Vec<ElementRelationWithRelatedElement>, PpdcError> {
+        let mut relations = Vec::new();
+        let mut seen = HashSet::<(Uuid, String)>::new();
+
+        let outgoing = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        for relation in outgoing {
+            if !relation.target_resource.is_element() {
+                continue;
+            }
+            let related_element_id = relation.target_resource.id;
+            if related_element_id == self.id {
+                continue;
+            }
+            let relation_type = relation.resource_relation.relation_type;
+            if !seen.insert((related_element_id, relation_type.clone())) {
+                continue;
+            }
+            let related_element = Element::find_full(related_element_id, pool)?;
+            relations.push(ElementRelationWithRelatedElement {
+                relation_type,
+                related_element,
+            });
+        }
+
+        let incoming = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        for relation in incoming {
+            if !relation.origin_resource.is_element() {
+                continue;
+            }
+            let related_element_id = relation.origin_resource.id;
+            if related_element_id == self.id {
+                continue;
+            }
+            let relation_type = relation.resource_relation.relation_type;
+            if !seen.insert((related_element_id, relation_type.clone())) {
+                continue;
+            }
+            let related_element = Element::find_full(related_element_id, pool)?;
+            relations.push(ElementRelationWithRelatedElement {
+                relation_type,
+                related_element,
+            });
+        }
+
+        Ok(relations)
     }
 }
 

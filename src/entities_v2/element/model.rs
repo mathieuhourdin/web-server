@@ -24,6 +24,12 @@ pub struct Element {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ElementRelationWithRelatedElement {
+    pub relation_type: String,
+    pub related_element: Element,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementType {
     Transaction,

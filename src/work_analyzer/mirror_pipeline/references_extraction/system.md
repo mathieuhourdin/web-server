@@ -94,10 +94,10 @@ YOU MATCH :
 YOU DO NOT MATCH :
 - RELATED BUT DIFFERENT : "Harry Potter" and "Thesis about Harry Potter". Use the related_landmarks_ids to express the relation in this case.
 
-5 NO DATE EXTRACTION
+5 NO DATE EXTRACTION (STRICT)
 You NEVER extract a date mention.
 
-6 TAGGED TEXT EXHAUSTIVITY
+6 TAGGED TEXT EXHAUSTIVITY (STRICT)
 The tagged text MUST be the EXACT SAME TEXT as the user text with only the tags added in some parts of the text. Between each tag, the string is a PERFECT MATCH of the origin text, and all the user text is present in the tagged text.
 
 7 PROPER NAME CANONICALIZATION

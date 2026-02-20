@@ -25,6 +25,7 @@ pub async fn run(
     ) = request_extraction_with_prompts(context, trace_mirror).await?;
     let raw_extraction = correct_extraction(
         context.analysis_id,
+        &trace_mirror.content,
         previous_system_prompt,
         previous_user_prompt,
         initial_extraction,

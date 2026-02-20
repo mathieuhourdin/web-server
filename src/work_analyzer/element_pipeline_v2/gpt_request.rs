@@ -239,6 +239,24 @@ pub async fn request_extraction_with_prompts(
     ))
 }
 
+fn normalize_hlp_span_for_prompt(span: &str) -> String {
+    if span.chars().count() <= 200 {
+        return span.to_string();
+    }
+
+    let first_50 = span.chars().take(50).collect::<String>();
+    let last_50 = span
+        .chars()
+        .rev()
+        .take(50)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<String>();
+
+    format!("[{} ... {}]", first_50, last_50)
+}
+
 fn build_prompt_input(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
@@ -300,8 +318,9 @@ fn build_prompt_input(
                 high_level_project_index_by_landmark_id.get(&landmark_id).copied()
             {
                 let spans = &mut high_level_projects[existing_index].spans;
-                if !spans.iter().any(|span| span == &reference.mention) {
-                    spans.push(reference.mention.clone());
+                let normalized_span = normalize_hlp_span_for_prompt(&reference.mention);
+                if !spans.iter().any(|span| span == &normalized_span) {
+                    spans.push(normalized_span);
                 }
             } else {
                 let hlp_prompt_id = high_level_projects.len() as i32;
@@ -313,7 +332,7 @@ fn build_prompt_input(
                     title: landmark.title.clone(),
                     subtitle: landmark.subtitle.clone(),
                     content: landmark.content.clone(),
-                    spans: vec![reference.mention.clone()],
+                    spans: vec![normalize_hlp_span_for_prompt(&reference.mention)],
                 });
             }
         }

@@ -5,6 +5,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::entities::error::PpdcError;
+use crate::entities::resource_relation::NewResourceRelation;
 use crate::entities_v2::{
     element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
     trace::Trace,
@@ -30,6 +31,13 @@ struct ClaimNode {
     neighbors: HashSet<String>,
 }
 
+#[derive(Debug, Clone)]
+struct ElementRelationDraft {
+    origin_claim_id: String,
+    target_claim_id: String,
+    relation_type: String,
+}
+
 pub fn persist_extraction(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
@@ -45,7 +53,10 @@ pub fn persist_extraction(
         default_interaction_date,
     )?;
     let effective_landmarks = compute_effective_landmark_ids(&nodes);
-    persist_nodes(context, trace_mirror, nodes, effective_landmarks)
+    let (created_elements, claim_to_element_id) =
+        persist_nodes(context, trace_mirror, nodes, effective_landmarks)?;
+    persist_claim_relations(context, extraction, &claim_to_element_id)?;
+    Ok(created_elements)
 }
 
 fn build_claim_nodes(
@@ -285,10 +296,12 @@ fn persist_nodes(
     trace_mirror: &TraceMirror,
     nodes: Vec<ClaimNode>,
     effective_landmarks: Vec<HashSet<Uuid>>,
-) -> Result<Vec<Element>, PpdcError> {
+) -> Result<(Vec<Element>, HashMap<String, Uuid>), PpdcError> {
     let mut created = Vec::new();
+    let mut claim_to_element_id = HashMap::new();
 
     for (node, landmark_ids) in nodes.into_iter().zip(effective_landmarks) {
+        let claim_id = node.claim_id.clone();
         let new_element = NewElement::new(
             node.title,
             node.subtitle,
@@ -308,11 +321,123 @@ fn persist_nodes(
         for landmark_id in landmark_ids {
             link_to_landmark(element.id, landmark_id, context.user_id, &context.pool)?;
         }
+        if claim_to_element_id.insert(claim_id.clone(), element.id).is_some() {
+            warn!(
+                claim_id = claim_id.as_str(),
+                "Duplicate claim id while persisting elements; keeping latest mapping"
+            );
+        }
 
         created.push(element);
     }
 
-    Ok(created)
+    Ok((created, claim_to_element_id))
+}
+
+fn persist_claim_relations(
+    context: &AnalysisContext,
+    extraction: &GrammaticalExtractionOutput,
+    claim_to_element_id: &HashMap<String, Uuid>,
+) -> Result<(), PpdcError> {
+    let relation_drafts = build_relation_drafts(extraction);
+    let mut created_relations = HashSet::<(Uuid, Uuid, String)>::new();
+
+    for relation in relation_drafts {
+        let Some(origin_resource_id) = claim_to_element_id.get(&relation.origin_claim_id).copied()
+        else {
+            warn!(
+                origin_claim_id = relation.origin_claim_id.as_str(),
+                target_claim_id = relation.target_claim_id.as_str(),
+                relation_type = relation.relation_type.as_str(),
+                "Skipping relation because origin element is missing"
+            );
+            continue;
+        };
+
+        let Some(target_resource_id) = claim_to_element_id.get(&relation.target_claim_id).copied()
+        else {
+            warn!(
+                origin_claim_id = relation.origin_claim_id.as_str(),
+                target_claim_id = relation.target_claim_id.as_str(),
+                relation_type = relation.relation_type.as_str(),
+                "Skipping relation because target element is missing"
+            );
+            continue;
+        };
+
+        let dedup_key = (
+            origin_resource_id,
+            target_resource_id,
+            relation.relation_type.clone(),
+        );
+        if !created_relations.insert(dedup_key) {
+            continue;
+        }
+
+        let mut new_relation = NewResourceRelation::new(origin_resource_id, target_resource_id);
+        new_relation.relation_type = Some(relation.relation_type);
+        new_relation.user_id = Some(context.user_id);
+        new_relation.create(&context.pool)?;
+    }
+
+    Ok(())
+}
+
+fn build_relation_drafts(extraction: &GrammaticalExtractionOutput) -> Vec<ElementRelationDraft> {
+    let mut relations = Vec::new();
+
+    for claim in &extraction.normatives {
+        for target_claim_id in &claim.applies_to {
+            relations.push(ElementRelationDraft {
+                origin_claim_id: claim.id.clone(),
+                target_claim_id: target_claim_id.clone(),
+                relation_type: "applies_to".to_string(),
+            });
+        }
+    }
+
+    for claim in &extraction.evaluatives {
+        for target_claim_id in claim
+            .descriptive_ids
+            .iter()
+            .chain(claim.transaction_ids.iter())
+        {
+            relations.push(ElementRelationDraft {
+                origin_claim_id: claim.id.clone(),
+                target_claim_id: target_claim_id.clone(),
+                relation_type: "applies_to".to_string(),
+            });
+        }
+    }
+
+    for claim in &extraction.descriptives {
+        if claim.kind != DescriptiveKind::Theme {
+            continue;
+        }
+        for unit_claim_id in &claim.unit_ids {
+            relations.push(ElementRelationDraft {
+                origin_claim_id: claim.id.clone(),
+                target_claim_id: unit_claim_id.clone(),
+                relation_type: "theme_of".to_string(),
+            });
+        }
+    }
+
+    for claim in &extraction.transactions {
+        let Some(parent_claim_id) = &claim.subtask_of else {
+            continue;
+        };
+        if parent_claim_id.trim().is_empty() {
+            continue;
+        }
+        relations.push(ElementRelationDraft {
+            origin_claim_id: claim.id.clone(),
+            target_claim_id: parent_claim_id.clone(),
+            relation_type: "subtask_of".to_string(),
+        });
+    }
+
+    relations
 }
 
 fn find_trace_interaction_date(
