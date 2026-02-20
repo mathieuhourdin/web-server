@@ -25,6 +25,6 @@ Règles :
 5) `trace_mirror_type` :
    - `Bio` si la trace parle principalement de biographie / parcours personnel passé.
    - `Journal` si la trace est un journal général (worklog, récit de journée, réflexions générales).
-   - `Note` pour une note de lecture (reading note) ou une note centrée sur une ressource lue.
+   - `Note` pour une note de lecture (reading note) ou une note centrée sur une ressource principale.
 
 Tu réponds UNIQUEMENT avec le JSON, sans texte avant ou après.
