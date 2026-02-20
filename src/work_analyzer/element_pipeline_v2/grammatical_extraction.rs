@@ -2,7 +2,8 @@ use crate::entities::error::PpdcError;
 use crate::entities_v2::{element::Element, trace_mirror::TraceMirror};
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 
-use super::gpt_request::{request_extraction, GrammaticalExtractionOutput};
+use super::gpt_correction::correct_extraction;
+use super::gpt_request::{request_extraction_with_prompts, GrammaticalExtractionOutput};
 use super::persistence::persist_extraction;
 
 #[derive(Debug, Clone)]
@@ -15,8 +16,20 @@ pub async fn run(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
 ) -> Result<GrammaticalStageOutput, PpdcError> {
-    let (raw_extraction, tag_to_landmark_id, hlp_id_to_uuid) =
-        request_extraction(context, trace_mirror).await?;
+    let (
+        initial_extraction,
+        tag_to_landmark_id,
+        hlp_id_to_uuid,
+        previous_system_prompt,
+        previous_user_prompt,
+    ) = request_extraction_with_prompts(context, trace_mirror).await?;
+    let raw_extraction = correct_extraction(
+        context.analysis_id,
+        previous_system_prompt,
+        previous_user_prompt,
+        initial_extraction,
+    )
+    .await?;
     let created_elements = persist_extraction(
         context,
         trace_mirror,

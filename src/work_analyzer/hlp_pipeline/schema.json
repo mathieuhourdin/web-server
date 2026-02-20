@@ -1,0 +1,103 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "subtitle",
+          "content",
+          "spans"
+        ]
+      }
+    },
+    "landmarks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "landmark_type": {
+            "type": "string",
+            "enum": [
+              "PROJECT",
+              "DELIVERABLE",
+              "RESOURCE",
+              "PERSON",
+              "ORGANIZATION",
+              "TOPIC",
+              "TOOL",
+              "QUESTION",
+              "HABIT",
+              "ROLE",
+              "SKILL",
+              "PLACE"
+            ]
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "related_project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "subtitle",
+          "content",
+          "landmark_type",
+          "spans",
+          "related_project_ids"
+        ]
+      }
+    }
+  },
+  "required": [
+    "projects",
+    "landmarks"
+  ]
+}

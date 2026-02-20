@@ -6,6 +6,7 @@ use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::entities_v2::reference::model::{Reference, ReferenceType};
 use crate::openai_handler::GptRequestConfig;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -19,6 +20,7 @@ pub struct ReferencesExtractionResultItem {
     pub tag_id: i32,
     pub mention: String,
     pub landmark_id: Option<i32>,
+    pub related_landmarks_ids: Vec<i32>,
     pub identification_status: IdentificationStatus,
     pub description: String,
     pub title_suggestion: String,
@@ -27,6 +29,7 @@ pub struct ReferencesExtractionResultItem {
     pub reference_variants: Vec<String>,
     pub context_tags: Vec<String>,
     pub same_object_tag_id: Option<i32>,
+    pub high_level_projects: Vec<i32>,
     pub confidence: f32,
 }
 
@@ -64,29 +67,43 @@ pub struct HighLevelProjectContextItem {
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    pub spans: Vec<String>,
 }
 
-pub async fn get_references_drafts(
+pub fn references_extraction_system_prompt() -> String {
+    include_str!("system.md").to_string()
+}
+
+pub fn references_extraction_schema() -> Result<serde_json::Value, PpdcError> {
+    Ok(serde_json::from_str(include_str!("schema.json"))?)
+}
+
+pub fn build_references_user_prompt(
     text: &str,
     context: &[LandmarkReferenceContextItem],
     high_level_projects: &[HighLevelProjectContextItem],
-    analysis_id: Uuid,
-) -> Result<ReferencesExtractionResult, PpdcError> {
-    let system_prompt = include_str!("../prompts/references_extraction/system.md").to_string();
-    let user_prompt = format!(
+) -> Result<String, PpdcError> {
+    Ok(format!(
         "trace_text : {}\n\n
         landmarks_to_match : {}\n\n
         high_level_projects : {}",
         text,
         serde_json::to_string(context)?,
         serde_json::to_string(high_level_projects)?
-    );
-    let schema = include_str!("../prompts/references_extraction/schema.json").to_string();
+    ))
+}
+
+pub async fn get_references_drafts_from_prompts(
+    system_prompt: String,
+    user_prompt: String,
+    analysis_id: Uuid,
+) -> Result<ReferencesExtractionResult, PpdcError> {
+    let schema = references_extraction_schema()?;
     let gpt_request_config = GptRequestConfig::new(
         "gpt-4.1-mini".to_string(),
         system_prompt,
         user_prompt,
-        Some(serde_json::from_str(&schema)?),
+        Some(schema),
         Some(analysis_id),
     );
     let result: ReferencesExtractionResult = gpt_request_config.execute().await?;
@@ -127,19 +144,58 @@ pub fn build_context(
 }
 
 pub fn build_high_level_projects_context(
-    high_level_projects: &[Landmark],
-) -> Vec<HighLevelProjectContextItem> {
-    high_level_projects
-        .iter()
-        .enumerate()
-        .map(|(index, hlp)| HighLevelProjectContextItem {
-            uuid: hlp.id,
+    high_level_projects_references: &[Reference],
+    pool: &DbPool,
+) -> Result<Vec<HighLevelProjectContextItem>, PpdcError> {
+    let mut high_level_projects = Vec::<HighLevelProjectContextItem>::new();
+    let mut high_level_project_index_by_landmark_id = HashMap::<Uuid, usize>::new();
+
+    for reference in high_level_projects_references {
+        let Some(landmark_id) = reference.landmark_id else {
+            continue;
+        };
+
+        let landmark = match Landmark::find(landmark_id, pool) {
+            Ok(landmark) => landmark,
+            Err(err) => {
+                warn!(
+                    landmark_id = %landmark_id,
+                    trace_mirror_id = %reference.trace_mirror_id,
+                    error = %err,
+                    "Skipping HLP reference because landmark hydration failed"
+                );
+                continue;
+            }
+        };
+
+        if landmark.landmark_type != LandmarkType::HighLevelProject {
+            continue;
+        }
+
+        if let Some(existing_index) = high_level_project_index_by_landmark_id
+            .get(&landmark_id)
+            .copied()
+        {
+            let spans = &mut high_level_projects[existing_index].spans;
+            if !spans.iter().any(|span| span == &reference.mention) {
+                spans.push(reference.mention.clone());
+            }
+            continue;
+        }
+
+        let index = high_level_projects.len();
+        high_level_project_index_by_landmark_id.insert(landmark_id, index);
+        high_level_projects.push(HighLevelProjectContextItem {
+            uuid: landmark.id,
             id: index as i32,
-            title: hlp.title.clone(),
-            subtitle: hlp.subtitle.clone(),
-            content: hlp.content.clone(),
-        })
-        .collect()
+            title: landmark.title,
+            subtitle: landmark.subtitle,
+            content: landmark.content,
+            spans: vec![reference.mention.clone()],
+        });
+    }
+
+    Ok(high_level_projects)
 }
 
 pub fn build_high_level_project_index_map(

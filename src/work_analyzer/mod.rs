@@ -1,4 +1,5 @@
 pub mod analysis_processor;
+pub mod active_context_filtering;
 pub mod context_builder;
 //pub mod match_elements_and_landmarks;
 pub mod elements_pipeline;

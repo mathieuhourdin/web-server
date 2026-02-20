@@ -12,8 +12,8 @@ pub async fn run(
     high_level_projects: &[Landmark],
     context: &AnalysisContext,
 ) -> Result<TraceMirror, PpdcError> {
-    let hlp_index_to_uuid = build_high_level_project_index_map(high_level_projects);
-    let header = extract_mirror_header(trace, context.analysis_id, high_level_projects).await?;
+    let hlp_index_to_uuid = build_high_level_project_index_map(&high_level_projects);
+    let header = extract_mirror_header(trace, context.analysis_id, &high_level_projects).await?;
     let trace_mirror = create_trace_mirror(trace, &header, context)?;
     persist_high_level_project_references(
         &trace_mirror,

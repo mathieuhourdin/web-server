@@ -182,7 +182,32 @@ pub struct EvaluativeClaim {
     pub spans: Vec<String>,
 }
 
-pub async fn request_extraction(
+pub fn grammatical_extraction_system_prompt() -> String {
+    include_str!("system.md").to_string()
+}
+
+pub fn grammatical_extraction_schema() -> Result<serde_json::Value, PpdcError> {
+    Ok(serde_json::from_str(include_str!("schema.json"))?)
+}
+
+pub async fn request_extraction_from_prompts(
+    analysis_id: Uuid,
+    system_prompt: String,
+    user_prompt: String,
+) -> Result<GrammaticalExtractionOutput, PpdcError> {
+    let schema = grammatical_extraction_schema()?;
+    let request = GptRequestConfig::new(
+        "gpt-4.1-mini".to_string(),
+        system_prompt,
+        user_prompt,
+        Some(schema),
+        Some(analysis_id),
+    )
+    .with_display_name("Element Pipeline V2 / Grammatical Extraction");
+    request.execute().await
+}
+
+pub async fn request_extraction_with_prompts(
     context: &AnalysisContext,
     trace_mirror: &TraceMirror,
 ) -> Result<
@@ -190,29 +215,28 @@ pub async fn request_extraction(
         GrammaticalExtractionOutput,
         HashMap<i32, Uuid>,
         HashMap<i32, Uuid>,
+        String,
+        String,
     ),
     PpdcError,
 > {
     let (prompt_input, tag_to_landmark_id, hlp_id_to_uuid) =
         build_prompt_input(context, trace_mirror)?;
-    let system_prompt =
-        include_str!("prompts/gramatical_extraction/v2/system.md").to_string();
+    let system_prompt = grammatical_extraction_system_prompt();
     let user_prompt = serde_json::to_string_pretty(&prompt_input)?;
-    let schema = serde_json::from_str(include_str!(
-        "prompts/gramatical_extraction/v2/schema.json"
-    ))?;
-
-    let request = GptRequestConfig::new(
-        "gpt-4.1-mini".to_string(),
+    let raw_extraction = request_extraction_from_prompts(
+        context.analysis_id,
+        system_prompt.clone(),
+        user_prompt.clone(),
+    )
+    .await?;
+    Ok((
+        raw_extraction,
+        tag_to_landmark_id,
+        hlp_id_to_uuid,
         system_prompt,
         user_prompt,
-        Some(schema),
-        Some(context.analysis_id),
-    )
-    .with_display_name("Element Pipeline V2 / Grammatical Extraction");
-
-    let raw_extraction: GrammaticalExtractionOutput = request.execute().await?;
-    Ok((raw_extraction, tag_to_landmark_id, hlp_id_to_uuid))
+    ))
 }
 
 fn build_prompt_input(

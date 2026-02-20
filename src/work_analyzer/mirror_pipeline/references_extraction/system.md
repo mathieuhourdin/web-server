@@ -82,7 +82,7 @@ Do NOT extract references whose mention describes an ACTIVITY / EPISODE (not a s
 Examples (DO NOT extract these as references): "Reading book A", "Reading of book A", "Working on project A", "Research on topic A", "Learning tool A", "Practicing skill A"...
 Instead, extract ONLY the underlying object: "Book A", "Project A", "Topic A", "Tool A", "Skill A", 
 
-4 SAME OBJECT MATCHING (IMPORTANT)
+4 SAME OBJECT MATCHING (STRICT)
 You only match to existing landmark using landmark_id if the reference is about the EXACT SAME object. 
 In priority, you use LANDMARK title and content for the matching. Existing reference context helps avoiding false match only.
 You ONLY match to landmark that have the SAME LANDMARK_TYPE.
@@ -190,7 +190,8 @@ High Level Projects : [
         "id": 0,
         "title": "Écriture d'un livre de management",
         "subtitle": "Un livre de management sur la culture de l'exécution",
-        "content": "J'écris un livre de management sur la culture de l'exécution, avec l'aide de Laurent"
+        "content": "J'écris un livre de management sur la culture de l'exécution, avec l'aide de Laurent",
+        "spans": ["Aujourd'hui je dois envoyer mon texte à LC. Je vais lui dire que j'ai bien avancé sur le livre de management."]
     }
 ]
 

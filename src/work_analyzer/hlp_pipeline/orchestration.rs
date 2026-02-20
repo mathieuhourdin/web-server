@@ -11,15 +11,17 @@ use super::{
 pub struct HlpPipelineOutput {
     pub trace_mirror: TraceMirror,
     pub created_high_level_projects: Vec<Landmark>,
+    pub created_related_landmarks: Vec<Landmark>,
 }
 
 pub async fn run(context: &AnalysisContext, trace: &Trace) -> Result<HlpPipelineOutput, PpdcError> {
     let extraction = extract_high_level_projects(&trace.content, context.analysis_id).await?;
-    let (trace_mirror, created_high_level_projects) =
-        persist_hlp_entities(context, trace, &extraction.projects)?;
+    let (trace_mirror, created_high_level_projects, created_related_landmarks) =
+        persist_hlp_entities(context, trace, &extraction.projects, &extraction.landmarks)?;
 
     Ok(HlpPipelineOutput {
         trace_mirror,
         created_high_level_projects,
+        created_related_landmarks,
     })
 }

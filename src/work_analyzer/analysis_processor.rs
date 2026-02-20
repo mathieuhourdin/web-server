@@ -3,16 +3,18 @@ use crate::entities::{error::PpdcError, resource::MaturingState};
 use crate::entities_v2::{
     element::Element,
     journal::Journal,
-    landmark::Landmark,
+    landmark::{Landmark, LandmarkType},
     landscape_analysis::LandscapeAnalysis,
     trace::{Trace, TraceType},
     trace_mirror::{self, TraceMirror},
 };
 use crate::work_analyzer::{
+    active_context_filtering,
     elements_pipeline::{self},
     element_pipeline_v2,
     high_level_analysis, mirror_pipeline, hlp_pipeline,
 };
+use std::collections::HashSet;
 use uuid::Uuid;
 
 pub struct AnalysisConfig {
@@ -32,6 +34,7 @@ pub struct AnalysisInputs {
     pub trace: Trace,
     pub previous_landscape: Option<LandscapeAnalysis>,
     pub previous_landscape_landmarks: Vec<Landmark>,
+    pub user_high_level_projects: Vec<Landmark>,
 }
 
 #[derive(Clone)]
@@ -68,11 +71,23 @@ impl AnalysisProcessor {
     pub async fn process(self) -> Result<LandscapeAnalysis, PpdcError> {
         let state = self.create_initial_state().await?;
 
-        // run mirror pipeline
-        let state = self.run_mirror_pipeline(state).await?;
-
-        // run trace broker pipeline
-        let state = self.run_grammatical_extraction_pipeline(state).await?;
+        let state = if self.inputs.trace.trace_type == TraceType::HighLevelProjectsDefinition {
+            let hlp_pipeline_output = hlp_pipeline::run(&self.context, &self.inputs.trace).await?;
+            let mut current_landmarks = hlp_pipeline_output.created_high_level_projects;
+            current_landmarks.extend(hlp_pipeline_output.created_related_landmarks);
+            AnalysisStateTraceBroker {
+                current_landscape: state.current_landscape,
+                current_trace_mirror: hlp_pipeline_output.trace_mirror,
+                current_landmarks,
+                current_elements: vec![],
+            }
+        } else {
+            // run mirror pipeline
+            let state = self.run_mirror_pipeline(state).await?;
+            // run trace broker pipeline
+            let state = self.run_grammatical_extraction_pipeline(state).await?;
+            self.run_active_context_filtering_pipeline(state).await?
+        };
 
         // run high level analysis pipeline
         self.run_high_level_analysis_pipeline(state).await?;
@@ -98,24 +113,13 @@ impl AnalysisProcessor {
         &self,
         state: AnalysisStateInitial,
     ) -> Result<AnalysisStateMirror, PpdcError> {
-        let trace_mirror: TraceMirror;
-        if self.inputs.trace.trace_type == TraceType::HighLevelProjectsDefinition {
-            let hlp_pipeline_output = hlp_pipeline::run(
-                &self.context,
+        let trace_mirror =
+            mirror_pipeline::header::run(
                 &self.inputs.trace,
-            )
-            .await?;
-            trace_mirror = hlp_pipeline_output.trace_mirror;
-        } else {
-            let user_high_level_projects =
-                Landmark::find_high_level_projects_for_user(self.context.user_id, &self.context.pool)?;
-            trace_mirror = mirror_pipeline::header::run(
-                &self.inputs.trace,
-                &user_high_level_projects,
+                &self.inputs.user_high_level_projects,
                 &self.context,
             )
             .await?;
-        }
         let trace_mirror = mirror_pipeline::references_extraction::extraction::run(
             self.context.analysis_id,
             trace_mirror.id,
@@ -179,6 +183,19 @@ impl AnalysisProcessor {
             current_landmarks: vec![],
             current_elements: grammatical_extraction.created_elements.clone(),
         })
+    }
+    async fn run_active_context_filtering_pipeline(
+        &self,
+        mut state: AnalysisStateTraceBroker,
+    ) -> Result<AnalysisStateTraceBroker, PpdcError> {
+        let linked_landmarks = active_context_filtering::run(
+            &self.context,
+            &state.current_landscape,
+            &self.inputs.previous_landscape_landmarks,
+            &self.inputs.user_high_level_projects,
+        )?;
+        state.current_landmarks.extend(linked_landmarks);
+        Ok(state)
     }
     async fn run_trace_broker_pipeline(
         &self,
@@ -259,14 +276,34 @@ impl AnalysisProcessor {
     ) -> Result<AnalysisProcessor, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
         let user_id = trace.user_id;
-        let (previous_landscape, previous_landscape_landmarks) = match previous_landscape_id {
+        let (previous_landscape, previous_landscape_landmarks, user_high_level_projects) =
+            match previous_landscape_id {
             Some(previous_landscape_id) => {
                 let previous_landscape =
                     LandscapeAnalysis::find_full_analysis(previous_landscape_id, &pool)?;
-                let previous_landscape_landmarks = previous_landscape.get_landmarks(None, &pool)?;
-                (Some(previous_landscape), previous_landscape_landmarks)
+                let mut seen_hlp_ids = HashSet::new();
+                let mut seen_non_hlp_ids = HashSet::new();
+
+                let all_previous_landscape_landmarks = previous_landscape.get_landmarks(None, &pool)?;
+                let user_high_level_projects = all_previous_landscape_landmarks
+                    .iter()
+                    .filter(|landmark| landmark.landmark_type == LandmarkType::HighLevelProject)
+                    .filter(|landmark| seen_hlp_ids.insert(landmark.id))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                let previous_landscape_landmarks = all_previous_landscape_landmarks
+                    .into_iter()
+                    .filter(|landmark| landmark.landmark_type != LandmarkType::HighLevelProject)
+                    .filter(|landmark| seen_non_hlp_ids.insert(landmark.id))
+                    .collect::<Vec<_>>();
+                (
+                    Some(previous_landscape),
+                    previous_landscape_landmarks,
+                    user_high_level_projects,
+                )
             }
-            None => (None, vec![]),
+            None => (None, vec![], vec![]),
         };
         let analysis_config = AnalysisConfig {
             model: "gpt-4.1-mini".to_string(),
@@ -282,6 +319,7 @@ impl AnalysisProcessor {
             trace,
             previous_landscape,
             previous_landscape_landmarks,
+            user_high_level_projects,
         };
         let processor = AnalysisProcessor::new(context, analysis_config, inputs);
         Ok(processor)

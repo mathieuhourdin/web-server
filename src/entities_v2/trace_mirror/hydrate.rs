@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -192,9 +190,11 @@ impl TraceMirror {
         Ok(trace_mirrors)
     }
 
-    pub fn get_high_level_projects(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
-        let mut projects = Vec::new();
-        let mut seen = HashSet::new();
+    pub fn get_high_level_projects_references(
+        &self,
+        pool: &DbPool,
+    ) -> Result<Vec<Reference>, PpdcError> {
+        let mut projects_references = Vec::new();
 
         // Source of truth: references from trace mirror -> high level project landmarks.
         let references = Reference::find_for_trace_mirror(self.id, pool)?;
@@ -202,24 +202,21 @@ impl TraceMirror {
             let Some(landmark_id) = reference.landmark_id else {
                 continue;
             };
-            if !seen.insert(landmark_id) {
-                continue;
-            }
             let landmark = Landmark::find(landmark_id, pool)?;
             if landmark.landmark_type == LandmarkType::HighLevelProject {
-                projects.push(landmark);
+                projects_references.push(reference);
             }
         }
 
-        Ok(projects)
+        Ok(projects_references)
     }
 
-    pub fn find_high_level_projects(
+    pub fn find_high_level_projects_references(
         trace_mirror_id: Uuid,
         pool: &DbPool,
-    ) -> Result<Vec<Landmark>, PpdcError> {
+    ) -> Result<Vec<Reference>, PpdcError> {
         let trace_mirror = TraceMirror::find_full_trace_mirror(trace_mirror_id, pool)?;
-        trace_mirror.get_high_level_projects(pool)
+        trace_mirror.get_high_level_projects_references(pool)
     }
 }
 

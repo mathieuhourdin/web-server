@@ -50,9 +50,8 @@ pub async fn extract_mirror_header(
     analysis_id: Uuid,
     high_level_projects: &[Landmark],
 ) -> Result<MirrorHeader, PpdcError> {
-    let system_prompt = include_str!("../prompts/mirror_header/system.md").to_string();
-    let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../prompts/mirror_header/schema.json"))?;
+    let system_prompt = include_str!("system.md").to_string();
+    let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
 
     let prompt_input = MirrorHeaderPromptInput {
         trace_text: trace.content.clone(),
