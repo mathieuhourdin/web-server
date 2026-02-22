@@ -31,7 +31,7 @@ pub fn create_router() -> Router {
         .allow_headers([CONTENT_TYPE, ACCEPT, AUTHORIZATION]);
 
     let users_router = Router::new()
-        .route("/", get(user::get_users).post(user::post_user))
+        .route("/", get(user::get_users))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route(
             "/:id/analysis",
@@ -169,6 +169,7 @@ pub fn create_router() -> Router {
     );
 
     Router::new()
+        .route("/users", post(user::post_user))
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/traces", traces_router)
