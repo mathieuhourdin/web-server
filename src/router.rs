@@ -19,7 +19,8 @@ use crate::entities::{
     resource, user,
 };
 use crate::entities_v2::{
-    element, landmark, landscape_analysis, lens, llm_call, reference, trace, trace_mirror,
+    element, journal_import, landmark, landscape_analysis, lens, llm_call, reference, trace,
+    trace_mirror,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -82,6 +83,7 @@ pub fn create_router() -> Router {
 
     let journals_router = Router::new()
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
+        .route("/:id/import_text", post(journal_import::post_import_text_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let interactions_router = Router::new()

@@ -21,12 +21,96 @@ use axum::{
 };
 use chrono::NaiveDateTime;
 use chrono::Utc;
+use diesel::deserialize::{self, FromSql};
+use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
+use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_query;
 use diesel::sql_types::{Float, Text, Uuid as SqlUuid};
+use diesel::{AsExpression, FromSqlRow};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Deserializer};
+use serde::{Deserialize, Serialize, Serializer};
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+pub enum JournalTheme {
+    Classic,
+    White,
+    Flowers,
+    Dark,
+}
+
+impl JournalTheme {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            JournalTheme::Classic => "classic",
+            JournalTheme::White => "white",
+            JournalTheme::Flowers => "flowers",
+            JournalTheme::Dark => "dark",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "classic" | "Classic" => Ok(JournalTheme::Classic),
+            // Backward compatibility with previous default naming.
+            "default" | "Default" => Ok(JournalTheme::Classic),
+            "white" | "White" => Ok(JournalTheme::White),
+            "flowers" | "Flowers" => Ok(JournalTheme::Flowers),
+            "dark" | "Dark" => Ok(JournalTheme::Dark),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid journal_theme: {}", code),
+            )),
+        }
+    }
+
+    pub fn to_api_value(self) -> &'static str {
+        match self {
+            JournalTheme::Classic => "Classic",
+            JournalTheme::White => "White",
+            JournalTheme::Flowers => "Flowers",
+            JournalTheme::Dark => "Dark",
+        }
+    }
+}
+
+impl Serialize for JournalTheme {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_api_value())
+    }
+}
+
+impl<'de> Deserialize<'de> for JournalTheme {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        JournalTheme::from_code(&value)
+            .map_err(|_| de::Error::custom("unknown journal_theme"))
+    }
+}
+
+impl ToSql<Text, Pg> for JournalTheme {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
+    }
+}
+
+impl FromSql<Text, Pg> for JournalTheme {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        JournalTheme::from_code(value.as_str())
+            .map_err(|_| "invalid journal_theme value in database".into())
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::users)]
@@ -43,9 +127,10 @@ pub struct User {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
-    pub high_level_projects_definition: Option<String>,
     pub pseudonym: String,
     pub pseudonymized: bool,
+    pub high_level_projects_definition: Option<String>,
+    pub journal_theme: JournalTheme,
 }
 
 pub enum UserResponse {
@@ -80,6 +165,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub biography: Option<String>,
     pub high_level_projects_definition: Option<String>,
     pub pseudonymized: bool,
+    pub journal_theme: JournalTheme,
     pub display_name: String,
 }
 
@@ -98,6 +184,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             biography: user.biography.clone(),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
+            journal_theme: user.journal_theme,
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -118,6 +205,7 @@ pub struct UserPseudonymizedResponse {
     pub biography: Option<String>,
     pub high_level_projects_definition: Option<String>,
     pub pseudonymized: bool,
+    pub journal_theme: JournalTheme,
     pub display_name: String,
 }
 
@@ -133,6 +221,7 @@ impl From<&User> for UserPseudonymizedResponse {
             biography: user.biography.clone(),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
+            journal_theme: user.journal_theme,
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -153,9 +242,10 @@ pub struct NewUser {
     pub profile_picture_url: Option<String>,
     pub is_platform_user: Option<bool>,
     pub biography: Option<String>,
-    pub high_level_projects_definition: Option<String>,
     pub pseudonym: Option<String>,
     pub pseudonymized: Option<bool>,
+    pub high_level_projects_definition: Option<String>,
+    pub journal_theme: Option<JournalTheme>,
 }
 
 impl NewUser {
@@ -597,6 +687,7 @@ mod tests {
             high_level_projects_definition: None,
             pseudonym: None,
             pseudonymized: Some(false),
+            journal_theme: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

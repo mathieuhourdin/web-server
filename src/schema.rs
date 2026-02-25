@@ -124,9 +124,10 @@ diesel::table! {
         profile_picture_url -> Nullable<Text>,
         is_platform_user -> Bool,
         biography -> Nullable<Text>,
-        high_level_projects_definition -> Nullable<Text>,
         pseudonym -> Text,
         pseudonymized -> Bool,
+        high_level_projects_definition -> Nullable<Text>,
+        journal_theme -> Text,
     }
 }
 

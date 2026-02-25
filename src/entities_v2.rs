@@ -1,5 +1,6 @@
 pub mod element;
 pub mod journal;
+pub mod journal_import;
 pub mod landmark;
 pub mod landscape_analysis;
 pub mod lens;
