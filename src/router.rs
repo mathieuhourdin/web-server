@@ -19,8 +19,8 @@ use crate::entities::{
     resource, user,
 };
 use crate::entities_v2::{
-    element, journal_import, landmark, landscape_analysis, lens, llm_call, reference, trace,
-    trace_mirror,
+    element, journal_import, landmark, landscape_analysis, lens, llm_call, post, reference,
+    trace, trace_mirror,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -34,6 +34,7 @@ pub fn create_router() -> Router {
     let users_router = Router::new()
         .route("/", get(user::get_users))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
+        .route("/:id/posts", get(post::get_user_posts_route))
         .route(
             "/:id/analysis",
             post(landscape_analysis::post_analysis_route)
@@ -80,6 +81,12 @@ pub fn create_router() -> Router {
         .route("/", post(trace::post_trace_route))
         .route("/:id", get(trace::get_trace_route))
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let posts_router = Router::new()
+        .route("/", get(post::get_posts_route).post(post::post_post_route))
+        .route("/:id", get(post::get_post_route).put(post::put_post_route))
+        .route("/users/:id", get(post::get_user_posts_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()
@@ -176,6 +183,7 @@ pub fn create_router() -> Router {
         .nest("/users", users_router)
         .nest("/resources", resources_router)
         .nest("/traces", traces_router)
+        .nest("/posts", posts_router)
         .nest("/journals", journals_router)
         .nest("/interactions", interactions_router)
         .nest("/transcriptions", transcriptions_router)

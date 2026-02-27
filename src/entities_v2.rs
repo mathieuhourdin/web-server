@@ -1,10 +1,12 @@
-pub mod element;
-pub mod journal;
-pub mod journal_import;
-pub mod landmark;
-pub mod landscape_analysis;
-pub mod lens;
-pub mod llm_call;
-pub mod reference;
-pub mod trace;
-pub mod trace_mirror;
+pub mod analysis_orchestration;
+pub mod derived_context;
+pub mod platform_infra;
+pub mod records;
+pub mod social;
+
+// Backward-compatible re-exports for existing imports across the codebase.
+pub use analysis_orchestration::{landscape_analysis, lens};
+pub use derived_context::{element, landmark, reference, trace_mirror};
+pub use platform_infra::llm_call;
+pub use records::{journal, journal_import, trace};
+pub use social::post;
