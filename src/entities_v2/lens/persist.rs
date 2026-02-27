@@ -14,6 +14,51 @@ use crate::entities_v2::{
 
 use super::model::{Lens, NewLens};
 
+const LENS_CURRENT_LANDSCAPE_RELATION_TYPE: &str = "head";
+const LENS_ANALYSIS_SCOPE_RELATION_TYPE: &str = "lnsa";
+
+fn ensure_lens_analysis_scope_relation(
+    lens_id: Uuid,
+    analysis_id: Uuid,
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let already_linked = ResourceRelation::find_target_for_resource(lens_id, pool)?
+        .into_iter()
+        .any(|relation| {
+            relation.resource_relation.relation_type == LENS_ANALYSIS_SCOPE_RELATION_TYPE
+                && relation.target_resource.id == analysis_id
+        });
+    if already_linked {
+        return Ok(());
+    }
+    let mut scope_relation = NewResourceRelation::new(lens_id, analysis_id);
+    scope_relation.relation_type = Some(LENS_ANALYSIS_SCOPE_RELATION_TYPE.to_string());
+    scope_relation.user_id = Some(user_id);
+    scope_relation.create(pool)?;
+    Ok(())
+}
+
+fn remove_lens_analysis_scope_relation(
+    lens_id: Uuid,
+    analysis_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let stale_relations = ResourceRelation::find_target_for_resource(lens_id, pool)?
+        .into_iter()
+        .filter(|relation| {
+            relation.resource_relation.relation_type == LENS_ANALYSIS_SCOPE_RELATION_TYPE
+                && relation.target_resource.id == analysis_id
+        })
+        .map(|relation| relation.resource_relation)
+        .collect::<Vec<_>>();
+
+    for relation in stale_relations {
+        relation.delete(pool)?;
+    }
+    Ok(())
+}
+
 impl Lens {
     pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let resource = self.to_resource();
@@ -27,7 +72,7 @@ impl Lens {
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
         // Get the new landscape to retrieve its trace_id
-        let _new_landscape =
+        let new_landscape =
             LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
 
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
@@ -37,7 +82,9 @@ impl Lens {
 
         for relation in relations {
             match relation.resource_relation.relation_type.as_str() {
-                "head" => current_landscape_relation = Some(relation.resource_relation),
+                LENS_CURRENT_LANDSCAPE_RELATION_TYPE => {
+                    current_landscape_relation = Some(relation.resource_relation)
+                }
                 _ => {}
             }
         }
@@ -48,9 +95,19 @@ impl Lens {
         }
         let mut new_current_landscape_relation =
             NewResourceRelation::new(self.id, new_landscape_analysis_id);
-        new_current_landscape_relation.relation_type = Some("head".to_string());
+        new_current_landscape_relation.relation_type =
+            Some(LENS_CURRENT_LANDSCAPE_RELATION_TYPE.to_string());
         new_current_landscape_relation.user_id = Some(self.user_id.unwrap());
         new_current_landscape_relation.create(pool)?;
+        ensure_lens_analysis_scope_relation(
+            self.id,
+            new_landscape_analysis_id,
+            self.user_id.unwrap(),
+            pool,
+        )?;
+        if let Some(replayed_analysis_id) = new_landscape.replayed_from_id {
+            remove_lens_analysis_scope_relation(self.id, replayed_analysis_id, pool)?;
+        }
 
         let lens = Lens::find_full_lens(self.id, pool)?;
         Ok(lens)
@@ -110,9 +167,16 @@ impl NewLens {
         if let Some(current_landscape_id) = current_landscape_id {
             let mut new_landscape_relation =
                 NewResourceRelation::new(created_resource.id, current_landscape_id);
-            new_landscape_relation.relation_type = Some("head".to_string());
+            new_landscape_relation.relation_type =
+                Some(LENS_CURRENT_LANDSCAPE_RELATION_TYPE.to_string());
             new_landscape_relation.user_id = Some(user_id);
             new_landscape_relation.create(pool)?;
+            ensure_lens_analysis_scope_relation(
+                created_resource.id,
+                current_landscape_id,
+                user_id,
+                pool,
+            )?;
         }
         let mut new_trace_relation = NewResourceRelation::new(created_resource.id, target_trace_id);
         new_trace_relation.relation_type = Some("trgt".to_string());

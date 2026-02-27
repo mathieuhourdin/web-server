@@ -131,6 +131,7 @@ pub struct User {
     pub pseudonymized: bool,
     pub high_level_projects_definition: Option<String>,
     pub journal_theme: JournalTheme,
+    pub current_lens_id: Option<Uuid>,
 }
 
 pub enum UserResponse {
@@ -166,6 +167,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub high_level_projects_definition: Option<String>,
     pub pseudonymized: bool,
     pub journal_theme: JournalTheme,
+    pub current_lens_id: Option<Uuid>,
     pub display_name: String,
 }
 
@@ -185,6 +187,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
             journal_theme: user.journal_theme,
+            current_lens_id: user.current_lens_id,
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -206,6 +209,7 @@ pub struct UserPseudonymizedResponse {
     pub high_level_projects_definition: Option<String>,
     pub pseudonymized: bool,
     pub journal_theme: JournalTheme,
+    pub current_lens_id: Option<Uuid>,
     pub display_name: String,
 }
 
@@ -222,6 +226,7 @@ impl From<&User> for UserPseudonymizedResponse {
             high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
             journal_theme: user.journal_theme,
+            current_lens_id: user.current_lens_id,
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -246,6 +251,7 @@ pub struct NewUser {
     pub pseudonymized: Option<bool>,
     pub high_level_projects_definition: Option<String>,
     pub journal_theme: Option<JournalTheme>,
+    pub current_lens_id: Option<Uuid>,
 }
 
 impl NewUser {
@@ -688,6 +694,7 @@ mod tests {
             pseudonym: None,
             pseudonymized: Some(false),
             journal_theme: None,
+            current_lens_id: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

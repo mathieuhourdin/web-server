@@ -158,6 +158,19 @@ impl LandscapeAnalysis {
         Ok(analysis)
     }
 
+    pub fn find_by_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+        let origins = ResourceRelation::find_origin_for_resource(trace_id, pool)?;
+        let analyses = origins
+            .into_iter()
+            .filter(|origin| {
+                origin.resource_relation.relation_type == "trce"
+                    && origin.origin_resource.is_landscape_analysis()
+            })
+            .map(|origin| LandscapeAnalysis::find_full_analysis(origin.origin_resource.id, pool))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(analyses)
+    }
+
     pub fn get_landmarks(
         &self,
         relation_type: Option<&str>,
@@ -203,6 +216,19 @@ impl LandscapeAnalysis {
             .into_iter()
             .filter(|relation| {
                 relation.resource_relation.relation_type == "head"
+                    && relation.origin_resource.is_lens()
+            })
+            .map(|relation| Lens::from_resource(relation.origin_resource))
+            .collect::<Vec<Lens>>();
+        Ok(lenses)
+    }
+
+    pub fn get_scoped_lenses(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
+        let lenses = ResourceRelation::find_origin_for_resource(self.id, pool)?;
+        let lenses = lenses
+            .into_iter()
+            .filter(|relation| {
+                relation.resource_relation.relation_type == "lnsa"
                     && relation.origin_resource.is_lens()
             })
             .map(|relation| Lens::from_resource(relation.origin_resource))

@@ -4,6 +4,8 @@ use axum::{
 };
 use chrono::{Duration, NaiveDate, Utc};
 use serde::Deserialize;
+use std::cmp::Reverse;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -12,8 +14,9 @@ use crate::entities::{
     interaction::model::{InteractionWithResource, NewInteraction},
     resource::{maturing_state::MaturingState, resource_type::ResourceType, NewResource, Resource},
     session::Session,
+    user::User,
 };
-use crate::entities_v2::{element::Element, landmark::Landmark};
+use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
 use super::model::LandscapeAnalysis;
 use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
@@ -172,9 +175,45 @@ pub async fn get_analysis_route(
 #[debug_handler]
 pub async fn get_analysis_parents_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<LandscapeAnalysis>>, PpdcError> {
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
-    let parents = landscape.find_all_parents(&pool)?;
+    let user_id = session.user_id.unwrap();
+    let user = User::find(&user_id, &pool)?;
+
+    let lens = if let Some(current_lens_id) = user.current_lens_id {
+        let lens = Lens::find_full_lens(current_lens_id, &pool)?;
+        if lens.user_id != Some(user_id) {
+            return Err(PpdcError::unauthorized());
+        }
+        Some(lens)
+    } else {
+        let scoped_lenses = landscape.get_scoped_lenses(&pool)?;
+        scoped_lenses
+            .into_iter()
+            .find_map(|lens| match Lens::find_full_lens(lens.id, &pool) {
+                Ok(full_lens) if full_lens.user_id == Some(user_id) => Some(full_lens),
+                _ => None,
+            })
+    };
+
+    let Some(lens) = lens else {
+        return Ok(Json(vec![]));
+    };
+
+    let reference_date = landscape.interaction_date.unwrap_or(landscape.created_at);
+    let mut seen_analysis_ids = HashSet::new();
+    let mut parents = lens
+        .get_analysis_scope(&pool)?
+        .into_iter()
+        .filter(|analysis| analysis.id != landscape.id)
+        .filter(|analysis| {
+            let date = analysis.interaction_date.unwrap_or(analysis.created_at);
+            date <= reference_date
+        })
+        .filter(|analysis| seen_analysis_ids.insert(analysis.id))
+        .collect::<Vec<_>>();
+    parents.sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(Json(parents))
 }

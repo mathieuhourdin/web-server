@@ -1,5 +1,6 @@
 use chrono::NaiveDateTime;
 use uuid::Uuid;
+use std::collections::HashSet;
 
 use crate::db::DbPool;
 use crate::entities::{
@@ -8,6 +9,7 @@ use crate::entities::{
     resource::{EntityType, NewResource, Resource, ResourceType},
     resource_relation::ResourceRelation,
 };
+use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 
 use super::model::{Lens, NewLens};
 
@@ -120,6 +122,35 @@ impl Lens {
             .map(|interaction| Lens::find_full_lens(interaction.resource.id, pool).unwrap())
             .collect::<Vec<Lens>>();
         Ok(lenses)
+    }
+
+    pub fn get_analysis_scope_ids(&self, pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
+        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        let mut seen = HashSet::new();
+        let analysis_ids = targets
+            .into_iter()
+            .filter(|target| {
+                target.resource_relation.relation_type == "lnsa"
+                    && target.target_resource.is_landscape_analysis()
+            })
+            .filter_map(|target| {
+                let target_id = target.target_resource.id;
+                if seen.insert(target_id) {
+                    Some(target_id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(analysis_ids)
+    }
+
+    pub fn get_analysis_scope(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+        let analysis_ids = self.get_analysis_scope_ids(pool)?;
+        analysis_ids
+            .into_iter()
+            .map(|analysis_id| LandscapeAnalysis::find_full_analysis(analysis_id, pool))
+            .collect::<Result<Vec<_>, _>>()
     }
 }
 

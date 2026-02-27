@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset, Clone)]
 #[diesel(table_name = crate::schema::llm_calls)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct LlmCall {
     pub id: Uuid,
     pub status: String,
@@ -64,6 +65,7 @@ impl LlmCall {
     pub fn get_paginated(offset: i64, limit: i64, db: &DbPool) -> Result<Vec<Self>, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
         let llm_calls = llm_calls::table
+            .select(LlmCall::as_select())
             .order(llm_calls::created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -73,13 +75,15 @@ impl LlmCall {
     pub fn get_by_id(id: Uuid, db: &DbPool) -> Result<Self, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
         let llm_call = llm_calls::table
+            .select(LlmCall::as_select())
             .filter(llm_calls::id.eq(id))
-            .first(&mut conn)?;
+            .first::<Self>(&mut conn)?;
         Ok(llm_call)
     }
     pub fn get_by_analysis_id(analysis_id: Uuid, db: &DbPool) -> Result<Vec<Self>, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
         let llm_calls = llm_calls::table
+            .select(LlmCall::as_select())
             .filter(llm_calls::analysis_id.eq(analysis_id))
             .load::<Self>(&mut conn)?;
         Ok(llm_calls)
@@ -131,6 +135,7 @@ impl NewLlmCall {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
         let llm_call = diesel::insert_into(llm_calls::table)
             .values(&self)
+            .returning(LlmCall::as_returning())
             .get_result(&mut conn)?;
         Ok(llm_call)
     }

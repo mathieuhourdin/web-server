@@ -46,7 +46,6 @@ diesel::table! {
         status -> Text,
         model -> Text,
         prompt -> Text,
-        display_name -> Text,
         schema -> Text,
         request -> Text,
         request_url -> Text,
@@ -62,6 +61,7 @@ diesel::table! {
         analysis_id -> Nullable<Uuid>,
         system_prompt -> Text,
         user_prompt -> Text,
+        display_name -> Text,
     }
 }
 
@@ -128,6 +128,7 @@ diesel::table! {
         pseudonymized -> Bool,
         high_level_projects_definition -> Nullable<Text>,
         journal_theme -> Text,
+        current_lens_id -> Nullable<Uuid>,
     }
 }
 

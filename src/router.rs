@@ -79,6 +79,7 @@ pub fn create_router() -> Router {
     let traces_router = Router::new()
         .route("/", post(trace::post_trace_route))
         .route("/:id", get(trace::get_trace_route))
+        .route("/:id/analysis", get(trace::get_trace_analysis_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()

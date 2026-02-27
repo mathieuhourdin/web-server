@@ -7,12 +7,84 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-02-27 design questions for the API
+
+The API should have multiple routes that are lens dependant : 
+- Get the trace mirror associated with a trace... for a given lens
+- Get all trace_mirrors, elements, landmarks, analysis... for a given lens
+
+So the API really depends on a lens param that applies as a filter.
+I could see multiple options : 
+- Every routes start by lens/id/xxx
+- Pass a lens query param everywhere
+- The user has a current_lens field (that can be updated) and the param applies by default
+
+From a basic customer point of view, it is much more easy to have a current_lens param on the user. Most of the time the user evolves in a given lens, he doesn't need to see other things at the same time.
+However in a more admin point of view it is good to be able to retrieve elements from multiple lens to be able to compare.
+
+What would be a good option is default user param and an optional query param that overrides the user field.
+
+### Quick summary of todo
+
+- Finish the migration and create new entities -> need to define all fields
+- Implement lens analysis relation -> will allow easier matching trace / analytic entities
+- Implement mentor feedback on a given trace
+- Implement day and week analysis
+- Implement clarification traces
+- Work on classification of note traces
+- Work on refinement of pipeline quality
+- Implement the pipeline choice entity to support better observability
+
+
+### 2026-02-27 Design ideas
+
+I think I should allow some time before a new trace is analyzed. And this way I allow a 1 hour time where the trace can be updated by the user. If too late, the user must write a new trace to add something. We could allow to ask the mentor for feedback on a given trace enven if the trace has not been analyzed. I think the "I write a trace and just after that I ask for a feedback" is an important feature. I also think that for this feedback, we could only retrieve the previous trace mirrors based on the tags they have for the context. It makes it easier to retrieve information first.
+
+
+I think I also should add a new type of analysis, very short term : each end of day, I create a day analysis that will summary what I have done during the day. It gives a small advice.
+Also each week i create a week analysis, that analysis the whole week with a small advice.
+
+The day / week analysis could identify noticeable temporal landmarks for a heatmap like display.
+
+### 2026-02-26 Lens segmentation ideas
+
+Currently I have analytics environments that are related to a Lens.
+When I retrieve analytic entities (trace mirrors, elements, landmarks, landscape) from the API, I always want them filtered by a given lens. 
+Moreover the analytic entities don't belong to only one lens : because a lens can be forked from a previous lens, analytic entities can belong to multiple lens if a fork has been made downstream.
+I have three options :
+- Duplicate all analytic entities on lens fork. This way an analytic entity always belong to one lens
+- Keep the current schema (environment is defined by parent relationship between analysis starting from lens head analysis) but make it easier for retrieval by creating a tag array on every analytical element (or only analysis) to filter efficiently
+- Add a relation table between lens and analytical entities belonging to the lens. This has the advantage of not duplicating anything on fork, and of making it more explicit and easy to update than option two. I have some cases (analysis rerun) where I want to be able to dismiss some elements from the current lens, etc.
+
+If I do option 3, I wonder if I should make multiple relation table for each analytic table, or a big table with multiple columns, or a single relation table with a single column for the analytic table primary keys, but this way it would be with no foreign key validation...
+
+### 2026-02-25 UI ideas
+
+In the journal, I really should add a button to ask the mentor a feedback about a given trace.
+
+The different see more buttons should send to dedicated pages : 
+- Elements : We should have a page organised temporarily. For each day we have a list of Elements of the day, with a switch Done Todo All. Maybe an organisation morning / afternoon.
+- Landmarks : a List of current Landmarks in a list display, maybe organized by a contextual distance metric / classification.
+
+All those pages can be filtered by high level projects.
+
+
+I could also have an element quite close to the current heatmap but displaying meaningfull temporal landmarks : this day I started this project, here I was OOO, there I realized I should work with AI...
+
+Ideas about how to deal with the event based design if I want to use user correction / repair.
+
+I want to keep a system where the user production could be entirely rerun from the begining to analyze it's activity. It means we should not create direct action on the analytic elements : no close this element. However, we could do it by using the traces : the user can say : this element is closed. It creates a trace saying that this element is close : "reading research article A is done". Then the pipeline should find the right element to close it. The trace is kept and can be analyzed by other tracks. The trace should be phrased sufficently generally for other analysis track to use it correctly even if they had a different phrasing of the element to close, etc. 
+
 ### 2026-02-19 Point
 
 My pipeline is working more or less ok.
 I must not overoptimize now.
 
 Let's do some work on High Level Projects then.
+
+End of the day :
+- The pipeline works better for base elements and landmarks
+- We introduced the HLP but it seems there is still some issues about duplication of HLP landmarks. See that tomorrow.
 
 ### 2026-02-19 Today todo
 
