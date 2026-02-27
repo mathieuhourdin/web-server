@@ -175,7 +175,7 @@ impl LandscapeAnalysis {
                 relation.resource_relation.relation_type == "ownr"
                     && relation.origin_resource.is_element()
             })
-            .map(|relation| Element::from_resource(relation.origin_resource))
+            .map(|relation| Element::find_full(relation.origin_resource.id, pool).unwrap())
             .collect::<Vec<Element>>();
         Ok(elements)
     }
