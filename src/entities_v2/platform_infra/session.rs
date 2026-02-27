@@ -1,5 +1,4 @@
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
 use crate::schema::sessions;
 use axum::{
     async_trait,
@@ -11,6 +10,8 @@ use diesel;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use super::error::PpdcError;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, Insertable, AsChangeset, Clone)]
 #[diesel(table_name = crate::schema::sessions)]

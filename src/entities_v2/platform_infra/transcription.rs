@@ -1,8 +1,9 @@
-use crate::entities::error::{ErrorType, PpdcError};
 use crate::openai_handler::whisper_handler::transcribe_audio_with_openai;
 use axum::{extract::Multipart, Json};
 use serde::Serialize;
 use std::path::Path;
+
+use super::error::{ErrorType, PpdcError};
 
 #[derive(Serialize)]
 pub struct Transcription {

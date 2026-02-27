@@ -11,7 +11,6 @@ use tower_http::{
 };
 
 use crate::entities::resource_relation;
-use crate::entities::transcription;
 use crate::entities::{
     comment,
     error::{ErrorType, PpdcError},
@@ -20,7 +19,7 @@ use crate::entities::{
 };
 use crate::entities_v2::{
     element, journal_import, landmark, landscape_analysis, lens, llm_call, post, reference,
-    trace, trace_mirror,
+    trace, trace_mirror, transcription,
 };
 use crate::link_preview;
 use crate::sessions_service;
