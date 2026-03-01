@@ -1,5 +1,3 @@
-pub mod category;
-pub mod comment;
 pub mod interaction;
 pub mod resource;
 pub mod resource_relation;

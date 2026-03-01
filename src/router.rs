@@ -12,7 +12,6 @@ use tower_http::{
 
 use crate::entities::resource_relation;
 use crate::entities::{
-    comment,
     error::{ErrorType, PpdcError},
     interaction::interaction_routes as interaction,
     resource, user,
@@ -70,10 +69,6 @@ pub fn create_router() -> Router {
             "/:id/usages",
             get(resource_relation::get_targets_for_resource_route),
         )
-        .route(
-            "/:id/comments",
-            get(comment::get_comments_for_resource).post(comment::post_comment_route),
-        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
@@ -103,10 +98,6 @@ pub fn create_router() -> Router {
             "/thought_input_usages",
             post(resource_relation::post_resource_relation_route),
         )
-        .layer(from_fn(sessions_service::auth_middleware_custom));
-
-    let comments_router = Router::new()
-        .route("/:id", put(comment::put_comment))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let transcriptions_router = Router::new()
@@ -187,7 +178,6 @@ pub fn create_router() -> Router {
         .nest("/interactions", interactions_router)
         .nest("/transcriptions", transcriptions_router)
         .nest("/", relations_router)
-        .nest("/comments", comments_router)
         .nest("/sessions", sessions_router)
         .nest("/analysis", analysis_router)
         .nest("/lens", lens_router)
