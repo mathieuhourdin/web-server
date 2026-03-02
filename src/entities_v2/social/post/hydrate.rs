@@ -19,6 +19,7 @@ impl Post {
             title: resource.title,
             subtitle: resource.subtitle,
             content: resource.content,
+            image_url: resource.image_url,
             post_type: PostType::from_interaction_type(
                 interaction.interaction_type.as_deref().unwrap_or("outp"),
             ),
@@ -39,7 +40,7 @@ impl Post {
             content: self.content.clone(),
             external_content_url: None,
             comment: None,
-            image_url: None,
+            image_url: self.image_url.clone(),
             resource_type: self.post_type.into(),
             entity_type: EntityType::PublicPost,
             maturing_state: self.maturing_state,
@@ -112,6 +113,8 @@ impl Post {
 
     pub fn find_filtered(
         post_type: Option<PostType>,
+        resource_type: Option<String>,
+        is_external: Option<bool>,
         user_id: Option<Uuid>,
         maturing_state: Option<MaturingState>,
         limit: i64,
@@ -129,6 +132,14 @@ impl Post {
 
         if let Some(post_type) = post_type {
             query = query.filter(interactions::interaction_type.eq(post_type.to_interaction_type()));
+        }
+        if let Some(resource_type) = resource_type {
+            if resource_type != "all" {
+                query = query.filter(resources::resource_type.eq(resource_type));
+            }
+        }
+        if let Some(is_external) = is_external {
+            query = query.filter(resources::is_external.eq(is_external));
         }
         if let Some(user_id) = user_id {
             query = query.filter(interactions::interaction_user_id.eq(user_id));

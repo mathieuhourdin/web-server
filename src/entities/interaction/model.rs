@@ -1,6 +1,7 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
+    resource::entity_type::EntityType,
     resource::{resource_type::ResourceType, NewResource, Resource},
     user::User,
 };
@@ -381,7 +382,7 @@ impl Interaction {
             .filter(interactions::interaction_type.eq("outp"))
             .filter(interactions::interaction_user_id.eq(user_id))
             .inner_join(resources::table)
-            .filter(resources::resource_type.eq("jrnl"))
+            .filter(resources::entity_type.eq(EntityType::Journal))
             .filter(resources::id.eq(journal_id))
             .first::<(Interaction, Resource)>(&mut conn)?;
         Ok(journal_interaction)

@@ -17,6 +17,26 @@ pub struct Journal {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct NewJournalDto {
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub journal_type: Option<JournalType>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct UpdateJournalDto {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub content: Option<String>,
+    pub journal_type: Option<JournalType>,
+    pub status: Option<JournalStatus>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalType {
     MetaJournal,

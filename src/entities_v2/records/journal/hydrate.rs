@@ -15,13 +15,20 @@ impl Journal {
     /// Creates a Journal from a Resource with default/placeholder values
     /// for fields that need to be hydrated from relations.
     pub fn from_resource(resource: Resource) -> Journal {
+        let status = if resource.maturing_state == MaturingState::Trashed {
+            JournalStatus::Archived
+        } else if resource.publishing_state == "pbsh" || resource.maturing_state == MaturingState::Finished {
+            JournalStatus::Published
+        } else {
+            JournalStatus::Draft
+        };
         Journal {
             id: resource.id,
             title: resource.title,
             subtitle: resource.subtitle,
             content: resource.content,
             user_id: Uuid::nil(),
-            status: JournalStatus::Draft,
+            status,
             journal_type: resource.resource_type.into(),
             created_at: resource.created_at,
             updated_at: resource.updated_at,
@@ -30,6 +37,11 @@ impl Journal {
 
     /// Converts the Journal back to a Resource.
     pub fn to_resource(&self) -> Resource {
+        let (maturing_state, publishing_state) = match self.status {
+            JournalStatus::Draft => (MaturingState::Draft, "drft".to_string()),
+            JournalStatus::Published => (MaturingState::Finished, "pbsh".to_string()),
+            JournalStatus::Archived => (MaturingState::Trashed, "drft".to_string()),
+        };
         Resource {
             id: self.id,
             title: self.title.clone(),
@@ -40,8 +52,8 @@ impl Journal {
             image_url: None,
             resource_type: self.journal_type.into(),
             entity_type: EntityType::Journal,
-            maturing_state: MaturingState::Draft,
-            publishing_state: "drft".to_string(),
+            maturing_state,
+            publishing_state,
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,

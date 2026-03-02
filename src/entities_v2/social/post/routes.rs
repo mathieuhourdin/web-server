@@ -18,6 +18,8 @@ use super::model::{NewPost, NewPostDto, Post, PostType};
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
     pub post_type: Option<PostType>,
+    pub is_external: Option<bool>,
+    pub resource_type: Option<String>,
     pub user_id: Option<Uuid>,
     pub maturing_state: Option<MaturingState>,
     pub limit: Option<i64>,
@@ -30,6 +32,8 @@ pub async fn get_posts_route(
 ) -> Result<Json<Vec<Post>>, PpdcError> {
     let posts = Post::find_filtered(
         filters.post_type,
+        filters.resource_type,
+        filters.is_external,
         filters.user_id,
         filters.maturing_state,
         filters.limit.unwrap_or(20),
@@ -83,6 +87,7 @@ pub async fn put_post_route(
     post.title = payload.title;
     post.subtitle = payload.subtitle.unwrap_or_default();
     post.content = payload.content;
+    post.image_url = payload.image_url;
     if let Some(post_type) = payload.post_type {
         post.post_type = post_type;
     }

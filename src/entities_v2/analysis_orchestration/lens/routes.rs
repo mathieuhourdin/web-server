@@ -2,12 +2,16 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path},
 };
+use std::cmp::Reverse;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError, resource::maturing_state::MaturingState, session::Session,
+    error::{ErrorType, PpdcError},
+    resource::maturing_state::MaturingState,
+    session::Session,
 };
+use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::trace::Trace;
 use crate::work_analyzer;
 
@@ -85,4 +89,25 @@ pub async fn get_user_lenses_route(
 ) -> Result<Json<Vec<Lens>>, PpdcError> {
     let lenses = Lens::get_user_lenses(session.user_id.unwrap(), &pool)?;
     Ok(Json(lenses))
+}
+
+#[debug_handler]
+pub async fn get_lens_analysis_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<LandscapeAnalysis>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let lens = Lens::find_full_lens(id, &pool)?;
+    if lens.user_id != Some(user_id) {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "Lens does not belong to current user".to_string(),
+        ));
+    }
+
+    let mut analyses = lens.get_analysis_scope(&pool)?;
+    analyses.sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
+    Ok(Json(analyses))
 }

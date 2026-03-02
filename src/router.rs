@@ -81,10 +81,20 @@ pub fn create_router() -> Router {
     let posts_router = Router::new()
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
+        .route(
+            "/:id/bibliography",
+            get(resource_relation::get_resource_relations_for_resource_route),
+        )
+        .route(
+            "/:id/usages",
+            get(resource_relation::get_targets_for_resource_route),
+        )
         .route("/users/:id", get(post::get_user_posts_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()
+        .route("/", post(journal::post_journal_route))
+        .route("/:id", put(journal::put_journal_route))
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
         .route("/:id/import_text", post(journal_import::post_import_text_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
@@ -136,6 +146,7 @@ pub fn create_router() -> Router {
 
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
+        .route("/:id/analysis", get(lens::get_lens_analysis_route))
         .route(
             "/:id",
             delete(lens::delete_lens_route).put(lens::put_lens_route),

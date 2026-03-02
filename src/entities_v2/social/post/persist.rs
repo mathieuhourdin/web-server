@@ -43,6 +43,7 @@ impl NewPost {
             self.content,
             resource_type,
         );
+        new_resource.image_url = self.image_url;
         new_resource.entity_type = Some(EntityType::PublicPost);
         new_resource.maturing_state = Some(self.maturing_state);
         new_resource.publishing_state = Some(self.publishing_state);
