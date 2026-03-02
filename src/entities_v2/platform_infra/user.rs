@@ -9,7 +9,7 @@ use crate::entities::{
     session::Session,
 };
 use crate::entities_v2::trace::model::{NewTrace, TraceType};
-use crate::entities_v2::lens::NewLens;
+use crate::entities_v2::lens::{LensProcessingState, NewLens};
 use crate::pagination::PaginationParams;
 use crate::schema::{interactions, resources, users};
 use argon2::Config;
@@ -20,7 +20,6 @@ use axum::{
     response::IntoResponse,
 };
 use chrono::NaiveDateTime;
-use chrono::Utc;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
@@ -408,16 +407,11 @@ pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(),
     }
 
     let autoplay_lens = NewLens {
-        name: "Autoplay Lens".to_string(),
-        description: "".to_string(),
-        processing_state: MaturingState::Draft,
+        processing_state: LensProcessingState::InSync,
         fork_landscape_id: None,
         target_trace_id: None,
-        current_state_date: Utc::now().naive_utc(),
         current_landscape_id: None,
-        model_version: "".to_string(),
         autoplay: true,
-        is_primary: false,
         user_id,
     };
     autoplay_lens.create(pool)?;

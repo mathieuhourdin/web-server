@@ -8,7 +8,6 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    resource::maturing_state::MaturingState,
     session::Session,
 };
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
@@ -62,13 +61,8 @@ pub async fn put_lens_route(
             (None, None) => {}
         }
     }
-    if payload.processing_state.is_some() {
-        if lens.processing_state == MaturingState::Finished
-            && payload.processing_state.unwrap() == MaturingState::Replay
-        {
-            lens = lens.set_processing_state(payload.processing_state.unwrap(), &pool)?;
-            tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
-        }
+    if let Some(next_processing_state) = payload.processing_state {
+        lens = lens.set_processing_state(next_processing_state, &pool)?;
     }
     let lens = Lens::find_full_lens(lens.id, &pool)?;
     Ok(Json(lens))

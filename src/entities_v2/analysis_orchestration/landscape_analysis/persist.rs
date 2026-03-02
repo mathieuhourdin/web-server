@@ -9,7 +9,7 @@ use crate::entities::{
 };
 use crate::entities_v2::reference::Reference;
 
-use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
+use super::model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
 
 impl LandscapeAnalysis {
     /// Updates the LandscapeAnalysis in the database.
@@ -21,7 +21,9 @@ impl LandscapeAnalysis {
             title: updated_resource.title,
             subtitle: updated_resource.subtitle,
             plain_text_state_summary: updated_resource.content,
-            processing_state: updated_resource.maturing_state,
+            processing_state: LandscapeProcessingState::from_maturing_state(
+                updated_resource.maturing_state,
+            ),
             updated_at: updated_resource.updated_at,
             ..self
         })
@@ -30,7 +32,7 @@ impl LandscapeAnalysis {
     /// Updates the processing state of the analysis.
     pub fn set_processing_state(
         mut self,
-        state: MaturingState,
+        state: LandscapeProcessingState,
         pool: &DbPool,
     ) -> Result<LandscapeAnalysis, PpdcError> {
         self.processing_state = state;

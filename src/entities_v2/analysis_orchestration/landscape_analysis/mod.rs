@@ -3,7 +3,7 @@ pub mod model;
 pub mod persist;
 pub mod routes;
 
-pub use model::{LandscapeAnalysis, NewLandscapeAnalysis};
+pub use model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
 pub use persist::{add_landmark_ref, delete_leaf_and_cleanup};
 pub use routes::{
     delete_analysis_route, get_analysis_parents_route, get_analysis_route, get_elements_route,

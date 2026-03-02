@@ -1,9 +1,9 @@
 use crate::db::DbPool;
-use crate::entities::{error::PpdcError, resource::MaturingState};
+use crate::entities::error::PpdcError;
 use crate::entities_v2::{
     element::Element,
     landmark::{Landmark, LandmarkType},
-    landscape_analysis::LandscapeAnalysis,
+    landscape_analysis::{LandscapeAnalysis, LandscapeProcessingState},
     trace::{Trace, TraceType},
     trace_mirror::{self, TraceMirror, TraceMirrorType},
 };
@@ -93,7 +93,7 @@ impl AnalysisProcessor {
 
         let mut analysis =
             LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
-        analysis.processing_state = MaturingState::Finished;
+        analysis.processing_state = LandscapeProcessingState::Completed;
         analysis = analysis.update(&self.context.pool)?;
         // return the new landscape
         Ok(analysis)

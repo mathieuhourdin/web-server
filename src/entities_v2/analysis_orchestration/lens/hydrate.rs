@@ -1,6 +1,5 @@
-use chrono::NaiveDateTime;
-use uuid::Uuid;
 use std::collections::HashSet;
+use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::{
@@ -11,57 +10,26 @@ use crate::entities::{
 };
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 
-use super::model::{Lens, NewLens};
+use super::model::{Lens, LensProcessingState, NewLens};
 
 impl Lens {
     pub fn from_resource(resource: Resource) -> Lens {
         Lens {
             id: resource.id,
             user_id: None,
-            name: resource.title,
-            description: resource.subtitle,
-            processing_state: resource.maturing_state,
+            processing_state: LensProcessingState::from_maturing_state(resource.maturing_state),
             fork_landscape_id: None,
             current_landscape_id: None,
             target_trace_id: None,
-            #[allow(deprecated)]
-            current_state_date: NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
-            model_version: "".to_string(),
             autoplay: resource.is_external,
-            is_primary: false,
-            created_at: resource.created_at,
-            updated_at: resource.updated_at,
         }
     }
-    pub fn to_resource(self) -> Resource {
-        Resource {
-            id: self.id,
-            title: self.name,
-            subtitle: self.description,
-            content: "".to_string(),
-            external_content_url: None,
-            comment: None,
-            image_url: None,
-            resource_type: ResourceType::Lens,
-            entity_type: EntityType::Lens,
-            maturing_state: self.processing_state,
-            publishing_state: "drft".to_string(),
-            is_external: self.autoplay,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            resource_subtype: None,
-        }
-    }
+
     pub fn with_user_id(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let resource = self.clone().to_resource();
+        let resource = Resource::find(self.id, pool)?;
         let interaction = resource.find_resource_author_interaction(&pool)?;
         let user_id = interaction.interaction_user_id;
-        let date = interaction.interaction_date;
-        Ok(Lens {
-            user_id: Some(user_id),
-            current_state_date: date,
-            ..self
-        })
+        Ok(Lens { user_id: Some(user_id), ..self })
     }
     pub fn with_forked_landscape(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let targets = ResourceRelation::find_target_for_resource(self.id, &pool)?;
@@ -148,12 +116,12 @@ impl Lens {
 impl NewLens {
     pub fn to_new_resource(self) -> NewResource {
         NewResource {
-            title: self.name,
-            subtitle: self.description,
+            title: "Lens".to_string(),
+            subtitle: "".to_string(),
             content: None,
             resource_type: Some(ResourceType::Lens),
             entity_type: Some(EntityType::Lens),
-            maturing_state: Some(self.processing_state),
+            maturing_state: Some(self.processing_state.to_maturing_state()),
             publishing_state: Some("drft".to_string()),
             is_external: Some(self.autoplay),
             external_content_url: None,

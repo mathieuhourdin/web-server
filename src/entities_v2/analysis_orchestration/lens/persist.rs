@@ -1,10 +1,10 @@
 use uuid::Uuid;
+use chrono::Utc;
 
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     interaction::model::NewInteraction,
-    resource::MaturingState,
     resource_relation::{NewResourceRelation, ResourceRelation},
 };
 use crate::entities_v2::{
@@ -12,7 +12,7 @@ use crate::entities_v2::{
     trace::Trace,
 };
 
-use super::model::{Lens, NewLens};
+use super::model::{Lens, LensProcessingState, NewLens};
 
 const LENS_CURRENT_LANDSCAPE_RELATION_TYPE: &str = "head";
 const LENS_ANALYSIS_SCOPE_RELATION_TYPE: &str = "lnsa";
@@ -58,7 +58,7 @@ fn remove_lens_analysis_scope_relation(
 
 impl Lens {
     pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let resource = self.to_resource();
+        let resource = crate::entities::resource::Resource::find(self.id, pool)?;
         let deleted_resource = resource.delete(pool)?;
         Ok(Lens::from_resource(deleted_resource))
     }
@@ -114,6 +114,7 @@ impl Lens {
         new_target_trace_id: Option<Uuid>,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
+        let target_changed = self.target_trace_id != new_target_trace_id;
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
         for relation in relations {
             if relation.resource_relation.relation_type == "trgt".to_string() {
@@ -128,16 +129,21 @@ impl Lens {
                 pool,
             )?;
         }
+        if target_changed {
+            let mut resource = crate::entities::resource::Resource::find(self.id, pool)?;
+            resource.maturing_state = LensProcessingState::OutOfSync.to_maturing_state();
+            let _updated_resource = resource.update(pool)?;
+        }
         let lens = Lens::find_full_lens(self.id, pool)?;
         Ok(lens)
     }
     pub fn set_processing_state(
         self,
-        new_processing_state: MaturingState,
+        new_processing_state: LensProcessingState,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
-        let mut resource = self.to_resource();
-        resource.maturing_state = new_processing_state;
+        let mut resource = crate::entities::resource::Resource::find(self.id, pool)?;
+        resource.maturing_state = new_processing_state.to_maturing_state();
         let resource = resource.update(pool)?;
         Ok(Lens::from_resource(resource))
     }
@@ -146,7 +152,6 @@ impl Lens {
 impl NewLens {
     pub fn create(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let user_id = self.user_id;
-        let current_state_date = self.current_state_date;
         let target_trace_id = self.target_trace_id;
         let fork_landscape_id = self.fork_landscape_id;
         let current_landscape_id = self.current_landscape_id;
@@ -155,7 +160,7 @@ impl NewLens {
         let created_resource = new_resource.create(pool)?;
         let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
         new_interaction.interaction_type = Some("outp".to_string());
-        new_interaction.interaction_date = Some(current_state_date);
+        new_interaction.interaction_date = Some(Utc::now().naive_utc());
         new_interaction.interaction_progress = 0;
         new_interaction.create(pool)?;
         if let Some(fork_landscape_id) = fork_landscape_id {

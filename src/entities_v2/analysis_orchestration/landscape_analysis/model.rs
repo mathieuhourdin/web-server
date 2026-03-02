@@ -4,6 +4,31 @@ use uuid::Uuid;
 
 use crate::entities::resource::maturing_state::MaturingState;
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LandscapeProcessingState {
+    Pending,
+    ReplayRequested,
+    Completed,
+}
+
+impl LandscapeProcessingState {
+    pub fn from_maturing_state(state: MaturingState) -> Self {
+        match state {
+            MaturingState::Replay => LandscapeProcessingState::ReplayRequested,
+            MaturingState::Finished => LandscapeProcessingState::Completed,
+            _ => LandscapeProcessingState::Pending,
+        }
+    }
+
+    pub fn to_maturing_state(self) -> MaturingState {
+        match self {
+            LandscapeProcessingState::Pending => MaturingState::Draft,
+            LandscapeProcessingState::ReplayRequested => MaturingState::Replay,
+            LandscapeProcessingState::Completed => MaturingState::Finished,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LandscapeAnalysis {
     pub id: Uuid,
@@ -16,7 +41,7 @@ pub struct LandscapeAnalysis {
     pub replayed_from_id: Option<Uuid>,
     pub analyzed_trace_id: Option<Uuid>,
     pub trace_mirror_id: Option<Uuid>,
-    pub processing_state: MaturingState,
+    pub processing_state: LandscapeProcessingState,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

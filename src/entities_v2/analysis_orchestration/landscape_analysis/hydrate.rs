@@ -4,14 +4,13 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     resource::{
-        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
-        NewResource, Resource,
+        entity_type::EntityType, resource_type::ResourceType, NewResource, Resource,
     },
     resource_relation::ResourceRelation,
 };
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
-use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
+use super::model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
 
 impl LandscapeAnalysis {
     /// Creates a LandscapeAnalysis from a Resource with default/placeholder values
@@ -28,7 +27,7 @@ impl LandscapeAnalysis {
             replayed_from_id: None,
             analyzed_trace_id: None,
             trace_mirror_id: None,
-            processing_state: resource.maturing_state,
+            processing_state: LandscapeProcessingState::from_maturing_state(resource.maturing_state),
             created_at: resource.created_at,
             updated_at: resource.updated_at,
         }
@@ -46,7 +45,7 @@ impl LandscapeAnalysis {
             image_url: None,
             resource_type: ResourceType::Analysis,
             entity_type: EntityType::LandscapeAnalysis,
-            maturing_state: self.processing_state,
+            maturing_state: self.processing_state.to_maturing_state(),
             publishing_state: "drft".to_string(),
             is_external: false,
             created_at: self.created_at,
@@ -245,7 +244,7 @@ impl NewLandscapeAnalysis {
             content: Some(self.plain_text_state_summary.clone()),
             resource_type: Some(ResourceType::Analysis),
             entity_type: Some(EntityType::LandscapeAnalysis),
-            maturing_state: Some(MaturingState::Draft),
+            maturing_state: Some(LandscapeProcessingState::Pending.to_maturing_state()),
             publishing_state: Some("drft".to_string()),
             is_external: Some(false),
             external_content_url: None,

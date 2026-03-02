@@ -1,8 +1,8 @@
 use crate::db::{get_global_pool, DbPool};
-use crate::entities::{error::PpdcError, resource::MaturingState};
+use crate::entities::error::PpdcError;
 use crate::entities_v2::{
-    landscape_analysis::{LandscapeAnalysis, NewLandscapeAnalysis},
-    lens::Lens,
+    landscape_analysis::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis},
+    lens::{Lens, LensProcessingState},
     trace::Trace,
 };
 use crate::work_analyzer::analysis_processor;
@@ -30,7 +30,7 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
     while let Some(new_lens) = run_lens_step(lens.id, &pool.clone()).await? {
         lens = new_lens;
     }
-    lens = lens.set_processing_state(MaturingState::Finished, &pool)?;
+    lens = lens.set_processing_state(LensProcessingState::InSync, &pool)?;
     Ok(lens)
 }
 
@@ -59,7 +59,7 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         {
             // The lens is up to date, no need to run the pipeline.
             // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
-            if lens.processing_state == MaturingState::Replay {
+            if current_landscape.processing_state == LandscapeProcessingState::ReplayRequested {
                 let new_analysis = NewLandscapeAnalysis::new(
                     format!(
                         "Replay de l'Analyse de la trace {}",
