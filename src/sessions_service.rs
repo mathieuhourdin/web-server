@@ -43,7 +43,7 @@ pub async fn auth_middleware_custom(
 #[debug_handler]
 pub async fn post_session_route(
     Extension(pool): Extension<DbPool>,
-    Extension(mut session): Extension<Session>,
+    Extension(session): Extension<Session>,
     Json(payload): Json<LoginCheck>,
 ) -> Result<Json<Session>, PpdcError> {
     println!("Post session route");
@@ -54,18 +54,29 @@ pub async fn post_session_route(
 
     if is_valid_password {
         println!("Password is valid. Let's authenticate session");
-        session.set_authenticated_and_user_id(existing_user.id);
-
-        let session = Session::update(&session, &pool)?;
-
+        if session.user_id.is_some() {
+            let _ = Session::revoke(session.id, &pool);
+        }
+        let (session, _bearer_token) = Session::create_authenticated(existing_user.id, &pool)?;
         return Ok(Json(session));
-    } else {
-        return Err(PpdcError::new(
-            401,
-            ErrorType::ApiError,
-            String::from("Invalid password"),
-        ));
     }
+    Err(PpdcError::new(
+        401,
+        ErrorType::ApiError,
+        String::from("Invalid password"),
+    ))
+}
+
+#[debug_handler]
+pub async fn delete_session_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Session>, PpdcError> {
+    if session.user_id.is_none() {
+        return Err(PpdcError::unauthorized());
+    }
+    let revoked = Session::revoke(session.id, &pool)?;
+    Ok(Json(revoked))
 }
 
 #[debug_handler]

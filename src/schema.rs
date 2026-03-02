@@ -84,6 +84,9 @@ diesel::table! {
         expires_at -> Timestamp,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        secret_hash -> Nullable<Text>,
+        revoked_at -> Nullable<Timestamp>,
+        last_seen_at -> Nullable<Timestamp>,
     }
 }
 

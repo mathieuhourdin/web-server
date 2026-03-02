@@ -177,7 +177,9 @@ pub fn create_router() -> Router {
 
     let sessions_router = Router::new().route(
         "/",
-        get(sessions_service::get_session_route).post(sessions_service::post_session_route),
+        get(sessions_service::get_session_route)
+            .post(sessions_service::post_session_route)
+            .delete(sessions_service::delete_session_route),
     );
 
     Router::new()
