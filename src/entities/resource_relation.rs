@@ -56,7 +56,6 @@ pub enum RelationEntityPair {
     LensToTrace,
     TraceMirrorToLandmark,
     PublicPostToPublicPost,
-    Unknown,
 }
 
 impl RelationEntityPair {
@@ -78,7 +77,6 @@ impl RelationEntityPair {
             Self::LensToTrace => "LENS_TO_TRACE",
             Self::TraceMirrorToLandmark => "TRACE_MIRROR_TO_LANDMARK",
             Self::PublicPostToPublicPost => "PUBLIC_POST_TO_PUBLIC_POST",
-            Self::Unknown => "UNKNOWN",
         }
     }
 
@@ -102,7 +100,6 @@ impl RelationEntityPair {
             "LENS_TO_TRACE" => Ok(Self::LensToTrace),
             "TRACE_MIRROR_TO_LANDMARK" => Ok(Self::TraceMirrorToLandmark),
             "PUBLIC_POST_TO_PUBLIC_POST" => Ok(Self::PublicPostToPublicPost),
-            "UNKNOWN" => Ok(Self::Unknown),
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
@@ -155,7 +152,6 @@ pub enum RelationMeaning {
     HasPrimaryTheme,   // origin trace_mirror has target landmark as primary theme. Future DB: `trace_mirrors.primary_theme_landmark_id` FK.
     ForkedFrom,        // origin lens is forked from target landscape_analysis. Future DB: `lenses.forked_from_landscape_analysis_id` FK.
     ChildOf,           // origin landmark/landscape_analysis is child of target parent. Future DB: `landmarks.parent_id` and `landscape_analyses.parent_id` FKs.
-    Unknown,           // Unknown or not-yet-classified relation meaning.
 }
 
 impl RelationMeaning {
@@ -184,7 +180,6 @@ impl RelationMeaning {
             Self::HasPrimaryTheme => "HAS_PRIMARY_THEME",
             Self::ForkedFrom => "FORKED_FROM",
             Self::ChildOf => "CHILD_OF",
-            Self::Unknown => "UNKNOWN",
         }
     }
 
@@ -213,7 +208,6 @@ impl RelationMeaning {
             "HAS_PRIMARY_THEME" => Ok(Self::HasPrimaryTheme),
             "FORKED_FROM" => Ok(Self::ForkedFrom),
             "CHILD_OF" => Ok(Self::ChildOf),
-            "UNKNOWN" => Ok(Self::Unknown),
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
@@ -264,32 +258,575 @@ pub struct NewResourceRelation {
 }
 
 impl NewResourceRelation {
-    pub fn new(origin_resource_id: Uuid, target_resource_id: Uuid) -> NewResourceRelation {
+    fn typed(
+        origin_resource_id: Uuid,
+        target_resource_id: Uuid,
+        relation_type: &str,
+        relation_entity_pair: RelationEntityPair,
+        relation_meaning: RelationMeaning,
+    ) -> NewResourceRelation {
         Self {
             origin_resource_id,
             target_resource_id,
             relation_comment: "".to_string(),
             user_id: None,
-            relation_type: None,
-            relation_entity_pair: None,
-            relation_meaning: None,
+            relation_type: Some(relation_type.to_string()),
+            relation_entity_pair: Some(relation_entity_pair),
+            relation_meaning: Some(relation_meaning),
         }
     }
 
-    pub fn create(mut self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
+    pub fn attached_to_landscape(
+        trace_mirror_id: Uuid,
+        landscape_analysis_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            trace_mirror_id,
+            landscape_analysis_id,
+            "lnds",
+            RelationEntityPair::TraceMirrorToLandscapeAnalysis,
+            RelationMeaning::AttachedToLandscape,
+        )
+    }
+
+    pub fn mirrors_trace(trace_mirror_id: Uuid, trace_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            trace_mirror_id,
+            trace_id,
+            "trce",
+            RelationEntityPair::TraceMirrorToTrace,
+            RelationMeaning::Mirrors,
+        )
+    }
+
+    pub fn has_primary_landmark(
+        trace_mirror_id: Uuid,
+        landmark_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            trace_mirror_id,
+            landmark_id,
+            "prir",
+            RelationEntityPair::TraceMirrorToLandmark,
+            RelationMeaning::HasPrimaryLandmark,
+        )
+    }
+
+    pub fn has_primary_theme(trace_mirror_id: Uuid, theme_landmark_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            trace_mirror_id,
+            theme_landmark_id,
+            "prit",
+            RelationEntityPair::TraceMirrorToLandmark,
+            RelationMeaning::HasPrimaryTheme,
+        )
+    }
+
+    pub fn reference_mention(trace_mirror_id: Uuid, landmark_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            trace_mirror_id,
+            landmark_id,
+            "rfrr",
+            RelationEntityPair::TraceMirrorToLandmark,
+            RelationMeaning::ReferenceMention,
+        )
+    }
+
+    pub fn analyzes_trace(landscape_analysis_id: Uuid, trace_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            landscape_analysis_id,
+            trace_id,
+            "trce",
+            RelationEntityPair::LandscapeAnalysisToTrace,
+            RelationMeaning::Analyzes,
+        )
+    }
+
+    pub fn child_of_landscape_analysis(
+        child_landscape_analysis_id: Uuid,
+        parent_landscape_analysis_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            child_landscape_analysis_id,
+            parent_landscape_analysis_id,
+            "prnt",
+            RelationEntityPair::LandscapeAnalysisToLandscapeAnalysis,
+            RelationMeaning::ChildOf,
+        )
+    }
+
+    pub fn replayed_from_landscape_analysis(
+        landscape_analysis_id: Uuid,
+        previous_landscape_analysis_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            landscape_analysis_id,
+            previous_landscape_analysis_id,
+            "rply",
+            RelationEntityPair::LandscapeAnalysisToLandscapeAnalysis,
+            RelationMeaning::ReplayedFrom,
+        )
+    }
+
+    pub fn referenced_landmark(
+        landmark_id: Uuid,
+        landscape_analysis_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            landmark_id,
+            landscape_analysis_id,
+            "refr",
+            RelationEntityPair::LandmarkToLandscapeAnalysis,
+            RelationMeaning::Referenced,
+        )
+    }
+
+    pub fn owned_by_analysis_landmark(
+        landmark_id: Uuid,
+        landscape_analysis_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            landmark_id,
+            landscape_analysis_id,
+            "ownr",
+            RelationEntityPair::LandmarkToLandscapeAnalysis,
+            RelationMeaning::OwnedByAnalysis,
+        )
+    }
+
+    pub fn child_of_landmark(child_landmark_id: Uuid, parent_landmark_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            child_landmark_id,
+            parent_landmark_id,
+            "prnt",
+            RelationEntityPair::LandmarkToLandmark,
+            RelationMeaning::ChildOf,
+        )
+    }
+
+    pub fn high_level_project_related_to(
+        landmark_id: Uuid,
+        high_level_project_landmark_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            landmark_id,
+            high_level_project_landmark_id,
+            "hlpr",
+            RelationEntityPair::LandmarkToLandmark,
+            RelationMeaning::HighLevelProjectRelatedTo,
+        )
+    }
+
+    pub fn owned_by_analysis_element(
+        element_id: Uuid,
+        landscape_analysis_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            element_id,
+            landscape_analysis_id,
+            "ownr",
+            RelationEntityPair::ElementToLandscapeAnalysis,
+            RelationMeaning::OwnedByAnalysis,
+        )
+    }
+
+    pub fn extracted_from_trace(element_id: Uuid, trace_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            element_id,
+            trace_id,
+            "elmt",
+            RelationEntityPair::ElementToTrace,
+            RelationMeaning::ExtractedFrom,
+        )
+    }
+
+    pub fn extracted_in_trace_mirror(
+        element_id: Uuid,
+        trace_mirror_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            element_id,
+            trace_mirror_id,
+            "trcm",
+            RelationEntityPair::ElementToTraceMirror,
+            RelationMeaning::ExtractedIn,
+        )
+    }
+
+    pub fn involves_landmark(element_id: Uuid, landmark_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            element_id,
+            landmark_id,
+            "elmt",
+            RelationEntityPair::ElementToLandmark,
+            RelationMeaning::Involves,
+        )
+    }
+
+    pub fn applies_to_element(origin_element_id: Uuid, target_element_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            origin_element_id,
+            target_element_id,
+            "applies_to",
+            RelationEntityPair::ElementToElement,
+            RelationMeaning::AppliesTo,
+        )
+    }
+
+    pub fn theme_of_element(theme_element_id: Uuid, unit_element_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            theme_element_id,
+            unit_element_id,
+            "theme_of",
+            RelationEntityPair::ElementToElement,
+            RelationMeaning::ThemeOf,
+        )
+    }
+
+    pub fn subtask_of_element(
+        child_element_id: Uuid,
+        parent_element_id: Uuid,
+    ) -> NewResourceRelation {
+        Self::typed(
+            child_element_id,
+            parent_element_id,
+            "subtask_of",
+            RelationEntityPair::ElementToElement,
+            RelationMeaning::SubtaskOf,
+        )
+    }
+
+    pub fn includes_in_scope(lens_id: Uuid, landscape_analysis_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            lens_id,
+            landscape_analysis_id,
+            "lnsa",
+            RelationEntityPair::LensToLandscapeAnalysis,
+            RelationMeaning::IncludesInScope,
+        )
+    }
+
+    pub fn has_current_head(lens_id: Uuid, landscape_analysis_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            lens_id,
+            landscape_analysis_id,
+            "head",
+            RelationEntityPair::LensToLandscapeAnalysis,
+            RelationMeaning::HasCurrentHead,
+        )
+    }
+
+    pub fn targets_trace(lens_id: Uuid, trace_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            lens_id,
+            trace_id,
+            "trgt",
+            RelationEntityPair::LensToTrace,
+            RelationMeaning::TargetsTrace,
+        )
+    }
+
+    pub fn forked_from(lens_id: Uuid, landscape_analysis_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            lens_id,
+            landscape_analysis_id,
+            "fork",
+            RelationEntityPair::LensToLandscapeAnalysis,
+            RelationMeaning::ForkedFrom,
+        )
+    }
+
+    pub fn journal_item_of(trace_id: Uuid, journal_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            trace_id,
+            journal_id,
+            "jrit",
+            RelationEntityPair::TraceToJournal,
+            RelationMeaning::JournalItemOf,
+        )
+    }
+
+    pub fn bibliography(origin_post_id: Uuid, target_post_id: Uuid) -> NewResourceRelation {
+        Self::typed(
+            origin_post_id,
+            target_post_id,
+            "bibl",
+            RelationEntityPair::PublicPostToPublicPost,
+            RelationMeaning::Bibliography,
+        )
+    }
+
+    pub fn create_attached_to_landscape(
+        trace_mirror_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::attached_to_landscape(trace_mirror_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_mirrors_trace(
+        trace_mirror_id: Uuid,
+        trace_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::mirrors_trace(trace_mirror_id, trace_id).create_by(user_id, pool)
+    }
+
+    pub fn create_has_primary_landmark(
+        trace_mirror_id: Uuid,
+        landmark_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::has_primary_landmark(trace_mirror_id, landmark_id).create_by(user_id, pool)
+    }
+
+    pub fn create_has_primary_theme(
+        trace_mirror_id: Uuid,
+        theme_landmark_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::has_primary_theme(trace_mirror_id, theme_landmark_id).create_by(user_id, pool)
+    }
+
+    pub fn create_reference_mention(
+        trace_mirror_id: Uuid,
+        landmark_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::reference_mention(trace_mirror_id, landmark_id).create_by(user_id, pool)
+    }
+
+    pub fn create_reference_mention_with_comment(
+        trace_mirror_id: Uuid,
+        landmark_id: Uuid,
+        relation_comment: String,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        let mut relation = Self::reference_mention(trace_mirror_id, landmark_id);
+        relation.relation_comment = relation_comment;
+        relation.create_by(user_id, pool)
+    }
+
+    pub fn create_analyzes_trace(
+        landscape_analysis_id: Uuid,
+        trace_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::analyzes_trace(landscape_analysis_id, trace_id).create_by(user_id, pool)
+    }
+
+    pub fn create_child_of_landscape_analysis(
+        child_landscape_analysis_id: Uuid,
+        parent_landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::child_of_landscape_analysis(child_landscape_analysis_id, parent_landscape_analysis_id)
+            .create_by(user_id, pool)
+    }
+
+    pub fn create_replayed_from_landscape_analysis(
+        landscape_analysis_id: Uuid,
+        previous_landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::replayed_from_landscape_analysis(landscape_analysis_id, previous_landscape_analysis_id)
+            .create_by(user_id, pool)
+    }
+
+    pub fn create_referenced_landmark(
+        landmark_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::referenced_landmark(landmark_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_owned_by_analysis_landmark(
+        landmark_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::owned_by_analysis_landmark(landmark_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_child_of_landmark(
+        child_landmark_id: Uuid,
+        parent_landmark_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::child_of_landmark(child_landmark_id, parent_landmark_id).create_by(user_id, pool)
+    }
+
+    pub fn create_high_level_project_related_to(
+        landmark_id: Uuid,
+        high_level_project_landmark_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::high_level_project_related_to(landmark_id, high_level_project_landmark_id)
+            .create_by(user_id, pool)
+    }
+
+    pub fn create_owned_by_analysis_element(
+        element_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::owned_by_analysis_element(element_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_extracted_from_trace(
+        element_id: Uuid,
+        trace_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::extracted_from_trace(element_id, trace_id).create_by(user_id, pool)
+    }
+
+    pub fn create_extracted_in_trace_mirror(
+        element_id: Uuid,
+        trace_mirror_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::extracted_in_trace_mirror(element_id, trace_mirror_id).create_by(user_id, pool)
+    }
+
+    pub fn create_involves_landmark(
+        element_id: Uuid,
+        landmark_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::involves_landmark(element_id, landmark_id).create_by(user_id, pool)
+    }
+
+    pub fn create_applies_to_element(
+        origin_element_id: Uuid,
+        target_element_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::applies_to_element(origin_element_id, target_element_id).create_by(user_id, pool)
+    }
+
+    pub fn create_theme_of_element(
+        theme_element_id: Uuid,
+        unit_element_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::theme_of_element(theme_element_id, unit_element_id).create_by(user_id, pool)
+    }
+
+    pub fn create_subtask_of_element(
+        child_element_id: Uuid,
+        parent_element_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::subtask_of_element(child_element_id, parent_element_id).create_by(user_id, pool)
+    }
+
+    pub fn create_includes_in_scope(
+        lens_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::includes_in_scope(lens_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_has_current_head(
+        lens_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::has_current_head(lens_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_targets_trace(
+        lens_id: Uuid,
+        trace_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::targets_trace(lens_id, trace_id).create_by(user_id, pool)
+    }
+
+    pub fn create_forked_from(
+        lens_id: Uuid,
+        landscape_analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::forked_from(lens_id, landscape_analysis_id).create_by(user_id, pool)
+    }
+
+    pub fn create_journal_item_of(
+        trace_id: Uuid,
+        journal_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::journal_item_of(trace_id, journal_id).create_by(user_id, pool)
+    }
+
+    pub fn create_bibliography(
+        origin_post_id: Uuid,
+        target_post_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<ResourceRelation, PpdcError> {
+        Self::bibliography(origin_post_id, target_post_id).create_by(user_id, pool)
+    }
+
+    pub fn create_by(mut self, user_id: Uuid, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
+        self.user_id = Some(user_id);
+        self.create(pool)
+    }
+
+    pub fn create(self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
 
-        if self.relation_type.is_none() {
-            self.relation_type = Some("UNKNOWN".to_string());
-        }
-        if self.relation_entity_pair.is_none() {
-            self.relation_entity_pair = Some(RelationEntityPair::Unknown);
-        }
-        if self.relation_meaning.is_none() {
-            self.relation_meaning = Some(RelationMeaning::Unknown);
-        }
+        let _ = self.relation_type.as_ref().ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "relation_type must be set before creating resource relation".to_string(),
+            )
+        })?;
+        let _ = self.relation_entity_pair.as_ref().ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "relation_entity_pair must be set before creating resource relation".to_string(),
+            )
+        })?;
+        let _ = self.relation_meaning.as_ref().ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "relation_meaning must be set before creating resource relation".to_string(),
+            )
+        })?;
 
         let resource_relation = diesel::insert_into(resource_relations::table)
             .values(&self)

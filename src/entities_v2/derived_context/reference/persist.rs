@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
+    resource_relation::NewResourceRelation,
 };
 use crate::schema::resource_relations;
 
@@ -33,13 +33,13 @@ impl NewReference {
 
         let relation_comment = to_relation_comment_json(&ReferenceRelationComment::from(&self))?;
 
-        let mut new_relation = NewResourceRelation::new(self.trace_mirror_id, landmark_id);
-        new_relation.relation_type = Some(REFERENCE_RELATION_TYPE.to_string());
-        new_relation.relation_entity_pair = Some(RelationEntityPair::TraceMirrorToLandmark);
-        new_relation.relation_meaning = Some(RelationMeaning::ReferenceMention);
-        new_relation.user_id = Some(user_id);
-        new_relation.relation_comment = relation_comment.clone();
-        new_relation.create(pool)?;
+        NewResourceRelation::create_reference_mention_with_comment(
+            self.trace_mirror_id,
+            landmark_id,
+            relation_comment.clone(),
+            user_id,
+            pool,
+        )?;
 
         // `ResourceRelation` fields are private, so we fetch the inserted row id.
         let mut conn = pool

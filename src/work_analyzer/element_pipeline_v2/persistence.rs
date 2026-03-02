@@ -4,8 +4,8 @@ use chrono::{Duration, NaiveDateTime};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::entities::error::PpdcError;
-use crate::entities::resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning};
+use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities::resource_relation::NewResourceRelation;
 use crate::entities_v2::{
     element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
     trace::Trace,
@@ -374,17 +374,42 @@ fn persist_claim_relations(
             continue;
         }
 
-        let mut new_relation = NewResourceRelation::new(origin_resource_id, target_resource_id);
-        new_relation.relation_type = Some(relation.relation_type.clone());
-        new_relation.relation_entity_pair = Some(RelationEntityPair::ElementToElement);
-        new_relation.relation_meaning = Some(match relation.relation_type.as_str() {
-            "applies_to" => RelationMeaning::AppliesTo,
-            "theme_of" => RelationMeaning::ThemeOf,
-            "subtask_of" => RelationMeaning::SubtaskOf,
-            _ => RelationMeaning::Unknown,
-        });
-        new_relation.user_id = Some(context.user_id);
-        new_relation.create(&context.pool)?;
+        match relation.relation_type.as_str() {
+            "applies_to" => {
+                NewResourceRelation::create_applies_to_element(
+                    origin_resource_id,
+                    target_resource_id,
+                    context.user_id,
+                    &context.pool,
+                )?;
+                continue;
+            }
+            "theme_of" => {
+                NewResourceRelation::create_theme_of_element(
+                    origin_resource_id,
+                    target_resource_id,
+                    context.user_id,
+                    &context.pool,
+                )?;
+                continue;
+            }
+            "subtask_of" => {
+                NewResourceRelation::create_subtask_of_element(
+                    origin_resource_id,
+                    target_resource_id,
+                    context.user_id,
+                    &context.pool,
+                )?;
+                continue;
+            }
+            other => {
+                return Err(PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Unsupported element relation_type in persistence: {}", other),
+                ))
+            }
+        }
     }
 
     Ok(())

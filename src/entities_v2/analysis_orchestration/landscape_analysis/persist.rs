@@ -5,7 +5,7 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::{Interaction, InteractionWithResource, NewInteraction},
     resource::{maturing_state::MaturingState, NewResource},
-    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
+    resource_relation::NewResourceRelation,
 };
 use crate::entities_v2::reference::Reference;
 
@@ -99,10 +99,12 @@ impl LandscapeAnalysis {
         );
         let new_analysis = new_analysis.create(pool)?;
 
-        let mut replay_relation = NewResourceRelation::new(new_analysis.id, old_analysis_id);
-        replay_relation.relation_type = Some("rply".to_string());
-        replay_relation.user_id = Some(user_id);
-        replay_relation.create(pool)?;
+        NewResourceRelation::create_replayed_from_landscape_analysis(
+            new_analysis.id,
+            old_analysis_id,
+            user_id,
+            pool,
+        )?;
 
         let lenses = analysis.get_heading_lens(pool)?;
         for lens in lenses {
@@ -137,43 +139,33 @@ impl NewLandscapeAnalysis {
 
         // Create parent analysis relation if provided
         if let Some(parent_id) = parent_analysis_id {
-            let mut parent_relation = NewResourceRelation::new(created_resource.id, parent_id);
-            parent_relation.relation_type = Some("prnt".to_string());
-            parent_relation.relation_entity_pair =
-                Some(RelationEntityPair::LandscapeAnalysisToLandscapeAnalysis);
-            parent_relation.relation_meaning = Some(RelationMeaning::ChildOf);
-            parent_relation.user_id = Some(user_id);
-            parent_relation.create(pool)?;
+            NewResourceRelation::create_child_of_landscape_analysis(
+                created_resource.id,
+                parent_id,
+                user_id,
+                pool,
+            )?;
         }
 
         // Create analyzed trace relation if provided
         if let Some(trace_id) = analyzed_trace_id {
-            let mut trace_relation = NewResourceRelation::new(created_resource.id, trace_id);
-            trace_relation.relation_type = Some("trce".to_string());
-            trace_relation.relation_entity_pair = Some(RelationEntityPair::LandscapeAnalysisToTrace);
-            trace_relation.relation_meaning = Some(RelationMeaning::Analyzes);
-            trace_relation.user_id = Some(user_id);
-            trace_relation.create(pool)?;
+            NewResourceRelation::create_analyzes_trace(created_resource.id, trace_id, user_id, pool)?;
         }
         if let Some(replayed_from_id) = replayed_from_id {
-            let mut replayed_from_relation =
-                NewResourceRelation::new(created_resource.id, replayed_from_id);
-            replayed_from_relation.relation_type = Some("rply".to_string());
-            replayed_from_relation.relation_entity_pair =
-                Some(RelationEntityPair::LandscapeAnalysisToLandscapeAnalysis);
-            replayed_from_relation.relation_meaning = Some(RelationMeaning::ReplayedFrom);
-            replayed_from_relation.user_id = Some(user_id);
-            replayed_from_relation.create(pool)?;
+            NewResourceRelation::create_replayed_from_landscape_analysis(
+                created_resource.id,
+                replayed_from_id,
+                user_id,
+                pool,
+            )?;
         }
         if let Some(trace_mirror_id) = trace_mirror_id {
-            let mut trace_mirror_relation =
-                NewResourceRelation::new(trace_mirror_id, created_resource.id);
-            trace_mirror_relation.relation_type = Some("lnds".to_string());
-            trace_mirror_relation.relation_entity_pair =
-                Some(RelationEntityPair::TraceMirrorToLandscapeAnalysis);
-            trace_mirror_relation.relation_meaning = Some(RelationMeaning::AttachedToLandscape);
-            trace_mirror_relation.user_id = Some(user_id);
-            trace_mirror_relation.create(pool)?;
+            NewResourceRelation::create_attached_to_landscape(
+                trace_mirror_id,
+                created_resource.id,
+                user_id,
+                pool,
+            )?;
         }
 
         // Return the fully hydrated analysis
@@ -247,12 +239,11 @@ pub fn add_landmark_ref(
     user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let mut new_resource_relation = NewResourceRelation::new(landmark_id, landscape_analysis_id);
-    new_resource_relation.relation_type = Some("refr".to_string());
-    new_resource_relation.relation_entity_pair =
-        Some(RelationEntityPair::LandmarkToLandscapeAnalysis);
-    new_resource_relation.relation_meaning = Some(RelationMeaning::Referenced);
-    new_resource_relation.user_id = Some(user_id);
-    new_resource_relation.create(pool)?;
+    NewResourceRelation::create_referenced_landmark(
+        landmark_id,
+        landscape_analysis_id,
+        user_id,
+        pool,
+    )?;
     Ok(())
 }

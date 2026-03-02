@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
-    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
+    resource_relation::NewResourceRelation,
 };
 
 use super::model::{NewTrace, Trace};
@@ -59,12 +59,7 @@ impl NewTrace {
             "Creating journal relation with resource id: {} and journal id: {}",
             created_resource.id, journal_id
         );
-        let mut journal_relation = NewResourceRelation::new(created_resource.id, journal_id);
-        journal_relation.relation_type = Some("jrit".to_string());
-        journal_relation.relation_entity_pair = Some(RelationEntityPair::TraceToJournal);
-        journal_relation.relation_meaning = Some(RelationMeaning::JournalItemOf);
-        journal_relation.user_id = Some(user_id);
-        journal_relation.create(pool)?;
+        NewResourceRelation::create_journal_item_of(created_resource.id, journal_id, user_id, pool)?;
 
         // Return the fully hydrated trace
         Trace::find_full_trace(created_resource.id, pool)

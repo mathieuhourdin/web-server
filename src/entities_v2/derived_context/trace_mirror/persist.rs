@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
-    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
+    resource_relation::NewResourceRelation,
 };
 
 use super::model::{NewTraceMirror, TraceMirror};
@@ -43,41 +43,34 @@ impl NewTraceMirror {
         new_interaction.create(pool)?;
 
         // Create trace relation
-        let mut trace_relation = NewResourceRelation::new(created_resource.id, trace_id);
-        trace_relation.relation_type = Some("trce".to_string());
-        trace_relation.relation_entity_pair = Some(RelationEntityPair::TraceMirrorToTrace);
-        trace_relation.relation_meaning = Some(RelationMeaning::Mirrors);
-        trace_relation.user_id = Some(user_id);
-        trace_relation.create(pool)?;
+        NewResourceRelation::create_mirrors_trace(created_resource.id, trace_id, user_id, pool)?;
 
         // Create landscape analysis relation
-        let mut landscape_relation =
-            NewResourceRelation::new(created_resource.id, landscape_analysis_id);
-        landscape_relation.relation_type = Some("lnds".to_string());
-        landscape_relation.relation_entity_pair =
-            Some(RelationEntityPair::TraceMirrorToLandscapeAnalysis);
-        landscape_relation.relation_meaning = Some(RelationMeaning::AttachedToLandscape);
-        landscape_relation.user_id = Some(user_id);
-        landscape_relation.create(pool)?;
+        NewResourceRelation::create_attached_to_landscape(
+            created_resource.id,
+            landscape_analysis_id,
+            user_id,
+            pool,
+        )?;
 
         // Create primary resource relation if provided
         if let Some(resource_id) = primary_resource_id {
-            let mut resource_relation = NewResourceRelation::new(created_resource.id, resource_id);
-            resource_relation.relation_type = Some("prir".to_string());
-            resource_relation.relation_entity_pair = Some(RelationEntityPair::TraceMirrorToLandmark);
-            resource_relation.relation_meaning = Some(RelationMeaning::HasPrimaryLandmark);
-            resource_relation.user_id = Some(user_id);
-            resource_relation.create(pool)?;
+            NewResourceRelation::create_has_primary_landmark(
+                created_resource.id,
+                resource_id,
+                user_id,
+                pool,
+            )?;
         }
 
         // Create primary theme relation if provided
         if let Some(theme_id) = primary_theme_id {
-            let mut theme_relation = NewResourceRelation::new(created_resource.id, theme_id);
-            theme_relation.relation_type = Some("prit".to_string());
-            theme_relation.relation_entity_pair = Some(RelationEntityPair::TraceMirrorToLandmark);
-            theme_relation.relation_meaning = Some(RelationMeaning::HasPrimaryTheme);
-            theme_relation.user_id = Some(user_id);
-            theme_relation.create(pool)?;
+            NewResourceRelation::create_has_primary_theme(
+                created_resource.id,
+                theme_id,
+                user_id,
+                pool,
+            )?;
         }
 
         // Return the fully hydrated trace mirror
@@ -92,11 +85,11 @@ pub fn link_to_primary_resource(
     user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Uuid, PpdcError> {
-    let mut mirror_resource = NewResourceRelation::new(trace_mirror_id, primary_resource_id);
-    mirror_resource.relation_type = Some("prir".to_string());
-    mirror_resource.relation_entity_pair = Some(RelationEntityPair::TraceMirrorToLandmark);
-    mirror_resource.relation_meaning = Some(RelationMeaning::HasPrimaryLandmark);
-    mirror_resource.user_id = Some(user_id);
-    mirror_resource.create(pool)?;
+    NewResourceRelation::create_has_primary_landmark(
+        trace_mirror_id,
+        primary_resource_id,
+        user_id,
+        pool,
+    )?;
     Ok(primary_resource_id)
 }

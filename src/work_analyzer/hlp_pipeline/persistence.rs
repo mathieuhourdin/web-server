@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use crate::entities::error::PpdcError;
 use crate::entities::resource::MaturingState;
-use crate::entities::resource_relation::{
-    NewResourceRelation, RelationEntityPair, RelationMeaning, ResourceRelation,
-};
+use crate::entities::resource_relation::{NewResourceRelation, ResourceRelation};
 use crate::entities_v2::{
     landmark::{Landmark, LandmarkType, NewLandmark},
     reference::{NewReference, ReferenceType},
@@ -14,8 +12,6 @@ use crate::entities_v2::{
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 
 use super::gpt_request::{HighLevelProjectDraft, RelatedLandmarkDraft};
-
-const HLP_LANDMARK_RELATION_TYPE: &str = "hlpr";
 
 pub fn persist_hlp_entities(
     context: &AnalysisContext,
@@ -153,12 +149,12 @@ pub fn persist_hlp_entities(
                 continue;
             };
 
-            let mut relation = NewResourceRelation::new(landmark.id, project_landmark_id);
-            relation.relation_type = Some(HLP_LANDMARK_RELATION_TYPE.to_string());
-            relation.relation_entity_pair = Some(RelationEntityPair::LandmarkToLandmark);
-            relation.relation_meaning = Some(RelationMeaning::HighLevelProjectRelatedTo);
-            relation.user_id = Some(context.user_id);
-            relation.create(&context.pool)?;
+            NewResourceRelation::create_high_level_project_related_to(
+                landmark.id,
+                project_landmark_id,
+                context.user_id,
+                &context.pool,
+            )?;
         }
 
         created_related_landmarks.push(landmark);
@@ -184,11 +180,11 @@ fn ensure_landmark_ownr_link(
         return Ok(());
     }
 
-    let mut relation = NewResourceRelation::new(landmark_id, analysis_id);
-    relation.relation_type = Some("ownr".to_string());
-    relation.relation_entity_pair = Some(RelationEntityPair::LandmarkToLandscapeAnalysis);
-    relation.relation_meaning = Some(RelationMeaning::OwnedByAnalysis);
-    relation.user_id = Some(user_id);
-    relation.create(pool)?;
+    NewResourceRelation::create_owned_by_analysis_landmark(
+        landmark_id,
+        analysis_id,
+        user_id,
+        pool,
+    )?;
     Ok(())
 }

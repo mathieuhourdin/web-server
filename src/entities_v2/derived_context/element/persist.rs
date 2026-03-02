@@ -4,7 +4,7 @@ use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
     interaction::model::NewInteraction,
-    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
+    resource_relation::NewResourceRelation,
 };
 
 use super::model::{Element, NewElement};
@@ -39,36 +39,26 @@ impl NewElement {
         let created = new_resource.create(pool)?;
         let element = Element::from_resource(created);
 
-        let mut ownr = NewResourceRelation::new(element.id, analysis_id);
-        ownr.relation_type = Some("ownr".to_string());
-        ownr.relation_entity_pair = Some(RelationEntityPair::ElementToLandscapeAnalysis);
-        ownr.relation_meaning = Some(RelationMeaning::OwnedByAnalysis);
-        ownr.user_id = Some(user_id);
-        ownr.create(pool)?;
+        NewResourceRelation::create_owned_by_analysis_element(
+            element.id,
+            analysis_id,
+            user_id,
+            pool,
+        )?;
 
-        let mut elmt_trace = NewResourceRelation::new(element.id, trace_id);
-        elmt_trace.relation_type = Some("elmt".to_string());
-        elmt_trace.relation_entity_pair = Some(RelationEntityPair::ElementToTrace);
-        elmt_trace.relation_meaning = Some(RelationMeaning::ExtractedFrom);
-        elmt_trace.user_id = Some(user_id);
-        elmt_trace.create(pool)?;
+        NewResourceRelation::create_extracted_from_trace(element.id, trace_id, user_id, pool)?;
 
         if let Some(trace_mirror_id) = trace_mirror_id {
-            let mut elmt_trace_mirror = NewResourceRelation::new(element.id, trace_mirror_id);
-            elmt_trace_mirror.relation_type = Some("trcm".to_string());
-            elmt_trace_mirror.relation_entity_pair = Some(RelationEntityPair::ElementToTraceMirror);
-            elmt_trace_mirror.relation_meaning = Some(RelationMeaning::ExtractedIn);
-            elmt_trace_mirror.user_id = Some(user_id);
-            elmt_trace_mirror.create(pool)?;
+            NewResourceRelation::create_extracted_in_trace_mirror(
+                element.id,
+                trace_mirror_id,
+                user_id,
+                pool,
+            )?;
         }
 
         if let Some(lid) = landmark_id {
-            let mut elmt_landmark = NewResourceRelation::new(element.id, lid);
-            elmt_landmark.relation_type = Some("elmt".to_string());
-            elmt_landmark.relation_entity_pair = Some(RelationEntityPair::ElementToLandmark);
-            elmt_landmark.relation_meaning = Some(RelationMeaning::Involves);
-            elmt_landmark.user_id = Some(user_id);
-            elmt_landmark.create(pool)?;
+            NewResourceRelation::create_involves_landmark(element.id, lid, user_id, pool)?;
         }
 
         let mut new_interaction = NewInteraction::new(user_id, element.id);
@@ -96,11 +86,6 @@ pub fn link_to_landmark(
     user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Uuid, PpdcError> {
-    let mut elmt_landmark = NewResourceRelation::new(element_id, landmark_id);
-    elmt_landmark.relation_type = Some("elmt".to_string());
-    elmt_landmark.relation_entity_pair = Some(RelationEntityPair::ElementToLandmark);
-    elmt_landmark.relation_meaning = Some(RelationMeaning::Involves);
-    elmt_landmark.user_id = Some(user_id);
-    elmt_landmark.create(pool)?;
+    NewResourceRelation::create_involves_landmark(element_id, landmark_id, user_id, pool)?;
     Ok(landmark_id)
 }

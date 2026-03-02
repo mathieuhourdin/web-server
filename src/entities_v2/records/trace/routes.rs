@@ -11,7 +11,7 @@ use crate::entities::{
     error::{ErrorType, PpdcError},
     interaction::model::{Interaction, NewInteraction},
     resource::Resource,
-    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
+    resource_relation::NewResourceRelation,
     session::Session,
     user::User,
 };
@@ -44,13 +44,12 @@ pub async fn post_trace_route(
     }
     new_interaction.create(&pool)?;
 
-    let mut new_resource_relation =
-        NewResourceRelation::new(resource.id, journal_interaction.resource_id.unwrap());
-    new_resource_relation.user_id = Some(user_id);
-    new_resource_relation.relation_type = Some("jrit".to_string());
-    new_resource_relation.relation_entity_pair = Some(RelationEntityPair::TraceToJournal);
-    new_resource_relation.relation_meaning = Some(RelationMeaning::JournalItemOf);
-    new_resource_relation.create(&pool)?;
+    NewResourceRelation::create_journal_item_of(
+        resource.id,
+        journal_interaction.resource_id.unwrap(),
+        user_id,
+        &pool,
+    )?;
 
     let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
     for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
