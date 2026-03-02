@@ -28,10 +28,6 @@ impl EntityType {
             "jrnl" => Ok(EntityType::Journal),
             "trce" => Ok(EntityType::Trace),
             "trcm" => Ok(EntityType::TraceMirror),
-            // Legacy trace mirror entity_type codes are normalized to TraceMirror.
-            "trmj" => Ok(EntityType::TraceMirror),
-            "trmb" => Ok(EntityType::TraceMirror),
-            "trmh" => Ok(EntityType::TraceMirror),
             "elmt" => Ok(EntityType::Element),
             "lndm" => Ok(EntityType::Landmark),
             "lnds" => Ok(EntityType::LandscapeAnalysis),
@@ -78,15 +74,6 @@ impl EntityType {
             "Journal" => Ok(EntityType::Journal),
             "Trace" => Ok(EntityType::Trace),
             "Trace Mirror" => Ok(EntityType::TraceMirror),
-            "Trace Mirror Note" => Ok(EntityType::TraceMirror),
-            "Trace Mirror Journal" => Ok(EntityType::TraceMirror),
-            "Trace Mirror Bio" => Ok(EntityType::TraceMirror),
-            "Trace Mirror High Level Projects Definition" => {
-                Ok(EntityType::TraceMirror)
-            }
-            "Trace Mirror High Level Projects" => {
-                Ok(EntityType::TraceMirror)
-            }
             "Element" => Ok(EntityType::Element),
             "Landmark" => Ok(EntityType::Landmark),
             "Landscape Analysis" => Ok(EntityType::LandscapeAnalysis),
