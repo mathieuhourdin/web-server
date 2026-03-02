@@ -156,8 +156,6 @@ mod tests {
             image_url: None,
             landmark_type: LandmarkType::Resource,
             maturing_state: MaturingState::Finished,
-            publishing_state: "pbsh".to_string(),
-            is_external: false,
             created_at: sample_datetime(),
             updated_at: sample_datetime(),
         };
@@ -171,8 +169,6 @@ mod tests {
             image_url: None,
             landmark_type: LandmarkType::Person,
             maturing_state: MaturingState::Finished,
-            publishing_state: "pbsh".to_string(),
-            is_external: false,
             created_at: sample_datetime(),
             updated_at: sample_datetime(),
         };
@@ -186,8 +182,6 @@ mod tests {
             image_url: None,
             landmark_type: LandmarkType::Topic,
             maturing_state: MaturingState::Finished,
-            publishing_state: "pbsh".to_string(),
-            is_external: false,
             created_at: sample_datetime(),
             updated_at: sample_datetime(),
         };

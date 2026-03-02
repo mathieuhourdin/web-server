@@ -63,7 +63,6 @@ impl TraceMirror {
             landscape_analysis_id: Uuid::nil(),
             user_id: Uuid::nil(),
             primary_resource_id: None,
-            primary_theme_id: None,
             created_at: resource.created_at,
             updated_at: resource.updated_at,
         }
@@ -144,20 +143,6 @@ impl TraceMirror {
         })
     }
 
-    /// Hydrates primary_theme_id from resource relations.
-    /// Looks for a relation of type "prit" (primary theme).
-    pub fn with_primary_theme(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let primary_theme_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "prit")
-            .map(|target| target.target_resource.id);
-        Ok(TraceMirror {
-            primary_theme_id,
-            ..self
-        })
-    }
-
     /// Finds a TraceMirror by id and fully hydrates it from the database.
     pub fn find_full_trace_mirror(id: Uuid, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
         let resource = Resource::find(id, pool)?;
@@ -166,7 +151,6 @@ impl TraceMirror {
         let trace_mirror = trace_mirror.with_trace(pool)?;
         let trace_mirror = trace_mirror.with_landscape_analysis(pool)?;
         let trace_mirror = trace_mirror.with_primary_resource(pool)?;
-        let trace_mirror = trace_mirror.with_primary_theme(pool)?;
         Ok(trace_mirror)
     }
 

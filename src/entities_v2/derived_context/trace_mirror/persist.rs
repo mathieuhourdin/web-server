@@ -29,7 +29,6 @@ impl NewTraceMirror {
         let trace_id = self.trace_id;
         let landscape_analysis_id = self.landscape_analysis_id;
         let primary_resource_id = self.primary_resource_id;
-        let primary_theme_id = self.primary_theme_id;
 
         // Create the underlying resource
         let new_resource = self.to_new_resource();
@@ -58,16 +57,6 @@ impl NewTraceMirror {
             NewResourceRelation::create_has_primary_landmark(
                 created_resource.id,
                 resource_id,
-                user_id,
-                pool,
-            )?;
-        }
-
-        // Create primary theme relation if provided
-        if let Some(theme_id) = primary_theme_id {
-            NewResourceRelation::create_has_primary_theme(
-                created_resource.id,
-                theme_id,
                 user_id,
                 pool,
             )?;

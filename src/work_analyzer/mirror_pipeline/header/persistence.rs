@@ -30,7 +30,6 @@ pub fn create_trace_mirror(
         context.analysis_id,
         context.user_id,
         None,
-        None,
         trace.interaction_date,
     );
     trace_mirror.create(&context.pool)

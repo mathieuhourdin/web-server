@@ -54,8 +54,8 @@ impl Landmark {
             resource_type: self.landmark_type.to_resource_type(),
             entity_type: EntityType::Landmark,
             maturing_state: self.maturing_state,
-            publishing_state: self.publishing_state,
-            is_external: self.is_external,
+            publishing_state: "pbsh".to_string(),
+            is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
             resource_subtype: None,
@@ -73,8 +73,6 @@ impl Landmark {
             image_url: resource.image_url,
             landmark_type: LandmarkType::from_resource_type(resource.resource_type),
             maturing_state: resource.maturing_state,
-            publishing_state: resource.publishing_state,
-            is_external: resource.is_external,
             created_at: resource.created_at,
             updated_at: resource.updated_at,
         }
@@ -182,8 +180,8 @@ impl NewLandmark {
             resource_type: Some(self.landmark_type.to_resource_type()),
             entity_type: Some(EntityType::Landmark),
             maturing_state: Some(self.maturing_state),
-            publishing_state: Some(self.publishing_state),
-            is_external: None,
+            publishing_state: Some("pbsh".to_string()),
+            is_external: Some(false),
             resource_subtype: None,
         }
     }

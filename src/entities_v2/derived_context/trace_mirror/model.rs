@@ -22,7 +22,6 @@ pub struct TraceMirror {
     pub landscape_analysis_id: Uuid,
     pub user_id: Uuid,
     pub primary_resource_id: Option<Uuid>,
-    pub primary_theme_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -38,7 +37,6 @@ pub struct NewTraceMirror {
     pub landscape_analysis_id: Uuid,
     pub user_id: Uuid,
     pub primary_resource_id: Option<Uuid>,
-    pub primary_theme_id: Option<Uuid>,
     pub interaction_date: Option<NaiveDateTime>,
 }
 
@@ -54,7 +52,6 @@ impl NewTraceMirror {
         landscape_analysis_id: Uuid,
         user_id: Uuid,
         primary_resource_id: Option<Uuid>,
-        primary_theme_id: Option<Uuid>,
         interaction_date: Option<NaiveDateTime>,
     ) -> NewTraceMirror {
         NewTraceMirror {
@@ -67,7 +64,6 @@ impl NewTraceMirror {
             landscape_analysis_id,
             user_id,
             primary_resource_id,
-            primary_theme_id,
             interaction_date,
         }
     }
