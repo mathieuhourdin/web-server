@@ -114,7 +114,7 @@ impl Lens {
     }
     pub fn update_target_trace(
         self,
-        new_target_trace_id: Uuid,
+        new_target_trace_id: Option<Uuid>,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
         let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
@@ -123,10 +123,13 @@ impl Lens {
                 relation.resource_relation.delete(pool)?;
             }
         }
-        let mut new_target_trace_relation = NewResourceRelation::new(self.id, new_target_trace_id);
-        new_target_trace_relation.relation_type = Some("trgt".to_string());
-        new_target_trace_relation.user_id = Some(self.user_id.unwrap());
-        new_target_trace_relation.create(pool)?;
+        if let Some(new_target_trace_id) = new_target_trace_id {
+            let mut new_target_trace_relation =
+                NewResourceRelation::new(self.id, new_target_trace_id);
+            new_target_trace_relation.relation_type = Some("trgt".to_string());
+            new_target_trace_relation.user_id = Some(self.user_id.unwrap());
+            new_target_trace_relation.create(pool)?;
+        }
         let lens = Lens::find_full_lens(self.id, pool)?;
         Ok(lens)
     }
@@ -178,10 +181,13 @@ impl NewLens {
                 pool,
             )?;
         }
-        let mut new_trace_relation = NewResourceRelation::new(created_resource.id, target_trace_id);
-        new_trace_relation.relation_type = Some("trgt".to_string());
-        new_trace_relation.user_id = Some(user_id);
-        new_trace_relation.create(pool)?;
+        if let Some(target_trace_id) = target_trace_id {
+            let mut new_trace_relation =
+                NewResourceRelation::new(created_resource.id, target_trace_id);
+            new_trace_relation.relation_type = Some("trgt".to_string());
+            new_trace_relation.user_id = Some(user_id);
+            new_trace_relation.create(pool)?;
+        }
         let lens = Lens::from_resource(created_resource);
         Ok(lens)
     }

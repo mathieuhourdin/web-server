@@ -38,11 +38,24 @@ pub async fn put_lens_route(
     let mut lens = Lens::find_full_lens(id, &pool)?;
 
     if payload.target_trace_id != lens.target_trace_id {
-        let payload_trace = Trace::find_full_trace(payload.target_trace_id, &pool)?;
-        let current_trace = Trace::find_full_trace(lens.target_trace_id, &pool)?;
-        if payload_trace.interaction_date.unwrap() > current_trace.interaction_date.unwrap() {
-            lens = lens.update_target_trace(payload.target_trace_id, &pool)?;
-            tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+        match (payload.target_trace_id, lens.target_trace_id) {
+            (Some(new_target_trace_id), Some(current_target_trace_id)) => {
+                let payload_trace = Trace::find_full_trace(new_target_trace_id, &pool)?;
+                let current_trace = Trace::find_full_trace(current_target_trace_id, &pool)?;
+                if payload_trace.interaction_date.unwrap() > current_trace.interaction_date.unwrap()
+                {
+                    lens = lens.update_target_trace(Some(new_target_trace_id), &pool)?;
+                    tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+                }
+            }
+            (Some(new_target_trace_id), None) => {
+                lens = lens.update_target_trace(Some(new_target_trace_id), &pool)?;
+                tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+            }
+            (None, Some(_)) => {
+                lens = lens.update_target_trace(None, &pool)?;
+            }
+            (None, None) => {}
         }
     }
     if payload.processing_state.is_some() {

@@ -52,8 +52,8 @@ pub async fn post_trace_route(
 
     let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
     for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
-        let lens = if lens.target_trace_id != resource.id {
-            lens.update_target_trace(resource.id, &pool)?
+        let lens = if lens.target_trace_id != Some(resource.id) {
+            lens.update_target_trace(Some(resource.id), &pool)?
         } else {
             lens
         };

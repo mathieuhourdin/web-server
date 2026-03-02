@@ -54,7 +54,9 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
     if current_landscape_id.is_some() {
         let current_landscape =
             LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
-        if current_landscape.analyzed_trace_id == Some(lens.target_trace_id) {
+        if lens.target_trace_id.is_some()
+            && current_landscape.analyzed_trace_id == lens.target_trace_id
+        {
             // The lens is up to date, no need to run the pipeline.
             // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
             if lens.processing_state == MaturingState::Replay {

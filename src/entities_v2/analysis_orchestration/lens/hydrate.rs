@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::db::DbPool;
 use crate::entities::{
-    error::{ErrorType, PpdcError},
+    error::PpdcError,
     interaction::model::Interaction,
     resource::{EntityType, NewResource, Resource, ResourceType},
     resource_relation::ResourceRelation,
@@ -23,7 +23,7 @@ impl Lens {
             processing_state: resource.maturing_state,
             fork_landscape_id: None,
             current_landscape_id: None,
-            target_trace_id: Uuid::nil(),
+            target_trace_id: None,
             #[allow(deprecated)]
             current_state_date: NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
             model_version: "".to_string(),
@@ -91,14 +91,6 @@ impl Lens {
             .into_iter()
             .find(|target| target.resource_relation.relation_type == "trgt".to_string())
             .map(|target| target.target_resource.id);
-        if target_trace_id.is_none() {
-            return Err(PpdcError::new(
-                404,
-                ErrorType::ApiError,
-                "Target trace not found".to_string(),
-            ));
-        }
-        let target_trace_id = target_trace_id.unwrap();
         Ok(Lens {
             target_trace_id,
             ..self

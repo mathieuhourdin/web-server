@@ -407,21 +407,12 @@ pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(),
         return Ok(());
     }
 
-    ensure_user_has_meta_journal(user_id, pool)?;
-    let placeholder_target_id = find_latest_meta_journal_id_for_user(user_id, pool)?.ok_or_else(|| {
-        PpdcError::new(
-            500,
-            ErrorType::InternalError,
-            "Meta journal not found after ensure".to_string(),
-        )
-    })?;
-
     let autoplay_lens = NewLens {
         name: "Autoplay Lens".to_string(),
         description: "".to_string(),
         processing_state: MaturingState::Draft,
         fork_landscape_id: None,
-        target_trace_id: placeholder_target_id,
+        target_trace_id: None,
         current_state_date: Utc::now().naive_utc(),
         current_landscape_id: None,
         model_version: "".to_string(),
