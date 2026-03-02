@@ -5,7 +5,7 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::{Interaction, InteractionWithResource, NewInteraction},
     resource::{maturing_state::MaturingState, NewResource},
-    resource_relation::NewResourceRelation,
+    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
 };
 use crate::entities_v2::reference::Reference;
 
@@ -139,6 +139,9 @@ impl NewLandscapeAnalysis {
         if let Some(parent_id) = parent_analysis_id {
             let mut parent_relation = NewResourceRelation::new(created_resource.id, parent_id);
             parent_relation.relation_type = Some("prnt".to_string());
+            parent_relation.relation_entity_pair =
+                Some(RelationEntityPair::LandscapeAnalysisToLandscapeAnalysis);
+            parent_relation.relation_meaning = Some(RelationMeaning::ChildOf);
             parent_relation.user_id = Some(user_id);
             parent_relation.create(pool)?;
         }
@@ -147,6 +150,8 @@ impl NewLandscapeAnalysis {
         if let Some(trace_id) = analyzed_trace_id {
             let mut trace_relation = NewResourceRelation::new(created_resource.id, trace_id);
             trace_relation.relation_type = Some("trce".to_string());
+            trace_relation.relation_entity_pair = Some(RelationEntityPair::LandscapeAnalysisToTrace);
+            trace_relation.relation_meaning = Some(RelationMeaning::Analyzes);
             trace_relation.user_id = Some(user_id);
             trace_relation.create(pool)?;
         }
@@ -154,6 +159,9 @@ impl NewLandscapeAnalysis {
             let mut replayed_from_relation =
                 NewResourceRelation::new(created_resource.id, replayed_from_id);
             replayed_from_relation.relation_type = Some("rply".to_string());
+            replayed_from_relation.relation_entity_pair =
+                Some(RelationEntityPair::LandscapeAnalysisToLandscapeAnalysis);
+            replayed_from_relation.relation_meaning = Some(RelationMeaning::ReplayedFrom);
             replayed_from_relation.user_id = Some(user_id);
             replayed_from_relation.create(pool)?;
         }
@@ -161,6 +169,9 @@ impl NewLandscapeAnalysis {
             let mut trace_mirror_relation =
                 NewResourceRelation::new(trace_mirror_id, created_resource.id);
             trace_mirror_relation.relation_type = Some("lnds".to_string());
+            trace_mirror_relation.relation_entity_pair =
+                Some(RelationEntityPair::TraceMirrorToLandscapeAnalysis);
+            trace_mirror_relation.relation_meaning = Some(RelationMeaning::AttachedToLandscape);
             trace_mirror_relation.user_id = Some(user_id);
             trace_mirror_relation.create(pool)?;
         }
@@ -238,6 +249,9 @@ pub fn add_landmark_ref(
 ) -> Result<(), PpdcError> {
     let mut new_resource_relation = NewResourceRelation::new(landmark_id, landscape_analysis_id);
     new_resource_relation.relation_type = Some("refr".to_string());
+    new_resource_relation.relation_entity_pair =
+        Some(RelationEntityPair::LandmarkToLandscapeAnalysis);
+    new_resource_relation.relation_meaning = Some(RelationMeaning::Referenced);
     new_resource_relation.user_id = Some(user_id);
     new_resource_relation.create(pool)?;
     Ok(())

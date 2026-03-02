@@ -3,7 +3,7 @@ use crate::entities::{
     error::{ErrorType, PpdcError},
     interaction::model::NewInteraction,
     resource::{maturing_state::MaturingState, Resource},
-    resource_relation::NewResourceRelation,
+    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
 };
 use crate::entities_v2::element::model::Element;
 use chrono::NaiveDateTime;
@@ -199,6 +199,9 @@ impl NewLandmark {
         // Create relation with analysis
         let mut new_resource_relation = NewResourceRelation::new(landmark.id, analysis_id);
         new_resource_relation.relation_type = Some("ownr".to_string());
+        new_resource_relation.relation_entity_pair =
+            Some(RelationEntityPair::LandmarkToLandscapeAnalysis);
+        new_resource_relation.relation_meaning = Some(RelationMeaning::OwnedByAnalysis);
         new_resource_relation.user_id = Some(user_id);
         new_resource_relation.create(pool)?;
 
@@ -206,6 +209,8 @@ impl NewLandmark {
             // create the parent relation to the parent landmark
             let mut new_resource_relation = NewResourceRelation::new(landmark.id, parent_id);
             new_resource_relation.relation_type = Some("prnt".to_string());
+            new_resource_relation.relation_entity_pair = Some(RelationEntityPair::LandmarkToLandmark);
+            new_resource_relation.relation_meaning = Some(RelationMeaning::ChildOf);
             new_resource_relation.user_id = Some(user_id);
             new_resource_relation.create(pool)?;
         }

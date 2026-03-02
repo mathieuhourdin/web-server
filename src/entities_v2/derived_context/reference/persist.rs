@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    resource_relation::NewResourceRelation,
+    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
 };
 use crate::schema::resource_relations;
 
@@ -35,6 +35,8 @@ impl NewReference {
 
         let mut new_relation = NewResourceRelation::new(self.trace_mirror_id, landmark_id);
         new_relation.relation_type = Some(REFERENCE_RELATION_TYPE.to_string());
+        new_relation.relation_entity_pair = Some(RelationEntityPair::TraceMirrorToLandmark);
+        new_relation.relation_meaning = Some(RelationMeaning::ReferenceMention);
         new_relation.user_id = Some(user_id);
         new_relation.relation_comment = relation_comment.clone();
         new_relation.create(pool)?;

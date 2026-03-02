@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
-    resource_relation::NewResourceRelation,
+    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning},
 };
 
 use super::model::{NewTrace, Trace};
@@ -61,6 +61,8 @@ impl NewTrace {
         );
         let mut journal_relation = NewResourceRelation::new(created_resource.id, journal_id);
         journal_relation.relation_type = Some("jrit".to_string());
+        journal_relation.relation_entity_pair = Some(RelationEntityPair::TraceToJournal);
+        journal_relation.relation_meaning = Some(RelationMeaning::JournalItemOf);
         journal_relation.user_id = Some(user_id);
         journal_relation.create(pool)?;
 

@@ -5,7 +5,7 @@ use crate::entities::{
     error::PpdcError,
     interaction::model::NewInteraction,
     resource::MaturingState,
-    resource_relation::{NewResourceRelation, ResourceRelation},
+    resource_relation::{NewResourceRelation, RelationEntityPair, RelationMeaning, ResourceRelation},
 };
 use crate::entities_v2::{
     landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
@@ -34,6 +34,8 @@ fn ensure_lens_analysis_scope_relation(
     }
     let mut scope_relation = NewResourceRelation::new(lens_id, analysis_id);
     scope_relation.relation_type = Some(LENS_ANALYSIS_SCOPE_RELATION_TYPE.to_string());
+    scope_relation.relation_entity_pair = Some(RelationEntityPair::LensToLandscapeAnalysis);
+    scope_relation.relation_meaning = Some(RelationMeaning::IncludesInScope);
     scope_relation.user_id = Some(user_id);
     scope_relation.create(pool)?;
     Ok(())
@@ -97,6 +99,9 @@ impl Lens {
             NewResourceRelation::new(self.id, new_landscape_analysis_id);
         new_current_landscape_relation.relation_type =
             Some(LENS_CURRENT_LANDSCAPE_RELATION_TYPE.to_string());
+        new_current_landscape_relation.relation_entity_pair =
+            Some(RelationEntityPair::LensToLandscapeAnalysis);
+        new_current_landscape_relation.relation_meaning = Some(RelationMeaning::HasCurrentHead);
         new_current_landscape_relation.user_id = Some(self.user_id.unwrap());
         new_current_landscape_relation.create(pool)?;
         ensure_lens_analysis_scope_relation(
@@ -127,6 +132,8 @@ impl Lens {
             let mut new_target_trace_relation =
                 NewResourceRelation::new(self.id, new_target_trace_id);
             new_target_trace_relation.relation_type = Some("trgt".to_string());
+            new_target_trace_relation.relation_entity_pair = Some(RelationEntityPair::LensToTrace);
+            new_target_trace_relation.relation_meaning = Some(RelationMeaning::TargetsTrace);
             new_target_trace_relation.user_id = Some(self.user_id.unwrap());
             new_target_trace_relation.create(pool)?;
         }
@@ -164,6 +171,9 @@ impl NewLens {
             let mut new_fork_relation =
                 NewResourceRelation::new(created_resource.id, fork_landscape_id);
             new_fork_relation.relation_type = Some("fork".to_string());
+            new_fork_relation.relation_entity_pair =
+                Some(RelationEntityPair::LensToLandscapeAnalysis);
+            new_fork_relation.relation_meaning = Some(RelationMeaning::ForkedFrom);
             new_fork_relation.user_id = Some(user_id);
             new_fork_relation.create(pool)?;
         }
@@ -172,6 +182,9 @@ impl NewLens {
                 NewResourceRelation::new(created_resource.id, current_landscape_id);
             new_landscape_relation.relation_type =
                 Some(LENS_CURRENT_LANDSCAPE_RELATION_TYPE.to_string());
+            new_landscape_relation.relation_entity_pair =
+                Some(RelationEntityPair::LensToLandscapeAnalysis);
+            new_landscape_relation.relation_meaning = Some(RelationMeaning::HasCurrentHead);
             new_landscape_relation.user_id = Some(user_id);
             new_landscape_relation.create(pool)?;
             ensure_lens_analysis_scope_relation(
@@ -185,6 +198,8 @@ impl NewLens {
             let mut new_trace_relation =
                 NewResourceRelation::new(created_resource.id, target_trace_id);
             new_trace_relation.relation_type = Some("trgt".to_string());
+            new_trace_relation.relation_entity_pair = Some(RelationEntityPair::LensToTrace);
+            new_trace_relation.relation_meaning = Some(RelationMeaning::TargetsTrace);
             new_trace_relation.user_id = Some(user_id);
             new_trace_relation.create(pool)?;
         }

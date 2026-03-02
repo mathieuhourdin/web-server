@@ -50,6 +50,8 @@ diesel::table! {
         updated_at -> Timestamp,
         user_id -> Uuid,
         relation_type -> Text,
+        relation_entity_pair -> Text,
+        relation_meaning -> Text,
     }
 }
 

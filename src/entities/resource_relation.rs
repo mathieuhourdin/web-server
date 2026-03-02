@@ -1,6 +1,6 @@
 use crate::db::DbPool;
 use crate::entities::{
-    error::PpdcError,
+    error::{ErrorType, PpdcError},
     resource::Resource,
     session::Session,
 };
@@ -10,7 +10,12 @@ use axum::{
     extract::{Extension, Json, Path},
 };
 use chrono::NaiveDateTime;
+use diesel::deserialize::{self, FromSql};
+use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
+use diesel::serialize::{self, Output, ToSql};
+use diesel::sql_types::Text;
+use diesel::{AsExpression, FromSqlRow};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -25,9 +30,15 @@ pub struct ResourceRelation {
     updated_at: NaiveDateTime,
     user_id: Uuid,
     pub relation_type: String,
+    pub relation_entity_pair: RelationEntityPair,
+    pub relation_meaning: RelationMeaning,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[diesel(sql_type = diesel::sql_types::Text)]
 pub enum RelationEntityPair {
     TraceMirrorToLandscapeAnalysis,
     TraceMirrorToTrace,
@@ -48,32 +59,182 @@ pub enum RelationEntityPair {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+impl RelationEntityPair {
+    pub fn to_code(&self) -> &'static str {
+        match self {
+            Self::TraceMirrorToLandscapeAnalysis => "TRACE_MIRROR_TO_LANDSCAPE_ANALYSIS",
+            Self::TraceMirrorToTrace => "TRACE_MIRROR_TO_TRACE",
+            Self::LandscapeAnalysisToTrace => "LANDSCAPE_ANALYSIS_TO_TRACE",
+            Self::LandscapeAnalysisToLandscapeAnalysis => "LANDSCAPE_ANALYSIS_TO_LANDSCAPE_ANALYSIS",
+            Self::ElementToLandscapeAnalysis => "ELEMENT_TO_LANDSCAPE_ANALYSIS",
+            Self::ElementToTrace => "ELEMENT_TO_TRACE",
+            Self::ElementToTraceMirror => "ELEMENT_TO_TRACE_MIRROR",
+            Self::ElementToLandmark => "ELEMENT_TO_LANDMARK",
+            Self::ElementToElement => "ELEMENT_TO_ELEMENT",
+            Self::LandmarkToLandscapeAnalysis => "LANDMARK_TO_LANDSCAPE_ANALYSIS",
+            Self::LandmarkToLandmark => "LANDMARK_TO_LANDMARK",
+            Self::TraceToJournal => "TRACE_TO_JOURNAL",
+            Self::LensToLandscapeAnalysis => "LENS_TO_LANDSCAPE_ANALYSIS",
+            Self::LensToTrace => "LENS_TO_TRACE",
+            Self::TraceMirrorToLandmark => "TRACE_MIRROR_TO_LANDMARK",
+            Self::PublicPostToPublicPost => "PUBLIC_POST_TO_PUBLIC_POST",
+            Self::Unknown => "UNKNOWN",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "TRACE_MIRROR_TO_LANDSCAPE_ANALYSIS" => Ok(Self::TraceMirrorToLandscapeAnalysis),
+            "TRACE_MIRROR_TO_TRACE" => Ok(Self::TraceMirrorToTrace),
+            "LANDSCAPE_ANALYSIS_TO_TRACE" => Ok(Self::LandscapeAnalysisToTrace),
+            "LANDSCAPE_ANALYSIS_TO_LANDSCAPE_ANALYSIS" => {
+                Ok(Self::LandscapeAnalysisToLandscapeAnalysis)
+            }
+            "ELEMENT_TO_LANDSCAPE_ANALYSIS" => Ok(Self::ElementToLandscapeAnalysis),
+            "ELEMENT_TO_TRACE" => Ok(Self::ElementToTrace),
+            "ELEMENT_TO_TRACE_MIRROR" => Ok(Self::ElementToTraceMirror),
+            "ELEMENT_TO_LANDMARK" => Ok(Self::ElementToLandmark),
+            "ELEMENT_TO_ELEMENT" => Ok(Self::ElementToElement),
+            "LANDMARK_TO_LANDSCAPE_ANALYSIS" => Ok(Self::LandmarkToLandscapeAnalysis),
+            "LANDMARK_TO_LANDMARK" => Ok(Self::LandmarkToLandmark),
+            "TRACE_TO_JOURNAL" => Ok(Self::TraceToJournal),
+            "LENS_TO_LANDSCAPE_ANALYSIS" => Ok(Self::LensToLandscapeAnalysis),
+            "LENS_TO_TRACE" => Ok(Self::LensToTrace),
+            "TRACE_MIRROR_TO_LANDMARK" => Ok(Self::TraceMirrorToLandmark),
+            "PUBLIC_POST_TO_PUBLIC_POST" => Ok(Self::PublicPostToPublicPost),
+            "UNKNOWN" => Ok(Self::Unknown),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Unknown relation_entity_pair code: {}", code),
+            )),
+        }
+    }
+}
+
+impl ToSql<Text, Pg> for RelationEntityPair {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
+    }
+}
+
+impl FromSql<Text, Pg> for RelationEntityPair {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let s = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        RelationEntityPair::from_code(&s)
+            .map_err(|_| format!("Unknown relation_entity_pair code in DB: {}", s).into())
+    }
+}
+
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[diesel(sql_type = diesel::sql_types::Text)]
 pub enum RelationMeaning {
-    AttachedToLandscape, // The origin analysis artifact belongs to / is attached to the target landscape analysis.
-    Referenced,        // The origin references the target as contextual memory, without implying direct ownership.
-    Mirrors,           // The origin trace mirror is the mirror representation of the target trace.
-    Analyzes,          // The origin landscape analysis analyzes the target trace.
-    ExtractedFrom,     // The origin element is extracted from the target trace content.
-    ExtractedIn,       // The origin element is extracted/generated in the target trace mirror execution context.
-    OwnedByAnalysis,   // The origin was produced/owned by the target analysis run.
-    IncludesInScope,   // The origin lens includes the target analysis in its scope/history timeline.
-    JournalItemOf,     // The origin trace entry belongs to the target journal.
-    ThemeOf,           // The origin thematic element categorizes or groups the target unit element.
-    AppliesTo,         // The origin normative/evaluative statement applies to the target objective element.
-    HasCurrentHead,    // The origin lens has the target analysis as its current head/state pointer.
-    HighLevelProjectRelatedTo, // The origin landmark is related/attached to the target high-level project landmark.
-    Involves,          // The origin element involves the target landmark as part of its action/content.
-    SubtaskOf,         // The origin task/transaction is a subtask of the target higher-level task/transaction.
-    ReferenceMention,  // The origin trace mirror contains a reference mention mapped to the target landmark.
-    TargetsTrace,      // The origin lens targets the target trace for processing.
-    Bibliography,      // The origin cites the target as bibliography/source material.
-    ReplayedFrom,      // The origin analysis is a replay/rerun from the target previous analysis.
-    HasPrimaryLandmark, // The origin trace mirror has the target landmark as its primary landmark focus.
-    HasPrimaryTheme,   // The origin trace mirror has the target landmark as its primary theme/topic.
-    ForkedFrom,        // The origin lens is forked from the target landscape analysis snapshot.
-    ChildOf,           // The origin is the child of the target in a parent-child hierarchy.
+    AttachedToLandscape, // origin trace_mirror attaches to target landscape_analysis. Future DB: `trace_mirrors.landscape_analysis_id` FK.
+    Referenced,        // origin landmark is referenced in target landscape_analysis context. Future DB: `landscape_landmarks` join table.
+    Mirrors,           // origin trace_mirror mirrors target trace. Future DB: `trace_mirrors.trace_id` FK.
+    Analyzes,          // origin landscape_analysis analyzes target trace. Future DB: `landscape_analyses.analyzed_trace_id` FK.
+    ExtractedFrom,     // origin element is extracted from target trace. Future DB: `elements.trace_id` FK.
+    ExtractedIn,       // origin element is extracted in target trace_mirror run. Future DB: `elements.trace_mirror_id` FK.
+    OwnedByAnalysis,   // origin element/landmark is owned by target landscape_analysis. Future DB: `elements.analysis_id` and `landmarks.analysis_id` FKs.
+    IncludesInScope,   // origin lens includes target landscape_analysis in scope. Future DB: `lens_analysis_scopes` join table.
+    JournalItemOf,     // origin trace belongs to target journal. Future DB: `traces.journal_id` FK.
+    ThemeOf,           // origin element (theme) is theme of target element (unit). Future DB: `element_relations` with typed edge.
+    AppliesTo,         // origin element applies to target element. Future DB: `element_relations` with typed edge.
+    HasCurrentHead,    // origin lens has target landscape_analysis as current head. Future DB: `lenses.current_landscape_analysis_id` FK.
+    HighLevelProjectRelatedTo, // origin landmark relates to target high-level-project landmark. Future DB: `landmark_relations` with typed edge.
+    Involves,          // origin element involves target landmark. Future DB: `element_landmarks` join table.
+    SubtaskOf,         // origin element is subtask of target element. Future DB: `element_relations` with typed edge.
+    ReferenceMention,  // origin trace_mirror mentions target landmark. Future DB: `references(trace_mirror_id, landmark_id, ...)`.
+    TargetsTrace,      // origin lens targets target trace. Future DB: `lenses.target_trace_id` FK.
+    Bibliography,      // origin public_post cites target public_post. Future DB: `post_relations` with typed edge.
+    ReplayedFrom,      // origin landscape_analysis is replayed from target landscape_analysis. Future DB: `landscape_analyses.replayed_from_id` FK.
+    HasPrimaryLandmark, // origin trace_mirror has target landmark as primary landmark. Future DB: `trace_mirrors.primary_landmark_id` FK.
+    HasPrimaryTheme,   // origin trace_mirror has target landmark as primary theme. Future DB: `trace_mirrors.primary_theme_landmark_id` FK.
+    ForkedFrom,        // origin lens is forked from target landscape_analysis. Future DB: `lenses.forked_from_landscape_analysis_id` FK.
+    ChildOf,           // origin landmark/landscape_analysis is child of target parent. Future DB: `landmarks.parent_id` and `landscape_analyses.parent_id` FKs.
     Unknown,           // Unknown or not-yet-classified relation meaning.
+}
+
+impl RelationMeaning {
+    pub fn to_code(&self) -> &'static str {
+        match self {
+            Self::AttachedToLandscape => "ATTACHED_TO_LANDSCAPE",
+            Self::Referenced => "REFERENCED",
+            Self::Mirrors => "MIRRORS",
+            Self::Analyzes => "ANALYZES",
+            Self::ExtractedFrom => "EXTRACTED_FROM",
+            Self::ExtractedIn => "EXTRACTED_IN",
+            Self::OwnedByAnalysis => "OWNED_BY_ANALYSIS",
+            Self::IncludesInScope => "INCLUDES_IN_SCOPE",
+            Self::JournalItemOf => "JOURNAL_ITEM_OF",
+            Self::ThemeOf => "THEME_OF",
+            Self::AppliesTo => "APPLIES_TO",
+            Self::HasCurrentHead => "HAS_CURRENT_HEAD",
+            Self::HighLevelProjectRelatedTo => "HIGH_LEVEL_PROJECT_RELATED_TO",
+            Self::Involves => "INVOLVES",
+            Self::SubtaskOf => "SUBTASK_OF",
+            Self::ReferenceMention => "REFERENCE_MENTION",
+            Self::TargetsTrace => "TARGETS_TRACE",
+            Self::Bibliography => "BIBLIOGRAPHY",
+            Self::ReplayedFrom => "REPLAYED_FROM",
+            Self::HasPrimaryLandmark => "HAS_PRIMARY_LANDMARK",
+            Self::HasPrimaryTheme => "HAS_PRIMARY_THEME",
+            Self::ForkedFrom => "FORKED_FROM",
+            Self::ChildOf => "CHILD_OF",
+            Self::Unknown => "UNKNOWN",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "ATTACHED_TO_LANDSCAPE" => Ok(Self::AttachedToLandscape),
+            "REFERENCED" => Ok(Self::Referenced),
+            "MIRRORS" => Ok(Self::Mirrors),
+            "ANALYZES" => Ok(Self::Analyzes),
+            "EXTRACTED_FROM" => Ok(Self::ExtractedFrom),
+            "EXTRACTED_IN" => Ok(Self::ExtractedIn),
+            "OWNED_BY_ANALYSIS" => Ok(Self::OwnedByAnalysis),
+            "INCLUDES_IN_SCOPE" => Ok(Self::IncludesInScope),
+            "JOURNAL_ITEM_OF" => Ok(Self::JournalItemOf),
+            "THEME_OF" => Ok(Self::ThemeOf),
+            "APPLIES_TO" => Ok(Self::AppliesTo),
+            "HAS_CURRENT_HEAD" => Ok(Self::HasCurrentHead),
+            "HIGH_LEVEL_PROJECT_RELATED_TO" => Ok(Self::HighLevelProjectRelatedTo),
+            "INVOLVES" => Ok(Self::Involves),
+            "SUBTASK_OF" => Ok(Self::SubtaskOf),
+            "REFERENCE_MENTION" => Ok(Self::ReferenceMention),
+            "TARGETS_TRACE" => Ok(Self::TargetsTrace),
+            "BIBLIOGRAPHY" => Ok(Self::Bibliography),
+            "REPLAYED_FROM" => Ok(Self::ReplayedFrom),
+            "HAS_PRIMARY_LANDMARK" => Ok(Self::HasPrimaryLandmark),
+            "HAS_PRIMARY_THEME" => Ok(Self::HasPrimaryTheme),
+            "FORKED_FROM" => Ok(Self::ForkedFrom),
+            "CHILD_OF" => Ok(Self::ChildOf),
+            "UNKNOWN" => Ok(Self::Unknown),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Unknown relation_meaning code: {}", code),
+            )),
+        }
+    }
+}
+
+impl ToSql<Text, Pg> for RelationMeaning {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
+    }
+}
+
+impl FromSql<Text, Pg> for RelationMeaning {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let s = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        RelationMeaning::from_code(&s)
+            .map_err(|_| format!("Unknown relation_meaning code in DB: {}", s).into())
+    }
 }
 
 #[derive(Serialize, Queryable, Debug)]
@@ -98,6 +259,8 @@ pub struct NewResourceRelation {
     pub relation_comment: String,
     pub user_id: Option<Uuid>,
     pub relation_type: Option<String>,
+    pub relation_entity_pair: Option<RelationEntityPair>,
+    pub relation_meaning: Option<RelationMeaning>,
 }
 
 impl NewResourceRelation {
@@ -108,13 +271,25 @@ impl NewResourceRelation {
             relation_comment: "".to_string(),
             user_id: None,
             relation_type: None,
+            relation_entity_pair: None,
+            relation_meaning: None,
         }
     }
 
-    pub fn create(self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
+    pub fn create(mut self, pool: &DbPool) -> Result<ResourceRelation, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+
+        if self.relation_type.is_none() {
+            self.relation_type = Some("UNKNOWN".to_string());
+        }
+        if self.relation_entity_pair.is_none() {
+            self.relation_entity_pair = Some(RelationEntityPair::Unknown);
+        }
+        if self.relation_meaning.is_none() {
+            self.relation_meaning = Some(RelationMeaning::Unknown);
+        }
 
         let resource_relation = diesel::insert_into(resource_relations::table)
             .values(&self)
