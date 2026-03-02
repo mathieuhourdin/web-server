@@ -55,7 +55,6 @@ impl Landmark {
             entity_type: EntityType::Landmark,
             maturing_state: self.maturing_state,
             publishing_state: self.publishing_state,
-            category_id: self.category_id,
             is_external: self.is_external,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -75,7 +74,6 @@ impl Landmark {
             landmark_type: LandmarkType::from_resource_type(resource.resource_type),
             maturing_state: resource.maturing_state,
             publishing_state: resource.publishing_state,
-            category_id: resource.category_id,
             is_external: resource.is_external,
             created_at: resource.created_at,
             updated_at: resource.updated_at,
@@ -185,7 +183,6 @@ impl NewLandmark {
             entity_type: Some(EntityType::Landmark),
             maturing_state: Some(self.maturing_state),
             publishing_state: Some(self.publishing_state),
-            category_id: None,
             is_external: None,
             resource_subtype: None,
         }

@@ -3,10 +3,13 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::PpdcError,
+    interaction::model::Interaction,
     resource::{entity_type::EntityType, maturing_state::MaturingState, Resource},
 };
+use crate::schema::{interactions, resources};
+use diesel::prelude::*;
 
-use super::model::Journal;
+use super::model::{Journal, JournalStatus};
 
 impl Journal {
     /// Creates a Journal from a Resource with default/placeholder values
@@ -18,9 +21,10 @@ impl Journal {
             subtitle: resource.subtitle,
             content: resource.content,
             user_id: Uuid::nil(),
+            status: JournalStatus::Draft,
+            journal_type: resource.resource_type.into(),
             created_at: resource.created_at,
             updated_at: resource.updated_at,
-            journal_type: resource.resource_type.into(),
         }
     }
 
@@ -38,7 +42,6 @@ impl Journal {
             entity_type: EntityType::Journal,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
-            category_id: None,
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -69,6 +72,31 @@ impl Journal {
         let journal = Journal::from_resource(resource);
         let journal = journal.with_user_id(pool)?;
         Ok(journal)
+    }
+
+    pub fn find_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Journal>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let interaction_resources = interactions::table
+            .inner_join(resources::table)
+            .filter(interactions::interaction_user_id.eq(user_id))
+            .filter(interactions::interaction_type.eq("outp"))
+            .filter(resources::entity_type.eq(EntityType::Journal))
+            .order(resources::updated_at.desc())
+            .select((Interaction::as_select(), Resource::as_select()))
+            .load::<(Interaction, Resource)>(&mut conn)?;
+
+        let journals = interaction_resources
+            .into_iter()
+            .map(|(interaction, resource)| Journal {
+                user_id: interaction.interaction_user_id,
+                ..Journal::from_resource(resource)
+            })
+            .collect::<Vec<_>>();
+
+        Ok(journals)
     }
 }
 

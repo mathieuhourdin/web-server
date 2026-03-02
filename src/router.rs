@@ -17,8 +17,8 @@ use crate::entities::{
     resource, user,
 };
 use crate::entities_v2::{
-    element, journal_import, landmark, landscape_analysis, lens, llm_call, post, reference,
-    trace, trace_mirror, transcription,
+    element, journal, journal_import, landmark, landscape_analysis, lens, llm_call, post,
+    reference, trace, trace_mirror, transcription,
 };
 use crate::link_preview;
 use crate::sessions_service;
@@ -40,6 +40,7 @@ pub fn create_router() -> Router {
         )
         .route("/:id/lens", get(lens::get_user_lenses_route))
         .route("/:id/traces", get(trace::get_all_traces_for_user_route))
+        .route("/:id/journals", get(journal::get_user_journals_route))
         .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 

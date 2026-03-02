@@ -60,7 +60,6 @@ impl Element {
             entity_type: EntityType::Element,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
-            category_id: None,
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,
@@ -268,7 +267,6 @@ impl NewElement {
             entity_type: Some(EntityType::Element),
             maturing_state: Some(MaturingState::Draft),
             publishing_state: Some("drft".to_string()),
-            category_id: None,
             is_external: Some(false),
             resource_subtype: Some(self.element_subtype.to_code().to_string()),
         }
@@ -335,7 +333,6 @@ mod tests {
             resource_type: ResourceType::Event,
             maturing_state: MaturingState::Draft,
             publishing_state: "drft".to_string(),
-            category_id: None,
             is_external: false,
             created_at: sample_datetime(),
             updated_at: sample_datetime(),

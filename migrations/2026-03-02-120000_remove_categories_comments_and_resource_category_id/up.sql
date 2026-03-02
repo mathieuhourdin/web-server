@@ -1,0 +1,4 @@
+ALTER TABLE resources DROP COLUMN IF EXISTS category_id;
+
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS categories;

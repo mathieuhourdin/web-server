@@ -44,7 +44,6 @@ impl Post {
             entity_type: EntityType::PublicPost,
             maturing_state: self.maturing_state,
             publishing_state: self.publishing_state.clone(),
-            category_id: None,
             is_external: false,
             created_at: self.created_at,
             updated_at: self.updated_at,

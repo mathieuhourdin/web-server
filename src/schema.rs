@@ -1,31 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    categories (id) {
-        id -> Uuid,
-        display_name -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    comments (id) {
-        id -> Uuid,
-        content -> Text,
-        resource_id -> Uuid,
-        comment_type -> Nullable<Text>,
-        start_index -> Nullable<Int4>,
-        end_index -> Nullable<Int4>,
-        parent_id -> Nullable<Uuid>,
-        editing -> Bool,
-        author_id -> Uuid,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     interactions (id) {
         id -> Uuid,
         interaction_user_id -> Uuid,
@@ -90,7 +65,6 @@ diesel::table! {
         resource_type -> Text,
         maturing_state -> Text,
         publishing_state -> Text,
-        category_id -> Nullable<Uuid>,
         is_external -> Bool,
         created_at -> Timestamp,
         updated_at -> Timestamp,
@@ -132,18 +106,13 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(comments -> resources (resource_id));
-diesel::joinable!(comments -> users (author_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(llm_calls -> resources (analysis_id));
 diesel::joinable!(resource_relations -> users (user_id));
-diesel::joinable!(resources -> categories (category_id));
 diesel::joinable!(sessions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    categories,
-    comments,
     interactions,
     llm_calls,
     resource_relations,

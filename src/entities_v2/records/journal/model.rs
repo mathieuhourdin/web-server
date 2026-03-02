@@ -11,9 +11,10 @@ pub struct Journal {
     pub subtitle: String,
     pub content: String,
     pub user_id: Uuid,
+    pub status: JournalStatus,
+    pub journal_type: JournalType,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub journal_type: JournalType,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +22,13 @@ pub enum JournalType {
     MetaJournal,
     WorkLogJournal,
     ReadingNoteJournal,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JournalStatus {
+    Draft,
+    Published,
+    Archived,
 }
 
 impl From<ResourceType> for JournalType {

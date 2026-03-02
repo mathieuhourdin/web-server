@@ -22,7 +22,6 @@ pub struct Landmark {
     pub landmark_type: LandmarkType,
     pub maturing_state: MaturingState,
     pub publishing_state: String,
-    pub category_id: Option<Uuid>,
     pub is_external: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
