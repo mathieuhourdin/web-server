@@ -134,9 +134,6 @@ impl Resource {
 
     pub fn is_trace_mirror(&self) -> bool {
         self.is_entity_type(EntityType::TraceMirror)
-            || self.is_entity_type(EntityType::TraceMirrorJournal)
-            || self.is_entity_type(EntityType::TraceMirrorBio)
-            || self.is_entity_type(EntityType::TraceMirrorHighLevelProjectsDefinition)
     }
 
     pub fn is_element(&self) -> bool {

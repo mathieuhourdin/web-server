@@ -48,7 +48,10 @@ pub enum ResourceType {
     Feeling,            // Element
     Topic,              // Landmark
     Lens,               // Lens
-    TraceMirror,        // TraceMirror
+    TraceMirror,        // TraceMirror Note (legacy + default)
+    TraceMirrorJournal, // TraceMirror
+    TraceMirrorBio,     // TraceMirror
+    TraceMirrorHighLevelProjectsDefinition, // TraceMirror
     Person,             // Landmark
     HighLevelProject,   // Landmark
     MetaJournal,        // Journal
@@ -94,6 +97,9 @@ impl ResourceType {
             "them" => Ok(ResourceType::Topic),
             "lens" => Ok(ResourceType::Lens),
             "trcm" => Ok(ResourceType::TraceMirror),
+            "trmj" => Ok(ResourceType::TraceMirrorJournal),
+            "trmb" => Ok(ResourceType::TraceMirrorBio),
+            "trmh" => Ok(ResourceType::TraceMirrorHighLevelProjectsDefinition),
             "autr" => Ok(ResourceType::Person),
             "hlpr" => Ok(ResourceType::HighLevelProject),
             "meta" => Ok(ResourceType::MetaJournal),
@@ -144,6 +150,9 @@ impl ResourceType {
             ResourceType::Topic => "them",
             ResourceType::Lens => "lens",
             ResourceType::TraceMirror => "trcm",
+            ResourceType::TraceMirrorJournal => "trmj",
+            ResourceType::TraceMirrorBio => "trmb",
+            ResourceType::TraceMirrorHighLevelProjectsDefinition => "trmh",
             ResourceType::Person => "autr",
             ResourceType::HighLevelProject => "hlpr",
             ResourceType::MetaJournal => "meta",
@@ -186,7 +195,12 @@ impl ResourceType {
             ResourceType::Feeling => "Feeling",
             ResourceType::Topic => "Topic",
             ResourceType::Lens => "Lens",
-            ResourceType::TraceMirror => "Trace Mirror",
+            ResourceType::TraceMirror => "Trace Mirror Note",
+            ResourceType::TraceMirrorJournal => "Trace Mirror Journal",
+            ResourceType::TraceMirrorBio => "Trace Mirror Bio",
+            ResourceType::TraceMirrorHighLevelProjectsDefinition => {
+                "Trace Mirror High Level Projects Definition"
+            }
             ResourceType::Person => "Person",
             ResourceType::HighLevelProject => "High Level Project",
             ResourceType::MetaJournal => "Meta Journal",
@@ -233,6 +247,12 @@ impl ResourceType {
             "Topic" => Ok(ResourceType::Topic),
             "Lens" => Ok(ResourceType::Lens),
             "Trace Mirror" => Ok(ResourceType::TraceMirror),
+            "Trace Mirror Note" => Ok(ResourceType::TraceMirror),
+            "Trace Mirror Journal" => Ok(ResourceType::TraceMirrorJournal),
+            "Trace Mirror Bio" => Ok(ResourceType::TraceMirrorBio),
+            "Trace Mirror High Level Projects Definition" => {
+                Ok(ResourceType::TraceMirrorHighLevelProjectsDefinition)
+            }
             "Author" => Ok(ResourceType::Person),
             "Person" => Ok(ResourceType::Person),
             "High Level Project" => Ok(ResourceType::HighLevelProject),
@@ -277,7 +297,10 @@ impl ResourceType {
             | ResourceType::BioTrace
             | ResourceType::WorkspaceTrace
             | ResourceType::HighLevelProjectsDefinitionTrace => EntityType::Trace,
-            ResourceType::TraceMirror => EntityType::TraceMirror,
+            ResourceType::TraceMirror
+            | ResourceType::TraceMirrorJournal
+            | ResourceType::TraceMirrorBio
+            | ResourceType::TraceMirrorHighLevelProjectsDefinition => EntityType::TraceMirror,
             ResourceType::Element
             | ResourceType::Event
             | ResourceType::GeneralComment

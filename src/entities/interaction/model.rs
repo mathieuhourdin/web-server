@@ -119,6 +119,13 @@ impl Interaction {
                     ResourceType::WorkspaceTrace.to_code(),
                     ResourceType::HighLevelProjectsDefinitionTrace.to_code(),
                 ]));
+            } else if resource_type == ResourceType::TraceMirror.to_code() {
+                query = query.filter(resources::resource_type.eq_any(vec![
+                    ResourceType::TraceMirror.to_code(),
+                    ResourceType::TraceMirrorJournal.to_code(),
+                    ResourceType::TraceMirrorBio.to_code(),
+                    ResourceType::TraceMirrorHighLevelProjectsDefinition.to_code(),
+                ]));
             } else {
                 query = query.filter(resources::resource_type.eq(resource_type));
             }
