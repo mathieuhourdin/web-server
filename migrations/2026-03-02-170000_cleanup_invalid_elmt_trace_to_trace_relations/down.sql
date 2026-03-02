@@ -1,0 +1,2 @@
+-- Irreversible data cleanup migration.
+-- Removed rows cannot be restored without a backup.

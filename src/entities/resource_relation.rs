@@ -30,42 +30,49 @@ pub struct ResourceRelation {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationEntityPair {
     TraceMirrorToLandscapeAnalysis,
+    TraceMirrorToTrace,
     LandscapeAnalysisToTrace,
     LandscapeAnalysisToLandscapeAnalysis,
     ElementToLandscapeAnalysis,
     ElementToTrace,
     ElementToTraceMirror,
     ElementToLandmark,
+    ElementToElement,
     LandmarkToLandscapeAnalysis,
     LandmarkToLandmark,
     TraceToJournal,
     LensToLandscapeAnalysis,
     LensToTrace,
     TraceMirrorToLandmark,
+    PublicPostToPublicPost,
     Unknown,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationMeaning {
-    LandscapeOf,       // The origin analysis artifact belongs to / is attached to the target landscape analysis.
+    AttachedToLandscape, // The origin analysis artifact belongs to / is attached to the target landscape analysis.
     Referenced,        // The origin references the target as contextual memory, without implying direct ownership.
-    LinkedTraceMirror, // The origin is linked to a trace mirror that provides higher-level context.
-    TraceOf,           // The origin is analytically derived from, or explicitly tied to, the target trace.
+    Mirrors,           // The origin trace mirror is the mirror representation of the target trace.
+    Analyzes,          // The origin landscape analysis analyzes the target trace.
+    ExtractedFrom,     // The origin element is extracted from the target trace content.
+    ExtractedIn,       // The origin element is extracted/generated in the target trace mirror execution context.
     OwnedByAnalysis,   // The origin was produced/owned by the target analysis run.
-    InLensScope,       // The target analysis is part of the lens scope/history timeline.
+    IncludesInScope,   // The origin lens includes the target analysis in its scope/history timeline.
     JournalItemOf,     // The origin trace entry belongs to the target journal.
     ThemeOf,           // The origin thematic element categorizes or groups the target unit element.
     AppliesTo,         // The origin normative/evaluative statement applies to the target objective element.
-    CurrentHead,       // The target analysis is the current head/current state pointer of the origin lens.
+    HasCurrentHead,    // The origin lens has the target analysis as its current head/state pointer.
     HighLevelProjectRelatedTo, // The origin landmark is related/attached to the target high-level project landmark.
-    ElementOf,         // The origin element is linked to the target landmark/trace as supporting detail.
+    Involves,          // The origin element involves the target landmark as part of its action/content.
     SubtaskOf,         // The origin task/transaction is a subtask of the target higher-level task/transaction.
     ReferenceMention,  // The origin trace mirror contains a reference mention mapped to the target landmark.
-    TargetTrace,       // The target trace is the current processing target for the origin lens.
+    TargetsTrace,      // The origin lens targets the target trace for processing.
     Bibliography,      // The origin cites the target as bibliography/source material.
     ReplayedFrom,      // The origin analysis is a replay/rerun from the target previous analysis.
-    PrimaryResourceOf, // The target landmark/resource is the primary resource focus of the origin trace mirror.
-    ParentOf,          // The target is the parent in a parent-child hierarchy for the origin.
+    HasPrimaryLandmark, // The origin trace mirror has the target landmark as its primary landmark focus.
+    HasPrimaryTheme,   // The origin trace mirror has the target landmark as its primary theme/topic.
+    ForkedFrom,        // The origin lens is forked from the target landscape analysis snapshot.
+    ChildOf,           // The origin is the child of the target in a parent-child hierarchy.
     Unknown,           // Unknown or not-yet-classified relation meaning.
 }
 
