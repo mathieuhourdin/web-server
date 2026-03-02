@@ -4,7 +4,7 @@ use crate::entities::{
     resource_relation::NewResourceRelation,
 };
 
-use super::model::{NewTrace, Trace};
+use super::model::{NewTrace, Trace, TraceStatus};
 
 impl Trace {
     /// Updates the Trace in the database.
@@ -15,19 +15,19 @@ impl Trace {
             title: updated_resource.title,
             subtitle: updated_resource.subtitle,
             content: updated_resource.content,
-            maturing_state: updated_resource.maturing_state,
+            status: updated_resource.maturing_state.into(),
             updated_at: updated_resource.updated_at,
             ..self
         })
     }
 
-    /// Updates the maturing state of the trace.
-    pub fn set_maturing_state(
+    /// Updates the status of the trace.
+    pub fn set_status(
         mut self,
-        state: crate::entities::resource::maturing_state::MaturingState,
+        status: TraceStatus,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
-        self.maturing_state = state;
+        self.status = status;
         self.update(pool)
     }
 }

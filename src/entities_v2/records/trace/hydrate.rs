@@ -22,7 +22,7 @@ impl Trace {
             user_id: Uuid::nil(),
             journal_id: None,
             trace_type: resource.resource_type.into(),
-            maturing_state: resource.maturing_state,
+            status: resource.maturing_state.into(),
             created_at: resource.created_at,
             updated_at: resource.updated_at,
         }
@@ -40,7 +40,7 @@ impl Trace {
             image_url: None,
             resource_type: self.trace_type.into(),
             entity_type: EntityType::Trace,
-            maturing_state: self.maturing_state,
+            maturing_state: self.status.into(),
             publishing_state: "drft".to_string(),
             is_external: false,
             created_at: self.created_at,

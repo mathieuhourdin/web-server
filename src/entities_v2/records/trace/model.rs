@@ -26,7 +26,7 @@ pub struct Trace {
     pub journal_id: Option<Uuid>,
     pub user_id: Uuid,
     pub trace_type: TraceType,
-    pub maturing_state: MaturingState,
+    pub status: TraceStatus,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -38,6 +38,35 @@ pub enum TraceType {
     UserTrace,
     #[serde(rename = "HIGH_LEVEL_PROJECTS_DEFINITION")]
     HighLevelProjectsDefinition,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceStatus {
+    Draft,
+    Finalized,
+    Archived,
+}
+
+impl From<MaturingState> for TraceStatus {
+    fn from(maturing_state: MaturingState) -> Self {
+        match maturing_state {
+            MaturingState::Draft | MaturingState::Review | MaturingState::Replay => {
+                TraceStatus::Draft
+            }
+            MaturingState::Finished => TraceStatus::Finalized,
+            MaturingState::Trashed => TraceStatus::Archived,
+        }
+    }
+}
+
+impl From<TraceStatus> for MaturingState {
+    fn from(status: TraceStatus) -> Self {
+        match status {
+            TraceStatus::Draft => MaturingState::Draft,
+            TraceStatus::Finalized => MaturingState::Finished,
+            TraceStatus::Archived => MaturingState::Trashed,
+        }
+    }
 }
 
 impl From<ResourceType> for TraceType {
