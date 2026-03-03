@@ -217,6 +217,7 @@ diesel::table! {
         subtitle -> Text,
         content -> Text,
         image_url -> Nullable<Text>,
+        interaction_type -> Text,
         post_type -> Text,
         publishing_date -> Nullable<Timestamp>,
         publishing_state -> Text,

@@ -1,4 +1,3 @@
-BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -227,7 +226,8 @@ CREATE TABLE IF NOT EXISTS posts (
     subtitle TEXT NOT NULL,
     content TEXT NOT NULL,
     image_url TEXT NULL,
-    post_type TEXT NOT NULL CHECK (post_type IN ('OUTPUT', 'INPUT', 'PROBLEM', 'WISH')),
+    interaction_type TEXT NOT NULL CHECK (interaction_type IN ('OUTPUT', 'INPUT', 'PROBLEM', 'WISH')),
+    post_type TEXT NOT NULL CHECK (post_type IN ('IDEA', 'RESEARCH_ARTICLE', 'BOOK', 'COURSE', 'QUESTION', 'OPINION_ARTICLE', 'PROBLEM', 'PODCAST', 'NEWS_ARTICLE', 'READING_NOTE', 'RESOURCE_LIST')),
     publishing_date TIMESTAMP NULL,
     publishing_state TEXT NOT NULL,
     maturing_state TEXT NOT NULL,
@@ -947,6 +947,7 @@ INSERT INTO posts (
     subtitle,
     content,
     image_url,
+    interaction_type,
     post_type,
     publishing_date,
     publishing_state,
@@ -966,6 +967,19 @@ SELECT
         WHEN i.interaction_type = 'pblm' THEN 'PROBLEM'
         WHEN i.interaction_type = 'wish' THEN 'WISH'
         ELSE 'OUTPUT'
+    END,
+    CASE
+        WHEN r.resource_type = 'ratc' THEN 'RESEARCH_ARTICLE'
+        WHEN r.resource_type = 'book' THEN 'BOOK'
+        WHEN r.resource_type = 'curs' THEN 'COURSE'
+        WHEN r.resource_type IN ('quest', 'qest') THEN 'QUESTION'
+        WHEN r.resource_type = 'oatc' THEN 'OPINION_ARTICLE'
+        WHEN r.resource_type = 'pblm' THEN 'PROBLEM'
+        WHEN r.resource_type = 'pcst' THEN 'PODCAST'
+        WHEN r.resource_type = 'natc' THEN 'NEWS_ARTICLE'
+        WHEN r.resource_type = 'rdnt' THEN 'READING_NOTE'
+        WHEN r.resource_type = 'list' THEN 'RESOURCE_LIST'
+        ELSE 'IDEA'
     END,
     i.interaction_date,
     COALESCE(r.publishing_state, 'pbsh'),
@@ -1154,4 +1168,3 @@ JOIN resource_post_map tpm ON tpm.resource_id = rr.target_resource_id
 WHERE rr.relation_type = 'bibl'
 ON CONFLICT (origin_post_id, target_post_id, relation_type) DO NOTHING;
 
-COMMIT;

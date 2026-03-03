@@ -7,7 +7,7 @@ use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::shared::MaturingState;
 use crate::schema::posts;
 
-use super::model::{Post, PostType};
+use super::model::{Post, PostInteractionType, PostType};
 
 type PostTuple = (
     Uuid,
@@ -16,6 +16,7 @@ type PostTuple = (
     String,
     String,
     Option<String>,
+    String,
     String,
     Option<NaiveDateTime>,
     String,
@@ -32,6 +33,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         subtitle,
         content,
         image_url,
+        interaction_type_raw,
         post_type_raw,
         publishing_date,
         publishing_state,
@@ -47,6 +49,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         subtitle,
         content,
         image_url,
+        interaction_type: PostInteractionType::from_db(&interaction_type_raw),
         post_type: PostType::from_db(&post_type_raw),
         user_id,
         publishing_date,
@@ -64,6 +67,7 @@ fn select_post_columns() -> (
     posts::subtitle,
     posts::content,
     posts::image_url,
+    posts::interaction_type,
     posts::post_type,
     posts::publishing_date,
     posts::publishing_state,
@@ -78,6 +82,7 @@ fn select_post_columns() -> (
         posts::subtitle,
         posts::content,
         posts::image_url,
+        posts::interaction_type,
         posts::post_type,
         posts::publishing_date,
         posts::publishing_state,
@@ -127,15 +132,16 @@ impl Post {
     }
 
     pub fn find_filtered(
+        interaction_type: Option<PostInteractionType>,
         post_type: Option<PostType>,
-        resource_type: Option<String>,
+        legacy_resource_type: Option<String>,
         _is_external: Option<bool>,
         user_id: Option<Uuid>,
         maturing_state: Option<MaturingState>,
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
-        let mapped_resource_type = resource_type.as_deref().and_then(|value| {
+        let mapped_post_type = legacy_resource_type.as_deref().and_then(|value| {
             if value == "all" {
                 None
             } else {
@@ -148,7 +154,10 @@ impl Post {
             .expect("Failed to get a connection from the pool");
 
         let mut query = posts::table.into_boxed();
-        if let Some(post_type) = post_type.or(mapped_resource_type) {
+        if let Some(interaction_type) = interaction_type {
+            query = query.filter(posts::interaction_type.eq(interaction_type.to_db()));
+        }
+        if let Some(post_type) = post_type.or(mapped_post_type) {
             query = query.filter(posts::post_type.eq(post_type.to_db()));
         }
         if let Some(user_id) = user_id {

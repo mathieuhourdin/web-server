@@ -13,13 +13,14 @@ use crate::entities_v2::{
 use crate::pagination::PaginationParams;
 use serde::Deserialize;
 
-use super::model::{NewPost, NewPostDto, Post, PostType};
+use super::model::{NewPost, NewPostDto, Post, PostInteractionType, PostType};
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
+    pub interaction_type: Option<PostInteractionType>,
     pub post_type: Option<PostType>,
     pub is_external: Option<bool>,
-    pub resource_type: Option<String>,
+    pub resource_type: Option<String>, // Legacy fallback mapped to post_type
     pub user_id: Option<Uuid>,
     pub maturing_state: Option<MaturingState>,
     pub limit: Option<i64>,
@@ -31,6 +32,7 @@ pub async fn get_posts_route(
     Query(filters): Query<PostFiltersQuery>,
 ) -> Result<Json<Vec<Post>>, PpdcError> {
     let posts = Post::find_filtered(
+        filters.interaction_type,
         filters.post_type,
         filters.resource_type,
         filters.is_external,
@@ -88,6 +90,9 @@ pub async fn put_post_route(
     post.subtitle = payload.subtitle.unwrap_or_default();
     post.content = payload.content;
     post.image_url = payload.image_url;
+    if let Some(interaction_type) = payload.interaction_type {
+        post.interaction_type = interaction_type;
+    }
     if let Some(post_type) = payload.post_type {
         post.post_type = post_type;
     }

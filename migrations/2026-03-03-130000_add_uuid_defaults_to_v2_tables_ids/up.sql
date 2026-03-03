@@ -1,4 +1,3 @@
-BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -12,4 +11,3 @@ ALTER TABLE "references" ALTER COLUMN id SET DEFAULT uuid_generate_v4();
 ALTER TABLE lenses ALTER COLUMN id SET DEFAULT uuid_generate_v4();
 ALTER TABLE posts ALTER COLUMN id SET DEFAULT uuid_generate_v4();
 
-COMMIT;

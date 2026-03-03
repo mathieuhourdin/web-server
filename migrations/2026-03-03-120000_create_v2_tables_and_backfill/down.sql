@@ -1,4 +1,3 @@
-BEGIN;
 
 DROP TABLE IF EXISTS post_relations;
 DROP TABLE IF EXISTS lens_targets;
@@ -8,6 +7,11 @@ DROP TABLE IF EXISTS landscape_landmarks;
 DROP TABLE IF EXISTS landmark_relations;
 DROP TABLE IF EXISTS element_landmarks;
 DROP TABLE IF EXISTS element_relations;
+
+-- Break cyclic dependency created in up.sql:
+-- landscape_analyses.trace_mirror_id -> trace_mirrors.id
+ALTER TABLE IF EXISTS landscape_analyses
+DROP CONSTRAINT IF EXISTS landscape_analyses_trace_mirror_id_fkey;
 
 DROP TABLE IF EXISTS posts;
 DROP TABLE IF EXISTS lenses;
@@ -24,5 +28,3 @@ DROP FUNCTION IF EXISTS safe_jsonb(TEXT);
 DROP FUNCTION IF EXISTS safe_bool(TEXT);
 DROP FUNCTION IF EXISTS safe_int(TEXT);
 DROP FUNCTION IF EXISTS safe_uuid(TEXT);
-
-COMMIT;
