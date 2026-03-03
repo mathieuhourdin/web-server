@@ -2,10 +2,8 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::{
-    error::{ErrorType, PpdcError},
-    resource::maturing_state::MaturingState,
-};
+use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::shared::MaturingState;
 use crate::entities_v2::element::model::Element;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

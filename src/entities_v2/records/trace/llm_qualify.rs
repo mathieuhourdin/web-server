@@ -1,4 +1,4 @@
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};

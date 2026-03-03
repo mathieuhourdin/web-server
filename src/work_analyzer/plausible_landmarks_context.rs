@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{
     element::Element,
     landmark::{Landmark, LandmarkType},

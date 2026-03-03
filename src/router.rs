@@ -26,7 +26,6 @@ use crate::entities_v2::{
     transcription,
     user,
 };
-use crate::link_preview;
 use crate::sessions_service;
 
 pub fn create_router() -> Router {
@@ -154,7 +153,6 @@ pub fn create_router() -> Router {
         .nest("/landmarks", landmarks_router)
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)
-        .route("/link_preview", post(link_preview::post_preview_route))
         .fallback(fallback_handler)
         .route("/", get(root_handler))
         .layer(from_fn(sessions_service::add_session_to_request))

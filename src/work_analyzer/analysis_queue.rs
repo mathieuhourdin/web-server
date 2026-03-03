@@ -1,5 +1,5 @@
 use crate::db::{get_global_pool, DbPool};
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{
     landscape_analysis::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis},
     lens::{Lens, LensProcessingState},

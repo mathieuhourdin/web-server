@@ -1,5 +1,5 @@
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{
     element::Element,
     landmark::{Landmark, LandmarkType},
@@ -9,7 +9,6 @@ use crate::entities_v2::{
 };
 use crate::work_analyzer::{
     active_context_filtering,
-    elements_pipeline::{self},
     element_pipeline_v2,
     high_level_analysis, mirror_pipeline, hlp_pipeline,
 };
@@ -193,53 +192,6 @@ impl AnalysisProcessor {
         state.current_landmarks.extend(linked_landmarks);
         Ok(state)
     }
-    async fn run_trace_broker_pipeline(
-        &self,
-        state: AnalysisStateMirror,
-    ) -> Result<AnalysisStateTraceBroker, PpdcError> {
-        let extracted_elements = elements_pipeline::extraction::extract_elements(
-            &self.config,
-            &self.context,
-            &self.inputs,
-            &state,
-        )
-        .await?;
-        let matched_elements = elements_pipeline::matching::match_elements(
-            &self.config,
-            &self.context,
-            &self.inputs,
-            &state,
-            extracted_elements,
-        )
-        .await?;
-        let created_elements = elements_pipeline::creation::create_elements(
-            &self.config,
-            &self.context,
-            &self.inputs,
-            &state,
-            matched_elements,
-        )
-        .await?;
-        let refined_elements =
-            elements_pipeline::refinement::refine_landmarks(&self.context, created_elements)
-                .await?;
-        let refined_elements = elements_pipeline::elements_refinement::refine_elements(
-            &self.context,
-            refined_elements,
-        )
-        .await?;
-        let AnalysisStateMirror {
-            current_landscape,
-            trace_mirror,
-        } = state;
-        Ok(AnalysisStateTraceBroker {
-            current_landscape,
-            current_trace_mirror: trace_mirror,
-            current_landmarks: refined_elements.created_landmarks,
-            current_elements: refined_elements.created_elements,
-        })
-    }
-
     async fn run_high_level_analysis_pipeline(
         &self,
         state: AnalysisStateTraceBroker,

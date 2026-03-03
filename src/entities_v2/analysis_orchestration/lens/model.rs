@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::resource::maturing_state::MaturingState;
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LensProcessingState {
     OutOfSync,
@@ -10,20 +8,6 @@ pub enum LensProcessingState {
 }
 
 impl LensProcessingState {
-    pub fn from_maturing_state(state: MaturingState) -> Self {
-        match state {
-            MaturingState::Finished => LensProcessingState::InSync,
-            _ => LensProcessingState::OutOfSync,
-        }
-    }
-
-    pub fn to_maturing_state(self) -> MaturingState {
-        match self {
-            LensProcessingState::OutOfSync => MaturingState::Draft,
-            LensProcessingState::InSync => MaturingState::Finished,
-        }
-    }
-
     pub fn to_db(self) -> &'static str {
         match self {
             LensProcessingState::OutOfSync => "OUT_OF_SYNC",

@@ -1,6 +1,6 @@
-use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::resource::MaturingState;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::landmark::{Landmark, LandmarkType, NewLandmark};
+use crate::entities_v2::MaturingState;
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 use crate::work_analyzer::mirror_pipeline::primary_resource::matching::PrimaryResourceMatched;

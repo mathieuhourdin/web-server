@@ -1,5 +1,5 @@
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::openai_handler::gpt_responses_handler::make_gpt_request;
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ pub async fn high_level_analysis_pipeline(
 }
 
 pub fn get_system_prompt() -> String {
-    include_str!("elements_pipeline/prompts/landscape_analysis/system.md").to_string()
+    "You summarize the user's work context into a concise landscape analysis.".to_string()
 }
 
 pub async fn get_high_level_analysis_from_gpt(

@@ -3,9 +3,7 @@ use serde::de::Deserializer;
 use serde::{Deserialize, Serialize, Serializer};
 use uuid::Uuid;
 
-use crate::entities::{
-    resource::{maturing_state::MaturingState, resource_type::ResourceType},
-};
+use crate::entities_v2::shared::MaturingState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostType {
@@ -77,17 +75,6 @@ impl<'de> Deserialize<'de> for PostType {
     {
         let value = String::deserialize(deserializer)?;
         Ok(PostType::from_code(&value))
-    }
-}
-
-impl From<PostType> for ResourceType {
-    fn from(post_type: PostType) -> Self {
-        match post_type {
-            PostType::Output => ResourceType::Idea,
-            PostType::Input => ResourceType::Idea,
-            PostType::Problem => ResourceType::Problem,
-            PostType::Wish => ResourceType::Idea,
-        }
     }
 }
 

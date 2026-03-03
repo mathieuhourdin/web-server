@@ -7,14 +7,14 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
+use crate::entities_v2::{
     error::{ErrorType, PpdcError},
+    journal::Journal,
+    landscape_analysis::LandscapeAnalysis,
+    lens::Lens,
     session::Session,
     user::User,
 };
-use crate::entities_v2::journal::Journal;
-use crate::entities_v2::lens::Lens;
-use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::work_analyzer;
 
 use super::{

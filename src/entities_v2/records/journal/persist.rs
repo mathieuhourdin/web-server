@@ -2,7 +2,7 @@ use diesel::prelude::*;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
 
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 
 use super::model::{Journal, JournalType, NewJournalDto};
 

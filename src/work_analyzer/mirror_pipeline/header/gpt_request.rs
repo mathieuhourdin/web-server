@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landmark::Landmark, trace::Trace};
 use crate::openai_handler::GptRequestConfig;
 

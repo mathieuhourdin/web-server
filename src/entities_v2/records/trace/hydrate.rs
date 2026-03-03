@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::schema::traces;
 
 use super::model::{Trace, TraceStatus, TraceType};

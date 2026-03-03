@@ -1,10 +1,8 @@
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    resource::entity_type::EntityType,
-    resource::{resource_type::ResourceType, NewResource, Resource},
-    user::User,
-};
+use crate::entities::resource::entity_type::EntityType;
+use crate::entities::resource::{resource_type::ResourceType, NewResource, Resource};
+use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::user::User;
 use crate::schema::*;
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use diesel;

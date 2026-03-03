@@ -2,8 +2,6 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::resource::resource_type::ResourceType;
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Element {
     pub id: Uuid,
@@ -74,29 +72,6 @@ impl ElementType {
             "NORMATIVE" | "normative" => Some(ElementType::Normative),
             "EVALUATIVE" | "evaluative" => Some(ElementType::Evaluative),
             _ => ElementType::from_code(value),
-        }
-    }
-}
-
-impl From<ResourceType> for ElementType {
-    fn from(resource_type: ResourceType) -> Self {
-        match resource_type {
-            ResourceType::Event => ElementType::Transaction,
-            ResourceType::GeneralComment => ElementType::Descriptive,
-            ResourceType::Element => ElementType::Normative,
-            ResourceType::Feeling => ElementType::Evaluative,
-            _ => ElementType::Transaction,
-        }
-    }
-}
-
-impl From<ElementType> for ResourceType {
-    fn from(element_type: ElementType) -> Self {
-        match element_type {
-            ElementType::Transaction => ResourceType::Event,
-            ElementType::Descriptive => ResourceType::GeneralComment,
-            ElementType::Normative => ResourceType::Element,
-            ElementType::Evaluative => ResourceType::Feeling,
         }
     }
 }

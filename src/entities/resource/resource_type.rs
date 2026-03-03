@@ -1,4 +1,4 @@
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities::resource::entity_type::EntityType;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::Pg;

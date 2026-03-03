@@ -1,8 +1,6 @@
 use crate::db::DbPool;
-use crate::entities::{
-    error::{ErrorType, PpdcError},
-    resource::Resource,
-};
+use crate::entities::resource::Resource;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::*;
 use chrono::NaiveDateTime;
 use diesel::deserialize::{self, FromSql};

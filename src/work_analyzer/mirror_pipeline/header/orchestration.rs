@@ -1,4 +1,4 @@
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{
     journal::{Journal, JournalType},
     landmark::Landmark,

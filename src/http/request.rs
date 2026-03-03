@@ -1,6 +1,6 @@
 use super::*;
-use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::session::Session;
+use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::session::Session;
 use chrono::{NaiveDateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;

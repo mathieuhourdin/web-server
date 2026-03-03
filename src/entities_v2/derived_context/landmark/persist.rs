@@ -2,7 +2,7 @@ use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::schema::{landmark_relations, landscape_landmarks, landmarks};
 
 use super::model::{Landmark, NewLandmark};

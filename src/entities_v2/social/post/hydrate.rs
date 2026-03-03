@@ -3,8 +3,8 @@ use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::resource::maturing_state::MaturingState;
+use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::shared::MaturingState;
 use crate::schema::posts;
 
 use super::model::{Post, PostType};

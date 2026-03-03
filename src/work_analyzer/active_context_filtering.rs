@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landmark::Landmark, landscape_analysis::LandscapeAnalysis};
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 

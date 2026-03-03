@@ -3,7 +3,7 @@ use std::io::Write;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use web_server::entities::error::PpdcError;
+use web_server::entities_v2::error::PpdcError;
 use web_server::openai_handler::GptRequestConfig;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

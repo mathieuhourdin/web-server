@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::{
     element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
     trace::Trace,

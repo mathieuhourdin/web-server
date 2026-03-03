@@ -9,12 +9,14 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
+use crate::entities_v2::{
+    element::Element,
     error::{ErrorType, PpdcError},
+    landmark::Landmark,
+    lens::Lens,
     session::Session,
     user::User,
 };
-use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
 use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
 use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};

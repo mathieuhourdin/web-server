@@ -3,7 +3,6 @@ pub mod entities;
 pub mod entities_v2;
 pub mod environment;
 pub mod http;
-pub mod link_preview;
 pub mod logging;
 pub mod openai_handler;
 pub mod pagination;

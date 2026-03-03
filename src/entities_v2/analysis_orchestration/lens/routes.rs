@@ -6,12 +6,12 @@ use std::cmp::Reverse;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
+use crate::entities_v2::{
     error::{ErrorType, PpdcError},
+    landscape_analysis::LandscapeAnalysis,
     session::Session,
+    trace::Trace,
 };
-use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
-use crate::entities_v2::trace::Trace;
 use crate::work_analyzer;
 
 use super::model::{Lens, NewLens, NewLensDto};

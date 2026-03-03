@@ -2,8 +2,6 @@ use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::resource::maturing_state::MaturingState;
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LandscapeProcessingState {
     Pending,
@@ -12,22 +10,6 @@ pub enum LandscapeProcessingState {
 }
 
 impl LandscapeProcessingState {
-    pub fn from_maturing_state(state: MaturingState) -> Self {
-        match state {
-            MaturingState::Replay => LandscapeProcessingState::ReplayRequested,
-            MaturingState::Finished => LandscapeProcessingState::Completed,
-            _ => LandscapeProcessingState::Pending,
-        }
-    }
-
-    pub fn to_maturing_state(self) -> MaturingState {
-        match self {
-            LandscapeProcessingState::Pending => MaturingState::Draft,
-            LandscapeProcessingState::ReplayRequested => MaturingState::Replay,
-            LandscapeProcessingState::Completed => MaturingState::Finished,
-        }
-    }
-
     pub fn to_db(self) -> &'static str {
         match self {
             LandscapeProcessingState::Pending => "PENDING",

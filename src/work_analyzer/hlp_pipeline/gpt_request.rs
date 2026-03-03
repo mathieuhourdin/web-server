@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::openai_handler::GptRequestConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

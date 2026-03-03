@@ -1,5 +1,5 @@
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::sessions;
 use argon2::Config;
 use axum::{

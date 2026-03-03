@@ -1,5 +1,5 @@
 use serde_json::Value;
-use web_server::entities::error::PpdcError;
+use web_server::entities_v2::error::PpdcError;
 use web_server::openai_handler::GptRequestConfig;
 
 #[tokio::main]

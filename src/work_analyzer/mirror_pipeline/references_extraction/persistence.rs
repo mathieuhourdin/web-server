@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::resource::MaturingState;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::landmark::{Landmark, NewLandmark};
 use crate::entities_v2::landscape_analysis;
 use crate::entities_v2::reference::model::NewReference;
 use crate::entities_v2::trace_mirror::TraceMirror;
+use crate::entities_v2::MaturingState;
 use tracing::warn;
 use uuid::Uuid;
 

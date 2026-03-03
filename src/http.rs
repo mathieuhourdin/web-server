@@ -1,4 +1,4 @@
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 pub use cookies::{Cookie, CookieValue};
 pub use file::{File, FileType};
 pub use request::{ContentType, HttpRequest};

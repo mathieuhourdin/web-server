@@ -1,6 +1,6 @@
 use crate::db::DbPool;
-use crate::entities::{error::PpdcError, interaction::model::Interaction};
-use crate::entities_v2::landmark::Landmark;
+use crate::entities::interaction::model::Interaction;
+use crate::entities_v2::error::PpdcError;
 use crate::schema::*;
 use chrono::NaiveDateTime;
 use diesel;
@@ -215,11 +215,5 @@ impl From<Resource> for NewResource {
             is_external: Some(resource.is_external),
             resource_subtype: resource.resource_subtype,
         }
-    }
-}
-
-impl From<Landmark> for Resource {
-    fn from(landmark: Landmark) -> Self {
-        landmark.to_resource()
     }
 }

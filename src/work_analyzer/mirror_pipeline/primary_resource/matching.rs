@@ -1,4 +1,4 @@
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::landmark::Landmark;
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 use crate::work_analyzer::matching;

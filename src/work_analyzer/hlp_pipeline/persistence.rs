@@ -2,14 +2,14 @@ use std::collections::HashSet;
 
 use diesel::prelude::*;
 
-use crate::entities::error::PpdcError;
-use crate::entities::resource::MaturingState;
+use crate::entities_v2::error::PpdcError;
 use crate::schema::landmark_relations;
 use crate::entities_v2::{
     landmark::{Landmark, LandmarkType, NewLandmark},
     reference::{NewReference, ReferenceType},
     trace::Trace,
     trace_mirror::{NewTraceMirror, TraceMirror, TraceMirrorType},
+    MaturingState,
 };
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 

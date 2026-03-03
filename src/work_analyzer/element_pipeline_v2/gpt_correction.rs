@@ -1,7 +1,7 @@
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::openai_handler::GptRequestConfig;
 
 use super::gpt_request::{grammatical_extraction_schema, GrammaticalExtractionOutput};

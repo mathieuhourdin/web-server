@@ -3,7 +3,7 @@ use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::{landscape_analyses, lens_analysis_scopes, lens_heads};
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 

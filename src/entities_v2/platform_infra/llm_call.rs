@@ -1,5 +1,5 @@
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::pagination::PaginationParams;
 use crate::schema::llm_calls;
 use axum::{

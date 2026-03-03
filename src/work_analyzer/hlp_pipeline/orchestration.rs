@@ -1,4 +1,4 @@
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landmark::Landmark, trace::Trace, trace_mirror::TraceMirror};
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 

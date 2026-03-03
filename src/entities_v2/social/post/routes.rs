@@ -5,10 +5,10 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
+use crate::entities_v2::{
     error::PpdcError,
-    resource::maturing_state::MaturingState,
     session::Session,
+    shared::MaturingState,
 };
 use crate::pagination::PaginationParams;
 use serde::Deserialize;

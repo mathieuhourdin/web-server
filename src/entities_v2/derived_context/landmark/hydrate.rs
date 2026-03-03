@@ -4,12 +4,9 @@ use uuid::Uuid;
 
 use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements};
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::resource::{
-    entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType, Resource,
-};
-use crate::entities_v2::analysis_orchestration::landscape_analysis::LandscapeAnalysis;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::element::model::Element;
+use crate::entities_v2::shared::MaturingState;
 use crate::schema::{landmarks, landscape_landmarks};
 
 type LandmarkTuple = (
@@ -27,77 +24,6 @@ type LandmarkTuple = (
     NaiveDateTime,
     NaiveDateTime,
 );
-
-impl LandmarkType {
-    pub fn from_resource_type(resource_type: ResourceType) -> LandmarkType {
-        match resource_type {
-            ResourceType::Resource => LandmarkType::Resource,
-            ResourceType::Topic => LandmarkType::Topic,
-            ResourceType::Person => LandmarkType::Person,
-            ResourceType::Mission => LandmarkType::Project,
-            ResourceType::HighLevelProject => LandmarkType::HighLevelProject,
-            ResourceType::Deliverable => LandmarkType::Deliverable,
-            ResourceType::Question => LandmarkType::Question,
-            _ => LandmarkType::Resource,
-        }
-    }
-
-    pub fn to_resource_type(self) -> ResourceType {
-        match self {
-            LandmarkType::Resource => ResourceType::Resource,
-            LandmarkType::Topic => ResourceType::Topic,
-            LandmarkType::Person => ResourceType::Person,
-            LandmarkType::Project => ResourceType::Mission,
-            LandmarkType::HighLevelProject => ResourceType::HighLevelProject,
-            LandmarkType::Deliverable => ResourceType::Deliverable,
-            LandmarkType::Question => ResourceType::Question,
-            LandmarkType::Organization
-            | LandmarkType::Tool
-            | LandmarkType::Habit
-            | LandmarkType::Role
-            | LandmarkType::Skill
-            | LandmarkType::Place => ResourceType::Resource,
-        }
-    }
-}
-
-impl Landmark {
-    pub fn to_resource(self) -> Resource {
-        Resource {
-            id: self.id,
-            title: self.title,
-            subtitle: self.subtitle,
-            content: self.content,
-            external_content_url: self.external_content_url,
-            comment: self.comment,
-            image_url: self.image_url,
-            resource_type: self.landmark_type.to_resource_type(),
-            entity_type: EntityType::Landmark,
-            maturing_state: self.maturing_state,
-            publishing_state: "pbsh".to_string(),
-            is_external: false,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            resource_subtype: None,
-        }
-    }
-
-    pub fn from_resource(resource: Resource) -> Self {
-        Self {
-            id: resource.id,
-            title: resource.title,
-            subtitle: resource.subtitle,
-            content: resource.content,
-            external_content_url: resource.external_content_url,
-            comment: resource.comment,
-            image_url: resource.image_url,
-            landmark_type: LandmarkType::from_resource_type(resource.resource_type),
-            maturing_state: resource.maturing_state,
-            created_at: resource.created_at,
-            updated_at: resource.updated_at,
-        }
-    }
-}
 
 fn tuple_to_landmark(row: LandmarkTuple) -> Landmark {
     let (
@@ -221,34 +147,6 @@ impl Landmark {
         ))
     }
 
-    pub fn get_analysis(self, pool: &DbPool) -> Result<Resource, PpdcError> {
-        let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
-        let analysis_id = landmarks::table
-            .filter(landmarks::id.eq(self.id))
-            .select(landmarks::analysis_id)
-            .first::<Uuid>(&mut conn)?;
-        let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, pool)?;
-        Ok(Resource {
-            id: analysis.id,
-            title: analysis.title,
-            subtitle: analysis.subtitle,
-            content: analysis.plain_text_state_summary,
-            external_content_url: None,
-            comment: None,
-            image_url: None,
-            resource_type: ResourceType::Analysis,
-            entity_type: EntityType::LandscapeAnalysis,
-            maturing_state: analysis.processing_state.to_maturing_state(),
-            publishing_state: "drft".to_string(),
-            is_external: false,
-            created_at: analysis.created_at,
-            updated_at: analysis.updated_at,
-            resource_subtype: None,
-        })
-    }
-
     pub fn get_for_landscape_analysis(
         landscape_analysis_id: Uuid,
         relation_type: Option<&str>,
@@ -296,11 +194,5 @@ impl Landmark {
             .into_iter()
             .map(|id| Landmark::find(id, pool))
             .collect()
-    }
-}
-
-impl From<Resource> for Landmark {
-    fn from(resource: Resource) -> Self {
-        Landmark::from_resource(resource)
     }
 }

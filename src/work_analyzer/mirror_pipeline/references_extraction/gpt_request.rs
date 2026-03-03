@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::entities_v2::reference::model::{Reference, ReferenceType};
 use crate::openai_handler::GptRequestConfig;

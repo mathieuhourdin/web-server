@@ -5,7 +5,7 @@ use diesel::sql_types::Text;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::trace_mirrors;
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::entities_v2::reference::Reference;

@@ -5,7 +5,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
+use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     session::Session,
 };

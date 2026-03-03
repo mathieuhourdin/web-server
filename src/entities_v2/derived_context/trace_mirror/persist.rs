@@ -4,7 +4,7 @@ use diesel::sql_types::{Nullable, Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::schema::{landscape_analyses, trace_mirrors};
 
 use super::model::{NewTraceMirror, TraceMirror};

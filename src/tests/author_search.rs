@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;
-use crate::entities::user::find_similar_users;
+use crate::entities_v2::user::find_similar_users;
 use crate::db::DbPool;
 use crate::environment::get_database_url;
 

@@ -5,7 +5,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{error::PpdcError, session::Session};
+use crate::entities_v2::{error::PpdcError, session::Session};
 
 use super::model::{Journal, NewJournalDto, UpdateJournalDto};
 

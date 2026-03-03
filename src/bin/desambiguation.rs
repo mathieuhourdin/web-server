@@ -2,7 +2,7 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 
 use chrono::Utc;
-use web_server::entities::error::PpdcError;
+use web_server::entities_v2::error::PpdcError;
 use web_server::openai_handler::GptRequestConfig;
 
 #[tokio::main]

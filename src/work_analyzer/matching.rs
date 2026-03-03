@@ -1,4 +1,4 @@
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::openai_handler::GptRequestConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -200,12 +200,26 @@ impl From<&Landmark> for LandmarkForMatching {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::work_analyzer::elements_pipeline::matching::LandmarkMatching;
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    struct TestLandmarkMatching {
+        pub temporary_id: String,
+        pub matching_key: String,
+        pub landmark_type: LandmarkType,
+        pub candidate_id: Option<String>,
+        pub confidence: f32,
+    }
+
+    impl ElementWithIdentifier for TestLandmarkMatching {
+        fn identifier(&self) -> String {
+            self.matching_key.clone()
+        }
+    }
 
     #[test]
     fn test_basic_matching_with_identifier() {
         // Un élément, un landmark, un match via attach_matching_results_to_elements_with_identifier
-        let element = LandmarkMatching {
+        let element = TestLandmarkMatching {
             temporary_id: "My Resource".to_string(),
             matching_key: "My Resource".to_string(),
             landmark_type: LandmarkType::Resource,
@@ -230,7 +244,7 @@ mod tests {
             confidence: 0.85,
         }];
 
-        let result: Vec<ElementMatched<LandmarkMatching>> =
+        let result: Vec<ElementMatched<TestLandmarkMatching>> =
             attach_matching_results_to_elements_with_identifier(
                 matching_results,
                 elements,

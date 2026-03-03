@@ -4,7 +4,7 @@ use diesel::sql_types::{Bool, Int4, Nullable, Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::error::{ErrorType, PpdcError};
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::references;
 
 use super::model::{NewReference, Reference};
