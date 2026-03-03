@@ -1,5 +1,4 @@
 pub mod db;
-pub mod entities;
 pub mod entities_v2;
 pub mod environment;
 pub mod http;
