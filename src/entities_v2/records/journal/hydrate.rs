@@ -1,89 +1,70 @@
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
+use diesel::sql_types::{Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    interaction::model::Interaction,
-    resource::{entity_type::EntityType, maturing_state::MaturingState, Resource},
-};
-use crate::schema::{interactions, resources};
-use diesel::prelude::*;
+use crate::entities::error::PpdcError;
 
-use super::model::{Journal, JournalStatus};
+use super::model::{Journal, JournalStatus, JournalType};
+
+#[derive(QueryableByName)]
+struct JournalRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    subtitle: String,
+    #[diesel(sql_type = Text)]
+    content: String,
+    #[diesel(sql_type = Text)]
+    journal_type: String,
+    #[diesel(sql_type = Text)]
+    status: String,
+    #[diesel(sql_type = Timestamp)]
+    created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    updated_at: NaiveDateTime,
+}
+
+impl From<JournalRow> for Journal {
+    fn from(row: JournalRow) -> Self {
+        Journal {
+            id: row.id,
+            title: row.title,
+            subtitle: row.subtitle,
+            content: row.content,
+            user_id: row.user_id,
+            status: JournalStatus::from_db(&row.status),
+            journal_type: JournalType::from_db(&row.journal_type),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
 
 impl Journal {
-    /// Creates a Journal from a Resource with default/placeholder values
-    /// for fields that need to be hydrated from relations.
-    pub fn from_resource(resource: Resource) -> Journal {
-        let status = if resource.maturing_state == MaturingState::Trashed {
-            JournalStatus::Archived
-        } else if resource.publishing_state == "pbsh" || resource.maturing_state == MaturingState::Finished {
-            JournalStatus::Published
-        } else {
-            JournalStatus::Draft
-        };
-        Journal {
-            id: resource.id,
-            title: resource.title,
-            subtitle: resource.subtitle,
-            content: resource.content,
-            user_id: Uuid::nil(),
-            status,
-            journal_type: resource.resource_type.into(),
-            created_at: resource.created_at,
-            updated_at: resource.updated_at,
-        }
-    }
-
-    /// Converts the Journal back to a Resource.
-    pub fn to_resource(&self) -> Resource {
-        let (maturing_state, publishing_state) = match self.status {
-            JournalStatus::Draft => (MaturingState::Draft, "drft".to_string()),
-            JournalStatus::Published => (MaturingState::Finished, "pbsh".to_string()),
-            JournalStatus::Archived => (MaturingState::Trashed, "drft".to_string()),
-        };
-        Resource {
-            id: self.id,
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: self.content.clone(),
-            external_content_url: None,
-            comment: None,
-            image_url: None,
-            resource_type: self.journal_type.into(),
-            entity_type: EntityType::Journal,
-            maturing_state,
-            publishing_state,
-            is_external: false,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            resource_subtype: None,
-        }
-    }
-
-    /// Finds a Journal by id (basic retrieval without hydration).
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {
-        let resource = Resource::find(id, pool)?;
-        Ok(Journal::from_resource(resource))
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let row = diesel::sql_query(
+            "SELECT id, user_id, title, subtitle, content, journal_type, status, created_at, updated_at
+             FROM journals
+             WHERE id = $1",
+        )
+        .bind::<SqlUuid, _>(id)
+        .get_result::<JournalRow>(&mut conn)?;
+
+        Ok(row.into())
     }
 
-    /// Hydrates user_id from the author interaction.
-    pub fn with_user_id(self, pool: &DbPool) -> Result<Journal, PpdcError> {
-        let resource = self.to_resource();
-        let interaction = resource.find_resource_author_interaction(pool)?;
-        Ok(Journal {
-            user_id: interaction.interaction_user_id,
-            ..self
-        })
-    }
-
-    /// Finds a Journal by id and fully hydrates it from the database.
-    /// This retrieves all related fields from interactions and resource_relations.
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {
-        let resource = Resource::find(id, pool)?;
-        let journal = Journal::from_resource(resource);
-        let journal = journal.with_user_id(pool)?;
-        Ok(journal)
+        Journal::find(id, pool)
     }
 
     pub fn find_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Journal>, PpdcError> {
@@ -91,29 +72,15 @@ impl Journal {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let interaction_resources = interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(resources::entity_type.eq(EntityType::Journal))
-            .order(resources::updated_at.desc())
-            .select((Interaction::as_select(), Resource::as_select()))
-            .load::<(Interaction, Resource)>(&mut conn)?;
+        let rows = diesel::sql_query(
+            "SELECT id, user_id, title, subtitle, content, journal_type, status, created_at, updated_at
+             FROM journals
+             WHERE user_id = $1
+             ORDER BY updated_at DESC",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .load::<JournalRow>(&mut conn)?;
 
-        let journals = interaction_resources
-            .into_iter()
-            .map(|(interaction, resource)| Journal {
-                user_id: interaction.interaction_user_id,
-                ..Journal::from_resource(resource)
-            })
-            .collect::<Vec<_>>();
-
-        Ok(journals)
-    }
-}
-
-impl From<Resource> for Journal {
-    fn from(resource: Resource) -> Self {
-        Journal::from_resource(resource)
+        Ok(rows.into_iter().map(Journal::from).collect())
     }
 }

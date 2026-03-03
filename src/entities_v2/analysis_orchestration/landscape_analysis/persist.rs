@@ -1,35 +1,34 @@
+use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    interaction::model::{Interaction, InteractionWithResource, NewInteraction},
-    resource::{maturing_state::MaturingState, NewResource},
-    resource_relation::NewResourceRelation,
-};
+use crate::entities::error::PpdcError;
+use crate::schema::{landscape_analyses, landscape_landmarks};
 use crate::entities_v2::reference::Reference;
 
 use super::model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
 
 impl LandscapeAnalysis {
-    /// Updates the LandscapeAnalysis in the database.
-    /// Only updates the underlying Resource fields (title, subtitle, content, maturing_state).
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let resource = self.to_resource();
-        let updated_resource = NewResource::from(resource).update(&self.id, pool)?;
-        Ok(LandscapeAnalysis {
-            title: updated_resource.title,
-            subtitle: updated_resource.subtitle,
-            plain_text_state_summary: updated_resource.content,
-            processing_state: LandscapeProcessingState::from_maturing_state(
-                updated_resource.maturing_state,
-            ),
-            updated_at: updated_resource.updated_at,
-            ..self
-        })
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        diesel::update(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
+            .set((
+                landscape_analyses::title.eq(self.title),
+                landscape_analyses::subtitle.eq(self.subtitle),
+                landscape_analyses::plain_text_state_summary.eq(self.plain_text_state_summary),
+                landscape_analyses::interaction_date.eq(self.interaction_date),
+                landscape_analyses::processing_state.eq(self.processing_state.to_db()),
+                landscape_analyses::parent_id.eq(self.parent_analysis_id),
+                landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
+                landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
+                landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
+            ))
+            .execute(&mut conn)?;
+        LandscapeAnalysis::find_full_analysis(self.id, pool)
     }
 
-    /// Updates the processing state of the analysis.
     pub fn set_processing_state(
         mut self,
         state: LandscapeProcessingState,
@@ -40,138 +39,38 @@ impl LandscapeAnalysis {
     }
 
     pub fn delete(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let resource = self.to_resource();
-        let deleted_resource = resource.delete(pool)?;
-        Ok(LandscapeAnalysis::from_resource(deleted_resource))
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        diesel::delete(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
+            .execute(&mut conn)?;
+        Ok(self)
     }
-
-    /*pub fn replay(self, lens_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let analysis = LandscapeAnalysis::find_full_analysis(self.id, pool)?;
-
-        if analysis.processing_state != MaturingState::Finished {
-            return Err(PpdcError::new(
-                409,
-                ErrorType::ApiError,
-                "Replay is only allowed for finished analyses".to_string(),
-            ));
-        }
-
-        let children = analysis.get_children_landscape_analyses(pool)?;
-        if !children.is_empty() {
-            return Err(PpdcError::new(
-                409,
-                ErrorType::ApiError,
-                "Replay rejected: analysis has children".to_string(),
-            ));
-        }
-
-        let trace_id = analysis.analyzed_trace_id.ok_or_else(|| {
-            PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Replay requires an analyzed trace id".to_string(),
-            )
-        })?;
-
-        let user_id = analysis.user_id;
-        let parent_analysis_id = analysis.parent_analysis_id;
-        let old_analysis_id = analysis.id;
-
-        // Use processing_state as a lightweight lock
-        let _trashed = analysis
-            .clone()
-            .set_processing_state(MaturingState::Trashed, pool)?;
-
-        // Re-check children to reduce race risks (best-effort, no locks)
-        let children_after = analysis.get_children_landscape_analyses(pool)?;
-        if !children_after.is_empty() {
-            let _ = analysis.clone().set_processing_state(MaturingState::Finished, pool);
-            return Err(PpdcError::new(
-                409,
-                ErrorType::ApiError,
-                "Replay rejected: analysis got children during replay".to_string(),
-            ));
-        }
-
-        let new_analysis = match NewLandscapeAnalysis::new_placeholder(
-            user_id,
-            trace_id,
-            parent_analysis_id,
-            replayed_from_id,
-        );
-        let new_analysis = new_analysis.create(pool)?;
-
-        NewResourceRelation::create_replayed_from_landscape_analysis(
-            new_analysis.id,
-            old_analysis_id,
-            user_id,
-            pool,
-        )?;
-
-        let lenses = analysis.get_heading_lens(pool)?;
-        for lens in lenses {
-            lens.update_current_landscape(new_analysis.id, pool)?;
-        }
-
-        Ok(new_analysis)
-    }*/
 }
 
 impl NewLandscapeAnalysis {
-    /// Creates the LandscapeAnalysis in the database.
-    /// This creates the underlying Resource, Interaction, and ResourceRelations.
     pub fn create(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let user_id = self.user_id;
-        let interaction_date = self.interaction_date;
-        let parent_analysis_id = self.parent_analysis_id;
-        let analyzed_trace_id = self.analyzed_trace_id;
-        let replayed_from_id = self.replayed_from_id;
-        let trace_mirror_id = self.trace_mirror_id;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
-        // Create the underlying resource
-        let new_resource = self.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
+        let id: Uuid = diesel::insert_into(landscape_analyses::table)
+            .values((
+                landscape_analyses::title.eq(self.title),
+                landscape_analyses::subtitle.eq(self.subtitle),
+                landscape_analyses::plain_text_state_summary.eq(self.plain_text_state_summary),
+                landscape_analyses::interaction_date.eq(Some(self.interaction_date)),
+                landscape_analyses::user_id.eq(self.user_id),
+                landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()),
+                landscape_analyses::parent_id.eq(self.parent_analysis_id),
+                landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
+                landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
+                landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
+            ))
+            .returning(landscape_analyses::id)
+            .get_result(&mut conn)?;
 
-        // Create the author interaction
-        let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
-        new_interaction.interaction_type = Some("outp".to_string());
-        new_interaction.interaction_date = Some(interaction_date);
-        new_interaction.interaction_progress = 0;
-        new_interaction.create(pool)?;
-
-        // Create parent analysis relation if provided
-        if let Some(parent_id) = parent_analysis_id {
-            NewResourceRelation::create_child_of_landscape_analysis(
-                created_resource.id,
-                parent_id,
-                user_id,
-                pool,
-            )?;
-        }
-
-        // Create analyzed trace relation if provided
-        if let Some(trace_id) = analyzed_trace_id {
-            NewResourceRelation::create_analyzes_trace(created_resource.id, trace_id, user_id, pool)?;
-        }
-        if let Some(replayed_from_id) = replayed_from_id {
-            NewResourceRelation::create_replayed_from_landscape_analysis(
-                created_resource.id,
-                replayed_from_id,
-                user_id,
-                pool,
-            )?;
-        }
-        if let Some(trace_mirror_id) = trace_mirror_id {
-            NewResourceRelation::create_attached_to_landscape(
-                trace_mirror_id,
-                created_resource.id,
-                user_id,
-                pool,
-            )?;
-        }
-
-        // Return the fully hydrated analysis
-        LandscapeAnalysis::find_full_analysis(created_resource.id, pool)
+        LandscapeAnalysis::find_full_analysis(id, pool)
     }
 }
 
@@ -179,73 +78,59 @@ pub fn delete_leaf_and_cleanup(
     id: Uuid,
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
-    println!("Deleting leaf and cleanup for analysis: {:?}", id);
     let landscape_analysis = LandscapeAnalysis::find_full_analysis(id, pool)?;
-    println!("Landscape analysis: {:?}", landscape_analysis);
     let children_landscape_analyses = landscape_analysis.get_children_landscape_analyses(pool)?;
-    println!(
-        "Children landscape analyses: {:?}",
-        children_landscape_analyses
-    );
     let heading_lens = landscape_analysis.get_heading_lens(pool)?;
-    println!("Heading lens: {:?}", heading_lens);
-    if children_landscape_analyses.len() > 0 || heading_lens.len() > 0 {
-        println!("Children landscape analyses or heading lens found, not deleting");
+    if !children_landscape_analyses.is_empty() || !heading_lens.is_empty() {
         return Ok(None);
     }
+
     Reference::delete_for_landscape_analysis(id, pool)?;
-    println!("Analysis: {:?}", landscape_analysis);
-    let related_resources =
-        crate::entities::resource_relation::ResourceRelation::find_origin_for_resource(id, pool)?;
-    println!("Related resources: {:?}", related_resources);
-    for resource_relation in related_resources {
-        println!("Resource relation: {:?}", resource_relation);
-        if resource_relation.origin_resource.is_trace_mirror() {
-            println!(
-                "Deleting trace mirror: {:?}",
-                resource_relation.origin_resource
-            );
-            resource_relation.origin_resource.delete(pool)?;
-            continue;
-        }
-        // check if the resource is owned by the analysis (for elements and entities)
-        if resource_relation.resource_relation.relation_type == "ownr".to_string()
-            && !resource_relation.origin_resource.is_trace()
-            && !resource_relation.origin_resource.is_lens()
-            && !resource_relation.origin_resource.is_landscape_analysis()
-        {
-            println!("Deleting resource: {:?}", resource_relation.origin_resource);
-            resource_relation.origin_resource.delete(pool)?;
-        } else if resource_relation.origin_resource.is_trace() {
-            let mut trace = resource_relation.origin_resource;
-            trace.maturing_state = MaturingState::Draft;
-            trace.update(pool)?;
-        }
-    }
-    println!("Deleting landscape analysis: {:?}", landscape_analysis);
-    let landscape_analysis = landscape_analysis.delete(pool)?;
-    Ok(Some(landscape_analysis))
+    let deleted = landscape_analysis.delete(pool)?;
+    Ok(Some(deleted))
 }
 
 pub fn find_last_analysis_resource(
     user_id: Uuid,
     pool: &DbPool,
-) -> Result<Option<InteractionWithResource>, PpdcError> {
-    let interaction = Interaction::find_last_analysis_for_user(user_id, pool)?;
-    Ok(interaction)
+) -> Result<Option<LandscapeAnalysis>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    let maybe_id = landscape_analyses::table
+        .filter(landscape_analyses::user_id.eq(user_id))
+        .order(landscape_analyses::interaction_date.desc().nulls_last())
+        .then_order_by(landscape_analyses::created_at.desc())
+        .select(landscape_analyses::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+    match maybe_id {
+        Some(id) => Ok(Some(LandscapeAnalysis::find_full_analysis(id, pool)?)),
+        None => Ok(None),
+    }
 }
 
 pub fn add_landmark_ref(
     landscape_analysis_id: Uuid,
     landmark_id: Uuid,
-    user_id: Uuid,
+    _user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    NewResourceRelation::create_referenced_landmark(
-        landmark_id,
-        landscape_analysis_id,
-        user_id,
-        pool,
-    )?;
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    diesel::insert_into(landscape_landmarks::table)
+        .values((
+            landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id),
+            landscape_landmarks::landmark_id.eq(landmark_id),
+            landscape_landmarks::relation_type.eq("REFERENCED"),
+        ))
+        .on_conflict((
+            landscape_landmarks::landscape_analysis_id,
+            landscape_landmarks::landmark_id,
+            landscape_landmarks::relation_type,
+        ))
+        .do_nothing()
+        .execute(&mut conn)?;
     Ok(())
 }

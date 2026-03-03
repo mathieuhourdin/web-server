@@ -1,225 +1,205 @@
-use uuid::Uuid;
 use std::collections::HashSet;
 
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
+use uuid::Uuid;
+
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    resource::{
-        entity_type::EntityType, maturing_state::MaturingState, NewResource, Resource,
-    },
-    resource_relation::ResourceRelation,
-};
+use crate::entities::error::{ErrorType, PpdcError};
+use crate::schema::{element_landmarks, element_relations};
 use crate::entities_v2::landmark::Landmark;
 
-use super::model::{Element, ElementRelationWithRelatedElement, ElementSubtype, ElementType, NewElement};
+use super::model::{Element, ElementRelationWithRelatedElement, ElementSubtype, ElementType};
+
+#[derive(QueryableByName)]
+struct ElementRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    subtitle: String,
+    #[diesel(sql_type = Text)]
+    content: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    extended_content: Option<String>,
+    #[diesel(sql_type = Text)]
+    verb: String,
+    #[diesel(sql_type = Text)]
+    element_type: String,
+    #[diesel(sql_type = Text)]
+    element_subtype: String,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    interaction_date: Option<NaiveDateTime>,
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    analysis_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    trace_id: Uuid,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    trace_mirror_id: Option<Uuid>,
+    #[diesel(sql_type = Timestamp)]
+    created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    updated_at: NaiveDateTime,
+}
+
+fn row_to_element(row: ElementRow, landmark_id: Option<Uuid>) -> Element {
+    let element_subtype = ElementSubtype::from_db(&row.element_subtype).unwrap_or_else(|| {
+        ElementSubtype::default_for_type(
+            ElementType::from_db(&row.element_type).unwrap_or(ElementType::Transaction),
+        )
+    });
+    let element_type = element_subtype.element_type();
+
+    Element {
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        content: row.content,
+        extended_content: row.extended_content,
+        element_type,
+        element_subtype,
+        verb: row.verb,
+        interaction_date: row.interaction_date,
+        user_id: row.user_id,
+        analysis_id: row.analysis_id,
+        trace_id: row.trace_id,
+        trace_mirror_id: row.trace_mirror_id,
+        landmark_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
+
+fn get_first_landmark_id_for_element(element_id: Uuid, pool: &DbPool) -> Result<Option<Uuid>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    let maybe_id = element_landmarks::table
+        .filter(element_landmarks::element_id.eq(element_id))
+        .order(element_landmarks::created_at.asc())
+        .select(element_landmarks::landmark_id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+    Ok(maybe_id)
+}
+
+fn load_elements_by_uuid(sql: &str, id: Uuid, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    let rows = sql_query(sql)
+        .bind::<SqlUuid, _>(id)
+        .load::<ElementRow>(&mut conn)?;
+    rows.into_iter()
+        .map(|row| {
+            let landmark_id = get_first_landmark_id_for_element(row.id, pool)?;
+            Ok(row_to_element(row, landmark_id))
+        })
+        .collect()
+}
+
+fn normalize_relation_type(raw: &str) -> String {
+    match raw {
+        "APPLIES_TO" => "applies_to".to_string(),
+        "SUBTASK_OF" => "subtask_of".to_string(),
+        "THEME_OF" => "theme_of".to_string(),
+        _ => raw.to_lowercase(),
+    }
+}
 
 impl Element {
-    /// Creates an Element from a Resource. Relations (user_id, analysis_id, trace_id, trace_mirror_id)
-    /// and extended_content must be hydrated via `with_*` / `find_full`.
-    pub fn from_resource(resource: Resource) -> Self {
-        let fallback_type: ElementType = resource.resource_type.into();
-        let element_subtype = resource
-            .resource_subtype
-            .as_deref()
-            .and_then(ElementSubtype::from_code)
-            .unwrap_or_else(|| ElementSubtype::default_for_type(fallback_type));
-        let element_type = element_subtype.element_type();
-        let verb = resource.comment.unwrap_or_default();
-        Self {
-            id: resource.id,
-            title: resource.title,
-            subtitle: resource.subtitle,
-            content: resource.content,
-            extended_content: None,
-            element_type,
-            element_subtype,
-            verb,
-            interaction_date: None,
-            user_id: Uuid::nil(),
-            analysis_id: Uuid::nil(),
-            trace_id: Uuid::nil(),
-            trace_mirror_id: None,
-            landmark_id: None,
-            created_at: resource.created_at,
-            updated_at: resource.updated_at,
-        }
-    }
-
-    /// Converts the Element back to a Resource for writes.
-    /// `extended_content` is not persisted (no dedicated Resource field).
-    pub fn to_resource(&self) -> Resource {
-        Resource {
-            id: self.id,
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: self.content.clone(),
-            external_content_url: None,
-            comment: Some(self.verb.clone()),
-            image_url: None,
-            resource_type: self.element_type.into(),
-            entity_type: EntityType::Element,
-            maturing_state: MaturingState::Draft,
-            publishing_state: "drft".to_string(),
-            is_external: false,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            resource_subtype: Some(self.element_subtype.to_code().to_string()),
-        }
-    }
-
-    /// Finds an Element by id (basic retrieval, no hydration).
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
-        let resource = Resource::find(id, pool)?;
-        Ok(Element::from_resource(resource))
-    }
-
-    /// Hydrates `user_id` from the author interaction ("outp"), when present.
-    pub fn with_user_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let resource = self.to_resource();
-        let interaction = resource.find_resource_author_interaction(pool)?;
-        Ok(Element {
-            user_id: interaction.interaction_user_id,
-            interaction_date: Some(interaction.interaction_date),
-            ..self
+        let mut result = load_elements_by_uuid(
+            r#"
+            SELECT id, title, subtitle, content, extended_content, verb, element_type, element_subtype,
+                   interaction_date, user_id, analysis_id, trace_id, trace_mirror_id, created_at, updated_at
+            FROM elements
+            WHERE id = $1
+            "#,
+            id,
+            pool,
+        )?;
+        result.pop().ok_or_else(|| {
+            PpdcError::new(404, ErrorType::ApiError, "Element not found".to_string())
         })
     }
 
-    /// Hydrates `analysis_id` from the "ownr" relation (element -> analysis).
-    pub fn with_analysis_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let analysis_id = targets
-            .into_iter()
-            .find(|t| t.resource_relation.relation_type == "ownr")
-            .map(|t| t.target_resource.id);
-        Ok(Element {
-            analysis_id: analysis_id.unwrap_or(Uuid::nil()),
-            ..self
-        })
-    }
-
-    /// Hydrates `trace_id` from an "elmt" relation whose target is a Trace.
-    pub fn with_trace_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let trace_id = targets
-            .into_iter()
-            .find(|t| t.resource_relation.relation_type == "elmt" && t.target_resource.is_trace())
-            .map(|t| t.target_resource.id);
-        Ok(Element {
-            trace_id: trace_id.unwrap_or(Uuid::nil()),
-            ..self
-        })
-    }
-
-    /// Hydrates `trace_mirror_id` from a "trcm" relation (element -> trace mirror).
-    pub fn with_trace_mirror_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let trace_mirror_id = targets
-            .into_iter()
-            .find(|t| t.resource_relation.relation_type == "trcm")
-            .map(|t| t.target_resource.id);
-        Ok(Element {
-            trace_mirror_id,
-            ..self
-        })
-    }
-
-    /// Hydrates `landmark_id` from an "elmt" relation whose target is a Landmark (not a Trace).
-    pub fn with_landmark_id(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let landmark_id = targets
-            .into_iter()
-            .find(|t| t.resource_relation.relation_type == "elmt" && !t.target_resource.is_trace())
-            .map(|t| t.target_resource.id);
-        Ok(Element {
-            landmark_id,
-            ..self
-        })
-    }
-
-    /// Finds landmarks linked to this element via "elmt" (element -> landmark).
-    pub fn find_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let landmarks = targets
-            .into_iter()
-            .filter(|t| {
-                t.resource_relation.relation_type == "elmt" && t.target_resource.is_landmark()
-            })
-            .map(|t| Landmark::from_resource(t.target_resource))
-            .collect::<Vec<Landmark>>();
-        Ok(landmarks)
-    }
-
-    pub fn with_interaction_date(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let interaction = self.to_resource().find_resource_author_interaction(pool);
-        if let Ok(interaction) = interaction {
-            Ok(Element {
-                interaction_date: Some(interaction.interaction_date),
-                ..self
-            })
-        } else {
-            Ok(self)
-        }
-    }
-
-    /// Finds an Element by id and fully hydrates it (user_id, analysis_id, trace_id, trace_mirror_id, landmark_id).
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
-        let resource = Resource::find(id, pool)?;
-        let el = Element::from_resource(resource);
-        let el = el.with_analysis_id(pool)?;
-        let el = el.with_trace_id(pool)?;
-        let el = el.with_trace_mirror_id(pool)?;
-        let el = el.with_landmark_id(pool)?;
-        let el = el.with_interaction_date(pool)?;
-        let el = match el.clone().with_user_id(pool) {
-            Ok(e) => e,
-            Err(_) => el,
-        };
-        Ok(el)
+        Self::find(id, pool)
     }
 
-    /// Finds elements linked to a landmark via "elmt" (element -> landmark).
+    pub fn with_interaction_date(self, _pool: &DbPool) -> Result<Element, PpdcError> {
+        Ok(self)
+    }
+
+    pub fn find_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let landmark_ids = element_landmarks::table
+            .filter(element_landmarks::element_id.eq(self.id))
+            .select(element_landmarks::landmark_id)
+            .load::<Uuid>(&mut conn)?;
+        landmark_ids
+            .into_iter()
+            .map(|id| Landmark::find(id, pool))
+            .collect()
+    }
+
     pub fn find_for_landmark(landmark_id: Uuid, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
-        let rels = ResourceRelation::find_origin_for_resource(landmark_id, pool)?;
-        let elements = rels
-            .into_iter()
-            .filter(|r| {
-                r.resource_relation.relation_type == "elmt" && r.origin_resource.is_element()
-            })
-            .map(|r| Element::from_resource(r.origin_resource))
-            .collect();
-        Ok(elements)
+        load_elements_by_uuid(
+            r#"
+            SELECT e.id, e.title, e.subtitle, e.content, e.extended_content, e.verb, e.element_type, e.element_subtype,
+                   e.interaction_date, e.user_id, e.analysis_id, e.trace_id, e.trace_mirror_id, e.created_at, e.updated_at
+            FROM elements e
+            JOIN element_landmarks el ON el.element_id = e.id
+            WHERE el.landmark_id = $1
+            ORDER BY e.created_at ASC
+            "#,
+            landmark_id,
+            pool,
+        )
     }
 
-    /// Finds elements linked to a trace via "elmt" (element -> trace).
     pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
-        let rels = ResourceRelation::find_origin_for_resource(trace_id, pool)?;
-        let elements = rels
-            .into_iter()
-            .filter(|r| {
-                r.resource_relation.relation_type == "elmt" && r.origin_resource.is_element()
-            })
-            .map(|r| Element::from_resource(r.origin_resource))
-            .collect();
-        Ok(elements)
+        load_elements_by_uuid(
+            r#"
+            SELECT id, title, subtitle, content, extended_content, verb, element_type, element_subtype,
+                   interaction_date, user_id, analysis_id, trace_id, trace_mirror_id, created_at, updated_at
+            FROM elements
+            WHERE trace_id = $1
+            ORDER BY created_at ASC
+            "#,
+            trace_id,
+            pool,
+        )
     }
 
     pub fn find_related_elements(
         &self,
         pool: &DbPool,
     ) -> Result<Vec<ElementRelationWithRelatedElement>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
         let mut relations = Vec::new();
         let mut seen = HashSet::<(Uuid, String)>::new();
 
-        let outgoing = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        for relation in outgoing {
-            if !relation.target_resource.is_element() {
-                continue;
-            }
-            let related_element_id = relation.target_resource.id;
+        let outgoing = element_relations::table
+            .filter(element_relations::origin_element_id.eq(self.id))
+            .select((element_relations::target_element_id, element_relations::relation_type))
+            .load::<(Uuid, String)>(&mut conn)?;
+        for (related_element_id, relation_type_raw) in outgoing {
             if related_element_id == self.id {
                 continue;
             }
-            let relation_type = relation.resource_relation.relation_type;
+            let relation_type = normalize_relation_type(&relation_type_raw);
             if !seen.insert((related_element_id, relation_type.clone())) {
                 continue;
             }
@@ -230,16 +210,15 @@ impl Element {
             });
         }
 
-        let incoming = ResourceRelation::find_origin_for_resource(self.id, pool)?;
-        for relation in incoming {
-            if !relation.origin_resource.is_element() {
-                continue;
-            }
-            let related_element_id = relation.origin_resource.id;
+        let incoming = element_relations::table
+            .filter(element_relations::target_element_id.eq(self.id))
+            .select((element_relations::origin_element_id, element_relations::relation_type))
+            .load::<(Uuid, String)>(&mut conn)?;
+        for (related_element_id, relation_type_raw) in incoming {
             if related_element_id == self.id {
                 continue;
             }
-            let relation_type = relation.resource_relation.relation_type;
+            let relation_type = normalize_relation_type(&relation_type_raw);
             if !seen.insert((related_element_id, relation_type.clone())) {
                 continue;
             }
@@ -251,98 +230,5 @@ impl Element {
         }
 
         Ok(relations)
-    }
-}
-
-impl NewElement {
-    pub fn to_new_resource(&self) -> NewResource {
-        NewResource {
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: Some(self.content.clone()),
-            external_content_url: None,
-            comment: Some(self.verb.clone()),
-            image_url: None,
-            resource_type: Some(self.element_type.into()),
-            entity_type: Some(EntityType::Element),
-            maturing_state: Some(MaturingState::Draft),
-            publishing_state: Some("drft".to_string()),
-            is_external: Some(false),
-            resource_subtype: Some(self.element_subtype.to_code().to_string()),
-        }
-    }
-}
-
-impl From<Resource> for Element {
-    fn from(resource: Resource) -> Self {
-        Element::from_resource(resource)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use chrono::{NaiveDate, NaiveDateTime};
-
-    use crate::entities::resource::{
-        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
-        Resource,
-    };
-
-    use super::{Element, NewElement};
-    use crate::entities_v2::element::{ElementSubtype, ElementType};
-
-    fn sample_datetime() -> NaiveDateTime {
-        NaiveDate::from_ymd_opt(2026, 1, 1)
-            .expect("valid date")
-            .and_hms_opt(0, 0, 0)
-            .expect("valid time")
-    }
-
-    #[test]
-    fn to_new_resource_persists_verb_in_comment() {
-        let new_element = NewElement::new(
-            "Title".to_string(),
-            "Subtitle".to_string(),
-            "Content".to_string(),
-            ElementType::Transaction,
-            ElementSubtype::Output,
-            "écouter".to_string(),
-            None,
-            uuid::Uuid::nil(),
-            None,
-            None,
-            uuid::Uuid::nil(),
-            uuid::Uuid::nil(),
-        );
-
-        let new_resource = new_element.to_new_resource();
-        assert_eq!(new_resource.comment, Some("écouter".to_string()));
-        assert_eq!(new_resource.resource_subtype, Some("output".to_string()));
-    }
-
-    #[test]
-    fn from_resource_keeps_legacy_comment_raw_as_verb() {
-        let resource = Resource {
-            id: uuid::Uuid::nil(),
-            title: "Title".to_string(),
-            subtitle: "Subtitle".to_string(),
-            content: "Content".to_string(),
-            external_content_url: None,
-            comment: Some("evnt".to_string()),
-            image_url: None,
-            resource_type: ResourceType::Event,
-            maturing_state: MaturingState::Draft,
-            publishing_state: "drft".to_string(),
-            is_external: false,
-            created_at: sample_datetime(),
-            updated_at: sample_datetime(),
-            entity_type: EntityType::Element,
-            resource_subtype: Some("output".to_string()),
-        };
-
-        let element = Element::from_resource(resource);
-        assert_eq!(element.verb, "evnt");
-        assert_eq!(element.element_type, ElementType::Transaction);
-        assert_eq!(element.element_subtype, ElementSubtype::Output);
     }
 }

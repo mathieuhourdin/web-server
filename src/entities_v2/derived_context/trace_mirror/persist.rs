@@ -1,84 +1,108 @@
-use chrono::Utc;
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{Nullable, Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
-    resource_relation::NewResourceRelation,
-};
+use crate::entities::error::PpdcError;
+use crate::schema::{landscape_analyses, trace_mirrors};
 
 use super::model::{NewTraceMirror, TraceMirror};
 
+#[derive(QueryableByName)]
+struct IdRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+}
+
 impl TraceMirror {
-    /// Updates the TraceMirror resource fields in the database.
     pub fn update(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let resource = self.to_resource();
-        let _updated_resource = NewResource::from(resource).update(&self.id, pool)?;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
+        sql_query(
+            r#"
+            UPDATE trace_mirrors
+            SET title = $1,
+                subtitle = $2,
+                content = $3,
+                trace_mirror_type = $4,
+                tags = CAST($5 AS jsonb),
+                trace_id = $6,
+                landscape_analysis_id = $7,
+                user_id = $8,
+                primary_landmark_id = $9
+            WHERE id = $10
+            "#,
+        )
+        .bind::<Text, _>(self.title)
+        .bind::<Text, _>(self.subtitle)
+        .bind::<Text, _>(self.content)
+        .bind::<Text, _>(self.trace_mirror_type.to_db())
+        .bind::<Text, _>(tags_json)
+        .bind::<SqlUuid, _>(self.trace_id)
+        .bind::<SqlUuid, _>(self.landscape_analysis_id)
+        .bind::<SqlUuid, _>(self.user_id)
+        .bind::<Nullable<SqlUuid>, _>(self.primary_resource_id)
+        .bind::<SqlUuid, _>(self.id)
+        .execute(&mut conn)?;
+
         TraceMirror::find_full_trace_mirror(self.id, pool)
     }
 }
 
 impl NewTraceMirror {
-    /// Creates the TraceMirror in the database.
-    /// This creates the underlying Resource, Interaction, and ResourceRelations.
     pub fn create(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let user_id = self.user_id;
-        let interaction_date = self
-            .interaction_date
-            .unwrap_or_else(|| Utc::now().naive_utc());
-        let trace_id = self.trace_id;
-        let landscape_analysis_id = self.landscape_analysis_id;
-        let primary_resource_id = self.primary_resource_id;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
-        // Create the underlying resource
-        let new_resource = self.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
+        let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
+        let id = sql_query(
+            r#"
+            INSERT INTO trace_mirrors (
+                title, subtitle, content, trace_mirror_type, tags,
+                trace_id, landscape_analysis_id, user_id, primary_landmark_id
+            )
+            VALUES ($1, $2, $3, $4, CAST($5 AS jsonb), $6, $7, $8, $9)
+            RETURNING id
+            "#,
+        )
+        .bind::<Text, _>(self.title)
+        .bind::<Text, _>(self.subtitle)
+        .bind::<Text, _>(self.content)
+        .bind::<Text, _>(self.trace_mirror_type.to_db())
+        .bind::<Text, _>(tags_json)
+        .bind::<SqlUuid, _>(self.trace_id)
+        .bind::<SqlUuid, _>(self.landscape_analysis_id)
+        .bind::<SqlUuid, _>(self.user_id)
+        .bind::<Nullable<SqlUuid>, _>(self.primary_resource_id)
+        .get_result::<IdRow>(&mut conn)?
+        .id;
 
-        // Create the author interaction
-        let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
-        new_interaction.interaction_type = Some("outp".to_string());
-        new_interaction.interaction_date = Some(interaction_date);
-        new_interaction.interaction_progress = 0;
-        new_interaction.create(pool)?;
+        diesel::update(
+            landscape_analyses::table.filter(landscape_analyses::id.eq(self.landscape_analysis_id)),
+        )
+        .set(landscape_analyses::trace_mirror_id.eq(Some(id)))
+        .execute(&mut conn)?;
 
-        // Create trace relation
-        NewResourceRelation::create_mirrors_trace(created_resource.id, trace_id, user_id, pool)?;
-
-        // Create landscape analysis relation
-        NewResourceRelation::create_attached_to_landscape(
-            created_resource.id,
-            landscape_analysis_id,
-            user_id,
-            pool,
-        )?;
-
-        // Create primary resource relation if provided
-        if let Some(resource_id) = primary_resource_id {
-            NewResourceRelation::create_has_primary_landmark(
-                created_resource.id,
-                resource_id,
-                user_id,
-                pool,
-            )?;
-        }
-
-        // Return the fully hydrated trace mirror
-        TraceMirror::find_full_trace_mirror(created_resource.id, pool)
+        TraceMirror::find_full_trace_mirror(id, pool)
     }
 }
 
-/// Links a trace mirror to its primary resource landmark
 pub fn link_to_primary_resource(
     trace_mirror_id: Uuid,
     primary_resource_id: Uuid,
-    user_id: Uuid,
+    _user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Uuid, PpdcError> {
-    NewResourceRelation::create_has_primary_landmark(
-        trace_mirror_id,
-        primary_resource_id,
-        user_id,
-        pool,
-    )?;
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    diesel::update(trace_mirrors::table.filter(trace_mirrors::id.eq(trace_mirror_id)))
+        .set(trace_mirrors::primary_landmark_id.eq(Some(primary_resource_id)))
+        .execute(&mut conn)?;
     Ok(primary_resource_id)
 }

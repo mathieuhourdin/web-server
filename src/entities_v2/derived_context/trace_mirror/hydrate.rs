@@ -1,199 +1,144 @@
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    interaction::model::Interaction,
-    resource::{
-        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
-        NewResource, Resource,
-    },
-    resource_relation::ResourceRelation,
-};
+use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::entities_v2::reference::Reference;
 
-use super::model::{NewTraceMirror, TraceMirror, TraceMirrorType};
+use super::model::{TraceMirror, TraceMirrorType};
 
-impl TraceMirrorType {
-    pub fn from_resource_type(resource_type: ResourceType) -> TraceMirrorType {
-        match resource_type {
-            ResourceType::TraceMirrorJournal => TraceMirrorType::Journal,
-            ResourceType::TraceMirrorBio => TraceMirrorType::Bio,
-            ResourceType::TraceMirrorHighLevelProjectsDefinition => {
-                TraceMirrorType::HighLevelProjects
-            }
-            _ => TraceMirrorType::Note,
-        }
-    }
+#[derive(QueryableByName)]
+struct TraceMirrorRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    subtitle: String,
+    #[diesel(sql_type = Text)]
+    content: String,
+    #[diesel(sql_type = Text)]
+    trace_mirror_type: String,
+    #[diesel(sql_type = Text)]
+    tags_json: String,
+    #[diesel(sql_type = SqlUuid)]
+    trace_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    landscape_analysis_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    primary_landmark_id: Option<Uuid>,
+    #[diesel(sql_type = Timestamp)]
+    created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    updated_at: NaiveDateTime,
+}
 
-    pub fn to_resource_type(self) -> ResourceType {
-        match self {
-            TraceMirrorType::Note => ResourceType::TraceMirror,
-            TraceMirrorType::Journal => ResourceType::TraceMirrorJournal,
-            TraceMirrorType::Bio => ResourceType::TraceMirrorBio,
-            TraceMirrorType::HighLevelProjects => ResourceType::TraceMirrorHighLevelProjectsDefinition,
-        }
+fn parse_json_string_array(value: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
+}
+
+fn row_to_trace_mirror(row: TraceMirrorRow) -> TraceMirror {
+    TraceMirror {
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        content: row.content,
+        trace_mirror_type: TraceMirrorType::from_db(&row.trace_mirror_type),
+        tags: parse_json_string_array(&row.tags_json),
+        trace_id: row.trace_id,
+        landscape_analysis_id: row.landscape_analysis_id,
+        user_id: row.user_id,
+        primary_resource_id: row.primary_landmark_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
     }
 }
 
+fn load_trace_mirrors_by_uuid(sql: &str, id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let rows = sql_query(sql)
+        .bind::<SqlUuid, _>(id)
+        .load::<TraceMirrorRow>(&mut conn)?;
+    Ok(rows.into_iter().map(row_to_trace_mirror).collect())
+}
+
 impl TraceMirror {
-    /// Creates a TraceMirror from a Resource with default/placeholder values
-    /// for fields that need to be hydrated from relations.
-    pub fn from_resource(resource: Resource) -> TraceMirror {
-        // Parse tags from comment (stored as JSON array)
-        let tags = if let Some(comment) = &resource.comment {
-            if !comment.is_empty() {
-                serde_json::from_str(comment).unwrap_or_default()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
-
-        TraceMirror {
-            id: resource.id,
-            title: resource.title,
-            subtitle: resource.subtitle,
-            content: resource.content,
-            trace_mirror_type: TraceMirrorType::from_resource_type(resource.resource_type),
-            tags,
-            trace_id: Uuid::nil(),
-            landscape_analysis_id: Uuid::nil(),
-            user_id: Uuid::nil(),
-            primary_resource_id: None,
-            created_at: resource.created_at,
-            updated_at: resource.updated_at,
-        }
-    }
-
-    /// Converts the TraceMirror back to a Resource.
-    pub fn to_resource(&self) -> Resource {
-        // Serialize tags to JSON for storage in comment field
-        let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
-
-        Resource {
-            id: self.id,
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: self.content.clone(),
-            external_content_url: None,
-            comment: Some(tags_json),
-            image_url: None,
-            resource_type: self.trace_mirror_type.to_resource_type(),
-            entity_type: EntityType::TraceMirror,
-            maturing_state: MaturingState::Draft,
-            publishing_state: "drft".to_string(),
-            is_external: false,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            resource_subtype: None,
-        }
-    }
-
-    /// Hydrates user_id from the author interaction.
-    pub fn with_user_id(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let resource = self.to_resource();
-        let interaction = resource.find_resource_author_interaction(pool)?;
-        Ok(TraceMirror {
-            user_id: interaction.interaction_user_id,
-            ..self
-        })
-    }
-
-    /// Hydrates trace_id from resource relations.
-    /// Looks for a relation of type "trce" (trace) pointing to a trace.
-    pub fn with_trace(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let trace_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "trce")
-            .map(|target| target.target_resource.id)
-            .unwrap_or(Uuid::nil());
-        Ok(TraceMirror { trace_id, ..self })
-    }
-
-    /// Hydrates landscape_analysis_id from resource relations.
-    /// Looks for a relation of type "lnds" (landscape) pointing to a landscape analysis.
-    pub fn with_landscape_analysis(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let landscape_analysis_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "lnds")
-            .map(|target| target.target_resource.id)
-            .unwrap_or(Uuid::nil());
-        Ok(TraceMirror {
-            landscape_analysis_id,
-            ..self
-        })
-    }
-
-    /// Hydrates primary_resource_id from resource relations.
-    /// Looks for a relation of type "prir" (primary resource).
-    pub fn with_primary_resource(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let primary_resource_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "prir")
-            .map(|target| target.target_resource.id);
-        Ok(TraceMirror {
-            primary_resource_id,
-            ..self
-        })
-    }
-
-    /// Finds a TraceMirror by id and fully hydrates it from the database.
     pub fn find_full_trace_mirror(id: Uuid, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let resource = Resource::find(id, pool)?;
-        let trace_mirror = TraceMirror::from_resource(resource);
-        let trace_mirror = trace_mirror.with_user_id(pool)?;
-        let trace_mirror = trace_mirror.with_trace(pool)?;
-        let trace_mirror = trace_mirror.with_landscape_analysis(pool)?;
-        let trace_mirror = trace_mirror.with_primary_resource(pool)?;
-        Ok(trace_mirror)
+        let mut result = load_trace_mirrors_by_uuid(
+            r#"
+            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
+                   landscape_analysis_id, user_id, primary_landmark_id,
+                   created_at, updated_at
+            FROM trace_mirrors
+            WHERE id = $1
+            "#,
+            id,
+            pool,
+        )?;
+        result.pop().ok_or_else(|| {
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Trace mirror not found".to_string(),
+            )
+        })
     }
 
-    /// Get all trace mirrors for a specific landscape analysis
     pub fn find_by_landscape_analysis(
         landscape_analysis_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<TraceMirror>, PpdcError> {
-        let origins = ResourceRelation::find_origin_for_resource(landscape_analysis_id, pool)?;
-        let trace_mirrors: Vec<TraceMirror> = origins
-            .into_iter()
-            .filter(|origin| {
-                origin.resource_relation.relation_type == "lnds"
-                    && origin.origin_resource.is_trace_mirror()
-            })
-            .map(|origin| TraceMirror::find_full_trace_mirror(origin.origin_resource.id, pool))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(trace_mirrors)
+        load_trace_mirrors_by_uuid(
+            r#"
+            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
+                   landscape_analysis_id, user_id, primary_landmark_id,
+                   created_at, updated_at
+            FROM trace_mirrors
+            WHERE landscape_analysis_id = $1
+            ORDER BY created_at ASC
+            "#,
+            landscape_analysis_id,
+            pool,
+        )
     }
 
-    /// Get all trace mirrors for a specific trace
     pub fn find_by_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        let origins = ResourceRelation::find_origin_for_resource(trace_id, pool)?;
-        let trace_mirrors: Vec<TraceMirror> = origins
-            .into_iter()
-            .filter(|origin| {
-                origin.resource_relation.relation_type == "trce"
-                    && origin.origin_resource.is_trace_mirror()
-            })
-            .map(|origin| TraceMirror::find_full_trace_mirror(origin.origin_resource.id, pool))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(trace_mirrors)
+        load_trace_mirrors_by_uuid(
+            r#"
+            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
+                   landscape_analysis_id, user_id, primary_landmark_id,
+                   created_at, updated_at
+            FROM trace_mirrors
+            WHERE trace_id = $1
+            ORDER BY created_at ASC
+            "#,
+            trace_id,
+            pool,
+        )
     }
 
-    /// Get all trace mirrors for a user
     pub fn find_by_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        let interactions =
-            Interaction::find_paginated_outputs_for_user(0, 1000, user_id, "trcm", pool)?;
-        let trace_mirrors: Vec<TraceMirror> = interactions
-            .into_iter()
-            .map(|interaction| TraceMirror::find_full_trace_mirror(interaction.resource.id, pool))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(trace_mirrors)
+        load_trace_mirrors_by_uuid(
+            r#"
+            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
+                   landscape_analysis_id, user_id, primary_landmark_id,
+                   created_at, updated_at
+            FROM trace_mirrors
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            "#,
+            user_id,
+            pool,
+        )
     }
 
     pub fn get_high_level_projects_references(
@@ -201,9 +146,8 @@ impl TraceMirror {
         pool: &DbPool,
     ) -> Result<Vec<Reference>, PpdcError> {
         let mut projects_references = Vec::new();
-
-        // Source of truth: references from trace mirror -> high level project landmarks.
         let references = Reference::find_for_trace_mirror(self.id, pool)?;
+
         for reference in references {
             let Some(landmark_id) = reference.landmark_id else {
                 continue;
@@ -223,33 +167,5 @@ impl TraceMirror {
     ) -> Result<Vec<Reference>, PpdcError> {
         let trace_mirror = TraceMirror::find_full_trace_mirror(trace_mirror_id, pool)?;
         trace_mirror.get_high_level_projects_references(pool)
-    }
-}
-
-impl NewTraceMirror {
-    /// Converts to a NewResource for database insertion.
-    pub fn to_new_resource(&self) -> NewResource {
-        let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
-
-        NewResource {
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: Some(self.content.clone()),
-            resource_type: Some(self.trace_mirror_type.to_resource_type()),
-            entity_type: Some(EntityType::TraceMirror),
-            maturing_state: Some(MaturingState::Draft),
-            publishing_state: Some("drft".to_string()),
-            is_external: Some(false),
-            external_content_url: None,
-            comment: Some(tags_json),
-            image_url: None,
-            resource_subtype: None,
-        }
-    }
-}
-
-impl From<Resource> for TraceMirror {
-    fn from(resource: Resource) -> Self {
-        TraceMirror::from_resource(resource)
     }
 }

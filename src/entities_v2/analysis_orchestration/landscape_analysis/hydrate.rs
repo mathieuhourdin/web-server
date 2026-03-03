@@ -1,129 +1,65 @@
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    resource::{
-        entity_type::EntityType, resource_type::ResourceType, NewResource, Resource,
-    },
-    resource_relation::ResourceRelation,
-};
+use crate::entities::error::{ErrorType, PpdcError};
+use crate::schema::{landscape_analyses, lens_analysis_scopes, lens_heads};
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
-use super::model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
+use super::model::{LandscapeAnalysis, LandscapeProcessingState};
+
+#[derive(QueryableByName)]
+struct LandscapeAnalysisRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    subtitle: String,
+    #[diesel(sql_type = Text)]
+    plain_text_state_summary: String,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    interaction_date: Option<NaiveDateTime>,
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    parent_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    replayed_from_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    analyzed_trace_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    trace_mirror_id: Option<Uuid>,
+    #[diesel(sql_type = Text)]
+    processing_state: String,
+    #[diesel(sql_type = Timestamp)]
+    created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    updated_at: NaiveDateTime,
+}
+
+fn row_to_analysis(row: LandscapeAnalysisRow) -> LandscapeAnalysis {
+    LandscapeAnalysis {
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        plain_text_state_summary: row.plain_text_state_summary,
+        interaction_date: row.interaction_date,
+        user_id: row.user_id,
+        parent_analysis_id: row.parent_id,
+        replayed_from_id: row.replayed_from_id,
+        analyzed_trace_id: row.analyzed_trace_id,
+        trace_mirror_id: row.trace_mirror_id,
+        processing_state: LandscapeProcessingState::from_db(&row.processing_state),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
 
 impl LandscapeAnalysis {
-    /// Creates a LandscapeAnalysis from a Resource with default/placeholder values
-    /// for fields that need to be hydrated from relations.
-    pub fn from_resource(resource: Resource) -> LandscapeAnalysis {
-        LandscapeAnalysis {
-            id: resource.id,
-            title: resource.title,
-            subtitle: resource.subtitle,
-            plain_text_state_summary: resource.content,
-            interaction_date: None,
-            user_id: Uuid::nil(),
-            parent_analysis_id: None,
-            replayed_from_id: None,
-            analyzed_trace_id: None,
-            trace_mirror_id: None,
-            processing_state: LandscapeProcessingState::from_maturing_state(resource.maturing_state),
-            created_at: resource.created_at,
-            updated_at: resource.updated_at,
-        }
-    }
-
-    /// Converts the LandscapeAnalysis back to a Resource.
-    pub fn to_resource(&self) -> Resource {
-        Resource {
-            id: self.id,
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: self.plain_text_state_summary.clone(),
-            external_content_url: None,
-            comment: None,
-            image_url: None,
-            resource_type: ResourceType::Analysis,
-            entity_type: EntityType::LandscapeAnalysis,
-            maturing_state: self.processing_state.to_maturing_state(),
-            publishing_state: "drft".to_string(),
-            is_external: false,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            resource_subtype: None,
-        }
-    }
-
-    /// Hydrates user_id and interaction_date from the author interaction.
-    pub fn with_user_id(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let resource = self.to_resource();
-        let interaction = resource.find_resource_author_interaction(pool)?;
-        Ok(LandscapeAnalysis {
-            user_id: interaction.interaction_user_id,
-            interaction_date: Some(interaction.interaction_date),
-            ..self
-        })
-    }
-
-    /// Hydrates parent_analysis_id from resource relations.
-    /// Looks for a relation of type "prnt" (parent) pointing to another analysis.
-    pub fn with_parent_analysis(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let parent_analysis_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "prnt")
-            .map(|target| target.target_resource.id);
-        Ok(LandscapeAnalysis {
-            parent_analysis_id,
-            ..self
-        })
-    }
-
-    /// Hydrates trace_id from resource relations.
-    /// Looks for a relation of type "trce" (trace) pointing to a trace resource.
-    pub fn with_trace(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let analyzed_trace_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "trce")
-            .map(|target| target.target_resource.id);
-        Ok(LandscapeAnalysis {
-            analyzed_trace_id,
-            ..self
-        })
-    }
-
-    /// Hydrates replayed_from_id from resource relations.
-    /// Looks for a relation of type "rply" (replayed from) pointing to another analysis.
-    pub fn with_replayed_from(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let targets = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        let replayed_from_id = targets
-            .into_iter()
-            .find(|target| target.resource_relation.relation_type == "rply")
-            .map(|target| target.target_resource.id);
-        Ok(LandscapeAnalysis {
-            replayed_from_id,
-            ..self
-        })
-    }
-
-    /// Hydrates trace_mirror_id from resource relations.
-    /// Looks for an origin relation of type "lnds" from a trace mirror.
-    pub fn with_trace_mirror(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let origins = ResourceRelation::find_origin_for_resource(self.id, pool)?;
-        let trace_mirror_id = origins
-            .into_iter()
-            .find(|origin| {
-                origin.resource_relation.relation_type == "lnds"
-                    && origin.origin_resource.is_trace_mirror()
-            })
-            .map(|origin| origin.origin_resource.id);
-        Ok(LandscapeAnalysis {
-            trace_mirror_id,
-            ..self
-        })
-    }
-
     pub fn find_full_parent(&self, pool: &DbPool) -> Result<Option<LandscapeAnalysis>, PpdcError> {
         let parent_analysis_id = self.parent_analysis_id;
         if let Some(parent_analysis_id) = parent_analysis_id {
@@ -144,29 +80,47 @@ impl LandscapeAnalysis {
         Ok(parents)
     }
 
-    /// Finds a LandscapeAnalysis by id and fully hydrates it from the database.
     pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let resource = Resource::find(id, pool)?;
-        let analysis = LandscapeAnalysis::from_resource(resource);
-        let analysis = analysis.with_user_id(pool)?;
-        let analysis = analysis.with_parent_analysis(pool)?;
-        let analysis = analysis.with_trace(pool)?;
-        let analysis = analysis.with_replayed_from(pool)?;
-        let analysis = analysis.with_trace_mirror(pool)?;
-        Ok(analysis)
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let mut rows = sql_query(
+            r#"
+            SELECT id, title, subtitle, plain_text_state_summary, interaction_date, user_id,
+                   parent_id, replayed_from_id, analyzed_trace_id, trace_mirror_id,
+                   processing_state, created_at, updated_at
+            FROM landscape_analyses
+            WHERE id = $1
+            "#,
+        )
+        .bind::<SqlUuid, _>(id)
+        .load::<LandscapeAnalysisRow>(&mut conn)?;
+        rows.pop().map(row_to_analysis).ok_or_else(|| {
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Landscape analysis not found".to_string(),
+            )
+        })
     }
 
     pub fn find_by_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-        let origins = ResourceRelation::find_origin_for_resource(trace_id, pool)?;
-        let analyses = origins
-            .into_iter()
-            .filter(|origin| {
-                origin.resource_relation.relation_type == "trce"
-                    && origin.origin_resource.is_landscape_analysis()
-            })
-            .map(|origin| LandscapeAnalysis::find_full_analysis(origin.origin_resource.id, pool))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(analyses)
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = sql_query(
+            r#"
+            SELECT id, title, subtitle, plain_text_state_summary, interaction_date, user_id,
+                   parent_id, replayed_from_id, analyzed_trace_id, trace_mirror_id,
+                   processing_state, created_at, updated_at
+            FROM landscape_analyses
+            WHERE analyzed_trace_id = $1
+            ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+            "#,
+        )
+        .bind::<SqlUuid, _>(trace_id)
+        .load::<LandscapeAnalysisRow>(&mut conn)?;
+        Ok(rows.into_iter().map(row_to_analysis).collect())
     }
 
     pub fn get_landmarks(
@@ -174,89 +128,64 @@ impl LandscapeAnalysis {
         relation_type: Option<&str>,
         pool: &DbPool,
     ) -> Result<Vec<Landmark>, PpdcError> {
-        let landmarks = Landmark::get_for_landscape_analysis(self.id, relation_type, pool)?;
-        Ok(landmarks)
+        Landmark::get_for_landscape_analysis(self.id, relation_type, pool)
     }
 
     pub fn get_elements(&self, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
-        let elements = ResourceRelation::find_origin_for_resource(self.id, pool)?;
-        let elements = elements
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let element_ids = crate::schema::elements::table
+            .filter(crate::schema::elements::analysis_id.eq(self.id))
+            .select(crate::schema::elements::id)
+            .load::<Uuid>(&mut conn)?;
+        element_ids
             .into_iter()
-            .filter(|relation| {
-                relation.resource_relation.relation_type == "ownr"
-                    && relation.origin_resource.is_element()
-            })
-            .map(|relation| Element::find_full(relation.origin_resource.id, pool).unwrap())
-            .collect::<Vec<Element>>();
-        Ok(elements)
+            .map(|id| Element::find_full(id, pool))
+            .collect()
     }
 
     pub fn get_children_landscape_analyses(
         &self,
         pool: &DbPool,
     ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-        let children_landscape_analyses =
-            ResourceRelation::find_origin_for_resource(self.id, pool)?;
-        let children_landscape_analyses = children_landscape_analyses
-            .into_iter()
-            .filter(|relation| {
-                relation.resource_relation.relation_type == "prnt"
-                    && relation.origin_resource.is_landscape_analysis()
-            })
-            .map(|relation| LandscapeAnalysis::from_resource(relation.origin_resource))
-            .collect::<Vec<LandscapeAnalysis>>();
-        Ok(children_landscape_analyses)
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = landscape_analyses::table
+            .filter(landscape_analyses::parent_id.eq(self.id))
+            .select(landscape_analyses::id)
+            .load::<Uuid>(&mut conn)?;
+        rows.into_iter()
+            .map(|id| LandscapeAnalysis::find_full_analysis(id, pool))
+            .collect()
     }
 
     pub fn get_heading_lens(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
-        let lenses = ResourceRelation::find_origin_for_resource(self.id, pool)?;
-        let lenses = lenses
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let lens_ids = lens_heads::table
+            .filter(lens_heads::landscape_analysis_id.eq(self.id))
+            .select(lens_heads::lens_id)
+            .load::<Uuid>(&mut conn)?;
+        lens_ids
             .into_iter()
-            .filter(|relation| {
-                relation.resource_relation.relation_type == "head"
-                    && relation.origin_resource.is_lens()
-            })
-            .map(|relation| Lens::from_resource(relation.origin_resource))
-            .collect::<Vec<Lens>>();
-        Ok(lenses)
+            .map(|id| Lens::find_full_lens(id, pool))
+            .collect()
     }
 
     pub fn get_scoped_lenses(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
-        let lenses = ResourceRelation::find_origin_for_resource(self.id, pool)?;
-        let lenses = lenses
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let lens_ids = lens_analysis_scopes::table
+            .filter(lens_analysis_scopes::landscape_analysis_id.eq(self.id))
+            .select(lens_analysis_scopes::lens_id)
+            .load::<Uuid>(&mut conn)?;
+        lens_ids
             .into_iter()
-            .filter(|relation| {
-                relation.resource_relation.relation_type == "lnsa"
-                    && relation.origin_resource.is_lens()
-            })
-            .map(|relation| Lens::from_resource(relation.origin_resource))
-            .collect::<Vec<Lens>>();
-        Ok(lenses)
-    }
-}
-
-impl NewLandscapeAnalysis {
-    /// Converts to a NewResource for database insertion.
-    pub fn to_new_resource(&self) -> NewResource {
-        NewResource {
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            content: Some(self.plain_text_state_summary.clone()),
-            resource_type: Some(ResourceType::Analysis),
-            entity_type: Some(EntityType::LandscapeAnalysis),
-            maturing_state: Some(LandscapeProcessingState::Pending.to_maturing_state()),
-            publishing_state: Some("drft".to_string()),
-            is_external: Some(false),
-            external_content_url: None,
-            comment: None,
-            image_url: None,
-            resource_subtype: None,
-        }
-    }
-}
-
-impl From<Resource> for LandscapeAnalysis {
-    fn from(resource: Resource) -> Self {
-        LandscapeAnalysis::from_resource(resource)
+            .map(|id| Lens::find_full_lens(id, pool))
+            .collect()
     }
 }

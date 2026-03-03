@@ -23,6 +23,20 @@ impl LensProcessingState {
             LensProcessingState::InSync => MaturingState::Finished,
         }
     }
+
+    pub fn to_db(self) -> &'static str {
+        match self {
+            LensProcessingState::OutOfSync => "OUT_OF_SYNC",
+            LensProcessingState::InSync => "IN_SYNC",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "IN_SYNC" | "in_sync" => LensProcessingState::InSync,
+            _ => LensProcessingState::OutOfSync,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -27,6 +27,22 @@ impl LandscapeProcessingState {
             LandscapeProcessingState::Completed => MaturingState::Finished,
         }
     }
+
+    pub fn to_db(self) -> &'static str {
+        match self {
+            LandscapeProcessingState::Pending => "PENDING",
+            LandscapeProcessingState::ReplayRequested => "REPLAY_REQUESTED",
+            LandscapeProcessingState::Completed => "COMPLETED",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "REPLAY_REQUESTED" | "replay_requested" => LandscapeProcessingState::ReplayRequested,
+            "COMPLETED" | "completed" => LandscapeProcessingState::Completed,
+            _ => LandscapeProcessingState::Pending,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

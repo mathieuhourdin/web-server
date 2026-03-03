@@ -31,15 +31,12 @@ WITH days AS (
 ),
 agg AS (
   SELECT
-    i.interaction_date::date AS day,
-    SUM(length(r.content))::bigint AS value
-  FROM resources r
-  JOIN interactions i
-    ON i.resource_id = r.id
-  WHERE i.interaction_user_id = $3
-    AND r.entity_type = 'trce'
-    AND i.interaction_date >= $1::date
-    AND i.interaction_date <  ($2::date + 1)
+    COALESCE(t.interaction_date, t.created_at)::date AS day,
+    SUM(length(t.content))::bigint AS value
+  FROM traces t
+  WHERE t.user_id = $3
+    AND COALESCE(t.interaction_date, t.created_at) >= $1::date
+    AND COALESCE(t.interaction_date, t.created_at) < ($2::date + 1)
   GROUP BY 1
 )
 SELECT d.day AS day, COALESCE(a.value, 0) AS value

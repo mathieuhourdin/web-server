@@ -9,19 +9,17 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    interaction::model::{Interaction, NewInteraction},
-    resource::Resource,
-    resource_relation::NewResourceRelation,
     session::Session,
     user::User,
 };
+use crate::entities_v2::journal::Journal;
 use crate::entities_v2::lens::Lens;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::work_analyzer;
 
 use super::{
     llm_qualify,
-    model::{NewTraceDto, Trace},
+    model::{NewTrace, NewTraceDto, Trace},
 };
 
 #[debug_handler]
@@ -29,39 +27,40 @@ pub async fn post_trace_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Json(payload): Json<NewTraceDto>,
-) -> Result<Json<Resource>, PpdcError> {
+) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.unwrap();
-    let journal_interaction = Interaction::find_user_journal(user_id, payload.journal_id, &pool)?;
-
-    let (new_resource, interaction_date) =
-        llm_qualify::qualify_trace(payload.content.as_str()).await?;
-
-    let resource = new_resource.create(&pool)?;
-    let mut new_interaction = NewInteraction::new(user_id, resource.id);
-
-    if let Some(interaction_date) = interaction_date {
-        new_interaction.interaction_date = Some(interaction_date.and_hms_opt(12, 0, 0).unwrap());
+    let journal = Journal::find_full(payload.journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
     }
-    new_interaction.create(&pool)?;
 
-    NewResourceRelation::create_journal_item_of(
-        resource.id,
-        journal_interaction.resource_id.unwrap(),
+    let qualified = llm_qualify::qualify_trace(payload.content.as_str()).await?;
+
+    let interaction_date = qualified
+        .interaction_date
+        .and_then(|d| d.and_hms_opt(12, 0, 0));
+
+    let trace = NewTrace::new(
+        qualified.title,
+        qualified.subtitle,
+        payload.content,
+        interaction_date,
         user_id,
-        &pool,
-    )?;
+        journal.id,
+    )
+    .create(&pool)?;
 
     let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
     for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
-        let lens = if lens.target_trace_id != Some(resource.id) {
-            lens.update_target_trace(Some(resource.id), &pool)?
+        let lens = if lens.target_trace_id != Some(trace.id) {
+            lens.update_target_trace(Some(trace.id), &pool)?
         } else {
             lens
         };
         tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
     }
 
-    Ok(Json(resource))
+    Ok(Json(trace))
 }
 
 #[debug_handler]

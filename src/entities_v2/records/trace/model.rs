@@ -1,14 +1,11 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError, interaction::model::Interaction, resource::maturing_state::MaturingState,
-    resource::resource_type::ResourceType, resource::Resource,
-};
-use crate::schema::{interactions, resource_relations, resources};
+use crate::entities::error::PpdcError;
 
 #[derive(Deserialize)]
 pub struct NewTraceDto {
@@ -31,6 +28,50 @@ pub struct Trace {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(QueryableByName, Debug)]
+pub(crate) struct TraceRow {
+    #[diesel(sql_type = SqlUuid)]
+    pub id: Uuid,
+    #[diesel(sql_type = Text)]
+    pub title: String,
+    #[diesel(sql_type = Text)]
+    pub subtitle: String,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    pub interaction_date: Option<NaiveDateTime>,
+    #[diesel(sql_type = Text)]
+    pub content: String,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    pub journal_id: Option<Uuid>,
+    #[diesel(sql_type = SqlUuid)]
+    pub user_id: Uuid,
+    #[diesel(sql_type = Text)]
+    pub trace_type: String,
+    #[diesel(sql_type = Text)]
+    pub status: String,
+    #[diesel(sql_type = Timestamp)]
+    pub created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    pub updated_at: NaiveDateTime,
+}
+
+impl From<TraceRow> for Trace {
+    fn from(row: TraceRow) -> Self {
+        Trace {
+            id: row.id,
+            title: row.title,
+            subtitle: row.subtitle,
+            interaction_date: row.interaction_date,
+            content: row.content,
+            journal_id: row.journal_id,
+            user_id: row.user_id,
+            trace_type: TraceType::from_db(&row.trace_type),
+            status: TraceStatus::from_db(&row.status),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceType {
     BioTrace,
@@ -40,6 +81,26 @@ pub enum TraceType {
     HighLevelProjectsDefinition,
 }
 
+impl TraceType {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            TraceType::UserTrace => "USER_TRACE",
+            TraceType::BioTrace => "BIO_TRACE",
+            TraceType::WorkspaceTrace => "WORKSPACE_TRACE",
+            TraceType::HighLevelProjectsDefinition => "HIGH_LEVEL_PROJECTS_DEFINITION",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "BIO_TRACE" => TraceType::BioTrace,
+            "WORKSPACE_TRACE" => TraceType::WorkspaceTrace,
+            "HIGH_LEVEL_PROJECTS_DEFINITION" => TraceType::HighLevelProjectsDefinition,
+            _ => TraceType::UserTrace,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceStatus {
     Draft,
@@ -47,53 +108,20 @@ pub enum TraceStatus {
     Archived,
 }
 
-impl From<MaturingState> for TraceStatus {
-    fn from(maturing_state: MaturingState) -> Self {
-        match maturing_state {
-            MaturingState::Draft | MaturingState::Review | MaturingState::Replay => {
-                TraceStatus::Draft
-            }
-            MaturingState::Finished => TraceStatus::Finalized,
-            MaturingState::Trashed => TraceStatus::Archived,
+impl TraceStatus {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            TraceStatus::Draft => "DRAFT",
+            TraceStatus::Finalized => "FINALIZED",
+            TraceStatus::Archived => "ARCHIVED",
         }
     }
-}
 
-impl From<TraceStatus> for MaturingState {
-    fn from(status: TraceStatus) -> Self {
-        match status {
-            TraceStatus::Draft => MaturingState::Draft,
-            TraceStatus::Finalized => MaturingState::Finished,
-            TraceStatus::Archived => MaturingState::Trashed,
-        }
-    }
-}
-
-impl From<ResourceType> for TraceType {
-    fn from(resource_type: ResourceType) -> Self {
-        match resource_type {
-            ResourceType::BioTrace => TraceType::BioTrace,
-            ResourceType::WorkspaceTrace => TraceType::WorkspaceTrace,
-            ResourceType::UserTrace => TraceType::UserTrace,
-            ResourceType::HighLevelProjectsDefinitionTrace => {
-                TraceType::HighLevelProjectsDefinition
-            }
-            // Backward compatibility for existing trace rows.
-            ResourceType::Trace => TraceType::UserTrace,
-            _ => TraceType::UserTrace,
-        }
-    }
-}
-
-impl From<TraceType> for ResourceType {
-    fn from(trace_type: TraceType) -> Self {
-        match trace_type {
-            TraceType::BioTrace => ResourceType::BioTrace,
-            TraceType::WorkspaceTrace => ResourceType::WorkspaceTrace,
-            TraceType::UserTrace => ResourceType::UserTrace,
-            TraceType::HighLevelProjectsDefinition => {
-                ResourceType::HighLevelProjectsDefinitionTrace
-            }
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "FINALIZED" => TraceStatus::Finalized,
+            "ARCHIVED" => TraceStatus::Archived,
+            _ => TraceStatus::Draft,
         }
     }
 }
@@ -107,24 +135,19 @@ impl Trace {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let first_user_trace = interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(resources::resource_type.eq_any(vec![
-                ResourceType::UserTrace,
-                // Backward compatibility for legacy trace rows.
-                ResourceType::Trace,
-            ]))
-            .order(interactions::interaction_date.asc())
-            .select((Interaction::as_select(), Resource::as_select()))
-            .first::<(Interaction, Resource)>(&mut conn)
-            .optional()?;
+        let row = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND trace_type = 'USER_TRACE'
+             ORDER BY interaction_date ASC NULLS LAST, created_at ASC
+             LIMIT 1",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .get_result::<TraceRow>(&mut conn)
+        .optional()?;
 
-        match first_user_trace {
-            Some((_, resource)) => Ok(Some(Trace::find_full_trace(resource.id, pool)?)),
-            None => Ok(None),
-        }
+        Ok(row.map(Trace::from))
     }
 
     pub fn get_most_recent_for_user(
@@ -135,25 +158,18 @@ impl Trace {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let latest_trace = interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(resources::resource_type.eq_any(vec![
-                ResourceType::UserTrace,
-                ResourceType::BioTrace,
-                ResourceType::WorkspaceTrace,
-                ResourceType::HighLevelProjectsDefinitionTrace,
-            ]))
-            .order(interactions::interaction_date.desc())
-            .select((Interaction::as_select(), Resource::as_select()))
-            .first::<(Interaction, Resource)>(&mut conn)
-            .optional()?;
+        let row = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             LIMIT 1",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .get_result::<TraceRow>(&mut conn)
+        .optional()?;
 
-        match latest_trace {
-            Some((_, resource)) => Ok(Some(Trace::find_full_trace(resource.id, pool)?)),
-            None => Ok(None),
-        }
+        Ok(row.map(Trace::from))
     }
 
     pub fn get_between(
@@ -165,20 +181,28 @@ impl Trace {
         let start_trace = Trace::find_full_trace(start_trace_id, pool)?;
         let end_trace = Trace::find_full_trace(end_trace_id, pool)?;
 
-        let interactions = Interaction::find_all_traces_for_user_between(
-            user_id,
-            start_trace.interaction_date.unwrap(),
-            end_trace.interaction_date.unwrap(),
-            pool,
-        )?;
+        let from = start_trace
+            .interaction_date
+            .unwrap_or(start_trace.created_at);
+        let to = end_trace.interaction_date.unwrap_or(end_trace.created_at);
 
-        let traces = interactions
-            .into_iter()
-            .map(|interaction| Trace::from_resource(interaction.resource))
-            .collect();
-        let mut traces: Vec<Trace> = traces;
-        traces.push(end_trace);
-        Ok(traces)
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let rows = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND COALESCE(interaction_date, created_at) BETWEEN $2 AND $3
+             ORDER BY COALESCE(interaction_date, created_at) ASC, created_at ASC",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Timestamp, _>(from)
+        .bind::<Timestamp, _>(to)
+        .load::<TraceRow>(&mut conn)?;
+
+        Ok(rows.into_iter().map(Trace::from).collect())
     }
 
     pub fn get_before(
@@ -187,18 +211,24 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Vec<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
-        let interactions = Interaction::find_all_traces_for_user_before_date(
-            user_id,
-            trace.interaction_date.unwrap(),
-            pool,
-        )?;
-        let traces = interactions
-            .into_iter()
-            .map(|interaction| Trace::from_resource(interaction.resource))
-            .collect();
-        let mut traces: Vec<Trace> = traces;
-        traces.push(trace);
-        Ok(traces)
+        let until = trace.interaction_date.unwrap_or(trace.created_at);
+
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let rows = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND COALESCE(interaction_date, created_at) <= $2
+             ORDER BY COALESCE(interaction_date, created_at) ASC, created_at ASC",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Timestamp, _>(until)
+        .load::<TraceRow>(&mut conn)?;
+
+        Ok(rows.into_iter().map(Trace::from).collect())
     }
 
     pub fn get_first(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
@@ -206,34 +236,36 @@ impl Trace {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let latest_hlp_trace = interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(
-                resources::resource_type.eq(ResourceType::HighLevelProjectsDefinitionTrace),
-            )
-            .order(interactions::interaction_date.desc())
-            .select((Interaction::as_select(), Resource::as_select()))
-            .first::<(Interaction, Resource)>(&mut conn)
-            .optional()?;
+        let latest_hlp = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND trace_type = 'HIGH_LEVEL_PROJECTS_DEFINITION'
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             LIMIT 1",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .get_result::<TraceRow>(&mut conn)
+        .optional()?;
 
-        if let Some((_, resource)) = latest_hlp_trace {
-            return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
+        if let Some(row) = latest_hlp {
+            return Ok(Some(row.into()));
         }
 
-        let latest_bio_trace = interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(resources::resource_type.eq(ResourceType::BioTrace))
-            .order(interactions::interaction_date.desc())
-            .select((Interaction::as_select(), Resource::as_select()))
-            .first::<(Interaction, Resource)>(&mut conn)
-            .optional()?;
+        let latest_bio = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND trace_type = 'BIO_TRACE'
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             LIMIT 1",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .get_result::<TraceRow>(&mut conn)
+        .optional()?;
 
-        if let Some((_, resource)) = latest_bio_trace {
-            return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
+        if let Some(row) = latest_bio {
+            return Ok(Some(row.into()));
         }
 
         Trace::find_first_user_trace_for_user(user_id, pool)
@@ -245,22 +277,26 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
+
         if trace.trace_type == TraceType::HighLevelProjectsDefinition {
             let mut conn = pool
                 .get()
                 .expect("Failed to get a connection from the pool");
-            let latest_bio_trace = interactions::table
-                .inner_join(resources::table)
-                .filter(interactions::interaction_user_id.eq(user_id))
-                .filter(interactions::interaction_type.eq("outp"))
-                .filter(resources::resource_type.eq(ResourceType::BioTrace))
-                .order(interactions::interaction_date.desc())
-                .select((Interaction::as_select(), Resource::as_select()))
-                .first::<(Interaction, Resource)>(&mut conn)
-                .optional()?;
 
-            if let Some((_, resource)) = latest_bio_trace {
-                return Ok(Some(Trace::find_full_trace(resource.id, pool)?));
+            let latest_bio = diesel::sql_query(
+                "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+                 FROM traces
+                 WHERE user_id = $1
+                   AND trace_type = 'BIO_TRACE'
+                 ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+                 LIMIT 1",
+            )
+            .bind::<SqlUuid, _>(user_id)
+            .get_result::<TraceRow>(&mut conn)
+            .optional()?;
+
+            if let Some(row) = latest_bio {
+                return Ok(Some(row.into()));
             }
 
             return Trace::find_first_user_trace_for_user(user_id, pool);
@@ -270,29 +306,43 @@ impl Trace {
             return Trace::find_first_user_trace_for_user(user_id, pool);
         }
 
-        let interactions = Interaction::find_all_traces_for_user_after_date(
-            user_id,
-            trace.interaction_date.unwrap(),
-            pool,
-        )?;
-        let next_trace = interactions
-            .into_iter()
-            .map(|interaction| Trace::from_resource(interaction.resource))
-            .filter(|candidate| candidate.trace_type == TraceType::UserTrace)
-            .next();
-        match next_trace {
-            Some(next_trace) => Ok(Some(Trace::find_full_trace(next_trace.id, pool)?)),
-            None => Ok(None),
-        }
+        let reference_ts = trace.interaction_date.unwrap_or(trace.created_at);
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let next = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND trace_type = 'USER_TRACE'
+               AND COALESCE(interaction_date, created_at) > $2
+             ORDER BY COALESCE(interaction_date, created_at) ASC, created_at ASC
+             LIMIT 1",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Timestamp, _>(reference_ts)
+        .get_result::<TraceRow>(&mut conn)
+        .optional()?;
+
+        Ok(next.map(Trace::from))
     }
 
     pub fn get_all_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
-        let interactions = Interaction::find_all_traces_for_user(user_id, pool)?;
-        let traces = interactions
-            .into_iter()
-            .map(|interaction| Trace::from_resource(interaction.resource))
-            .collect();
-        Ok(traces)
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let rows = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .load::<TraceRow>(&mut conn)?;
+
+        Ok(rows.into_iter().map(Trace::from).collect())
     }
 
     pub fn get_all_for_journal(journal_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
@@ -300,42 +350,19 @@ impl Trace {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let interactions_with_resources = interactions::table
-            .inner_join(resources::table)
-            .inner_join(
-                resource_relations::table
-                    .on(resources::id.eq(resource_relations::origin_resource_id)),
-            )
-            .filter(resource_relations::target_resource_id.eq(journal_id))
-            .filter(resource_relations::relation_type.eq("jrit"))
-            .filter(resources::resource_type.eq_any(vec![
-                ResourceType::UserTrace,
-                ResourceType::BioTrace,
-                ResourceType::WorkspaceTrace,
-                ResourceType::HighLevelProjectsDefinitionTrace,
-            ]))
-            .filter(interactions::interaction_type.eq("outp"))
-            .order(interactions::interaction_date.desc())
-            .select((Interaction::as_select(), Resource::as_select()))
-            .load::<(Interaction, Resource)>(&mut conn)?;
+        let rows = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+             FROM traces
+             WHERE journal_id = $1
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
+        )
+        .bind::<SqlUuid, _>(journal_id)
+        .load::<TraceRow>(&mut conn)?;
 
-        let traces = interactions_with_resources
-            .into_iter()
-            .map(|(interaction, resource)| {
-                let trace = Trace::from_resource(resource);
-                Trace {
-                    interaction_date: Some(interaction.interaction_date),
-                    user_id: interaction.interaction_user_id,
-                    journal_id: Some(journal_id),
-                    ..trace
-                }
-            })
-            .collect::<Vec<Trace>>();
-        Ok(traces)
+        Ok(rows.into_iter().map(Trace::from).collect())
     }
 }
 
-/// Struct for creating a new Trace with all required data.
 #[derive(Debug, Clone)]
 pub struct NewTrace {
     pub title: String,
@@ -348,7 +375,6 @@ pub struct NewTrace {
 }
 
 impl NewTrace {
-    /// Creates a new NewTrace with all fields.
     pub fn new(
         title: String,
         subtitle: String,

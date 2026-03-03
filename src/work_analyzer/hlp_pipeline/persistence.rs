@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 
+use diesel::prelude::*;
+
 use crate::entities::error::PpdcError;
 use crate::entities::resource::MaturingState;
-use crate::entities::resource_relation::{NewResourceRelation, ResourceRelation};
+use crate::schema::landmark_relations;
 use crate::entities_v2::{
     landmark::{Landmark, LandmarkType, NewLandmark},
     reference::{NewReference, ReferenceType},
@@ -50,7 +52,6 @@ pub fn persist_hlp_entities(
             None,
         );
         let landmark = new_landmark.create(&context.pool)?;
-        ensure_landmark_ownr_link(landmark.id, context.analysis_id, context.user_id, &context.pool)?;
 
         let mut mentions: Vec<String> = draft
             .spans
@@ -148,42 +149,27 @@ pub fn persist_hlp_entities(
                 continue;
             };
 
-            NewResourceRelation::create_high_level_project_related_to(
-                landmark.id,
-                project_landmark_id,
-                context.user_id,
-                &context.pool,
-            )?;
+            let mut conn = context
+                .pool
+                .get()
+                .expect("Failed to get a connection from the pool");
+            diesel::insert_into(landmark_relations::table)
+                .values((
+                    landmark_relations::origin_landmark_id.eq(landmark.id),
+                    landmark_relations::target_landmark_id.eq(project_landmark_id),
+                    landmark_relations::relation_type.eq("HIGH_LEVEL_PROJECT_RELATED_TO"),
+                ))
+                .on_conflict((
+                    landmark_relations::origin_landmark_id,
+                    landmark_relations::target_landmark_id,
+                    landmark_relations::relation_type,
+                ))
+                .do_nothing()
+                .execute(&mut conn)?;
         }
 
         created_related_landmarks.push(landmark);
     }
 
     Ok((trace_mirror, created_projects, created_related_landmarks))
-}
-
-fn ensure_landmark_ownr_link(
-    landmark_id: uuid::Uuid,
-    analysis_id: uuid::Uuid,
-    user_id: uuid::Uuid,
-    pool: &crate::db::DbPool,
-) -> Result<(), PpdcError> {
-    let already_linked = ResourceRelation::find_target_for_resource(landmark_id, pool)?
-        .into_iter()
-        .any(|relation| {
-            relation.resource_relation.relation_type == "ownr"
-                && relation.target_resource.id == analysis_id
-        });
-
-    if already_linked {
-        return Ok(());
-    }
-
-    NewResourceRelation::create_owned_by_analysis_landmark(
-        landmark_id,
-        analysis_id,
-        user_id,
-        pool,
-    )?;
-    Ok(())
 }

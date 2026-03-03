@@ -1,14 +1,12 @@
-use crate::db::DbPool;
-use crate::entities::{
-    error::{ErrorType, PpdcError},
-    interaction::model::NewInteraction,
-    resource::{maturing_state::MaturingState, Resource},
-    resource_relation::NewResourceRelation,
-};
-use crate::entities_v2::element::model::Element;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::entities::{
+    error::{ErrorType, PpdcError},
+    resource::maturing_state::MaturingState,
+};
+use crate::entities_v2::element::model::Element;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Landmark {
@@ -67,25 +65,22 @@ impl LandmarkType {
             LandmarkType::Place => "PLACE",
         }
     }
+
     pub fn from_code(code: &str) -> Result<Self, PpdcError> {
         match code {
-            "rsrc" => Ok(LandmarkType::Resource),
-            "them" => Ok(LandmarkType::Topic),
-            "autr" => Ok(LandmarkType::Person),
-            "RESOURCE" => Ok(LandmarkType::Resource),
-            "PROJECT" => Ok(LandmarkType::Project),
-            "HIGH_LEVEL_PROJECT" => Ok(LandmarkType::HighLevelProject),
-            "DELIVERABLE" => Ok(LandmarkType::Deliverable),
-            "PERSON" => Ok(LandmarkType::Person),
+            "rsrc" | "RESOURCE" => Ok(LandmarkType::Resource),
+            "them" | "TOPIC" => Ok(LandmarkType::Topic),
+            "autr" | "PERSON" => Ok(LandmarkType::Person),
+            "PROJECT" | "miss" => Ok(LandmarkType::Project),
+            "HIGH_LEVEL_PROJECT" | "hlpr" => Ok(LandmarkType::HighLevelProject),
+            "DELIVERABLE" | "dlvr" => Ok(LandmarkType::Deliverable),
             "ORGANIZATION" => Ok(LandmarkType::Organization),
-            "TOPIC" => Ok(LandmarkType::Topic),
             "TOOL" => Ok(LandmarkType::Tool),
-            "QUESTION" => Ok(LandmarkType::Question),
+            "QUESTION" | "qest" => Ok(LandmarkType::Question),
             "HABIT" => Ok(LandmarkType::Habit),
             "ROLE" => Ok(LandmarkType::Role),
             "SKILL" => Ok(LandmarkType::Skill),
             "PLACE" => Ok(LandmarkType::Place),
-            "hlpr" => Ok(LandmarkType::HighLevelProject),
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
@@ -94,6 +89,7 @@ impl LandmarkType {
         }
     }
 }
+
 impl Serialize for LandmarkType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -112,6 +108,7 @@ impl<'de> Deserialize<'de> for LandmarkType {
         Ok(LandmarkType::from_code(&s).unwrap_or(LandmarkType::Resource))
     }
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LandmarkWithParentsAndElements {
     #[serde(flatten)]
@@ -146,18 +143,6 @@ pub struct NewLandmark {
     pub parent_id: Option<Uuid>,
 }
 
-impl Landmark {
-    pub fn find(id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let result = Resource::find(id, pool)?;
-        Ok(Landmark::from_resource(result))
-    }
-    pub fn update(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let result = self.to_resource();
-        let updated_resource = result.update(pool)?;
-        Ok(Landmark::from_resource(updated_resource))
-    }
-}
-
 impl NewLandmark {
     pub fn new(
         title: String,
@@ -179,41 +164,5 @@ impl NewLandmark {
             user_id,
             parent_id,
         }
-    }
-
-    pub fn create(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let analysis_id = self.analysis_id;
-        let user_id = self.user_id;
-        let parent_id = self.parent_id;
-
-        // create the landmark with all positive flags
-        let landmark = self;
-        let new_resource = landmark.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
-        let landmark = Landmark::from_resource(created_resource);
-
-        // Create relation with analysis
-        NewResourceRelation::create_owned_by_analysis_landmark(
-            landmark.id,
-            analysis_id,
-            user_id,
-            pool,
-        )?;
-
-        if let Some(parent_id) = parent_id {
-            // create the parent relation to the parent landmark
-            NewResourceRelation::create_child_of_landmark(
-                landmark.id,
-                parent_id,
-                user_id,
-                pool,
-            )?;
-        }
-
-        // link the landmark to the user with the interaction
-        let mut new_interaction = NewInteraction::new(user_id, landmark.id);
-        new_interaction.interaction_type = Some("anly".to_string());
-        new_interaction.create(pool)?;
-        Ok(landmark)
     }
 }

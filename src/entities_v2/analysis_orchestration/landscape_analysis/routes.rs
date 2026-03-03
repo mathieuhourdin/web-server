@@ -11,14 +11,12 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    interaction::model::{InteractionWithResource, NewInteraction},
-    resource::{maturing_state::MaturingState, resource_type::ResourceType, NewResource, Resource},
     session::Session,
     user::User,
 };
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
-use super::model::LandscapeAnalysis;
+use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
 use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
 
 #[derive(Deserialize)]
@@ -52,70 +50,46 @@ pub async fn post_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(_session): Extension<Session>,
     Json(payload): Json<NewAnalysisDto>,
-) -> Result<Json<Resource>, PpdcError> {
+) -> Result<Json<LandscapeAnalysis>, PpdcError> {
     let date = payload.date.unwrap_or_else(|| Utc::now().date_naive());
     let user_id = payload.user_id;
+    let anchor_date = date.and_hms_opt(12, 0, 0).expect("valid date");
 
-    // we find the last analysis for the user
     let last_analysis = find_last_analysis_resource(user_id, &pool)?;
-
     let analysis_title = match &last_analysis {
         Some(last_analysis) => {
-            if last_analysis.interaction.interaction_date.clone()
-                > (date - Duration::days(1))
-                    .and_hms_opt(12, 0, 0)
-                    .expect("Date should be valid")
-            {
+            let last_date = last_analysis
+                .interaction_date
+                .unwrap_or(last_analysis.created_at);
+            if last_date > (date - Duration::days(1)).and_hms_opt(12, 0, 0).expect("valid date") {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
                     "Analysis already exists for this day".to_string(),
                 ));
-            } else {
-                format!(
-                    "Analyse du {} au {}",
-                    last_analysis
-                        .interaction
-                        .interaction_date
-                        .clone()
-                        .format("%Y-%m-%d")
-                        .to_string(),
-                    date.and_hms_opt(12, 0, 0)
-                        .expect("Date should be valid")
-                        .format("%Y-%m-%d")
-                        .to_string()
-                )
             }
-        }
-        None => {
             format!(
-                "Première Analyse, jusqu'au {}",
-                date.and_hms_opt(12, 0, 0)
-                    .expect("Date should be valid")
-                    .format("%Y-%m-%d")
-                    .to_string()
+                "Analyse du {} au {}",
+                last_date.format("%Y-%m-%d"),
+                anchor_date.format("%Y-%m-%d")
             )
         }
+        None => format!("Première Analyse, jusqu'au {}", anchor_date.format("%Y-%m-%d")),
     };
-    // we create a new analysis resource that will be the support of all performed analysis in this analysis session
-    let mut analysis_resource = NewResource::new(
+
+    let analysis = NewLandscapeAnalysis::new(
         analysis_title,
         "Analyse".to_string(),
         "Analyse".to_string(),
-        ResourceType::Analysis,
-    );
-    analysis_resource.maturing_state = Some(MaturingState::Draft);
+        user_id,
+        anchor_date,
+        None,
+        None,
+        None,
+    )
+    .create(&pool)?;
 
-    let analysis_resource = analysis_resource.create(&pool)?;
-
-    // we create a new interaction for the analysis resource, with the given date
-    let mut new_interaction = NewInteraction::new(user_id, analysis_resource.id);
-    new_interaction.interaction_type = Some("outp".to_string());
-    new_interaction.interaction_date = Some(date.and_hms_opt(12, 0, 0).unwrap());
-    new_interaction.interaction_progress = 0;
-    new_interaction.create(&pool)?;
-
-    Ok(Json(analysis_resource))
+    Ok(Json(analysis))
 }
 
 #[debug_handler]
@@ -154,11 +128,7 @@ pub async fn get_elements_route(
 pub async fn get_last_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<InteractionWithResource>, PpdcError> {
-    println!(
-        "Getting last analysis for user: {:?}",
-        session.user_id.unwrap()
-    );
+) -> Result<Json<LandscapeAnalysis>, PpdcError> {
     let last_analysis = find_last_analysis_resource(session.user_id.unwrap(), &pool)?;
     Ok(Json(last_analysis.expect("No last analysis found")))
 }

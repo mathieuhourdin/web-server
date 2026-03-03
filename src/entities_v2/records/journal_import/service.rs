@@ -1,10 +1,7 @@
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::{ErrorType, PpdcError},
-    interaction::model::Interaction,
-};
+use crate::entities::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::Journal;
 
 use super::{
@@ -30,7 +27,10 @@ pub fn import_journal_text(
     raw_text: &str,
     pool: &DbPool,
 ) -> Result<ImportJournalResult, PpdcError> {
-    Interaction::find_user_journal(user_id, journal_id, pool)?;
+    let journal = Journal::find_full(journal_id, pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
 
     let mut blocks = extract_blocks(raw_text)
         .into_iter()

@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use chrono::{Duration, NaiveDateTime};
+use diesel::prelude::*;
 use tracing::warn;
 use uuid::Uuid;
 
 use crate::entities::error::{ErrorType, PpdcError};
-use crate::entities::resource_relation::NewResourceRelation;
 use crate::entities_v2::{
     element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
     trace::Trace,
     trace_mirror::TraceMirror,
 };
+use crate::schema::element_relations;
 use crate::work_analyzer::analysis_processor::AnalysisContext;
 
 use super::gpt_request::{
@@ -375,32 +376,29 @@ fn persist_claim_relations(
         }
 
         match relation.relation_type.as_str() {
-            "applies_to" => {
-                NewResourceRelation::create_applies_to_element(
-                    origin_resource_id,
-                    target_resource_id,
-                    context.user_id,
-                    &context.pool,
-                )?;
-                continue;
-            }
-            "theme_of" => {
-                NewResourceRelation::create_theme_of_element(
-                    origin_resource_id,
-                    target_resource_id,
-                    context.user_id,
-                    &context.pool,
-                )?;
-                continue;
-            }
-            "subtask_of" => {
-                NewResourceRelation::create_subtask_of_element(
-                    origin_resource_id,
-                    target_resource_id,
-                    context.user_id,
-                    &context.pool,
-                )?;
-                continue;
+            "applies_to" | "theme_of" | "subtask_of" => {
+                let db_relation_type = match relation.relation_type.as_str() {
+                    "applies_to" => "APPLIES_TO",
+                    "theme_of" => "THEME_OF",
+                    _ => "SUBTASK_OF",
+                };
+                let mut conn = context
+                    .pool
+                    .get()
+                    .expect("Failed to get a connection from the pool");
+                diesel::insert_into(element_relations::table)
+                    .values((
+                        element_relations::origin_element_id.eq(origin_resource_id),
+                        element_relations::target_element_id.eq(target_resource_id),
+                        element_relations::relation_type.eq(db_relation_type),
+                    ))
+                    .on_conflict((
+                        element_relations::origin_element_id,
+                        element_relations::target_element_id,
+                        element_relations::relation_type,
+                    ))
+                    .do_nothing()
+                    .execute(&mut conn)?;
             }
             other => {
                 return Err(PpdcError::new(

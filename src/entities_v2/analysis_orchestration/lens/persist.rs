@@ -1,12 +1,9 @@
+use diesel::prelude::*;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError,
-    interaction::model::NewInteraction,
-    resource_relation::{NewResourceRelation, ResourceRelation},
-};
+use crate::entities::error::PpdcError;
+use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 use crate::entities_v2::{
     landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
     trace::Trace,
@@ -14,25 +11,25 @@ use crate::entities_v2::{
 
 use super::model::{Lens, LensProcessingState, NewLens};
 
-const LENS_CURRENT_LANDSCAPE_RELATION_TYPE: &str = "head";
-const LENS_ANALYSIS_SCOPE_RELATION_TYPE: &str = "lnsa";
-
 fn ensure_lens_analysis_scope_relation(
     lens_id: Uuid,
     analysis_id: Uuid,
-    user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let already_linked = ResourceRelation::find_target_for_resource(lens_id, pool)?
-        .into_iter()
-        .any(|relation| {
-            relation.resource_relation.relation_type == LENS_ANALYSIS_SCOPE_RELATION_TYPE
-                && relation.target_resource.id == analysis_id
-        });
-    if already_linked {
-        return Ok(());
-    }
-    NewResourceRelation::create_includes_in_scope(lens_id, analysis_id, user_id, pool)?;
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    diesel::insert_into(lens_analysis_scopes::table)
+        .values((
+            lens_analysis_scopes::lens_id.eq(lens_id),
+            lens_analysis_scopes::landscape_analysis_id.eq(analysis_id),
+        ))
+        .on_conflict((
+            lens_analysis_scopes::lens_id,
+            lens_analysis_scopes::landscape_analysis_id,
+        ))
+        .do_nothing()
+        .execute(&mut conn)?;
     Ok(())
 }
 
@@ -41,26 +38,25 @@ fn remove_lens_analysis_scope_relation(
     analysis_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let stale_relations = ResourceRelation::find_target_for_resource(lens_id, pool)?
-        .into_iter()
-        .filter(|relation| {
-            relation.resource_relation.relation_type == LENS_ANALYSIS_SCOPE_RELATION_TYPE
-                && relation.target_resource.id == analysis_id
-        })
-        .map(|relation| relation.resource_relation)
-        .collect::<Vec<_>>();
-
-    for relation in stale_relations {
-        relation.delete(pool)?;
-    }
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    diesel::delete(
+        lens_analysis_scopes::table
+            .filter(lens_analysis_scopes::lens_id.eq(lens_id))
+            .filter(lens_analysis_scopes::landscape_analysis_id.eq(analysis_id)),
+    )
+    .execute(&mut conn)?;
     Ok(())
 }
 
 impl Lens {
     pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let resource = crate::entities::resource::Resource::find(self.id, pool)?;
-        let deleted_resource = resource.delete(pool)?;
-        Ok(Lens::from_resource(deleted_resource))
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        diesel::delete(lenses::table.filter(lenses::id.eq(self.id))).execute(&mut conn)?;
+        Ok(self)
     }
 
     pub fn update_current_landscape(
@@ -68,133 +64,127 @@ impl Lens {
         new_landscape_analysis_id: Uuid,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
-        // Get the new landscape to retrieve its trace_id
-        let new_landscape =
-            LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
+        let new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
-        let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
+        diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
+            .set(lenses::current_landscape_id.eq(Some(new_landscape_analysis_id)))
+            .execute(&mut conn)?;
 
-        // Find and separate the landscape and trace relations
-        let mut current_landscape_relation = None;
+        diesel::insert_into(lens_heads::table)
+            .values((
+                lens_heads::lens_id.eq(self.id),
+                lens_heads::landscape_analysis_id.eq(new_landscape_analysis_id),
+            ))
+            .on_conflict(lens_heads::lens_id)
+            .do_update()
+            .set(lens_heads::landscape_analysis_id.eq(new_landscape_analysis_id))
+            .execute(&mut conn)?;
 
-        for relation in relations {
-            match relation.resource_relation.relation_type.as_str() {
-                LENS_CURRENT_LANDSCAPE_RELATION_TYPE => {
-                    current_landscape_relation = Some(relation.resource_relation)
-                }
-                _ => {}
-            }
-        }
-
-        // Update landscape relation (head)
-        if current_landscape_relation.is_some() {
-            current_landscape_relation.unwrap().delete(pool)?;
-        }
-        NewResourceRelation::create_has_current_head(
-            self.id,
-            new_landscape_analysis_id,
-            self.user_id.unwrap(),
-            pool,
-        )?;
-        ensure_lens_analysis_scope_relation(
-            self.id,
-            new_landscape_analysis_id,
-            self.user_id.unwrap(),
-            pool,
-        )?;
+        ensure_lens_analysis_scope_relation(self.id, new_landscape_analysis_id, pool)?;
         if let Some(replayed_analysis_id) = new_landscape.replayed_from_id {
             remove_lens_analysis_scope_relation(self.id, replayed_analysis_id, pool)?;
         }
 
-        let lens = Lens::find_full_lens(self.id, pool)?;
-        Ok(lens)
+        Lens::find_full_lens(self.id, pool)
     }
+
     pub fn update_target_trace(
         self,
         new_target_trace_id: Option<Uuid>,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
         let target_changed = self.target_trace_id != new_target_trace_id;
-        let relations = ResourceRelation::find_target_for_resource(self.id, pool)?;
-        for relation in relations {
-            if relation.resource_relation.relation_type == "trgt".to_string() {
-                relation.resource_relation.delete(pool)?;
-            }
-        }
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
+            .set(lenses::target_trace_id.eq(new_target_trace_id))
+            .execute(&mut conn)?;
+
         if let Some(new_target_trace_id) = new_target_trace_id {
-            NewResourceRelation::create_targets_trace(
-                self.id,
-                new_target_trace_id,
-                self.user_id.unwrap(),
-                pool,
-            )?;
+            diesel::insert_into(lens_targets::table)
+                .values((
+                    lens_targets::lens_id.eq(self.id),
+                    lens_targets::trace_id.eq(new_target_trace_id),
+                ))
+                .on_conflict(lens_targets::lens_id)
+                .do_update()
+                .set(lens_targets::trace_id.eq(new_target_trace_id))
+                .execute(&mut conn)?;
+        } else {
+            diesel::delete(lens_targets::table.filter(lens_targets::lens_id.eq(self.id)))
+                .execute(&mut conn)?;
         }
+
         if target_changed {
-            let mut resource = crate::entities::resource::Resource::find(self.id, pool)?;
-            resource.maturing_state = LensProcessingState::OutOfSync.to_maturing_state();
-            let _updated_resource = resource.update(pool)?;
+            diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
+                .set(lenses::processing_state.eq(LensProcessingState::OutOfSync.to_db()))
+                .execute(&mut conn)?;
         }
-        let lens = Lens::find_full_lens(self.id, pool)?;
-        Ok(lens)
+        Lens::find_full_lens(self.id, pool)
     }
+
     pub fn set_processing_state(
         self,
         new_processing_state: LensProcessingState,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
-        let mut resource = crate::entities::resource::Resource::find(self.id, pool)?;
-        resource.maturing_state = new_processing_state.to_maturing_state();
-        let resource = resource.update(pool)?;
-        Ok(Lens::from_resource(resource))
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
+            .set(lenses::processing_state.eq(new_processing_state.to_db()))
+            .execute(&mut conn)?;
+        Lens::find_full_lens(self.id, pool)
     }
 }
 
 impl NewLens {
     pub fn create(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let user_id = self.user_id;
-        let target_trace_id = self.target_trace_id;
-        let fork_landscape_id = self.fork_landscape_id;
-        let current_landscape_id = self.current_landscape_id;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
-        let new_resource = self.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
-        let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
-        new_interaction.interaction_type = Some("outp".to_string());
-        new_interaction.interaction_date = Some(Utc::now().naive_utc());
-        new_interaction.interaction_progress = 0;
-        new_interaction.create(pool)?;
-        if let Some(fork_landscape_id) = fork_landscape_id {
-            NewResourceRelation::create_forked_from(
-                created_resource.id,
-                fork_landscape_id,
-                user_id,
-                pool,
-            )?;
+        let id: Uuid = diesel::insert_into(lenses::table)
+            .values((
+                lenses::user_id.eq(self.user_id),
+                lenses::processing_state.eq(self.processing_state.to_db()),
+                lenses::fork_landscape_id.eq(self.fork_landscape_id),
+                lenses::current_landscape_id.eq(self.current_landscape_id),
+                lenses::target_trace_id.eq(self.target_trace_id),
+                lenses::autoplay.eq(self.autoplay),
+            ))
+            .returning(lenses::id)
+            .get_result(&mut conn)?;
+
+        if let Some(current_landscape_id) = self.current_landscape_id {
+            diesel::insert_into(lens_heads::table)
+                .values((
+                    lens_heads::lens_id.eq(id),
+                    lens_heads::landscape_analysis_id.eq(current_landscape_id),
+                ))
+                .on_conflict(lens_heads::lens_id)
+                .do_update()
+                .set(lens_heads::landscape_analysis_id.eq(current_landscape_id))
+                .execute(&mut conn)?;
+            ensure_lens_analysis_scope_relation(id, current_landscape_id, pool)?;
         }
-        if let Some(current_landscape_id) = current_landscape_id {
-            NewResourceRelation::create_has_current_head(
-                created_resource.id,
-                current_landscape_id,
-                user_id,
-                pool,
-            )?;
-            ensure_lens_analysis_scope_relation(
-                created_resource.id,
-                current_landscape_id,
-                user_id,
-                pool,
-            )?;
+        if let Some(target_trace_id) = self.target_trace_id {
+            diesel::insert_into(lens_targets::table)
+                .values((
+                    lens_targets::lens_id.eq(id),
+                    lens_targets::trace_id.eq(target_trace_id),
+                ))
+                .on_conflict(lens_targets::lens_id)
+                .do_update()
+                .set(lens_targets::trace_id.eq(target_trace_id))
+                .execute(&mut conn)?;
         }
-        if let Some(target_trace_id) = target_trace_id {
-            NewResourceRelation::create_targets_trace(
-                created_resource.id,
-                target_trace_id,
-                user_id,
-                pool,
-            )?;
-        }
-        let lens = Lens::from_resource(created_resource);
-        Ok(lens)
+        Lens::find_full_lens(id, pool)
     }
 }
 
@@ -230,49 +220,25 @@ pub fn create_landscape_placeholders(
 }
 
 pub fn delete_lens_and_landscapes(id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
-    println!("Deleting lens: {:?}", id);
     let mut lens = Lens::find_full_lens(id, pool)?;
     let mut landscape_analysis_id = lens.current_landscape_id;
 
     while let Some(id) = landscape_analysis_id {
-        println!("Deleting landscape analysis: {:?}", id);
         let current_landscape_analysis = LandscapeAnalysis::find_full_analysis(id, pool)?;
-        println!(
-            "Current landscape analysis: {:?}",
-            current_landscape_analysis
-        );
         if let Some(parent_analysis_id) = current_landscape_analysis.parent_analysis_id {
-            // update head to the parent landscape_analysis before to delete the current landscape_analysis
-            println!(
-                "Updating head to parent landscape analysis: {:?}",
-                parent_analysis_id
-            );
             lens = lens.update_current_landscape(parent_analysis_id, pool)?;
         } else {
-            // we reached last landscape_analysis, delete the lens before deleting the root landscape_analysis
-            println!("Deleting lens");
             lens = lens.delete(pool)?;
             landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, pool)?;
             return Ok(lens);
         }
-        println!(
-            "Deleting landscape analysis: {:?}",
-            current_landscape_analysis.id
-        );
         let deletion_option =
             landscape_analysis::delete_leaf_and_cleanup(current_landscape_analysis.id, pool)?;
-        println!("Deletion option: {:?}", deletion_option);
-        if let Some(_deletion_option) = deletion_option {
-            // deletion succeded, continue with the parent.
+        if deletion_option.is_some() {
             landscape_analysis_id = current_landscape_analysis.parent_analysis_id;
         } else {
-            // we reached a landscape analysis referenced by other lens or landscape_analysis, just delete the lens
-            println!("Reached a landscape analysis referenced by other lens or landscape_analysis, just deleting the lens");
             break;
         }
     }
-    println!("Deleting lens: {:?}", id);
-    let lens = lens.delete(pool)?;
-    println!("Lens deleted: {:?}", lens);
-    Ok(lens)
+    lens.delete(pool)
 }

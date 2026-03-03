@@ -2,8 +2,6 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const REFERENCE_RELATION_TYPE: &str = "rfrr";
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Reference {
     pub id: Uuid,
@@ -77,46 +75,24 @@ pub enum ReferenceType {
     Nickname,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct ReferenceRelationComment {
-    #[serde(alias = "local_id")]
-    pub tag_id: i32,
-    #[serde(default = "Uuid::nil")]
-    pub landscape_analysis_id: Uuid,
-    pub mention: String,
-    pub reference_type: ReferenceType,
-    pub context_tags: Vec<String>,
-    pub reference_variants: Vec<String>,
-    pub parent_reference_id: Option<Uuid>,
-    pub is_user_specific: bool,
-}
-
-impl From<&Reference> for ReferenceRelationComment {
-    fn from(reference: &Reference) -> Self {
-        Self {
-            tag_id: reference.tag_id,
-            landscape_analysis_id: reference.landscape_analysis_id,
-            mention: reference.mention.clone(),
-            reference_type: reference.reference_type,
-            context_tags: reference.context_tags.clone(),
-            reference_variants: reference.reference_variants.clone(),
-            parent_reference_id: reference.parent_reference_id,
-            is_user_specific: reference.is_user_specific,
+impl ReferenceType {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            ReferenceType::ProperName => "PROPER_NAME",
+            ReferenceType::NamedDesc => "NAMED_DESC",
+            ReferenceType::DeicticDesc => "DEICTIC_DESC",
+            ReferenceType::PlainDesc => "PLAIN_DESC",
+            ReferenceType::Nickname => "NICKNAME",
         }
     }
-}
 
-impl From<&NewReference> for ReferenceRelationComment {
-    fn from(reference: &NewReference) -> Self {
-        Self {
-            tag_id: reference.tag_id,
-            landscape_analysis_id: reference.landscape_analysis_id,
-            mention: reference.mention.clone(),
-            reference_type: reference.reference_type,
-            context_tags: reference.context_tags.clone(),
-            reference_variants: reference.reference_variants.clone(),
-            parent_reference_id: reference.parent_reference_id,
-            is_user_specific: reference.is_user_specific,
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "PROPER_NAME" | "proper_name" => ReferenceType::ProperName,
+            "NAMED_DESC" | "named_desc" => ReferenceType::NamedDesc,
+            "DEICTIC_DESC" | "deictic_desc" => ReferenceType::DeicticDesc,
+            "NICKNAME" | "nickname" => ReferenceType::Nickname,
+            _ => ReferenceType::PlainDesc,
         }
     }
 }

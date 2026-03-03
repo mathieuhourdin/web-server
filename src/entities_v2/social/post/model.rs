@@ -41,6 +41,24 @@ impl PostType {
     pub fn from_interaction_type(interaction_type: &str) -> Self {
         Self::from_code(interaction_type)
     }
+
+    pub fn to_db(self) -> &'static str {
+        match self {
+            PostType::Output => "OUTPUT",
+            PostType::Input => "INPUT",
+            PostType::Problem => "PROBLEM",
+            PostType::Wish => "WISH",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "INPUT" | "input" => PostType::Input,
+            "PROBLEM" | "problem" => PostType::Problem,
+            "WISH" | "wish" => PostType::Wish,
+            _ => PostType::Output,
+        }
+    }
 }
 
 impl Serialize for PostType {

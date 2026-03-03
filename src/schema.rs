@@ -1,6 +1,47 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    element_landmarks (id) {
+        id -> Uuid,
+        element_id -> Uuid,
+        landmark_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    element_relations (id) {
+        id -> Uuid,
+        origin_element_id -> Uuid,
+        target_element_id -> Uuid,
+        relation_type -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    elements (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        analysis_id -> Uuid,
+        trace_id -> Uuid,
+        trace_mirror_id -> Nullable<Uuid>,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        extended_content -> Nullable<Text>,
+        verb -> Text,
+        element_type -> Text,
+        element_subtype -> Text,
+        interaction_date -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     interactions (id) {
         id -> Uuid,
         interaction_user_id -> Uuid,
@@ -12,6 +53,123 @@ diesel::table! {
         interaction_type -> Nullable<Text>,
         interaction_is_public -> Bool,
         resource_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    journals (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        journal_type -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    landmark_relations (id) {
+        id -> Uuid,
+        origin_landmark_id -> Uuid,
+        target_landmark_id -> Uuid,
+        relation_type -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    landmarks (id) {
+        id -> Uuid,
+        analysis_id -> Uuid,
+        user_id -> Uuid,
+        parent_id -> Nullable<Uuid>,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        external_content_url -> Nullable<Text>,
+        comment -> Nullable<Text>,
+        image_url -> Nullable<Text>,
+        landmark_type -> Text,
+        maturing_state -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    landscape_analyses (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        title -> Text,
+        subtitle -> Text,
+        plain_text_state_summary -> Text,
+        interaction_date -> Nullable<Timestamp>,
+        processing_state -> Text,
+        parent_id -> Nullable<Uuid>,
+        replayed_from_id -> Nullable<Uuid>,
+        analyzed_trace_id -> Nullable<Uuid>,
+        trace_mirror_id -> Nullable<Uuid>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    landscape_landmarks (id) {
+        id -> Uuid,
+        landscape_analysis_id -> Uuid,
+        landmark_id -> Uuid,
+        relation_type -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    lens_analysis_scopes (id) {
+        id -> Uuid,
+        lens_id -> Uuid,
+        landscape_analysis_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    lens_heads (id) {
+        id -> Uuid,
+        lens_id -> Uuid,
+        landscape_analysis_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    lens_targets (id) {
+        id -> Uuid,
+        lens_id -> Uuid,
+        trace_id -> Uuid,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    lenses (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        processing_state -> Text,
+        fork_landscape_id -> Nullable<Uuid>,
+        current_landscape_id -> Nullable<Uuid>,
+        target_trace_id -> Nullable<Uuid>,
+        autoplay -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -37,6 +195,53 @@ diesel::table! {
         system_prompt -> Text,
         user_prompt -> Text,
         display_name -> Text,
+    }
+}
+
+diesel::table! {
+    post_relations (id) {
+        id -> Uuid,
+        origin_post_id -> Uuid,
+        target_post_id -> Uuid,
+        relation_type -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    posts (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        image_url -> Nullable<Text>,
+        post_type -> Text,
+        publishing_date -> Nullable<Timestamp>,
+        publishing_state -> Text,
+        maturing_state -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    references (id) {
+        id -> Uuid,
+        tag_id -> Int4,
+        trace_mirror_id -> Uuid,
+        landmark_id -> Nullable<Uuid>,
+        landscape_analysis_id -> Uuid,
+        user_id -> Uuid,
+        mention -> Text,
+        reference_type -> Text,
+        context_tags -> Jsonb,
+        reference_variants -> Jsonb,
+        parent_reference_id -> Nullable<Uuid>,
+        is_user_specific -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -91,6 +296,39 @@ diesel::table! {
 }
 
 diesel::table! {
+    trace_mirrors (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        trace_id -> Uuid,
+        landscape_analysis_id -> Uuid,
+        primary_landmark_id -> Nullable<Uuid>,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        trace_mirror_type -> Text,
+        tags -> Jsonb,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    traces (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        journal_id -> Uuid,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        interaction_date -> Nullable<Timestamp>,
+        trace_type -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -111,17 +349,65 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(element_landmarks -> elements (element_id));
+diesel::joinable!(element_landmarks -> landmarks (landmark_id));
+diesel::joinable!(elements -> landscape_analyses (analysis_id));
+diesel::joinable!(elements -> trace_mirrors (trace_mirror_id));
+diesel::joinable!(elements -> traces (trace_id));
+diesel::joinable!(elements -> users (user_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
+diesel::joinable!(journals -> users (user_id));
+diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
+diesel::joinable!(landmarks -> users (user_id));
+diesel::joinable!(landscape_analyses -> traces (analyzed_trace_id));
+diesel::joinable!(landscape_analyses -> users (user_id));
+diesel::joinable!(landscape_landmarks -> landmarks (landmark_id));
+diesel::joinable!(landscape_landmarks -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(lens_analysis_scopes -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(lens_analysis_scopes -> lenses (lens_id));
+diesel::joinable!(lens_heads -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(lens_heads -> lenses (lens_id));
+diesel::joinable!(lens_targets -> lenses (lens_id));
+diesel::joinable!(lens_targets -> traces (trace_id));
+diesel::joinable!(lenses -> traces (target_trace_id));
+diesel::joinable!(lenses -> users (user_id));
 diesel::joinable!(llm_calls -> resources (analysis_id));
+diesel::joinable!(posts -> users (user_id));
+diesel::joinable!(references -> landmarks (landmark_id));
+diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(references -> trace_mirrors (trace_mirror_id));
+diesel::joinable!(references -> users (user_id));
 diesel::joinable!(resource_relations -> users (user_id));
 diesel::joinable!(sessions -> users (user_id));
+diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
+diesel::joinable!(trace_mirrors -> traces (trace_id));
+diesel::joinable!(trace_mirrors -> users (user_id));
+diesel::joinable!(traces -> journals (journal_id));
+diesel::joinable!(traces -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    element_landmarks,
+    element_relations,
+    elements,
     interactions,
+    journals,
+    landmark_relations,
+    landmarks,
+    landscape_analyses,
+    landscape_landmarks,
+    lens_analysis_scopes,
+    lens_heads,
+    lens_targets,
+    lenses,
     llm_calls,
+    post_relations,
+    posts,
+    references,
     resource_relations,
     resources,
     sessions,
+    trace_mirrors,
+    traces,
     users,
 );

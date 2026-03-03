@@ -1,67 +1,93 @@
+use diesel::prelude::*;
+use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
+
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError, interaction::model::NewInteraction, resource::NewResource,
-    resource_relation::NewResourceRelation,
-};
+use crate::entities::error::PpdcError;
 
 use super::model::{NewTrace, Trace, TraceStatus};
 
+#[derive(QueryableByName)]
+struct IdRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: uuid::Uuid,
+}
+
 impl Trace {
-    /// Updates the Trace in the database.
     pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
-        let resource = self.to_resource();
-        let updated_resource = NewResource::from(resource).update(&self.id, pool)?;
-        Ok(Trace {
-            title: updated_resource.title,
-            subtitle: updated_resource.subtitle,
-            content: updated_resource.content,
-            status: updated_resource.maturing_state.into(),
-            updated_at: updated_resource.updated_at,
-            ..self
-        })
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let _ = diesel::sql_query(
+            "UPDATE traces
+             SET title = $2,
+                 subtitle = $3,
+                 content = $4,
+                 interaction_date = $5,
+                 trace_type = $6,
+                 status = $7,
+                 journal_id = $8,
+                 updated_at = NOW()
+             WHERE id = $1",
+        )
+        .bind::<SqlUuid, _>(self.id)
+        .bind::<Text, _>(&self.title)
+        .bind::<Text, _>(&self.subtitle)
+        .bind::<Text, _>(&self.content)
+        .bind::<Nullable<Timestamp>, _>(self.interaction_date)
+        .bind::<Text, _>(self.trace_type.to_db())
+        .bind::<Text, _>(self.status.to_db())
+        .bind::<Nullable<SqlUuid>, _>(self.journal_id)
+        .execute(&mut conn)?;
+
+        Trace::find_full_trace(self.id, pool)
     }
 
-    /// Updates the status of the trace.
-    pub fn set_status(
-        mut self,
-        status: TraceStatus,
-        pool: &DbPool,
-    ) -> Result<Trace, PpdcError> {
+    pub fn set_status(mut self, status: TraceStatus, pool: &DbPool) -> Result<Trace, PpdcError> {
         self.status = status;
         self.update(pool)
     }
 }
 
 impl NewTrace {
-    /// Creates the Trace in the database.
-    /// This creates the underlying Resource, Interaction, and ResourceRelation to journal.
     pub fn create(self, pool: &DbPool) -> Result<Trace, PpdcError> {
-        let user_id = self.user_id;
-        let interaction_date = self.interaction_date;
-        let journal_id = self.journal_id;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
 
-        // Create the underlying resource
-        let new_resource = self.to_new_resource();
-        let created_resource = new_resource.create(pool)?;
+        let inserted = diesel::sql_query(
+            "INSERT INTO traces (
+                id,
+                user_id,
+                journal_id,
+                title,
+                subtitle,
+                content,
+                interaction_date,
+                trace_type,
+                status
+             ) VALUES (
+                uuid_generate_v4(),
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                $6,
+                $7,
+                'DRAFT'
+             )
+             RETURNING id",
+        )
+        .bind::<SqlUuid, _>(self.user_id)
+        .bind::<SqlUuid, _>(self.journal_id)
+        .bind::<Text, _>(self.title)
+        .bind::<Text, _>(self.subtitle)
+        .bind::<Text, _>(self.content)
+        .bind::<Nullable<Timestamp>, _>(self.interaction_date)
+        .bind::<Text, _>(self.trace_type.to_db())
+        .get_result::<IdRow>(&mut conn)?;
 
-        // Create the author interaction
-        let mut new_interaction = NewInteraction::new(user_id, created_resource.id);
-        new_interaction.interaction_type = Some("outp".to_string());
-        if let Some(date) = interaction_date {
-            new_interaction.interaction_date = Some(date);
-        }
-        new_interaction.interaction_user_id = Some(self.user_id);
-        new_interaction.interaction_progress = 0;
-        new_interaction.create(pool)?;
-
-        // Create journal relation
-        println!(
-            "Creating journal relation with resource id: {} and journal id: {}",
-            created_resource.id, journal_id
-        );
-        NewResourceRelation::create_journal_item_of(created_resource.id, journal_id, user_id, pool)?;
-
-        // Return the fully hydrated trace
-        Trace::find_full_trace(created_resource.id, pool)
+        Trace::find_full_trace(inserted.id, pool)
     }
 }
