@@ -1,7 +1,5 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements};
@@ -12,38 +10,23 @@ use crate::entities::resource::{
 };
 use crate::entities_v2::analysis_orchestration::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::element::model::Element;
+use crate::schema::{landmarks, landscape_landmarks};
 
-#[derive(QueryableByName)]
-struct LandmarkRow {
-    #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
-    #[diesel(sql_type = SqlUuid)]
-    analysis_id: Uuid,
-    #[diesel(sql_type = SqlUuid)]
-    user_id: Uuid,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    parent_id: Option<Uuid>,
-    #[diesel(sql_type = Text)]
-    title: String,
-    #[diesel(sql_type = Text)]
-    subtitle: String,
-    #[diesel(sql_type = Text)]
-    content: String,
-    #[diesel(sql_type = Nullable<Text>)]
-    external_content_url: Option<String>,
-    #[diesel(sql_type = Nullable<Text>)]
-    comment: Option<String>,
-    #[diesel(sql_type = Nullable<Text>)]
-    image_url: Option<String>,
-    #[diesel(sql_type = Text)]
-    landmark_type: String,
-    #[diesel(sql_type = Text)]
-    maturing_state: String,
-    #[diesel(sql_type = Timestamp)]
-    created_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    updated_at: NaiveDateTime,
-}
+type LandmarkTuple = (
+    Uuid,
+    Uuid,
+    Option<Uuid>,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    NaiveDateTime,
+    NaiveDateTime,
+);
 
 impl LandmarkType {
     pub fn from_resource_type(resource_type: ResourceType) -> LandmarkType {
@@ -116,53 +99,98 @@ impl Landmark {
     }
 }
 
-fn row_to_landmark(row: LandmarkRow) -> Landmark {
+fn tuple_to_landmark(row: LandmarkTuple) -> Landmark {
+    let (
+        id,
+        _analysis_id,
+        _parent_id,
+        title,
+        subtitle,
+        content,
+        external_content_url,
+        comment,
+        image_url,
+        landmark_type_raw,
+        maturing_state_raw,
+        created_at,
+        updated_at,
+    ) = row;
+
     Landmark {
-        id: row.id,
-        title: row.title,
-        subtitle: row.subtitle,
-        content: row.content,
-        external_content_url: row.external_content_url,
-        comment: row.comment,
-        image_url: row.image_url,
-        landmark_type: LandmarkType::from_code(&row.landmark_type).unwrap_or(LandmarkType::Resource),
-        maturing_state: MaturingState::from_code(&row.maturing_state).unwrap_or(MaturingState::Draft),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
+        id,
+        title,
+        subtitle,
+        content,
+        external_content_url,
+        comment,
+        image_url,
+        landmark_type: LandmarkType::from_code(&landmark_type_raw).unwrap_or(LandmarkType::Resource),
+        maturing_state: MaturingState::from_code(&maturing_state_raw).unwrap_or(MaturingState::Draft),
+        created_at,
+        updated_at,
     }
 }
 
-fn load_landmark_row(id: Uuid, pool: &DbPool) -> Result<LandmarkRow, PpdcError> {
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-    let mut rows = sql_query(
-        r#"
-        SELECT id, analysis_id, user_id, parent_id, title, subtitle, content, external_content_url,
-               comment, image_url, landmark_type, maturing_state, created_at, updated_at
-        FROM landmarks
-        WHERE id = $1
-        "#,
+fn select_landmark_columns() -> (
+    landmarks::id,
+    landmarks::analysis_id,
+    landmarks::parent_id,
+    landmarks::title,
+    landmarks::subtitle,
+    landmarks::content,
+    landmarks::external_content_url,
+    landmarks::comment,
+    landmarks::image_url,
+    landmarks::landmark_type,
+    landmarks::maturing_state,
+    landmarks::created_at,
+    landmarks::updated_at,
+) {
+    (
+        landmarks::id,
+        landmarks::analysis_id,
+        landmarks::parent_id,
+        landmarks::title,
+        landmarks::subtitle,
+        landmarks::content,
+        landmarks::external_content_url,
+        landmarks::comment,
+        landmarks::image_url,
+        landmarks::landmark_type,
+        landmarks::maturing_state,
+        landmarks::created_at,
+        landmarks::updated_at,
     )
-    .bind::<SqlUuid, _>(id)
-    .load::<LandmarkRow>(&mut conn)?;
-    rows.pop().ok_or_else(|| {
-        PpdcError::new(
-            404,
-            ErrorType::ApiError,
-            "Landmark not found".to_string(),
-        )
-    })
 }
 
 impl Landmark {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        Ok(row_to_landmark(load_landmark_row(id, pool)?))
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let row = landmarks::table
+            .filter(landmarks::id.eq(id))
+            .select(select_landmark_columns())
+            .first::<LandmarkTuple>(&mut conn)
+            .optional()?;
+        row.map(tuple_to_landmark).ok_or_else(|| {
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Landmark not found".to_string(),
+            )
+        })
     }
 
     pub fn find_parent(&self, pool: &DbPool) -> Result<Option<Landmark>, PpdcError> {
-        let row = load_landmark_row(self.id, pool)?;
-        if let Some(parent_id) = row.parent_id {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let parent_id = landmarks::table
+            .filter(landmarks::id.eq(self.id))
+            .select(landmarks::parent_id)
+            .first::<Option<Uuid>>(&mut conn)?;
+        if let Some(parent_id) = parent_id {
             return Landmark::find(parent_id, pool).map(Some);
         }
         Ok(None)
@@ -194,8 +222,14 @@ impl Landmark {
     }
 
     pub fn get_analysis(self, pool: &DbPool) -> Result<Resource, PpdcError> {
-        let row = load_landmark_row(self.id, pool)?;
-        let analysis = LandscapeAnalysis::find_full_analysis(row.analysis_id, pool)?;
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let analysis_id = landmarks::table
+            .filter(landmarks::id.eq(self.id))
+            .select(landmarks::analysis_id)
+            .first::<Uuid>(&mut conn)?;
+        let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, pool)?;
         Ok(Resource {
             id: analysis.id,
             title: analysis.title,
@@ -229,17 +263,15 @@ impl Landmark {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let mut query = crate::schema::landscape_landmarks::table
-            .filter(
-                crate::schema::landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id),
-            )
+        let mut query = landscape_landmarks::table
+            .filter(landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id))
             .into_boxed();
         if let Some(filter) = relation_filter {
-            query = query.filter(crate::schema::landscape_landmarks::relation_type.eq(filter));
+            query = query.filter(landscape_landmarks::relation_type.eq(filter));
         }
 
         let landmark_ids = query
-            .select(crate::schema::landscape_landmarks::landmark_id)
+            .select(landscape_landmarks::landmark_id)
             .load::<Uuid>(&mut conn)?;
 
         landmark_ids
@@ -255,10 +287,10 @@ impl Landmark {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let landmark_ids = crate::schema::landmarks::table
-            .filter(crate::schema::landmarks::user_id.eq(user_id))
-            .filter(crate::schema::landmarks::landmark_type.eq("HIGH_LEVEL_PROJECT"))
-            .select(crate::schema::landmarks::id)
+        let landmark_ids = landmarks::table
+            .filter(landmarks::user_id.eq(user_id))
+            .filter(landmarks::landmark_type.eq("HIGH_LEVEL_PROJECT"))
+            .select(landmarks::id)
             .load::<Uuid>(&mut conn)?;
         landmark_ids
             .into_iter()

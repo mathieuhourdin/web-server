@@ -1,7 +1,5 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -11,50 +9,82 @@ use crate::schema::posts;
 
 use super::model::{Post, PostType};
 
-#[derive(QueryableByName)]
-struct PostRow {
-    #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
-    #[diesel(sql_type = SqlUuid)]
-    user_id: Uuid,
-    #[diesel(sql_type = Text)]
-    title: String,
-    #[diesel(sql_type = Text)]
-    subtitle: String,
-    #[diesel(sql_type = Text)]
-    content: String,
-    #[diesel(sql_type = Nullable<Text>)]
-    image_url: Option<String>,
-    #[diesel(sql_type = Text)]
-    post_type: String,
-    #[diesel(sql_type = Nullable<Timestamp>)]
-    publishing_date: Option<NaiveDateTime>,
-    #[diesel(sql_type = Text)]
-    publishing_state: String,
-    #[diesel(sql_type = Text)]
-    maturing_state: String,
-    #[diesel(sql_type = Timestamp)]
-    created_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    updated_at: NaiveDateTime,
+type PostTuple = (
+    Uuid,
+    Uuid,
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<NaiveDateTime>,
+    String,
+    String,
+    NaiveDateTime,
+    NaiveDateTime,
+);
+
+fn tuple_to_post(row: PostTuple) -> Post {
+    let (
+        id,
+        user_id,
+        title,
+        subtitle,
+        content,
+        image_url,
+        post_type_raw,
+        publishing_date,
+        publishing_state,
+        maturing_state_raw,
+        created_at,
+        updated_at,
+    ) = row;
+
+    Post {
+        id,
+        resource_id: id,
+        title,
+        subtitle,
+        content,
+        image_url,
+        post_type: PostType::from_db(&post_type_raw),
+        user_id,
+        publishing_date,
+        publishing_state,
+        maturing_state: MaturingState::from_code(&maturing_state_raw).unwrap_or(MaturingState::Draft),
+        created_at,
+        updated_at,
+    }
 }
 
-fn row_to_post(row: PostRow) -> Post {
-    Post {
-        id: row.id,
-        resource_id: row.id,
-        title: row.title,
-        subtitle: row.subtitle,
-        content: row.content,
-        image_url: row.image_url,
-        post_type: PostType::from_db(&row.post_type),
-        user_id: row.user_id,
-        publishing_date: row.publishing_date,
-        publishing_state: row.publishing_state,
-        maturing_state: MaturingState::from_code(&row.maturing_state).unwrap_or(MaturingState::Draft),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    }
+fn select_post_columns() -> (
+    posts::id,
+    posts::user_id,
+    posts::title,
+    posts::subtitle,
+    posts::content,
+    posts::image_url,
+    posts::post_type,
+    posts::publishing_date,
+    posts::publishing_state,
+    posts::maturing_state,
+    posts::created_at,
+    posts::updated_at,
+) {
+    (
+        posts::id,
+        posts::user_id,
+        posts::title,
+        posts::subtitle,
+        posts::content,
+        posts::image_url,
+        posts::post_type,
+        posts::publishing_date,
+        posts::publishing_state,
+        posts::maturing_state,
+        posts::created_at,
+        posts::updated_at,
+    )
 }
 
 impl Post {
@@ -62,17 +92,12 @@ impl Post {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let mut rows = sql_query(
-            r#"
-            SELECT id, user_id, title, subtitle, content, image_url, post_type, publishing_date,
-                   publishing_state, maturing_state, created_at, updated_at
-            FROM posts
-            WHERE id = $1
-            "#,
-        )
-        .bind::<SqlUuid, _>(id)
-        .load::<PostRow>(&mut conn)?;
-        rows.pop().map(row_to_post).ok_or_else(|| {
+        let row = posts::table
+            .filter(posts::id.eq(id))
+            .select(select_post_columns())
+            .first::<PostTuple>(&mut conn)
+            .optional()?;
+        row.map(tuple_to_post).ok_or_else(|| {
             PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string())
         })
     }
@@ -92,13 +117,13 @@ impl Post {
             .expect("Failed to get a connection from the pool");
         let rows = posts::table
             .filter(posts::user_id.eq(user_id))
+            .select(select_post_columns())
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .offset(offset)
             .limit(limit)
-            .select(posts::id)
-            .load::<Uuid>(&mut conn)?;
-        rows.into_iter().map(|id| Post::find(id, pool)).collect()
+            .load::<PostTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_post).collect())
     }
 
     pub fn find_filtered(
@@ -110,15 +135,13 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
-        let mapped_resource_type = resource_type
-            .as_deref()
-            .and_then(|value| {
-                if value == "all" {
-                    None
-                } else {
-                    Some(PostType::from_code(value))
-                }
-            });
+        let mapped_resource_type = resource_type.as_deref().and_then(|value| {
+            if value == "all" {
+                None
+            } else {
+                Some(PostType::from_code(value))
+            }
+        });
 
         let mut conn = pool
             .get()
@@ -136,13 +159,13 @@ impl Post {
             query = query.filter(posts::maturing_state.eq(maturing_state_code));
         }
 
-        let ids = query
+        let rows = query
+            .select(select_post_columns())
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .limit(limit.max(1))
-            .select(posts::id)
-            .load::<Uuid>(&mut conn)?;
+            .load::<PostTuple>(&mut conn)?;
 
-        ids.into_iter().map(|id| Post::find(id, pool)).collect()
+        Ok(rows.into_iter().map(tuple_to_post).collect())
     }
 }

@@ -1,17 +1,13 @@
 use crate::db::DbPool;
-use crate::entities::{
+use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    interaction::model::NewInteraction,
-    resource::{
-        entity_type::EntityType, maturing_state::MaturingState, resource_type::ResourceType,
-        NewResource,
-    },
+    journal::{Journal, JournalType, NewJournalDto},
+    lens::{LensProcessingState, NewLens},
     session::Session,
+    trace::{NewTrace, TraceType},
 };
-use crate::entities_v2::trace::model::{NewTrace, TraceType};
-use crate::entities_v2::lens::{LensProcessingState, NewLens};
 use crate::pagination::PaginationParams;
-use crate::schema::{interactions, resources, users};
+use crate::schema::{journals, lenses, users};
 use argon2::Config;
 use axum::{
     debug_handler,
@@ -352,11 +348,9 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
         .expect("Failed to get a connection from the pool");
 
     let has_meta_journal = diesel::select(diesel::dsl::exists(
-        interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(resources::resource_type.eq(ResourceType::MetaJournal)),
+        journals::table
+            .filter(journals::user_id.eq(user_id))
+            .filter(journals::journal_type.eq(JournalType::MetaJournal.to_db())),
     ))
     .get_result::<bool>(&mut conn)?;
 
@@ -364,25 +358,16 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
         return Ok(());
     }
 
-    let meta_journal = NewResource {
-        title: "Meta Journal".to_string(),
-        subtitle: "".to_string(),
-        content: Some("".to_string()),
-        external_content_url: None,
-        comment: None,
-        image_url: None,
-        resource_type: Some(ResourceType::MetaJournal),
-        maturing_state: Some(MaturingState::Draft),
-        publishing_state: Some("drft".to_string()),
-        is_external: Some(false),
-        entity_type: Some(EntityType::Journal),
-        resource_subtype: None,
-    }
-    .create(pool)?;
-
-    let mut meta_journal_interaction = NewInteraction::new(user_id, meta_journal.id);
-    meta_journal_interaction.interaction_type = Some("outp".to_string());
-    meta_journal_interaction.create(pool)?;
+    Journal::create(
+        NewJournalDto {
+            title: "Meta Journal".to_string(),
+            subtitle: Some(String::new()),
+            content: Some(String::new()),
+            journal_type: Some(JournalType::MetaJournal),
+        },
+        user_id,
+        pool,
+    )?;
 
     Ok(())
 }
@@ -393,12 +378,9 @@ pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(),
         .expect("Failed to get a connection from the pool");
 
     let has_autoplay_lens = diesel::select(diesel::dsl::exists(
-        interactions::table
-            .inner_join(resources::table)
-            .filter(interactions::interaction_user_id.eq(user_id))
-            .filter(interactions::interaction_type.eq("outp"))
-            .filter(resources::resource_type.eq(ResourceType::Lens))
-            .filter(resources::is_external.eq(true)),
+        lenses::table
+            .filter(lenses::user_id.eq(user_id))
+            .filter(lenses::autoplay.eq(true)),
     ))
     .get_result::<bool>(&mut conn)?;
 
@@ -426,13 +408,11 @@ fn find_latest_meta_journal_id_for_user(
         .get()
         .expect("Failed to get a connection from the pool");
 
-    let journal_id = interactions::table
-        .inner_join(resources::table)
-        .filter(interactions::interaction_user_id.eq(user_id))
-        .filter(interactions::interaction_type.eq("outp"))
-        .filter(resources::resource_type.eq(ResourceType::MetaJournal))
-        .order(interactions::created_at.desc())
-        .select(resources::id)
+    let journal_id = journals::table
+        .filter(journals::user_id.eq(user_id))
+        .filter(journals::journal_type.eq(JournalType::MetaJournal.to_db()))
+        .order(journals::created_at.desc())
+        .select(journals::id)
         .first::<Uuid>(&mut conn)
         .optional()?;
 

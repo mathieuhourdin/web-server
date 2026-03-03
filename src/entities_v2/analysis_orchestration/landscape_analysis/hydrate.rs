@@ -1,7 +1,5 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -11,52 +9,86 @@ use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
 
 use super::model::{LandscapeAnalysis, LandscapeProcessingState};
 
-#[derive(QueryableByName)]
-struct LandscapeAnalysisRow {
-    #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
-    #[diesel(sql_type = Text)]
-    title: String,
-    #[diesel(sql_type = Text)]
-    subtitle: String,
-    #[diesel(sql_type = Text)]
-    plain_text_state_summary: String,
-    #[diesel(sql_type = Nullable<Timestamp>)]
-    interaction_date: Option<NaiveDateTime>,
-    #[diesel(sql_type = SqlUuid)]
-    user_id: Uuid,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    parent_id: Option<Uuid>,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    replayed_from_id: Option<Uuid>,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    analyzed_trace_id: Option<Uuid>,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    trace_mirror_id: Option<Uuid>,
-    #[diesel(sql_type = Text)]
-    processing_state: String,
-    #[diesel(sql_type = Timestamp)]
-    created_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    updated_at: NaiveDateTime,
+type LandscapeAnalysisTuple = (
+    Uuid,
+    String,
+    String,
+    String,
+    Option<NaiveDateTime>,
+    Uuid,
+    Option<Uuid>,
+    Option<Uuid>,
+    Option<Uuid>,
+    Option<Uuid>,
+    String,
+    NaiveDateTime,
+    NaiveDateTime,
+);
+
+fn tuple_to_analysis(row: LandscapeAnalysisTuple) -> LandscapeAnalysis {
+    let (
+        id,
+        title,
+        subtitle,
+        plain_text_state_summary,
+        interaction_date,
+        user_id,
+        parent_id,
+        replayed_from_id,
+        analyzed_trace_id,
+        trace_mirror_id,
+        processing_state_raw,
+        created_at,
+        updated_at,
+    ) = row;
+
+    LandscapeAnalysis {
+        id,
+        title,
+        subtitle,
+        plain_text_state_summary,
+        interaction_date,
+        user_id,
+        parent_analysis_id: parent_id,
+        replayed_from_id,
+        analyzed_trace_id,
+        trace_mirror_id,
+        processing_state: LandscapeProcessingState::from_db(&processing_state_raw),
+        created_at,
+        updated_at,
+    }
 }
 
-fn row_to_analysis(row: LandscapeAnalysisRow) -> LandscapeAnalysis {
-    LandscapeAnalysis {
-        id: row.id,
-        title: row.title,
-        subtitle: row.subtitle,
-        plain_text_state_summary: row.plain_text_state_summary,
-        interaction_date: row.interaction_date,
-        user_id: row.user_id,
-        parent_analysis_id: row.parent_id,
-        replayed_from_id: row.replayed_from_id,
-        analyzed_trace_id: row.analyzed_trace_id,
-        trace_mirror_id: row.trace_mirror_id,
-        processing_state: LandscapeProcessingState::from_db(&row.processing_state),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    }
+fn select_analysis_columns() -> (
+    landscape_analyses::id,
+    landscape_analyses::title,
+    landscape_analyses::subtitle,
+    landscape_analyses::plain_text_state_summary,
+    landscape_analyses::interaction_date,
+    landscape_analyses::user_id,
+    landscape_analyses::parent_id,
+    landscape_analyses::replayed_from_id,
+    landscape_analyses::analyzed_trace_id,
+    landscape_analyses::trace_mirror_id,
+    landscape_analyses::processing_state,
+    landscape_analyses::created_at,
+    landscape_analyses::updated_at,
+) {
+    (
+        landscape_analyses::id,
+        landscape_analyses::title,
+        landscape_analyses::subtitle,
+        landscape_analyses::plain_text_state_summary,
+        landscape_analyses::interaction_date,
+        landscape_analyses::user_id,
+        landscape_analyses::parent_id,
+        landscape_analyses::replayed_from_id,
+        landscape_analyses::analyzed_trace_id,
+        landscape_analyses::trace_mirror_id,
+        landscape_analyses::processing_state,
+        landscape_analyses::created_at,
+        landscape_analyses::updated_at,
+    )
 }
 
 impl LandscapeAnalysis {
@@ -84,18 +116,12 @@ impl LandscapeAnalysis {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let mut rows = sql_query(
-            r#"
-            SELECT id, title, subtitle, plain_text_state_summary, interaction_date, user_id,
-                   parent_id, replayed_from_id, analyzed_trace_id, trace_mirror_id,
-                   processing_state, created_at, updated_at
-            FROM landscape_analyses
-            WHERE id = $1
-            "#,
-        )
-        .bind::<SqlUuid, _>(id)
-        .load::<LandscapeAnalysisRow>(&mut conn)?;
-        rows.pop().map(row_to_analysis).ok_or_else(|| {
+        let row = landscape_analyses::table
+            .filter(landscape_analyses::id.eq(id))
+            .select(select_analysis_columns())
+            .first::<LandscapeAnalysisTuple>(&mut conn)
+            .optional()?;
+        row.map(tuple_to_analysis).ok_or_else(|| {
             PpdcError::new(
                 404,
                 ErrorType::ApiError,
@@ -108,19 +134,13 @@ impl LandscapeAnalysis {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let rows = sql_query(
-            r#"
-            SELECT id, title, subtitle, plain_text_state_summary, interaction_date, user_id,
-                   parent_id, replayed_from_id, analyzed_trace_id, trace_mirror_id,
-                   processing_state, created_at, updated_at
-            FROM landscape_analyses
-            WHERE analyzed_trace_id = $1
-            ORDER BY interaction_date DESC NULLS LAST, created_at DESC
-            "#,
-        )
-        .bind::<SqlUuid, _>(trace_id)
-        .load::<LandscapeAnalysisRow>(&mut conn)?;
-        Ok(rows.into_iter().map(row_to_analysis).collect())
+        let rows = landscape_analyses::table
+            .filter(landscape_analyses::analyzed_trace_id.eq(trace_id))
+            .select(select_analysis_columns())
+            .order(landscape_analyses::interaction_date.desc().nulls_last())
+            .then_order_by(landscape_analyses::created_at.desc())
+            .load::<LandscapeAnalysisTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_analysis).collect())
     }
 
     pub fn get_landmarks(

@@ -1,52 +1,65 @@
 use std::collections::HashSet;
 
-use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
-use crate::schema::lens_analysis_scopes;
+use crate::schema::{lens_analysis_scopes, lenses};
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 
 use super::model::{Lens, LensProcessingState};
 
-#[derive(QueryableByName)]
-struct LensRow {
-    #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
-    #[diesel(sql_type = SqlUuid)]
-    user_id: Uuid,
-    #[diesel(sql_type = Text)]
-    processing_state: String,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    fork_landscape_id: Option<Uuid>,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    current_landscape_id: Option<Uuid>,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    target_trace_id: Option<Uuid>,
-    #[diesel(sql_type = Bool)]
-    autoplay: bool,
-    #[diesel(sql_type = Timestamp)]
-    created_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    updated_at: NaiveDateTime,
+type LensTuple = (
+    Uuid,
+    Uuid,
+    String,
+    Option<Uuid>,
+    Option<Uuid>,
+    Option<Uuid>,
+    bool,
+);
+
+fn tuple_to_lens(row: LensTuple) -> Lens {
+    let (
+        id,
+        user_id,
+        processing_state_raw,
+        fork_landscape_id,
+        current_landscape_id,
+        target_trace_id,
+        autoplay,
+    ) = row;
+
+    Lens {
+        id,
+        user_id: Some(user_id),
+        processing_state: LensProcessingState::from_db(&processing_state_raw),
+        fork_landscape_id,
+        current_landscape_id,
+        target_trace_id,
+        autoplay,
+    }
 }
 
-fn row_to_lens(row: LensRow) -> Lens {
-    let _ = row.created_at;
-    let _ = row.updated_at;
-    Lens {
-        id: row.id,
-        user_id: Some(row.user_id),
-        processing_state: LensProcessingState::from_db(&row.processing_state),
-        fork_landscape_id: row.fork_landscape_id,
-        current_landscape_id: row.current_landscape_id,
-        target_trace_id: row.target_trace_id,
-        autoplay: row.autoplay,
-    }
+fn select_lens_columns() -> (
+    lenses::id,
+    lenses::user_id,
+    lenses::processing_state,
+    lenses::fork_landscape_id,
+    lenses::current_landscape_id,
+    lenses::target_trace_id,
+    lenses::autoplay,
+) {
+    (
+        lenses::id,
+        lenses::user_id,
+        lenses::processing_state,
+        lenses::fork_landscape_id,
+        lenses::current_landscape_id,
+        lenses::target_trace_id,
+        lenses::autoplay,
+    )
 }
 
 impl Lens {
@@ -54,17 +67,12 @@ impl Lens {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let mut rows = sql_query(
-            r#"
-            SELECT id, user_id, processing_state, fork_landscape_id, current_landscape_id,
-                   target_trace_id, autoplay, created_at, updated_at
-            FROM lenses
-            WHERE id = $1
-            "#,
-        )
-        .bind::<SqlUuid, _>(id)
-        .load::<LensRow>(&mut conn)?;
-        rows.pop().map(row_to_lens).ok_or_else(|| {
+        let row = lenses::table
+            .filter(lenses::id.eq(id))
+            .select(select_lens_columns())
+            .first::<LensTuple>(&mut conn)
+            .optional()?;
+        row.map(tuple_to_lens).ok_or_else(|| {
             PpdcError::new(404, ErrorType::ApiError, "Lens not found".to_string())
         })
     }
@@ -73,18 +81,12 @@ impl Lens {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let rows = sql_query(
-            r#"
-            SELECT id, user_id, processing_state, fork_landscape_id, current_landscape_id,
-                   target_trace_id, autoplay, created_at, updated_at
-            FROM lenses
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind::<SqlUuid, _>(user_id)
-        .load::<LensRow>(&mut conn)?;
-        Ok(rows.into_iter().map(row_to_lens).collect())
+        let rows = lenses::table
+            .filter(lenses::user_id.eq(user_id))
+            .select(select_lens_columns())
+            .order(lenses::created_at.desc())
+            .load::<LensTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_lens).collect())
     }
 
     pub fn get_analysis_scope_ids(&self, pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {

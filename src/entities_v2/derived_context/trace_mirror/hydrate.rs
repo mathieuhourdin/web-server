@@ -1,90 +1,92 @@
 use chrono::NaiveDateTime;
+use diesel::dsl::sql;
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::Text;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities::error::{ErrorType, PpdcError};
+use crate::schema::trace_mirrors;
 use crate::entities_v2::landmark::{Landmark, LandmarkType};
 use crate::entities_v2::reference::Reference;
 
 use super::model::{TraceMirror, TraceMirrorType};
 
-#[derive(QueryableByName)]
-struct TraceMirrorRow {
-    #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
-    #[diesel(sql_type = Text)]
-    title: String,
-    #[diesel(sql_type = Text)]
-    subtitle: String,
-    #[diesel(sql_type = Text)]
-    content: String,
-    #[diesel(sql_type = Text)]
-    trace_mirror_type: String,
-    #[diesel(sql_type = Text)]
-    tags_json: String,
-    #[diesel(sql_type = SqlUuid)]
-    trace_id: Uuid,
-    #[diesel(sql_type = SqlUuid)]
-    landscape_analysis_id: Uuid,
-    #[diesel(sql_type = SqlUuid)]
-    user_id: Uuid,
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    primary_landmark_id: Option<Uuid>,
-    #[diesel(sql_type = Timestamp)]
-    created_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    updated_at: NaiveDateTime,
-}
+type TraceMirrorTuple = (
+    Uuid,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Uuid,
+    Uuid,
+    Uuid,
+    Option<Uuid>,
+    NaiveDateTime,
+    NaiveDateTime,
+);
 
 fn parse_json_string_array(value: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
 }
 
-fn row_to_trace_mirror(row: TraceMirrorRow) -> TraceMirror {
+fn tuple_to_trace_mirror(row: TraceMirrorTuple) -> TraceMirror {
+    let (
+        id,
+        title,
+        subtitle,
+        content,
+        trace_mirror_type_raw,
+        tags_json,
+        trace_id,
+        landscape_analysis_id,
+        user_id,
+        primary_landmark_id,
+        created_at,
+        updated_at,
+    ) = row;
+
     TraceMirror {
-        id: row.id,
-        title: row.title,
-        subtitle: row.subtitle,
-        content: row.content,
-        trace_mirror_type: TraceMirrorType::from_db(&row.trace_mirror_type),
-        tags: parse_json_string_array(&row.tags_json),
-        trace_id: row.trace_id,
-        landscape_analysis_id: row.landscape_analysis_id,
-        user_id: row.user_id,
-        primary_resource_id: row.primary_landmark_id,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
+        id,
+        title,
+        subtitle,
+        content,
+        trace_mirror_type: TraceMirrorType::from_db(&trace_mirror_type_raw),
+        tags: parse_json_string_array(&tags_json),
+        trace_id,
+        landscape_analysis_id,
+        user_id,
+        primary_resource_id: primary_landmark_id,
+        created_at,
+        updated_at,
     }
-}
-
-fn load_trace_mirrors_by_uuid(sql: &str, id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let rows = sql_query(sql)
-        .bind::<SqlUuid, _>(id)
-        .load::<TraceMirrorRow>(&mut conn)?;
-    Ok(rows.into_iter().map(row_to_trace_mirror).collect())
 }
 
 impl TraceMirror {
     pub fn find_full_trace_mirror(id: Uuid, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let mut result = load_trace_mirrors_by_uuid(
-            r#"
-            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
-                   landscape_analysis_id, user_id, primary_landmark_id,
-                   created_at, updated_at
-            FROM trace_mirrors
-            WHERE id = $1
-            "#,
-            id,
-            pool,
-        )?;
-        result.pop().ok_or_else(|| {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let row = trace_mirrors::table
+            .filter(trace_mirrors::id.eq(id))
+            .select((
+                trace_mirrors::id,
+                trace_mirrors::title,
+                trace_mirrors::subtitle,
+                trace_mirrors::content,
+                trace_mirrors::trace_mirror_type,
+                sql::<Text>("tags::text"),
+                trace_mirrors::trace_id,
+                trace_mirrors::landscape_analysis_id,
+                trace_mirrors::user_id,
+                trace_mirrors::primary_landmark_id,
+                trace_mirrors::created_at,
+                trace_mirrors::updated_at,
+            ))
+            .first::<TraceMirrorTuple>(&mut conn)
+            .optional()?;
+        row.map(tuple_to_trace_mirror).ok_or_else(|| {
             PpdcError::new(
                 404,
                 ErrorType::ApiError,
@@ -97,48 +99,78 @@ impl TraceMirror {
         landscape_analysis_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<TraceMirror>, PpdcError> {
-        load_trace_mirrors_by_uuid(
-            r#"
-            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
-                   landscape_analysis_id, user_id, primary_landmark_id,
-                   created_at, updated_at
-            FROM trace_mirrors
-            WHERE landscape_analysis_id = $1
-            ORDER BY created_at ASC
-            "#,
-            landscape_analysis_id,
-            pool,
-        )
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = trace_mirrors::table
+            .filter(trace_mirrors::landscape_analysis_id.eq(landscape_analysis_id))
+            .select((
+                trace_mirrors::id,
+                trace_mirrors::title,
+                trace_mirrors::subtitle,
+                trace_mirrors::content,
+                trace_mirrors::trace_mirror_type,
+                sql::<Text>("tags::text"),
+                trace_mirrors::trace_id,
+                trace_mirrors::landscape_analysis_id,
+                trace_mirrors::user_id,
+                trace_mirrors::primary_landmark_id,
+                trace_mirrors::created_at,
+                trace_mirrors::updated_at,
+            ))
+            .order(trace_mirrors::created_at.asc())
+            .load::<TraceMirrorTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_trace_mirror).collect())
     }
 
     pub fn find_by_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        load_trace_mirrors_by_uuid(
-            r#"
-            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
-                   landscape_analysis_id, user_id, primary_landmark_id,
-                   created_at, updated_at
-            FROM trace_mirrors
-            WHERE trace_id = $1
-            ORDER BY created_at ASC
-            "#,
-            trace_id,
-            pool,
-        )
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = trace_mirrors::table
+            .filter(trace_mirrors::trace_id.eq(trace_id))
+            .select((
+                trace_mirrors::id,
+                trace_mirrors::title,
+                trace_mirrors::subtitle,
+                trace_mirrors::content,
+                trace_mirrors::trace_mirror_type,
+                sql::<Text>("tags::text"),
+                trace_mirrors::trace_id,
+                trace_mirrors::landscape_analysis_id,
+                trace_mirrors::user_id,
+                trace_mirrors::primary_landmark_id,
+                trace_mirrors::created_at,
+                trace_mirrors::updated_at,
+            ))
+            .order(trace_mirrors::created_at.asc())
+            .load::<TraceMirrorTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_trace_mirror).collect())
     }
 
     pub fn find_by_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        load_trace_mirrors_by_uuid(
-            r#"
-            SELECT id, title, subtitle, content, trace_mirror_type, tags::text AS tags_json, trace_id,
-                   landscape_analysis_id, user_id, primary_landmark_id,
-                   created_at, updated_at
-            FROM trace_mirrors
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            "#,
-            user_id,
-            pool,
-        )
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = trace_mirrors::table
+            .filter(trace_mirrors::user_id.eq(user_id))
+            .select((
+                trace_mirrors::id,
+                trace_mirrors::title,
+                trace_mirrors::subtitle,
+                trace_mirrors::content,
+                trace_mirrors::trace_mirror_type,
+                sql::<Text>("tags::text"),
+                trace_mirrors::trace_id,
+                trace_mirrors::landscape_analysis_id,
+                trace_mirrors::user_id,
+                trace_mirrors::primary_landmark_id,
+                trace_mirrors::created_at,
+                trace_mirrors::updated_at,
+            ))
+            .order(trace_mirrors::created_at.desc())
+            .load::<TraceMirrorTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_trace_mirror).collect())
     }
 
     pub fn get_high_level_projects_references(
