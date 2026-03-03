@@ -21,6 +21,7 @@ fn ensure_lens_analysis_scope_relation(
         .expect("Failed to get a connection from the pool");
     diesel::insert_into(lens_analysis_scopes::table)
         .values((
+            lens_analysis_scopes::id.eq(Uuid::new_v4()),
             lens_analysis_scopes::lens_id.eq(lens_id),
             lens_analysis_scopes::landscape_analysis_id.eq(analysis_id),
         ))
@@ -75,6 +76,7 @@ impl Lens {
 
         diesel::insert_into(lens_heads::table)
             .values((
+                lens_heads::id.eq(Uuid::new_v4()),
                 lens_heads::lens_id.eq(self.id),
                 lens_heads::landscape_analysis_id.eq(new_landscape_analysis_id),
             ))
@@ -108,6 +110,7 @@ impl Lens {
         if let Some(new_target_trace_id) = new_target_trace_id {
             diesel::insert_into(lens_targets::table)
                 .values((
+                    lens_targets::id.eq(Uuid::new_v4()),
                     lens_targets::lens_id.eq(self.id),
                     lens_targets::trace_id.eq(new_target_trace_id),
                 ))
@@ -149,8 +152,10 @@ impl NewLens {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let id: Uuid = diesel::insert_into(lenses::table)
+        let id = Uuid::new_v4();
+        diesel::insert_into(lenses::table)
             .values((
+                lenses::id.eq(id),
                 lenses::user_id.eq(self.user_id),
                 lenses::processing_state.eq(self.processing_state.to_db()),
                 lenses::fork_landscape_id.eq(self.fork_landscape_id),
@@ -158,12 +163,12 @@ impl NewLens {
                 lenses::target_trace_id.eq(self.target_trace_id),
                 lenses::autoplay.eq(self.autoplay),
             ))
-            .returning(lenses::id)
-            .get_result(&mut conn)?;
+            .execute(&mut conn)?;
 
         if let Some(current_landscape_id) = self.current_landscape_id {
             diesel::insert_into(lens_heads::table)
                 .values((
+                    lens_heads::id.eq(Uuid::new_v4()),
                     lens_heads::lens_id.eq(id),
                     lens_heads::landscape_analysis_id.eq(current_landscape_id),
                 ))
@@ -176,6 +181,7 @@ impl NewLens {
         if let Some(target_trace_id) = self.target_trace_id {
             diesel::insert_into(lens_targets::table)
                 .values((
+                    lens_targets::id.eq(Uuid::new_v4()),
                     lens_targets::lens_id.eq(id),
                     lens_targets::trace_id.eq(target_trace_id),
                 ))

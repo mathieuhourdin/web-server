@@ -372,7 +372,7 @@ diesel::joinable!(lens_targets -> lenses (lens_id));
 diesel::joinable!(lens_targets -> traces (trace_id));
 diesel::joinable!(lenses -> traces (target_trace_id));
 diesel::joinable!(lenses -> users (user_id));
-diesel::joinable!(llm_calls -> resources (analysis_id));
+diesel::joinable!(llm_calls -> landscape_analyses (analysis_id));
 diesel::joinable!(posts -> users (user_id));
 diesel::joinable!(references -> landmarks (landmark_id));
 diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));

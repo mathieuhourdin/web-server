@@ -1,5 +1,6 @@
 use crate::db::DbPool;
-use crate::entities::error::PpdcError;
+use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::schema::traces;
 use axum::{
     debug_handler,
     extract::{Extension, Path, Query},
@@ -7,49 +8,62 @@ use axum::{
 };
 use chrono::{Duration, NaiveDate, Utc};
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Date, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Debug, QueryableByName, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct HeatmapRow {
-    #[diesel(sql_type = Date)]
     pub day: NaiveDate,
-    #[diesel(sql_type = BigInt)]
     pub value: i64,
 }
 
-pub fn heatmap_sum_trace_content_len_join_direct(
+type TraceContentRow = (Option<chrono::NaiveDateTime>, chrono::NaiveDateTime, String);
+
+pub fn heatmap_sum_trace_content_len(
     conn: &mut PgConnection,
     from: NaiveDate,
     to: NaiveDate,
     user_id: Uuid,
 ) -> QueryResult<Vec<HeatmapRow>> {
-    let sql = r#"
-WITH days AS (
-  SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
-),
-agg AS (
-  SELECT
-    COALESCE(t.interaction_date, t.created_at)::date AS day,
-    SUM(length(t.content))::bigint AS value
-  FROM traces t
-  WHERE t.user_id = $3
-    AND COALESCE(t.interaction_date, t.created_at) >= $1::date
-    AND COALESCE(t.interaction_date, t.created_at) < ($2::date + 1)
-  GROUP BY 1
-)
-SELECT d.day AS day, COALESCE(a.value, 0) AS value
-FROM days d
-LEFT JOIN agg a USING (day)
-ORDER BY d.day;
-"#;
+    let from_dt = from.and_hms_opt(0, 0, 0).expect("valid day start");
+    let to_exclusive_dt = (to + Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .expect("valid day start");
 
-    diesel::sql_query(sql)
-        .bind::<Date, _>(from)
-        .bind::<Date, _>(to)
-        .bind::<SqlUuid, _>(user_id)
-        .load::<HeatmapRow>(conn)
+    let interaction_window = traces::interaction_date
+        .is_not_null()
+        .and(traces::interaction_date.ge(from_dt))
+        .and(traces::interaction_date.lt(to_exclusive_dt));
+    let created_window = traces::interaction_date
+        .is_null()
+        .and(traces::created_at.ge(from_dt))
+        .and(traces::created_at.lt(to_exclusive_dt));
+
+    let rows = traces::table
+        .filter(traces::user_id.eq(user_id))
+        .filter(interaction_window.or(created_window))
+        .select((traces::interaction_date, traces::created_at, traces::content))
+        .load::<TraceContentRow>(conn)?;
+
+    let mut by_day = HashMap::<NaiveDate, i64>::new();
+    for (interaction_date, created_at, content) in rows {
+        let day = interaction_date.unwrap_or(created_at).date();
+        let value = i64::try_from(content.chars().count()).unwrap_or(i64::MAX);
+        *by_day.entry(day).or_insert(0) += value;
+    }
+
+    let mut out = Vec::new();
+    let mut day = from;
+    while day <= to {
+        out.push(HeatmapRow {
+            day,
+            value: by_day.get(&day).copied().unwrap_or(0),
+        });
+        day += Duration::days(1);
+    }
+
+    Ok(out)
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,13 +83,13 @@ pub async fn get_user_heatmap_route(
     if from > to {
         return Err(PpdcError::new(
             400,
-            crate::entities::error::ErrorType::ApiError,
+            ErrorType::ApiError,
             "`from` must be <= `to`".to_string(),
         ));
     }
     let mut conn = pool
         .get()
         .expect("Failed to get a connection from the pool");
-    let rows = heatmap_sum_trace_content_len_join_direct(&mut conn, from, to, user_id)?;
+    let rows = heatmap_sum_trace_content_len(&mut conn, from, to, user_id)?;
     Ok(Json(rows))
 }

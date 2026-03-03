@@ -10,13 +10,21 @@ use tower_http::{
     services::ServeDir,
 };
 
-use crate::entities::{
-    error::{ErrorType, PpdcError},
-    user,
-};
 use crate::entities_v2::{
-    element, journal, journal_import, landmark, landscape_analysis, lens, llm_call, post,
-    reference, trace, trace_mirror, transcription,
+    element,
+    error::{ErrorType, PpdcError},
+    journal,
+    journal_import,
+    landmark,
+    landscape_analysis,
+    lens,
+    llm_call,
+    post,
+    reference,
+    trace,
+    trace_mirror,
+    transcription,
+    user,
 };
 use crate::link_preview;
 use crate::sessions_service;
