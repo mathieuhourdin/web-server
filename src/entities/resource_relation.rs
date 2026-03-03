@@ -2,13 +2,8 @@ use crate::db::DbPool;
 use crate::entities::{
     error::{ErrorType, PpdcError},
     resource::Resource,
-    session::Session,
 };
 use crate::schema::*;
-use axum::{
-    debug_handler,
-    extract::{Extension, Json, Path},
-};
 use chrono::NaiveDateTime;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
@@ -897,32 +892,6 @@ impl ResourceRelation {
             .get_result(&mut conn)?;
         Ok(resource_relation)
     }
-}
-
-#[debug_handler]
-pub async fn post_resource_relation_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Json(mut payload): Json<NewResourceRelation>,
-) -> Result<Json<ResourceRelation>, PpdcError> {
-    payload.user_id = session.user_id;
-    Ok(Json(payload.create(&pool)?))
-}
-
-#[debug_handler]
-pub async fn get_resource_relations_for_resource_route(
-    Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Vec<ResourceRelationWithOriginResource>>, PpdcError> {
-    Ok(Json(ResourceRelation::find_origin_for_resource(id, &pool)?))
-}
-
-#[debug_handler]
-pub async fn get_targets_for_resource_route(
-    Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Vec<ResourceRelationWithTargetResource>>, PpdcError> {
-    Ok(Json(ResourceRelation::find_target_for_resource(id, &pool)?))
 }
 
 #[cfg(test)]

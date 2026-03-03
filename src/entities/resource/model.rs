@@ -1,14 +1,7 @@
 use crate::db::DbPool;
-use crate::entities::{
-    error::PpdcError, interaction::model::Interaction, session::Session, user::User,
-};
+use crate::entities::{error::PpdcError, interaction::model::Interaction};
 use crate::entities_v2::landmark::Landmark;
-use crate::pagination::PaginationParams;
 use crate::schema::*;
-use axum::{
-    debug_handler,
-    extract::{Extension, Json, Path, Query},
-};
 use chrono::NaiveDateTime;
 use diesel;
 use diesel::prelude::*;
@@ -229,99 +222,4 @@ impl From<Landmark> for Resource {
     fn from(landmark: Landmark) -> Self {
         landmark.to_resource()
     }
-}
-
-#[debug_handler]
-pub async fn put_resource_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<NewResource>,
-) -> Result<Json<Resource>, PpdcError> {
-    let db_resource = Resource::find(id, &pool)?;
-    let author_interaction = db_resource.find_resource_author_interaction(&pool);
-    if author_interaction.is_ok() {
-        let author_id = author_interaction.unwrap().interaction_user_id;
-        if author_id != session.user_id.unwrap() {
-            let author_user = User::find(&author_id, &pool)?;
-            if author_user.is_platform_user {
-                return Err(PpdcError::unauthorized());
-            }
-        }
-    }
-    Ok(Json(payload.update(&id, &pool)?))
-}
-
-#[debug_handler]
-pub async fn post_resource_route(
-    Extension(pool): Extension<DbPool>,
-    Json(payload): Json<NewResource>,
-) -> Result<Json<Resource>, PpdcError> {
-    Ok(Json(payload.create(&pool)?))
-}
-
-#[debug_handler]
-pub async fn get_resource_author_interaction_route(
-    Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Interaction>, PpdcError> {
-    println!("get_resource_author_interaction_route");
-    let resource = Resource::find(id, &pool)?;
-    let author_interaction = resource.find_resource_author_interaction(&pool)?;
-    Ok(Json(author_interaction))
-}
-
-#[debug_handler]
-pub async fn get_resource_route(
-    Extension(pool): Extension<DbPool>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Resource>, PpdcError> {
-    Ok(Json(Resource::find(id, &pool)?))
-}
-
-#[derive(Deserialize)]
-pub struct GetResourcesParams {
-    is_external: Option<bool>,
-    resource_type: Option<String>,
-}
-
-impl GetResourcesParams {
-    pub fn is_external(&self) -> Option<bool> {
-        self.is_external
-    }
-
-    pub fn resource_type(&self) -> String {
-        self.resource_type.clone().unwrap_or("all".into())
-    }
-}
-
-#[debug_handler]
-pub async fn get_resources_route(
-    Extension(pool): Extension<DbPool>,
-    Query(filter_params): Query<GetResourcesParams>,
-    Query(pagination): Query<PaginationParams>,
-) -> Result<Json<Vec<Resource>>, PpdcError> {
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let mut query = resources::table
-        .offset(pagination.offset())
-        .limit(pagination.limit())
-        .order(resources::updated_at.desc())
-        .filter(resources::maturing_state.eq("fnsh"))
-        .into_boxed();
-
-    if let Some(is_external) = filter_params.is_external {
-        query = query.filter(resources::is_external.eq(is_external));
-    }
-    if filter_params.resource_type().as_str() == "pblm" {
-        query = query.filter(resources::resource_type.eq("pblm"));
-    }
-    if filter_params.resource_type().as_str() == "miss" {
-        query = query.filter(resources::resource_type.eq("miss"));
-    }
-    let results = query.load::<Resource>(&mut conn)?;
-
-    Ok(Json(results))
 }

@@ -10,11 +10,9 @@ use tower_http::{
     services::ServeDir,
 };
 
-use crate::entities::resource_relation;
 use crate::entities::{
     error::{ErrorType, PpdcError},
-    interaction::interaction_routes as interaction,
-    resource, user,
+    user,
 };
 use crate::entities_v2::{
     element, journal, journal_import, landmark, landscape_analysis, lens, llm_call, post,
@@ -44,34 +42,6 @@ pub fn create_router() -> Router {
         .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
-    let resources_router = Router::new()
-        .route(
-            "/",
-            get(resource::get_resources_route).post(resource::post_resource_route),
-        )
-        .route(
-            "/:id",
-            get(resource::get_resource_route).put(resource::put_resource_route),
-        )
-        .route(
-            "/:id/author_interaction",
-            get(resource::get_resource_author_interaction_route),
-        )
-        .route(
-            "/:id/interactions",
-            get(interaction::get_interactions_for_resource_route)
-                .post(interaction::post_interaction_for_resource),
-        )
-        .route(
-            "/:id/bibliography",
-            get(resource_relation::get_resource_relations_for_resource_route),
-        )
-        .route(
-            "/:id/usages",
-            get(resource_relation::get_targets_for_resource_route),
-        )
-        .layer(from_fn(sessions_service::auth_middleware_custom));
-
     let traces_router = Router::new()
         .route("/", post(trace::post_trace_route))
         .route("/:id", get(trace::get_trace_route))
@@ -81,14 +51,6 @@ pub fn create_router() -> Router {
     let posts_router = Router::new()
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
-        .route(
-            "/:id/bibliography",
-            get(resource_relation::get_resource_relations_for_resource_route),
-        )
-        .route(
-            "/:id/usages",
-            get(resource_relation::get_targets_for_resource_route),
-        )
         .route("/users/:id", get(post::get_user_posts_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
@@ -97,18 +59,6 @@ pub fn create_router() -> Router {
         .route("/:id", put(journal::put_journal_route))
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
         .route("/:id/import_text", post(journal_import::post_import_text_route))
-        .layer(from_fn(sessions_service::auth_middleware_custom));
-
-    let interactions_router = Router::new()
-        .route("/", get(interaction::get_interactions_route))
-        .route("/:id", put(interaction::put_interaction_route))
-        .layer(from_fn(sessions_service::auth_middleware_custom));
-
-    let relations_router = Router::new()
-        .route(
-            "/thought_input_usages",
-            post(resource_relation::post_resource_relation_route),
-        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let transcriptions_router = Router::new()
@@ -185,13 +135,10 @@ pub fn create_router() -> Router {
     Router::new()
         .route("/users", post(user::post_user))
         .nest("/users", users_router)
-        .nest("/resources", resources_router)
         .nest("/traces", traces_router)
         .nest("/posts", posts_router)
         .nest("/journals", journals_router)
-        .nest("/interactions", interactions_router)
         .nest("/transcriptions", transcriptions_router)
-        .nest("/", relations_router)
         .nest("/sessions", sessions_router)
         .nest("/analysis", analysis_router)
         .nest("/lens", lens_router)
