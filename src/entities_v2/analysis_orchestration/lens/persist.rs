@@ -1,3 +1,4 @@
+use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use uuid::Uuid;
 
@@ -54,6 +55,79 @@ fn remove_lens_analysis_scope_relation(
 }
 
 impl Lens {
+    pub fn try_acquire_run_lock(
+        &self,
+        worker_id: Uuid,
+        ttl_seconds: i64,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let now = Utc::now().naive_utc();
+        let lock_until = now + Duration::seconds(ttl_seconds.max(1));
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let updated_rows = diesel::update(
+            lenses::table
+                .filter(lenses::id.eq(self.id))
+                .filter(
+                    lenses::run_lock_until
+                        .is_null()
+                        .or(lenses::run_lock_until.lt(now))
+                        .or(lenses::run_lock_owner.eq(Some(worker_id))),
+                ),
+        )
+        .set((
+            lenses::run_lock_owner.eq(Some(worker_id)),
+            lenses::run_lock_until.eq(Some(lock_until)),
+        ))
+        .execute(&mut conn)?;
+
+        Ok(updated_rows == 1)
+    }
+
+    pub fn renew_run_lock(
+        &self,
+        worker_id: Uuid,
+        ttl_seconds: i64,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let now = Utc::now().naive_utc();
+        let lock_until = now + Duration::seconds(ttl_seconds.max(1));
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let updated_rows = diesel::update(
+            lenses::table
+                .filter(lenses::id.eq(self.id))
+                .filter(lenses::run_lock_owner.eq(Some(worker_id))),
+        )
+        .set(lenses::run_lock_until.eq(Some(lock_until)))
+        .execute(&mut conn)?;
+
+        Ok(updated_rows == 1)
+    }
+
+    pub fn release_run_lock(&self, worker_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let updated_rows = diesel::update(
+            lenses::table
+                .filter(lenses::id.eq(self.id))
+                .filter(lenses::run_lock_owner.eq(Some(worker_id))),
+        )
+        .set((
+            lenses::run_lock_owner.eq::<Option<Uuid>>(None),
+            lenses::run_lock_until.eq::<Option<chrono::NaiveDateTime>>(None),
+        ))
+        .execute(&mut conn)?;
+
+        Ok(updated_rows == 1)
+    }
+
     pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
         let mut conn = pool
             .get()
