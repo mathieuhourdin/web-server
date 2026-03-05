@@ -73,7 +73,7 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
                     current_landscape.analyzed_trace_id,
                     Some(current_landscape.id),
                 )
-                .create(&pool)?;
+                .create_for_lens(lens.id, &pool)?;
                 let _lens = lens.update_current_landscape(new_analysis.id, &pool)?;
                 let processor = analysis_processor::AnalysisProcessor::setup(
                     new_analysis.id,
@@ -127,7 +127,7 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         Some(next_trace.id),
         None,
     )
-    .create(&pool)?;
+    .create_for_lens(lens.id, &pool)?;
     let lens = lens.update_current_landscape(new_analysis.id, &pool)?;
     let processor = analysis_processor::AnalysisProcessor::setup(
         new_analysis.id,

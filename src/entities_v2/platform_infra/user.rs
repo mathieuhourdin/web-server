@@ -389,6 +389,7 @@ impl NewUser {
 
         let user = diesel::insert_into(users::table)
             .values(&self)
+            .returning(User::as_returning())
             .get_result(&mut conn)?;
         Ok(user)
     }
@@ -401,6 +402,7 @@ impl NewUser {
         let result = diesel::update(users::table)
             .filter(users::id.eq(id))
             .set(&self)
+            .returning(User::as_returning())
             .get_result(&mut conn)?;
         Ok(result)
     }
@@ -451,7 +453,10 @@ impl User {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let user = users::table.filter(users::id.eq(id)).first(&mut conn)?;
+        let user = users::table
+            .filter(users::id.eq(id))
+            .select(User::as_select())
+            .first(&mut conn)?;
         Ok(user)
     }
 
@@ -461,6 +466,7 @@ impl User {
             .expect("Failed to get a connection from the pool");
         let user = users::table
             .filter(users::email.eq(email))
+            .select(User::as_select())
             .first(&mut conn)?;
         Ok(user)
     }
@@ -681,6 +687,7 @@ pub async fn get_users(
         .into_boxed()
         .offset(params.offset())
         .limit(params.limit())
+        .select(User::as_select())
         .load::<User>(&mut conn)?
         .iter()
         .map(UserPseudonymizedResponse::from)

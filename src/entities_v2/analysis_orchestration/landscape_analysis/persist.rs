@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
-use crate::schema::{landscape_analyses, landscape_landmarks};
+use crate::schema::{landscape_analyses, landscape_landmarks, lens_analysis_scopes};
 use crate::entities_v2::reference::Reference;
 
 use super::model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
@@ -77,6 +77,49 @@ impl NewLandscapeAnalysis {
             .get_result(&mut conn)?;
 
         LandscapeAnalysis::find_full_analysis(id, pool)
+    }
+
+    pub fn create_for_lens(self, lens_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let analysis_id: Uuid = conn.transaction::<Uuid, diesel::result::Error, _>(|conn| {
+            let id: Uuid = diesel::insert_into(landscape_analyses::table)
+                .values((
+                    landscape_analyses::title.eq(self.title.clone()),
+                    landscape_analyses::subtitle.eq(self.subtitle.clone()),
+                    landscape_analyses::plain_text_state_summary.eq(self.plain_text_state_summary.clone()),
+                    landscape_analyses::interaction_date.eq(Some(self.interaction_date)),
+                    landscape_analyses::period_start.eq(self.period_start),
+                    landscape_analyses::period_end.eq(self.period_end),
+                    landscape_analyses::user_id.eq(self.user_id),
+                    landscape_analyses::landscape_analysis_type.eq(self.landscape_analysis_type.to_db()),
+                    landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()),
+                    landscape_analyses::parent_id.eq(self.parent_analysis_id),
+                    landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
+                    landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
+                    landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
+                ))
+                .returning(landscape_analyses::id)
+                .get_result(conn)?;
+
+            diesel::insert_into(lens_analysis_scopes::table)
+                .values((
+                    lens_analysis_scopes::id.eq(Uuid::new_v4()),
+                    lens_analysis_scopes::lens_id.eq(lens_id),
+                    lens_analysis_scopes::landscape_analysis_id.eq(id),
+                ))
+                .on_conflict((
+                    lens_analysis_scopes::lens_id,
+                    lens_analysis_scopes::landscape_analysis_id,
+                ))
+                .do_nothing()
+                .execute(conn)?;
+            Ok(id)
+        })?;
+
+        LandscapeAnalysis::find_full_analysis(analysis_id, pool)
     }
 }
 

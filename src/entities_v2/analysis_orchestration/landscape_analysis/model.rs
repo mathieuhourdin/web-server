@@ -5,23 +5,29 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LandscapeProcessingState {
     Pending,
+    Running,
     ReplayRequested,
     Completed,
+    Failed,
 }
 
 impl LandscapeProcessingState {
     pub fn to_db(self) -> &'static str {
         match self {
             LandscapeProcessingState::Pending => "PENDING",
+            LandscapeProcessingState::Running => "RUNNING",
             LandscapeProcessingState::ReplayRequested => "REPLAY_REQUESTED",
             LandscapeProcessingState::Completed => "COMPLETED",
+            LandscapeProcessingState::Failed => "FAILED",
         }
     }
 
     pub fn from_db(value: &str) -> Self {
         match value {
+            "RUNNING" | "running" => LandscapeProcessingState::Running,
             "REPLAY_REQUESTED" | "replay_requested" => LandscapeProcessingState::ReplayRequested,
             "COMPLETED" | "completed" => LandscapeProcessingState::Completed,
+            "FAILED" | "failed" => LandscapeProcessingState::Failed,
             _ => LandscapeProcessingState::Pending,
         }
     }
@@ -30,6 +36,9 @@ impl LandscapeProcessingState {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LandscapeAnalysisType {
     DailyRecap,
+    WeeklyRecap,
+    Hlp,
+    Bio,
     TraceIncremental,
 }
 
@@ -37,6 +46,9 @@ impl LandscapeAnalysisType {
     pub fn to_db(self) -> &'static str {
         match self {
             LandscapeAnalysisType::DailyRecap => "DAILY_RECAP",
+            LandscapeAnalysisType::WeeklyRecap => "WEEKLY_RECAP",
+            LandscapeAnalysisType::Hlp => "HLP",
+            LandscapeAnalysisType::Bio => "BIO",
             LandscapeAnalysisType::TraceIncremental => "TRACE_INCREMENTAL",
         }
     }
@@ -44,6 +56,9 @@ impl LandscapeAnalysisType {
     pub fn from_db(value: &str) -> Self {
         match value {
             "DAILY_RECAP" | "daily_recap" => LandscapeAnalysisType::DailyRecap,
+            "WEEKLY_RECAP" | "weekly_recap" => LandscapeAnalysisType::WeeklyRecap,
+            "HLP" | "hlp" => LandscapeAnalysisType::Hlp,
+            "BIO" | "bio" => LandscapeAnalysisType::Bio,
             _ => LandscapeAnalysisType::TraceIncremental,
         }
     }
@@ -86,8 +101,7 @@ pub struct NewLandscapeAnalysis {
 }
 
 impl NewLandscapeAnalysis {
-    /// Creates a new NewLandscapeAnalysis with all fields.
-    pub fn new(
+    pub fn new_trace_incremental(
         title: String,
         subtitle: String,
         plain_text_state_summary: String,
@@ -111,6 +125,135 @@ impl NewLandscapeAnalysis {
             trace_mirror_id: None,
             landscape_analysis_type: LandscapeAnalysisType::TraceIncremental,
         }
+    }
+
+    pub fn new_daily_recap(
+        title: String,
+        subtitle: String,
+        plain_text_state_summary: String,
+        user_id: Uuid,
+        interaction_date: NaiveDateTime,
+        period_start: NaiveDateTime,
+        period_end: NaiveDateTime,
+        parent_analysis_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
+    ) -> NewLandscapeAnalysis {
+        NewLandscapeAnalysis {
+            title,
+            subtitle,
+            plain_text_state_summary,
+            interaction_date,
+            period_start,
+            period_end,
+            user_id,
+            parent_analysis_id,
+            analyzed_trace_id: None,
+            replayed_from_id,
+            trace_mirror_id: None,
+            landscape_analysis_type: LandscapeAnalysisType::DailyRecap,
+        }
+    }
+
+    pub fn new_weekly_recap(
+        title: String,
+        subtitle: String,
+        plain_text_state_summary: String,
+        user_id: Uuid,
+        interaction_date: NaiveDateTime,
+        period_start: NaiveDateTime,
+        period_end: NaiveDateTime,
+        parent_analysis_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
+    ) -> NewLandscapeAnalysis {
+        NewLandscapeAnalysis {
+            title,
+            subtitle,
+            plain_text_state_summary,
+            interaction_date,
+            period_start,
+            period_end,
+            user_id,
+            parent_analysis_id,
+            analyzed_trace_id: None,
+            replayed_from_id,
+            trace_mirror_id: None,
+            landscape_analysis_type: LandscapeAnalysisType::WeeklyRecap,
+        }
+    }
+
+    pub fn new_hlp(
+        title: String,
+        subtitle: String,
+        plain_text_state_summary: String,
+        user_id: Uuid,
+        interaction_date: NaiveDateTime,
+        parent_analysis_id: Option<Uuid>,
+        analyzed_trace_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
+    ) -> NewLandscapeAnalysis {
+        NewLandscapeAnalysis {
+            title,
+            subtitle,
+            plain_text_state_summary,
+            interaction_date,
+            period_start: interaction_date,
+            period_end: interaction_date,
+            user_id,
+            parent_analysis_id,
+            analyzed_trace_id,
+            replayed_from_id,
+            trace_mirror_id: None,
+            landscape_analysis_type: LandscapeAnalysisType::Hlp,
+        }
+    }
+
+    pub fn new_bio(
+        title: String,
+        subtitle: String,
+        plain_text_state_summary: String,
+        user_id: Uuid,
+        interaction_date: NaiveDateTime,
+        parent_analysis_id: Option<Uuid>,
+        analyzed_trace_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
+    ) -> NewLandscapeAnalysis {
+        NewLandscapeAnalysis {
+            title,
+            subtitle,
+            plain_text_state_summary,
+            interaction_date,
+            period_start: interaction_date,
+            period_end: interaction_date,
+            user_id,
+            parent_analysis_id,
+            analyzed_trace_id,
+            replayed_from_id,
+            trace_mirror_id: None,
+            landscape_analysis_type: LandscapeAnalysisType::Bio,
+        }
+    }
+
+    /// Creates a new NewLandscapeAnalysis with all fields.
+    pub fn new(
+        title: String,
+        subtitle: String,
+        plain_text_state_summary: String,
+        user_id: Uuid,
+        interaction_date: NaiveDateTime,
+        parent_analysis_id: Option<Uuid>,
+        analyzed_trace_id: Option<Uuid>,
+        replayed_from_id: Option<Uuid>,
+    ) -> NewLandscapeAnalysis {
+        NewLandscapeAnalysis::new_trace_incremental(
+            title,
+            subtitle,
+            plain_text_state_summary,
+            user_id,
+            interaction_date,
+            parent_analysis_id,
+            analyzed_trace_id,
+            replayed_from_id,
+        )
     }
 
     pub fn new_placeholder(
