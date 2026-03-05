@@ -2,10 +2,12 @@ use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 use crate::entities_v2::{
-    landscape_analysis::{self, LandscapeAnalysis, NewLandscapeAnalysis},
+    landscape_analysis::{
+        self, create_for_trace_and_lens_with_options, LandscapeAnalysis, NewLandscapeAnalysis,
+    },
     trace::Trace,
 };
 
@@ -85,10 +87,10 @@ impl Lens {
             .set(lens_heads::landscape_analysis_id.eq(new_landscape_analysis_id))
             .execute(&mut conn)?;
 
-        ensure_lens_analysis_scope_relation(self.id, new_landscape_analysis_id, pool)?;
         if let Some(replayed_analysis_id) = new_landscape.replayed_from_id {
             remove_lens_analysis_scope_relation(self.id, replayed_analysis_id, pool)?;
         }
+        ensure_lens_analysis_scope_relation(self.id, new_landscape_analysis_id, pool)?;
 
         Lens::find_full_lens(self.id, pool)
     }
@@ -98,7 +100,35 @@ impl Lens {
         new_target_trace_id: Option<Uuid>,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
+        let user_id = self.user_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Lens user_id is missing".to_string(),
+            )
+        })?;
         let target_changed = self.target_trace_id != new_target_trace_id;
+        let traces_to_schedule = match (self.target_trace_id, new_target_trace_id) {
+            (Some(previous_target_trace_id), Some(next_target_trace_id)) => {
+                let previous_trace = Trace::find_full_trace(previous_target_trace_id, pool)?;
+                let next_trace = Trace::find_full_trace(next_target_trace_id, pool)?;
+                let previous_dt = previous_trace
+                    .interaction_date
+                    .unwrap_or(previous_trace.created_at);
+                let next_dt = next_trace.interaction_date.unwrap_or(next_trace.created_at);
+                if next_dt > previous_dt {
+                    Trace::get_between(user_id, previous_target_trace_id, next_target_trace_id, pool)?
+                        .into_iter()
+                        .filter(|trace| trace.id != previous_target_trace_id)
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![next_trace]
+                }
+            }
+            (None, Some(next_target_trace_id)) => Trace::get_before(user_id, next_target_trace_id, pool)?,
+            _ => Vec::new(),
+        };
+
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -127,6 +157,9 @@ impl Lens {
             diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
                 .set(lenses::processing_state.eq(LensProcessingState::OutOfSync.to_db()))
                 .execute(&mut conn)?;
+            for trace in traces_to_schedule {
+                let _ = create_for_trace_and_lens_with_options(trace.id, self.id, true, pool)?;
+            }
         }
         Lens::find_full_lens(self.id, pool)
     }
@@ -189,6 +222,11 @@ impl NewLens {
                 .do_update()
                 .set(lens_targets::trace_id.eq(target_trace_id))
                 .execute(&mut conn)?;
+
+            let traces = Trace::get_before(self.user_id, target_trace_id, pool)?;
+            for trace in traces {
+                let _ = create_for_trace_and_lens_with_options(trace.id, id, true, pool)?;
+            }
         }
         Lens::find_full_lens(id, pool)
     }

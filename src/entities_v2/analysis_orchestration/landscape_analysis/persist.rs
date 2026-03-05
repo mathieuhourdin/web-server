@@ -1,12 +1,15 @@
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::{lens::Lens, trace::{Trace, TraceType}, user::User};
 use crate::schema::{landscape_analyses, landscape_landmarks, lens_analysis_scopes};
 use crate::entities_v2::reference::Reference;
 
-use super::model::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis};
+use super::model::{LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState, NewLandscapeAnalysis};
 
 impl LandscapeAnalysis {
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
@@ -121,6 +124,262 @@ impl NewLandscapeAnalysis {
 
         LandscapeAnalysis::find_full_analysis(analysis_id, pool)
     }
+}
+
+fn local_midnight(tz: Tz, date: NaiveDate) -> Result<DateTime<Tz>, PpdcError> {
+    let naive_midnight = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            "Failed to construct local midnight".to_string(),
+        )
+    })?;
+
+    tz.from_local_datetime(&naive_midnight)
+        .single()
+        .or_else(|| tz.from_local_datetime(&naive_midnight).earliest())
+        .or_else(|| tz.from_local_datetime(&naive_midnight).latest())
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "Failed to resolve local midnight for timezone".to_string(),
+            )
+        })
+}
+
+fn parse_user_timezone_or_utc(user: &User) -> Tz {
+    user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
+}
+
+fn trace_effective_datetime(trace: &Trace) -> NaiveDateTime {
+    trace.interaction_date.unwrap_or(trace.created_at)
+}
+
+fn day_period_for_datetime(
+    datetime_utc: NaiveDateTime,
+    tz: Tz,
+) -> Result<(NaiveDateTime, NaiveDateTime), PpdcError> {
+    let utc_dt = DateTime::<Utc>::from_naive_utc_and_offset(datetime_utc, Utc);
+    let local_dt = utc_dt.with_timezone(&tz);
+    let local_day_start = local_midnight(tz, local_dt.date_naive())?;
+    let local_day_end = local_day_start + Duration::days(1);
+
+    Ok((
+        local_day_start.with_timezone(&Utc).naive_utc(),
+        local_day_end.with_timezone(&Utc).naive_utc(),
+    ))
+}
+
+fn week_period_for_datetime(
+    datetime_utc: NaiveDateTime,
+    tz: Tz,
+    week_start_weekday: chrono::Weekday,
+) -> Result<(NaiveDateTime, NaiveDateTime), PpdcError> {
+    let utc_dt = DateTime::<Utc>::from_naive_utc_and_offset(datetime_utc, Utc);
+    let local_dt = utc_dt.with_timezone(&tz);
+    let local_date = local_dt.date_naive();
+
+    let current = i64::from(local_date.weekday().num_days_from_monday());
+    let target = i64::from(week_start_weekday.num_days_from_monday());
+    let delta_days = (7 + current - target) % 7;
+    let week_start_date = local_date - Duration::days(delta_days);
+
+    let local_week_start = local_midnight(tz, week_start_date)?;
+    let local_week_end = local_week_start + Duration::days(7);
+
+    Ok((
+        local_week_start.with_timezone(&Utc).naive_utc(),
+        local_week_end.with_timezone(&Utc).naive_utc(),
+    ))
+}
+
+fn has_analysis_covering_moment_for_lens(
+    lens_id: Uuid,
+    analysis_type: LandscapeAnalysisType,
+    moment: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<bool, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let maybe_id = lens_analysis_scopes::table
+        .inner_join(
+            landscape_analyses::table
+                .on(lens_analysis_scopes::landscape_analysis_id.eq(landscape_analyses::id)),
+        )
+        .filter(lens_analysis_scopes::lens_id.eq(lens_id))
+        .filter(landscape_analyses::landscape_analysis_type.eq(analysis_type.to_db()))
+        .filter(landscape_analyses::period_start.le(moment))
+        .filter(landscape_analyses::period_end.gt(moment))
+        .select(landscape_analyses::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+
+    Ok(maybe_id.is_some())
+}
+
+fn has_trace_analysis_for_lens(
+    lens_id: Uuid,
+    analysis_type: LandscapeAnalysisType,
+    analyzed_trace_id: Uuid,
+    pool: &DbPool,
+) -> Result<bool, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let maybe_id = lens_analysis_scopes::table
+        .inner_join(
+            landscape_analyses::table
+                .on(lens_analysis_scopes::landscape_analysis_id.eq(landscape_analyses::id)),
+        )
+        .filter(lens_analysis_scopes::lens_id.eq(lens_id))
+        .filter(landscape_analyses::landscape_analysis_type.eq(analysis_type.to_db()))
+        .filter(landscape_analyses::analyzed_trace_id.eq(Some(analyzed_trace_id)))
+        .select(landscape_analyses::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+
+    Ok(maybe_id.is_some())
+}
+
+pub fn create_for_trace_and_lens(
+    trace_id: Uuid,
+    lens_id: Uuid,
+    pool: &DbPool,
+) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+    create_for_trace_and_lens_with_options(trace_id, lens_id, false, pool)
+}
+
+pub fn create_for_trace_and_lens_with_options(
+    trace_id: Uuid,
+    lens_id: Uuid,
+    use_anchor_for_context_types: bool,
+    pool: &DbPool,
+) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+    let lens = Lens::find_full_lens(lens_id, pool)?;
+    let user_id = lens.user_id.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Lens user_id is missing".to_string(),
+        )
+    })?;
+    let user = User::find(&user_id, pool)?;
+    let trace = Trace::find_full_trace(trace_id, pool)?;
+    let trace_datetime = trace_effective_datetime(&trace);
+
+    let (trace_analysis_type, analysis_datetime) = match trace.trace_type {
+        TraceType::HighLevelProjectsDefinition => {
+            let dt = if use_anchor_for_context_types {
+                user.context_anchor_at.unwrap_or(trace_datetime)
+            } else {
+                Utc::now().naive_utc()
+            };
+            (LandscapeAnalysisType::Hlp, dt)
+        }
+        TraceType::BioTrace => {
+            let dt = if use_anchor_for_context_types {
+                user.context_anchor_at.unwrap_or(trace_datetime)
+            } else {
+                Utc::now().naive_utc()
+            };
+            (LandscapeAnalysisType::Bio, dt)
+        }
+        _ => (LandscapeAnalysisType::TraceIncremental, trace_datetime),
+    };
+
+    let mut created = Vec::new();
+
+    if !has_trace_analysis_for_lens(lens_id, trace_analysis_type, trace.id, pool)? {
+        let new_analysis = match trace_analysis_type {
+            LandscapeAnalysisType::Hlp => NewLandscapeAnalysis::new_hlp(
+                format!("HLP analysis {}", trace.id),
+                String::new(),
+                String::new(),
+                user_id,
+                analysis_datetime,
+                None,
+                Some(trace.id),
+                None,
+            ),
+            LandscapeAnalysisType::Bio => NewLandscapeAnalysis::new_bio(
+                format!("Bio analysis {}", trace.id),
+                String::new(),
+                String::new(),
+                user_id,
+                analysis_datetime,
+                None,
+                Some(trace.id),
+                None,
+            ),
+            _ => NewLandscapeAnalysis::new_trace_incremental(
+                format!("Trace analysis {}", trace.id),
+                String::new(),
+                String::new(),
+                user_id,
+                analysis_datetime,
+                None,
+                Some(trace.id),
+                None,
+            ),
+        };
+        created.push(new_analysis.create_for_lens(lens_id, pool)?);
+    }
+
+    if matches!(trace.trace_type, TraceType::UserTrace | TraceType::WorkspaceTrace) {
+        let tz = parse_user_timezone_or_utc(&user);
+
+        if !has_analysis_covering_moment_for_lens(
+            lens_id,
+            LandscapeAnalysisType::DailyRecap,
+            trace_datetime,
+            pool,
+        )? {
+            let (day_start, day_end) = day_period_for_datetime(trace_datetime, tz)?;
+            let daily = NewLandscapeAnalysis::new_daily_recap(
+                format!("Daily recap {}", day_start.date()),
+                String::new(),
+                String::new(),
+                user_id,
+                trace_datetime,
+                day_start,
+                day_end,
+                None,
+                None,
+            )
+            .create_for_lens(lens_id, pool)?;
+            created.push(daily);
+        }
+
+        if !has_analysis_covering_moment_for_lens(
+            lens_id,
+            LandscapeAnalysisType::WeeklyRecap,
+            trace_datetime,
+            pool,
+        )? {
+            let week_start_weekday = user.week_analysis_weekday.to_chrono_weekday();
+            let (week_start, week_end) =
+                week_period_for_datetime(trace_datetime, tz, week_start_weekday)?;
+            let weekly = NewLandscapeAnalysis::new_weekly_recap(
+                format!("Weekly recap {}", week_start.date()),
+                String::new(),
+                String::new(),
+                user_id,
+                trace_datetime,
+                week_start,
+                week_end,
+                None,
+                None,
+            )
+            .create_for_lens(lens_id, pool)?;
+            created.push(weekly);
+        }
+    }
+
+    Ok(created)
 }
 
 pub fn delete_leaf_and_cleanup(

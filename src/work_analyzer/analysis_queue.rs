@@ -1,9 +1,12 @@
 use crate::db::{get_global_pool, DbPool};
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{
-    landscape_analysis::{LandscapeAnalysis, LandscapeProcessingState, NewLandscapeAnalysis},
+    landscape_analysis::{
+        create_for_trace_and_lens, model::LandscapeAnalysisType, LandscapeAnalysis,
+        LandscapeProcessingState, NewLandscapeAnalysis,
+    },
     lens::{Lens, LensProcessingState},
-    trace::Trace,
+    trace::{Trace, TraceType},
 };
 use crate::work_analyzer::analysis_processor;
 use chrono::Utc;
@@ -108,29 +111,31 @@ pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>,
         return Ok(None);
     }
     let next_trace = next_trace.unwrap();
-    let analysis_title = format!(
-        "{} {}",
-        title,
-        next_trace
-            .interaction_date
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string()
-    );
-    let new_analysis = NewLandscapeAnalysis::new(
-        analysis_title,
-        String::new(),
-        String::new(),
-        lens.user_id.expect("User id is required"),
-        Utc::now().naive_utc(),
-        current_landscape_id,
-        Some(next_trace.id),
-        None,
-    )
-    .create_for_lens(lens.id, &pool)?;
-    let lens = lens.update_current_landscape(new_analysis.id, &pool)?;
+    let _ = title;
+    let _created = create_for_trace_and_lens(next_trace.id, lens.id, pool)?;
+    let expected_type = match next_trace.trace_type {
+        TraceType::HighLevelProjectsDefinition => LandscapeAnalysisType::Hlp,
+        TraceType::BioTrace => LandscapeAnalysisType::Bio,
+        _ => LandscapeAnalysisType::TraceIncremental,
+    };
+    let next_analysis = lens
+        .get_analysis_scope(pool)?
+        .into_iter()
+        .filter(|analysis| {
+            analysis.analyzed_trace_id == Some(next_trace.id)
+                && analysis.landscape_analysis_type == expected_type
+        })
+        .max_by_key(|analysis| analysis.created_at)
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                crate::entities_v2::error::ErrorType::InternalError,
+                "No analysis found for next trace after creation".to_string(),
+            )
+        })?;
+    let lens = lens.update_current_landscape(next_analysis.id, &pool)?;
     let processor = analysis_processor::AnalysisProcessor::setup(
-        new_analysis.id,
+        next_analysis.id,
         next_trace.id,
         current_landscape_id,
         &pool,

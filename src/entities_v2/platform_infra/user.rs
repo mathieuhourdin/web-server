@@ -16,6 +16,7 @@ use axum::{
     response::IntoResponse,
 };
 use chrono::NaiveDateTime;
+use chrono::Weekday;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
@@ -182,6 +183,18 @@ impl WeekAnalysisWeekday {
             WeekAnalysisWeekday::Friday => "Friday",
             WeekAnalysisWeekday::Saturday => "Saturday",
             WeekAnalysisWeekday::Sunday => "Sunday",
+        }
+    }
+
+    pub fn to_chrono_weekday(self) -> Weekday {
+        match self {
+            WeekAnalysisWeekday::Monday => Weekday::Mon,
+            WeekAnalysisWeekday::Tuesday => Weekday::Tue,
+            WeekAnalysisWeekday::Wednesday => Weekday::Wed,
+            WeekAnalysisWeekday::Thursday => Weekday::Thu,
+            WeekAnalysisWeekday::Friday => Weekday::Fri,
+            WeekAnalysisWeekday::Saturday => Weekday::Sat,
+            WeekAnalysisWeekday::Sunday => Weekday::Sun,
         }
     }
 }
