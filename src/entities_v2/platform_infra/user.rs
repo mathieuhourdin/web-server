@@ -21,7 +21,7 @@ use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_query;
-use diesel::sql_types::{Float, Text, Uuid as SqlUuid};
+use diesel::sql_types::{Float, SmallInt, Text, Uuid as SqlUuid};
 use diesel::{AsExpression, FromSqlRow};
 use rand::Rng;
 use serde::de::{self, Deserializer};
@@ -107,6 +107,120 @@ impl FromSql<Text, Pg> for JournalTheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::SmallInt)]
+pub enum WeekAnalysisWeekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+impl WeekAnalysisWeekday {
+    pub fn to_db_value(self) -> i16 {
+        match self {
+            WeekAnalysisWeekday::Monday => 1,
+            WeekAnalysisWeekday::Tuesday => 2,
+            WeekAnalysisWeekday::Wednesday => 3,
+            WeekAnalysisWeekday::Thursday => 4,
+            WeekAnalysisWeekday::Friday => 5,
+            WeekAnalysisWeekday::Saturday => 6,
+            WeekAnalysisWeekday::Sunday => 7,
+        }
+    }
+
+    pub fn from_db_value(value: i16) -> Result<Self, PpdcError> {
+        match value {
+            1 => Ok(WeekAnalysisWeekday::Monday),
+            2 => Ok(WeekAnalysisWeekday::Tuesday),
+            3 => Ok(WeekAnalysisWeekday::Wednesday),
+            4 => Ok(WeekAnalysisWeekday::Thursday),
+            5 => Ok(WeekAnalysisWeekday::Friday),
+            6 => Ok(WeekAnalysisWeekday::Saturday),
+            7 => Ok(WeekAnalysisWeekday::Sunday),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid week_analysis_weekday: {}", value),
+            )),
+        }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "1" => Ok(WeekAnalysisWeekday::Monday),
+            "2" => Ok(WeekAnalysisWeekday::Tuesday),
+            "3" => Ok(WeekAnalysisWeekday::Wednesday),
+            "4" => Ok(WeekAnalysisWeekday::Thursday),
+            "5" => Ok(WeekAnalysisWeekday::Friday),
+            "6" => Ok(WeekAnalysisWeekday::Saturday),
+            "7" => Ok(WeekAnalysisWeekday::Sunday),
+            "MONDAY" | "Monday" | "monday" => Ok(WeekAnalysisWeekday::Monday),
+            "TUESDAY" | "Tuesday" | "tuesday" => Ok(WeekAnalysisWeekday::Tuesday),
+            "WEDNESDAY" | "Wednesday" | "wednesday" => Ok(WeekAnalysisWeekday::Wednesday),
+            "THURSDAY" | "Thursday" | "thursday" => Ok(WeekAnalysisWeekday::Thursday),
+            "FRIDAY" | "Friday" | "friday" => Ok(WeekAnalysisWeekday::Friday),
+            "SATURDAY" | "Saturday" | "saturday" => Ok(WeekAnalysisWeekday::Saturday),
+            "SUNDAY" | "Sunday" | "sunday" => Ok(WeekAnalysisWeekday::Sunday),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid week_analysis_weekday: {}", code),
+            )),
+        }
+    }
+
+    pub fn to_api_value(self) -> &'static str {
+        match self {
+            WeekAnalysisWeekday::Monday => "Monday",
+            WeekAnalysisWeekday::Tuesday => "Tuesday",
+            WeekAnalysisWeekday::Wednesday => "Wednesday",
+            WeekAnalysisWeekday::Thursday => "Thursday",
+            WeekAnalysisWeekday::Friday => "Friday",
+            WeekAnalysisWeekday::Saturday => "Saturday",
+            WeekAnalysisWeekday::Sunday => "Sunday",
+        }
+    }
+}
+
+impl Serialize for WeekAnalysisWeekday {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_api_value())
+    }
+}
+
+impl<'de> Deserialize<'de> for WeekAnalysisWeekday {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        WeekAnalysisWeekday::from_code(&value)
+            .map_err(|_| de::Error::custom("unknown week_analysis_weekday"))
+    }
+}
+
+impl ToSql<SmallInt, Pg> for WeekAnalysisWeekday {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        let value = self.to_db_value();
+        <i16 as ToSql<SmallInt, Pg>>::to_sql(&value, &mut out.reborrow())
+    }
+}
+
+impl FromSql<SmallInt, Pg> for WeekAnalysisWeekday {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <i16 as FromSql<SmallInt, Pg>>::from_sql(bytes)?;
+        WeekAnalysisWeekday::from_db_value(value)
+            .map_err(|_| "invalid week_analysis_weekday value in database".into())
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct User {
@@ -127,6 +241,9 @@ pub struct User {
     pub high_level_projects_definition: Option<String>,
     pub journal_theme: JournalTheme,
     pub current_lens_id: Option<Uuid>,
+    pub week_analysis_weekday: WeekAnalysisWeekday,
+    pub timezone: String,
+    pub context_anchor_at: Option<NaiveDateTime>,
 }
 
 pub enum UserResponse {
@@ -163,6 +280,9 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub pseudonymized: bool,
     pub journal_theme: JournalTheme,
     pub current_lens_id: Option<Uuid>,
+    pub week_analysis_weekday: WeekAnalysisWeekday,
+    pub timezone: String,
+    pub context_anchor_at: Option<NaiveDateTime>,
     pub display_name: String,
 }
 
@@ -183,6 +303,9 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             pseudonymized: user.pseudonymized.clone(),
             journal_theme: user.journal_theme,
             current_lens_id: user.current_lens_id,
+            week_analysis_weekday: user.week_analysis_weekday,
+            timezone: user.timezone.clone(),
+            context_anchor_at: user.context_anchor_at,
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -205,6 +328,9 @@ pub struct UserPseudonymizedResponse {
     pub pseudonymized: bool,
     pub journal_theme: JournalTheme,
     pub current_lens_id: Option<Uuid>,
+    pub week_analysis_weekday: WeekAnalysisWeekday,
+    pub timezone: String,
+    pub context_anchor_at: Option<NaiveDateTime>,
     pub display_name: String,
 }
 
@@ -222,6 +348,9 @@ impl From<&User> for UserPseudonymizedResponse {
             pseudonymized: user.pseudonymized.clone(),
             journal_theme: user.journal_theme,
             current_lens_id: user.current_lens_id,
+            week_analysis_weekday: user.week_analysis_weekday,
+            timezone: user.timezone.clone(),
+            context_anchor_at: user.context_anchor_at,
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -247,6 +376,9 @@ pub struct NewUser {
     pub high_level_projects_definition: Option<String>,
     pub journal_theme: Option<JournalTheme>,
     pub current_lens_id: Option<Uuid>,
+    pub week_analysis_weekday: Option<WeekAnalysisWeekday>,
+    pub timezone: Option<String>,
+    pub context_anchor_at: Option<NaiveDateTime>,
 }
 
 impl NewUser {
@@ -659,6 +791,9 @@ mod tests {
             pseudonymized: Some(false),
             journal_theme: None,
             current_lens_id: None,
+            week_analysis_weekday: None,
+            timezone: None,
+            context_anchor_at: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

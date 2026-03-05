@@ -108,6 +108,9 @@ diesel::table! {
         subtitle -> Text,
         plain_text_state_summary -> Text,
         interaction_date -> Nullable<Timestamp>,
+        period_start -> Timestamp,
+        period_end -> Timestamp,
+        landscape_analysis_type -> Text,
         processing_state -> Text,
         parent_id -> Nullable<Uuid>,
         replayed_from_id -> Nullable<Uuid>,
@@ -168,6 +171,8 @@ diesel::table! {
         current_landscape_id -> Nullable<Uuid>,
         target_trace_id -> Nullable<Uuid>,
         autoplay -> Bool,
+        run_lock_owner -> Nullable<Uuid>,
+        run_lock_until -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -347,6 +352,9 @@ diesel::table! {
         high_level_projects_definition -> Nullable<Text>,
         journal_theme -> Text,
         current_lens_id -> Nullable<Uuid>,
+        week_analysis_weekday -> Int2,
+        timezone -> Text,
+        context_anchor_at -> Nullable<Timestamp>,
     }
 }
 

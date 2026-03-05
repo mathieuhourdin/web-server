@@ -1,0 +1,8 @@
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS users_timezone_not_blank_check;
+
+ALTER TABLE users
+ALTER COLUMN timezone DROP DEFAULT;
+
+ALTER TABLE users
+DROP COLUMN IF EXISTS timezone;
