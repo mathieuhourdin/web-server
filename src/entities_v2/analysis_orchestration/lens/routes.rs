@@ -23,8 +23,15 @@ pub async fn post_lens_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
-    let lens = NewLens::new(payload, None, session.user_id.unwrap()).create(&pool)?;
-    let lens = Lens::find_full_lens(lens.id, &pool)?;
+    let user_id = session.user_id.unwrap();
+    let lens = NewLens::new(payload, None, user_id).create(&pool)?;
+    let mut lens = Lens::find_full_lens(lens.id, &pool)?;
+
+    if lens.target_trace_id.is_none() {
+        if let Some(most_recent_trace) = Trace::get_most_recent_for_user(user_id, &pool)? {
+            lens = lens.update_target_trace(Some(most_recent_trace.id), &pool)?;
+        }
+    }
 
     tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
 
@@ -102,6 +109,7 @@ pub async fn get_lens_analysis_route(
     }
 
     let mut analyses = lens.get_analysis_scope(&pool)?;
-    analyses.sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
+    analyses
+        .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(Json(analyses))
 }

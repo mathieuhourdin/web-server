@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::schema::{landscape_analyses, lens_analysis_scopes, lens_heads};
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
+use crate::schema::{landscape_analyses, lens_analysis_scopes, lens_heads};
 
 use super::model::{LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState};
 
@@ -145,7 +145,10 @@ impl LandscapeAnalysis {
         })
     }
 
-    pub fn find_by_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+    pub fn find_by_trace(
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");

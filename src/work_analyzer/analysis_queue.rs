@@ -1,163 +1,261 @@
-use crate::db::{get_global_pool, DbPool};
-use crate::entities_v2::error::PpdcError;
-use crate::entities_v2::{
-    landscape_analysis::{
-        create_for_trace_and_lens, model::LandscapeAnalysisType, LandscapeAnalysis,
-        LandscapeProcessingState, NewLandscapeAnalysis,
-    },
-    lens::{Lens, LensProcessingState},
-    trace::{Trace, TraceType},
-};
-use crate::work_analyzer::analysis_processor;
-use chrono::Utc;
 use uuid::Uuid;
 
-/*pub async fn run_analysis_pipeline_for_landscapes(landscape_analysis_ids: Vec<Uuid>) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-    println!("run_analysis_pipeline_for_landscapes: {:?}", landscape_analysis_ids);
-    tracing::info!(
-        target: "work_analyzer",
-        "analysis_id: batch run_analysis_pipeline_for_landscapes ids={:?}",
-        landscape_analysis_ids
-    );
-    for landscape_analysis_id in landscape_analysis_ids {
-        run_landscape_analysis(landscape_analysis_id).await?;
-    }
-    println!("run_analysis_pipeline_for_landscapes complete");
-    Ok(vec![])
-}*/
+use crate::db::{get_global_pool, DbPool};
+use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::landscape_analysis::model::LandscapeAnalysisType;
+use crate::entities_v2::{
+    landscape_analysis::{
+        claim_next_pending_for_lens, copy_landmark_links_from_analysis, LandscapeAnalysis,
+        LandscapeProcessingState,
+    },
+    lens::{Lens, LensProcessingState},
+    trace::Trace,
+};
+use crate::work_analyzer::analysis_processor;
+
+const LENS_RUN_LOCK_TTL_SECONDS: i64 = 1800;
+const MAX_ANALYSES_PER_RUN: usize = 100;
 
 pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
-    println!("run_lens: {:?}", lens_id);
     let pool = get_global_pool();
-    let mut lens = Lens::find_full_lens(lens_id, &pool.clone())?;
-    while let Some(new_lens) = run_lens_step(lens.id, &pool.clone()).await? {
-        lens = new_lens;
+    let mut lens = Lens::find_full_lens(lens_id, pool)?;
+    let worker_id = Uuid::new_v4();
+    let claim_cutoff_at = resolve_claim_cutoff_at(&lens, pool)?;
+    tracing::info!(
+        target: "work_analyzer",
+        "run_lens_start lens_id={} worker_id={} current_landscape_id={:?} target_trace_id={:?} claim_cutoff_at={}",
+        lens.id,
+        worker_id,
+        lens.current_landscape_id,
+        lens.target_trace_id,
+        claim_cutoff_at
+    );
+
+    let acquired = lens.try_acquire_run_lock(worker_id, LENS_RUN_LOCK_TTL_SECONDS, pool)?;
+    if !acquired {
+        tracing::info!(
+            target: "work_analyzer",
+            "run_lens_lock_not_acquired lens_id={} worker_id={}",
+            lens.id,
+            worker_id
+        );
+        return Ok(lens);
     }
-    lens = lens.set_processing_state(LensProcessingState::InSync, &pool)?;
-    Ok(lens)
+    tracing::info!(
+        target: "work_analyzer",
+        "run_lens_lock_acquired lens_id={} worker_id={}",
+        lens.id,
+        worker_id
+    );
+
+    let run_result = run_claim_loop(&mut lens, worker_id, claim_cutoff_at, pool).await;
+
+    let release_result = lens.release_run_lock(worker_id, pool);
+    match (run_result, release_result) {
+        (Ok(()), Ok(_)) => {
+            tracing::info!(
+                target: "work_analyzer",
+                "run_lens_complete lens_id={} worker_id={} current_landscape_id={:?}",
+                lens.id,
+                worker_id,
+                lens.current_landscape_id
+            );
+            Ok(lens)
+        }
+        (Err(err), Ok(_)) => {
+            tracing::error!(
+                target: "work_analyzer",
+                "run_lens_failed lens_id={} worker_id={} error={}",
+                lens.id,
+                worker_id,
+                err
+            );
+            Err(err)
+        }
+        (Ok(()), Err(err)) => {
+            tracing::error!(
+                target: "work_analyzer",
+                "run_lens_lock_release_failed lens_id={} worker_id={} error={}",
+                lens.id,
+                worker_id,
+                err
+            );
+            Err(err)
+        }
+        (Err(err), Err(_release_err)) => Err(err),
+    }
 }
 
-pub async fn run_lens_step(lens_id: Uuid, pool: &DbPool) -> Result<Option<Lens>, PpdcError> {
-    println!("run_lens_step: {:?}", lens_id);
-    let lens = Lens::find_full_lens(lens_id, &pool)?;
-    println!("lens: {:?}", lens);
-    let current_landscape_id = lens.current_landscape_id;
-    /*if current_landscape_id.is_none() {
-        println!("Creating first landscape");
-        let initial_landscape = create_first_landscape(lens.user_id.expect("User id is required"), &pool).await?;
-        let lens = lens.update_current_landscape(initial_landscape.id, &pool)?;
-        println!("Lens updated with first landscape: {:?}", lens);
-        return Ok(Some(lens));
-    } */
-    //let current_landscape_id = current_landscape_id.expect("Current landscape id is required");
-    //let current_landscape = LandscapeAnalysis::find_full_analysis(current_landscape_id, &pool)?;
-    //let current_trace_id = current_landscape.analyzed_trace_id;
+async fn run_claim_loop(
+    lens: &mut Lens,
+    worker_id: Uuid,
+    claim_cutoff_at: chrono::NaiveDateTime,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    for iteration in 0..MAX_ANALYSES_PER_RUN {
+        ensure_lock_is_alive(lens, worker_id, pool)?;
 
-    // check the replay case first.
-    if current_landscape_id.is_some() {
-        let current_landscape =
-            LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
-        if lens.target_trace_id.is_some()
-            && current_landscape.analyzed_trace_id == lens.target_trace_id
-        {
-            // The lens is up to date, no need to run the pipeline.
-            // Except if this is a replay, in which case we should run the pipeline but keep the current landscape as replayed from.
-            if current_landscape.processing_state == LandscapeProcessingState::ReplayRequested {
-                let new_analysis = NewLandscapeAnalysis::new(
-                    format!(
-                        "Replay de l'Analyse de la trace {}",
-                        current_landscape.analyzed_trace_id.unwrap()
-                    ),
-                    String::new(),
-                    String::new(),
-                    lens.user_id.expect("User id is required"),
-                    Utc::now().naive_utc(),
-                    current_landscape.parent_analysis_id,
-                    current_landscape.analyzed_trace_id,
-                    Some(current_landscape.id),
-                )
-                .create_for_lens(lens.id, &pool)?;
-                let _lens = lens.update_current_landscape(new_analysis.id, &pool)?;
-                let processor = analysis_processor::AnalysisProcessor::setup(
-                    new_analysis.id,
-                    current_landscape.analyzed_trace_id.unwrap(),
-                    current_landscape_id,
-                    &pool,
-                )?;
-                let _new_landscape = processor.process().await?;
-            }
-            // This should stop the pipeline if we have reached the target trace.
-            return Ok(None);
+        let Some(mut claimed_analysis) =
+            claim_next_pending_for_lens(lens.id, claim_cutoff_at, pool)?
+        else {
+            tracing::info!(
+                target: "work_analyzer",
+                "run_lens_no_claim lens_id={} worker_id={} iteration={}",
+                lens.id,
+                worker_id,
+                iteration
+            );
+            *lens = lens
+                .clone()
+                .set_processing_state(LensProcessingState::InSync, pool)?;
+            return Ok(());
+        };
+        tracing::info!(
+            target: "work_analyzer",
+            "run_lens_claimed lens_id={} worker_id={} iteration={} analysis_id={} analysis_type={} analyzed_trace_id={:?} period_start={} period_end={}",
+            lens.id,
+            worker_id,
+            iteration,
+            claimed_analysis.id,
+            claimed_analysis.landscape_analysis_type.to_db(),
+            claimed_analysis.analyzed_trace_id,
+            claimed_analysis.period_start,
+            claimed_analysis.period_end
+        );
+
+        let previous_landscape_id = lens.current_landscape_id;
+        if claimed_analysis.parent_analysis_id != previous_landscape_id {
+            tracing::info!(
+                target: "work_analyzer",
+                "run_lens_set_parent lens_id={} analysis_id={} old_parent={:?} new_parent={:?}",
+                lens.id,
+                claimed_analysis.id,
+                claimed_analysis.parent_analysis_id,
+                previous_landscape_id
+            );
+            claimed_analysis.parent_analysis_id = previous_landscape_id;
+            claimed_analysis = claimed_analysis.update(pool)?;
+        }
+        if let Some(parent_analysis_id) = previous_landscape_id {
+            let copied_links =
+                copy_landmark_links_from_analysis(parent_analysis_id, claimed_analysis.id, pool)?;
+            tracing::info!(
+                target: "work_analyzer",
+                "run_lens_transfer_parent_landmarks lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
+                lens.id,
+                claimed_analysis.id,
+                parent_analysis_id,
+                copied_links
+            );
+        }
+
+        let run_result =
+            run_claimed_analysis(lens, claimed_analysis.clone(), previous_landscape_id, pool).await;
+        if let Err(err) = run_result {
+            tracing::error!(
+                target: "work_analyzer",
+                "run_lens_analysis_failed lens_id={} analysis_id={} analysis_type={} error={}",
+                lens.id,
+                claimed_analysis.id,
+                claimed_analysis.landscape_analysis_type.to_db(),
+                err
+            );
+            let _ = claimed_analysis.set_processing_state(LandscapeProcessingState::Failed, pool);
+            return Err(err);
         }
     }
-    // The lens is not up to date, run the pipeline.
-    let next_trace: Option<Trace>;
-    let title: String;
-    if current_landscape_id.is_none() {
-        next_trace = Trace::get_first(lens.user_id.expect("User id is required"), &pool)?;
-        title = String::from("Premiere analyse ");
-    } else {
-        let current_landscape =
-            LandscapeAnalysis::find_full_analysis(current_landscape_id.unwrap(), &pool)?;
-        next_trace = Trace::get_next(
-            lens.user_id.expect("User id is required"),
-            current_landscape.analyzed_trace_id.unwrap(),
-            &pool,
-        )?;
-        title = String::from("Analyse de la trace suivante ");
-    }
-    if next_trace.is_none() {
-        // It should not happen, but if it does, we should stop the pipeline.
-        return Ok(None);
-    }
-    let next_trace = next_trace.unwrap();
-    let _ = title;
-    let _created = create_for_trace_and_lens(next_trace.id, lens.id, pool)?;
-    let expected_type = match next_trace.trace_type {
-        TraceType::HighLevelProjectsDefinition => LandscapeAnalysisType::Hlp,
-        TraceType::BioTrace => LandscapeAnalysisType::Bio,
-        _ => LandscapeAnalysisType::TraceIncremental,
-    };
-    let next_analysis = lens
-        .get_analysis_scope(pool)?
-        .into_iter()
-        .filter(|analysis| {
-            analysis.analyzed_trace_id == Some(next_trace.id)
-                && analysis.landscape_analysis_type == expected_type
-        })
-        .max_by_key(|analysis| analysis.created_at)
-        .ok_or_else(|| {
-            PpdcError::new(
-                500,
-                crate::entities_v2::error::ErrorType::InternalError,
-                "No analysis found for next trace after creation".to_string(),
-            )
-        })?;
-    let lens = lens.update_current_landscape(next_analysis.id, &pool)?;
-    let processor = analysis_processor::AnalysisProcessor::setup(
-        next_analysis.id,
-        next_trace.id,
-        current_landscape_id,
-        &pool,
-    )?;
-    let _new_landscape = processor.process().await?;
-    Ok(Some(lens))
+
+    tracing::warn!(
+        target: "work_analyzer",
+        "run_lens_max_iterations lens_id={} max_iterations={}",
+        lens.id,
+        MAX_ANALYSES_PER_RUN
+    );
+    Err(PpdcError::new(
+        500,
+        ErrorType::InternalError,
+        format!(
+            "Reached MAX_ANALYSES_PER_RUN ({MAX_ANALYSES_PER_RUN}) while processing lens {}",
+            lens.id
+        ),
+    ))
 }
 
-pub async fn create_first_landscape(
-    user_id: Uuid,
+fn ensure_lock_is_alive(lens: &Lens, worker_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    let renewed = lens.renew_run_lock(worker_id, LENS_RUN_LOCK_TTL_SECONDS, pool)?;
+    if renewed {
+        Ok(())
+    } else {
+        Err(PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            format!(
+                "Run lock lost while processing lens {} (worker {})",
+                lens.id, worker_id
+            ),
+        ))
+    }
+}
+
+async fn run_claimed_analysis(
+    lens: &mut Lens,
+    analysis: LandscapeAnalysis,
+    previous_landscape_id: Option<Uuid>,
     pool: &DbPool,
-) -> Result<LandscapeAnalysis, PpdcError> {
-    let initial_landscape = NewLandscapeAnalysis::new(
-        "Analyse de la biographie".to_string(),
-        "Analyse de la biographie".to_string(),
-        "Analyse de la biographie".to_string(),
-        user_id,
-        Utc::now().naive_utc(),
-        None,
-        None,
-        None,
-    )
-    .create(&pool)?;
-    Ok(initial_landscape)
+) -> Result<(), PpdcError> {
+    tracing::info!(
+        target: "work_analyzer",
+        "run_lens_analysis_start lens_id={} analysis_id={} analysis_type={} analyzed_trace_id={:?}",
+        lens.id,
+        analysis.id,
+        analysis.landscape_analysis_type.to_db(),
+        analysis.analyzed_trace_id
+    );
+    let completed_analysis = if let Some(trace_id) = analysis.analyzed_trace_id {
+        let processor = analysis_processor::AnalysisProcessor::setup(
+            analysis.id,
+            trace_id,
+            previous_landscape_id,
+            pool,
+        )?;
+        processor.process().await?
+    } else if matches!(
+        analysis.landscape_analysis_type,
+        LandscapeAnalysisType::DailyRecap | LandscapeAnalysisType::WeeklyRecap
+    ) {
+        let mut summary_analysis = analysis.clone();
+        if let Some(parent_analysis_id) = previous_landscape_id {
+            let parent_analysis = LandscapeAnalysis::find_full_analysis(parent_analysis_id, pool)?;
+            summary_analysis.plain_text_state_summary = parent_analysis.plain_text_state_summary;
+            summary_analysis.trace_mirror_id = parent_analysis.trace_mirror_id;
+        }
+        summary_analysis.processing_state = LandscapeProcessingState::Completed;
+        summary_analysis.update(pool)?
+    } else {
+        analysis.set_processing_state(LandscapeProcessingState::Completed, pool)?
+    };
+
+    *lens = lens
+        .clone()
+        .update_current_landscape(completed_analysis.id, pool)?;
+    tracing::info!(
+        target: "work_analyzer",
+        "run_lens_analysis_complete lens_id={} analysis_id={} analysis_type={} new_head={}",
+        lens.id,
+        completed_analysis.id,
+        completed_analysis.landscape_analysis_type.to_db(),
+        completed_analysis.id
+    );
+    Ok(())
+}
+
+fn resolve_claim_cutoff_at(lens: &Lens, pool: &DbPool) -> Result<chrono::NaiveDateTime, PpdcError> {
+    if let Some(target_trace_id) = lens.target_trace_id {
+        let target_trace = Trace::find_full_trace(target_trace_id, pool)?;
+        Ok(target_trace
+            .interaction_date
+            .unwrap_or(target_trace.created_at))
+    } else {
+        Ok(chrono::Utc::now().naive_utc())
+    }
 }

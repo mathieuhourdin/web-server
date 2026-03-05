@@ -1,15 +1,29 @@
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::Uuid as SqlUuid;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::entities_v2::{lens::Lens, trace::{Trace, TraceType}, user::User};
-use crate::schema::{landscape_analyses, landscape_landmarks, lens_analysis_scopes};
 use crate::entities_v2::reference::Reference;
+use crate::entities_v2::{
+    lens::Lens,
+    trace::{Trace, TraceType},
+    user::User,
+};
+use crate::schema::{landscape_analyses, landscape_landmarks, lens_analysis_scopes};
 
-use super::model::{LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState, NewLandscapeAnalysis};
+use super::model::{
+    LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState, NewLandscapeAnalysis,
+};
+
+#[derive(diesel::QueryableByName)]
+struct IdRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+}
 
 impl LandscapeAnalysis {
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
@@ -24,7 +38,8 @@ impl LandscapeAnalysis {
                 landscape_analyses::interaction_date.eq(self.interaction_date),
                 landscape_analyses::period_start.eq(self.period_start),
                 landscape_analyses::period_end.eq(self.period_end),
-                landscape_analyses::landscape_analysis_type.eq(self.landscape_analysis_type.to_db()),
+                landscape_analyses::landscape_analysis_type
+                    .eq(self.landscape_analysis_type.to_db()),
                 landscape_analyses::processing_state.eq(self.processing_state.to_db()),
                 landscape_analyses::parent_id.eq(self.parent_analysis_id),
                 landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
@@ -69,7 +84,8 @@ impl NewLandscapeAnalysis {
                 landscape_analyses::period_start.eq(self.period_start),
                 landscape_analyses::period_end.eq(self.period_end),
                 landscape_analyses::user_id.eq(self.user_id),
-                landscape_analyses::landscape_analysis_type.eq(self.landscape_analysis_type.to_db()),
+                landscape_analyses::landscape_analysis_type
+                    .eq(self.landscape_analysis_type.to_db()),
                 landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()),
                 landscape_analyses::parent_id.eq(self.parent_analysis_id),
                 landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
@@ -82,7 +98,11 @@ impl NewLandscapeAnalysis {
         LandscapeAnalysis::find_full_analysis(id, pool)
     }
 
-    pub fn create_for_lens(self, lens_id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+    pub fn create_for_lens(
+        self,
+        lens_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -92,13 +112,16 @@ impl NewLandscapeAnalysis {
                 .values((
                     landscape_analyses::title.eq(self.title.clone()),
                     landscape_analyses::subtitle.eq(self.subtitle.clone()),
-                    landscape_analyses::plain_text_state_summary.eq(self.plain_text_state_summary.clone()),
+                    landscape_analyses::plain_text_state_summary
+                        .eq(self.plain_text_state_summary.clone()),
                     landscape_analyses::interaction_date.eq(Some(self.interaction_date)),
                     landscape_analyses::period_start.eq(self.period_start),
                     landscape_analyses::period_end.eq(self.period_end),
                     landscape_analyses::user_id.eq(self.user_id),
-                    landscape_analyses::landscape_analysis_type.eq(self.landscape_analysis_type.to_db()),
-                    landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()),
+                    landscape_analyses::landscape_analysis_type
+                        .eq(self.landscape_analysis_type.to_db()),
+                    landscape_analyses::processing_state
+                        .eq(LandscapeProcessingState::Pending.to_db()),
                     landscape_analyses::parent_id.eq(self.parent_analysis_id),
                     landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
                     landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
@@ -259,6 +282,22 @@ pub fn create_for_trace_and_lens_with_options(
     use_anchor_for_context_types: bool,
     pool: &DbPool,
 ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+    create_for_trace_and_lens_with_options_and_anchor(
+        trace_id,
+        lens_id,
+        use_anchor_for_context_types,
+        None,
+        pool,
+    )
+}
+
+pub fn create_for_trace_and_lens_with_options_and_anchor(
+    trace_id: Uuid,
+    lens_id: Uuid,
+    use_anchor_for_context_types: bool,
+    anchor_override: Option<NaiveDateTime>,
+    pool: &DbPool,
+) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
     let lens = Lens::find_full_lens(lens_id, pool)?;
     let user_id = lens.user_id.ok_or_else(|| {
         PpdcError::new(
@@ -274,7 +313,10 @@ pub fn create_for_trace_and_lens_with_options(
     let (trace_analysis_type, analysis_datetime) = match trace.trace_type {
         TraceType::HighLevelProjectsDefinition => {
             let dt = if use_anchor_for_context_types {
-                user.context_anchor_at.unwrap_or(trace_datetime)
+                anchor_override
+                    .or(user.context_anchor_at)
+                    .unwrap_or(trace_datetime)
+                    - Duration::days(1)
             } else {
                 Utc::now().naive_utc()
             };
@@ -282,7 +324,10 @@ pub fn create_for_trace_and_lens_with_options(
         }
         TraceType::BioTrace => {
             let dt = if use_anchor_for_context_types {
-                user.context_anchor_at.unwrap_or(trace_datetime)
+                anchor_override
+                    .or(user.context_anchor_at)
+                    .unwrap_or(trace_datetime)
+                    - Duration::days(1)
             } else {
                 Utc::now().naive_utc()
             };
@@ -329,7 +374,10 @@ pub fn create_for_trace_and_lens_with_options(
         created.push(new_analysis.create_for_lens(lens_id, pool)?);
     }
 
-    if matches!(trace.trace_type, TraceType::UserTrace | TraceType::WorkspaceTrace) {
+    if matches!(
+        trace.trace_type,
+        TraceType::UserTrace | TraceType::WorkspaceTrace
+    ) {
         let tz = parse_user_timezone_or_utc(&user);
 
         if !has_analysis_covering_moment_for_lens(
@@ -380,6 +428,55 @@ pub fn create_for_trace_and_lens_with_options(
     }
 
     Ok(created)
+}
+
+pub fn claim_next_pending_for_lens(
+    lens_id: Uuid,
+    claim_cutoff_at: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<Option<LandscapeAnalysis>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let claimed = sql_query(
+        r#"
+WITH candidate AS (
+    SELECT la.id
+    FROM landscape_analyses la
+    INNER JOIN lens_analysis_scopes las
+        ON las.landscape_analysis_id = la.id
+    WHERE las.lens_id = $1
+      AND la.processing_state = 'PENDING'
+      AND la.period_end <= $2
+    ORDER BY
+      la.period_end ASC,
+      CASE la.landscape_analysis_type
+        WHEN 'DAILY_RECAP' THEN 0
+        WHEN 'WEEKLY_RECAP' THEN 1
+        ELSE 0
+      END ASC,
+      la.created_at ASC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE landscape_analyses la
+SET processing_state = 'RUNNING',
+    updated_at = NOW()
+FROM candidate
+WHERE la.id = candidate.id
+RETURNING la.id
+        "#,
+    )
+    .bind::<SqlUuid, _>(lens_id)
+    .bind::<diesel::sql_types::Timestamp, _>(claim_cutoff_at)
+    .get_result::<IdRow>(&mut conn)
+    .optional()?;
+
+    match claimed {
+        Some(row) => Ok(Some(LandscapeAnalysis::find_full_analysis(row.id, pool)?)),
+        None => Ok(None),
+    }
 }
 
 pub fn delete_leaf_and_cleanup(
@@ -441,4 +538,42 @@ pub fn add_landmark_ref(
         .do_nothing()
         .execute(&mut conn)?;
     Ok(())
+}
+
+pub fn copy_landmark_links_from_analysis(
+    source_landscape_analysis_id: Uuid,
+    target_landscape_analysis_id: Uuid,
+    pool: &DbPool,
+) -> Result<usize, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let source_links = landscape_landmarks::table
+        .filter(landscape_landmarks::landscape_analysis_id.eq(source_landscape_analysis_id))
+        .select((
+            landscape_landmarks::landmark_id,
+            landscape_landmarks::relation_type,
+        ))
+        .load::<(Uuid, String)>(&mut conn)?;
+
+    let mut inserted = 0usize;
+    for (landmark_id, relation_type) in source_links {
+        let rows = diesel::insert_into(landscape_landmarks::table)
+            .values((
+                landscape_landmarks::landscape_analysis_id.eq(target_landscape_analysis_id),
+                landscape_landmarks::landmark_id.eq(landmark_id),
+                landscape_landmarks::relation_type.eq(relation_type),
+            ))
+            .on_conflict((
+                landscape_landmarks::landscape_analysis_id,
+                landscape_landmarks::landmark_id,
+                landscape_landmarks::relation_type,
+            ))
+            .do_nothing()
+            .execute(&mut conn)?;
+        inserted += rows as usize;
+    }
+
+    Ok(inserted)
 }

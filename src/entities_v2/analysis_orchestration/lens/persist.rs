@@ -4,13 +4,14 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 use crate::entities_v2::{
     landscape_analysis::{
-        self, create_for_trace_and_lens_with_options, LandscapeAnalysis, NewLandscapeAnalysis,
+        self, create_for_trace_and_lens_with_options,
+        create_for_trace_and_lens_with_options_and_anchor, LandscapeAnalysis, NewLandscapeAnalysis,
     },
-    trace::Trace,
+    trace::{Trace, TraceType},
 };
+use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 
 use super::model::{Lens, LensProcessingState, NewLens};
 
@@ -54,6 +55,70 @@ fn remove_lens_analysis_scope_relation(
     Ok(())
 }
 
+fn enqueue_pending_analyses_for_lens_target(
+    lens_id: Uuid,
+    user_id: Uuid,
+    target_trace_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let all_user_traces = Trace::get_all_for_user(user_id, pool)?;
+    let trace_effective_date = |trace: &Trace| trace.interaction_date.unwrap_or(trace.created_at);
+
+    let anchor_date = all_user_traces
+        .iter()
+        .filter(|trace| {
+            matches!(
+                trace.trace_type,
+                TraceType::UserTrace | TraceType::WorkspaceTrace
+            )
+        })
+        .map(trace_effective_date)
+        .min()
+        .or_else(|| all_user_traces.iter().map(trace_effective_date).min());
+
+    let latest_hlp_trace = all_user_traces
+        .iter()
+        .filter(|trace| trace.trace_type == TraceType::HighLevelProjectsDefinition)
+        .max_by_key(|trace| trace_effective_date(trace))
+        .map(|trace| trace.id);
+    if let Some(hlp_trace_id) = latest_hlp_trace {
+        let _ = create_for_trace_and_lens_with_options_and_anchor(
+            hlp_trace_id,
+            lens_id,
+            true,
+            anchor_date,
+            pool,
+        )?;
+    }
+
+    let latest_bio_trace = all_user_traces
+        .iter()
+        .filter(|trace| trace.trace_type == TraceType::BioTrace)
+        .max_by_key(|trace| trace_effective_date(trace))
+        .map(|trace| trace.id);
+    if let Some(bio_trace_id) = latest_bio_trace {
+        let _ = create_for_trace_and_lens_with_options_and_anchor(
+            bio_trace_id,
+            lens_id,
+            true,
+            anchor_date,
+            pool,
+        )?;
+    }
+
+    let traces = Trace::get_before(user_id, target_trace_id, pool)?;
+    for trace in traces.iter().filter(|trace| {
+        !matches!(
+            trace.trace_type,
+            TraceType::HighLevelProjectsDefinition | TraceType::BioTrace
+        )
+    }) {
+        let _ = create_for_trace_and_lens_with_options(trace.id, lens_id, true, pool)?;
+    }
+
+    Ok(())
+}
+
 impl Lens {
     pub fn try_acquire_run_lock(
         &self,
@@ -68,14 +133,12 @@ impl Lens {
             .expect("Failed to get a connection from the pool");
 
         let updated_rows = diesel::update(
-            lenses::table
-                .filter(lenses::id.eq(self.id))
-                .filter(
-                    lenses::run_lock_until
-                        .is_null()
-                        .or(lenses::run_lock_until.lt(now))
-                        .or(lenses::run_lock_owner.eq(Some(worker_id))),
-                ),
+            lenses::table.filter(lenses::id.eq(self.id)).filter(
+                lenses::run_lock_until
+                    .is_null()
+                    .or(lenses::run_lock_until.lt(now))
+                    .or(lenses::run_lock_owner.eq(Some(worker_id))),
+            ),
         )
         .set((
             lenses::run_lock_owner.eq(Some(worker_id)),
@@ -182,26 +245,6 @@ impl Lens {
             )
         })?;
         let target_changed = self.target_trace_id != new_target_trace_id;
-        let traces_to_schedule = match (self.target_trace_id, new_target_trace_id) {
-            (Some(previous_target_trace_id), Some(next_target_trace_id)) => {
-                let previous_trace = Trace::find_full_trace(previous_target_trace_id, pool)?;
-                let next_trace = Trace::find_full_trace(next_target_trace_id, pool)?;
-                let previous_dt = previous_trace
-                    .interaction_date
-                    .unwrap_or(previous_trace.created_at);
-                let next_dt = next_trace.interaction_date.unwrap_or(next_trace.created_at);
-                if next_dt > previous_dt {
-                    Trace::get_between(user_id, previous_target_trace_id, next_target_trace_id, pool)?
-                        .into_iter()
-                        .filter(|trace| trace.id != previous_target_trace_id)
-                        .collect::<Vec<_>>()
-                } else {
-                    vec![next_trace]
-                }
-            }
-            (None, Some(next_target_trace_id)) => Trace::get_before(user_id, next_target_trace_id, pool)?,
-            _ => Vec::new(),
-        };
 
         let mut conn = pool
             .get()
@@ -231,8 +274,13 @@ impl Lens {
             diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
                 .set(lenses::processing_state.eq(LensProcessingState::OutOfSync.to_db()))
                 .execute(&mut conn)?;
-            for trace in traces_to_schedule {
-                let _ = create_for_trace_and_lens_with_options(trace.id, self.id, true, pool)?;
+            if let Some(next_target_trace_id) = new_target_trace_id {
+                enqueue_pending_analyses_for_lens_target(
+                    self.id,
+                    user_id,
+                    next_target_trace_id,
+                    pool,
+                )?;
             }
         }
         Lens::find_full_lens(self.id, pool)
@@ -296,11 +344,7 @@ impl NewLens {
                 .do_update()
                 .set(lens_targets::trace_id.eq(target_trace_id))
                 .execute(&mut conn)?;
-
-            let traces = Trace::get_before(self.user_id, target_trace_id, pool)?;
-            for trace in traces {
-                let _ = create_for_trace_and_lens_with_options(trace.id, id, true, pool)?;
-            }
+            enqueue_pending_analyses_for_lens_target(id, self.user_id, target_trace_id, pool)?;
         }
         Lens::find_full_lens(id, pool)
     }

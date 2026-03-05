@@ -93,9 +93,12 @@ impl TraceType {
 
     pub fn from_db(value: &str) -> Self {
         match value {
-            "BIO_TRACE" => TraceType::BioTrace,
-            "WORKSPACE_TRACE" => TraceType::WorkspaceTrace,
-            "HIGH_LEVEL_PROJECTS_DEFINITION" => TraceType::HighLevelProjectsDefinition,
+            "BIO_TRACE" | "btrc" | "BTRC" => TraceType::BioTrace,
+            "WORKSPACE_TRACE" | "wtrc" | "WTRC" => TraceType::WorkspaceTrace,
+            "HIGH_LEVEL_PROJECTS_DEFINITION" | "hlpd" | "HLPD" => {
+                TraceType::HighLevelProjectsDefinition
+            }
+            "USER_TRACE" | "trce" | "TRCE" => TraceType::UserTrace,
             _ => TraceType::UserTrace,
         }
     }

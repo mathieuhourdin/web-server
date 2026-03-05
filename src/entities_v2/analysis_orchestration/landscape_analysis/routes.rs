@@ -63,7 +63,11 @@ pub async fn post_analysis_route(
             let last_date = last_analysis
                 .interaction_date
                 .unwrap_or(last_analysis.created_at);
-            if last_date > (date - Duration::days(1)).and_hms_opt(12, 0, 0).expect("valid date") {
+            if last_date
+                > (date - Duration::days(1))
+                    .and_hms_opt(12, 0, 0)
+                    .expect("valid date")
+            {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -76,7 +80,10 @@ pub async fn post_analysis_route(
                 anchor_date.format("%Y-%m-%d")
             )
         }
-        None => format!("Première Analyse, jusqu'au {}", anchor_date.format("%Y-%m-%d")),
+        None => format!(
+            "Première Analyse, jusqu'au {}",
+            anchor_date.format("%Y-%m-%d")
+        ),
     };
 
     let analysis = NewLandscapeAnalysis::new(
@@ -186,6 +193,7 @@ pub async fn get_analysis_parents_route(
         })
         .filter(|analysis| seen_analysis_ids.insert(analysis.id))
         .collect::<Vec<_>>();
-    parents.sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
+    parents
+        .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(Json(parents))
 }
