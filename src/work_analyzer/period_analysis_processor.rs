@@ -9,6 +9,7 @@ use crate::entities_v2::landscape_analysis::{
 
 use crate::work_analyzer::active_context_filtering;
 use crate::work_analyzer::analysis_context::{load_previous_landscape_inputs, AnalysisContext};
+use crate::work_analyzer::mentor_feedback;
 use crate::work_analyzer::period_summary;
 
 pub struct PeriodAnalysisProcessor {
@@ -90,6 +91,7 @@ impl PeriodAnalysisProcessor {
         )?;
 
         let _summary = period_summary::run_day(&self.context, &current_landscape).await?;
+        let _feedback = mentor_feedback::send(&self.context, &current_landscape).await?;
         let current_landscape =
             LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
         let _linked_landmarks = active_context_filtering::run(

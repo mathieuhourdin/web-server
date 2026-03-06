@@ -21,6 +21,11 @@ pub struct MessageFiltersQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+pub struct AnalysisMessagesQuery {
+    pub limit: Option<i64>,
+}
+
 #[debug_handler]
 pub async fn get_messages_route(
     Extension(pool): Extension<DbPool>,
@@ -34,6 +39,23 @@ pub async fn get_messages_route(
         filters.limit.unwrap_or(50),
         &pool,
     )?;
+    Ok(Json(messages))
+}
+
+#[debug_handler]
+pub async fn get_analysis_messages_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(analysis_id): Path<Uuid>,
+    Query(params): Query<AnalysisMessagesQuery>,
+) -> Result<Json<Vec<Message>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
+    if analysis.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let messages = Message::find_for_participant(user_id, Some(analysis_id), params.limit.unwrap_or(50), &pool)?;
     Ok(Json(messages))
 }
 

@@ -113,6 +113,7 @@ pub fn create_router() -> Router {
             "/:id/parents",
             get(landscape_analysis::get_analysis_parents_route),
         )
+        .route("/:id/messages", get(message::get_analysis_messages_route))
         .route(
             "/:id/llm_calls",
             get(llm_call::get_llm_calls_by_analysis_id_route),
