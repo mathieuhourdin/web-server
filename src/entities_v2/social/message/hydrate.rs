@@ -6,7 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::messages;
 
-use super::model::{Message, MessageType};
+use super::model::{Message, MessageProcessingState, MessageType};
 
 type MessageTuple = (
     Uuid,
@@ -14,6 +14,8 @@ type MessageTuple = (
     Uuid,
     Option<Uuid>,
     Option<Uuid>,
+    Option<Uuid>,
+    String,
     String,
     String,
     String,
@@ -28,7 +30,9 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         recipient_user_id,
         landscape_analysis_id,
         trace_id,
+        reply_to_message_id,
         message_type_raw,
+        processing_state_raw,
         title,
         content,
         created_at,
@@ -41,7 +45,9 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         recipient_user_id,
         landscape_analysis_id,
         trace_id,
+        reply_to_message_id,
         message_type: MessageType::from_db(&message_type_raw),
+        processing_state: MessageProcessingState::from_db(&processing_state_raw),
         title,
         content,
         created_at,
@@ -55,7 +61,9 @@ fn select_message_columns() -> (
     messages::recipient_user_id,
     messages::landscape_analysis_id,
     messages::trace_id,
+    messages::reply_to_message_id,
     messages::message_type,
+    messages::processing_state,
     messages::title,
     messages::content,
     messages::created_at,
@@ -67,7 +75,9 @@ fn select_message_columns() -> (
         messages::recipient_user_id,
         messages::landscape_analysis_id,
         messages::trace_id,
+        messages::reply_to_message_id,
         messages::message_type,
+        messages::processing_state,
         messages::title,
         messages::content,
         messages::created_at,
@@ -114,6 +124,29 @@ impl Message {
         let rows = query
             .select(select_message_columns())
             .order(messages::created_at.desc())
+            .limit(limit.max(1))
+            .load::<MessageTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_message).collect())
+    }
+
+    pub fn find_for_trace_conversation(
+        user_id: Uuid,
+        trace_id: Uuid,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<Vec<Message>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = messages::table
+            .filter(messages::trace_id.eq(Some(trace_id)))
+            .filter(
+                messages::sender_user_id
+                    .eq(user_id)
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
+            .select(select_message_columns())
+            .order(messages::created_at.asc())
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
         Ok(rows.into_iter().map(tuple_to_message).collect())

@@ -9,6 +9,7 @@ pub mod analysis_queue;
 pub mod high_level_analysis;
 pub mod hlp_pipeline;
 pub mod matching;
+pub mod message_processing;
 pub mod mentor_feedback;
 pub mod mirror_pipeline;
 pub mod observability;
@@ -16,3 +17,4 @@ pub mod period_summary;
 pub mod plausible_landmarks_context;
 
 pub use analysis_queue::run_lens;
+pub use message_processing::run_message;

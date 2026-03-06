@@ -62,6 +62,10 @@ pub fn create_router() -> Router {
         .route("/", post(trace::post_trace_route))
         .route("/:id", get(trace::get_trace_route))
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
+        .route(
+            "/:id/messages",
+            get(trace::get_trace_messages_route).post(trace::post_trace_message_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let posts_router = Router::new()

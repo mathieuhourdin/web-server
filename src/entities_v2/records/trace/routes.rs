@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path},
+    extract::{Extension, Json, Path, Query},
 };
 use chrono::Utc;
 use std::cmp::Reverse;
@@ -13,6 +13,7 @@ use crate::entities_v2::{
     journal::Journal,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
+    message::{Message, MessageProcessingState, MessageType, NewMessage},
     session::Session,
     user::User,
 };
@@ -22,6 +23,24 @@ use super::{
     llm_qualify,
     model::{NewTrace, NewTraceDto, Trace},
 };
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize)]
+pub struct TraceMessagesQuery {
+    pub limit: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct NewTraceMessageDto {
+    pub title: Option<String>,
+    pub content: String,
+}
+
+#[derive(Serialize)]
+pub struct TraceMessageCreationResponse {
+    pub question_message: Message,
+    pub pending_reply_message: Message,
+}
 
 #[debug_handler]
 pub async fn post_trace_route(
@@ -138,6 +157,83 @@ pub async fn get_trace_analysis_route(
         )
     })?;
     Ok(Json(analysis))
+}
+
+#[debug_handler]
+pub async fn get_trace_messages_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+    Query(params): Query<TraceMessagesQuery>,
+) -> Result<Json<Vec<Message>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let messages = Message::find_for_trace_conversation(user_id, trace_id, params.limit.unwrap_or(100), &pool)?;
+    Ok(Json(messages))
+}
+
+#[debug_handler]
+pub async fn post_trace_message_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+    Json(payload): Json<NewTraceMessageDto>,
+) -> Result<Json<TraceMessageCreationResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let user = User::find(&user_id, &pool)?;
+    let mentor_id = user.mentor_id.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "No mentor assigned to user".to_string(),
+        )
+    })?;
+
+    let question_message = NewMessage {
+        sender_user_id: user_id,
+        recipient_user_id: mentor_id,
+        landscape_analysis_id: None,
+        trace_id: Some(trace_id),
+        reply_to_message_id: None,
+        message_type: MessageType::Question,
+        processing_state: MessageProcessingState::Processed,
+        title: payload.title.unwrap_or_default(),
+        content: payload.content,
+    }
+    .create(&pool)?;
+
+    let pending_reply_message = NewMessage {
+        sender_user_id: mentor_id,
+        recipient_user_id: user_id,
+        landscape_analysis_id: None,
+        trace_id: Some(trace_id),
+        reply_to_message_id: Some(question_message.id),
+        message_type: MessageType::MentorReply,
+        processing_state: MessageProcessingState::Pending,
+        title: String::new(),
+        content: String::new(),
+    }
+    .create(&pool)?;
+
+    let pool_for_task = pool.clone();
+    let pending_reply_id = pending_reply_message.id;
+    tokio::spawn(async move {
+        let _ = work_analyzer::run_message(pending_reply_id, &pool_for_task).await;
+    });
+
+    Ok(Json(TraceMessageCreationResponse {
+        question_message,
+        pending_reply_message,
+    }))
 }
 
 #[debug_handler]

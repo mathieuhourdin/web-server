@@ -1,3 +1,4 @@
+use chrono::Utc;
 use diesel::prelude::*;
 use uuid::Uuid;
 
@@ -17,9 +18,12 @@ impl Message {
                 messages::recipient_user_id.eq(self.recipient_user_id),
                 messages::landscape_analysis_id.eq(self.landscape_analysis_id),
                 messages::trace_id.eq(self.trace_id),
+                messages::reply_to_message_id.eq(self.reply_to_message_id),
                 messages::message_type.eq(self.message_type.to_db()),
+                messages::processing_state.eq(self.processing_state.to_db()),
                 messages::title.eq(self.title),
                 messages::content.eq(self.content),
+                messages::updated_at.eq(Utc::now().naive_utc()),
             ))
             .execute(&mut conn)?;
         Message::find(self.id, pool)
@@ -37,7 +41,9 @@ impl NewMessage {
                 messages::recipient_user_id.eq(self.recipient_user_id),
                 messages::landscape_analysis_id.eq(self.landscape_analysis_id),
                 messages::trace_id.eq(self.trace_id),
+                messages::reply_to_message_id.eq(self.reply_to_message_id),
                 messages::message_type.eq(self.message_type.to_db()),
+                messages::processing_state.eq(self.processing_state.to_db()),
                 messages::title.eq(self.title),
                 messages::content.eq(self.content),
             ))
