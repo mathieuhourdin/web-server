@@ -12,8 +12,13 @@ use super::model::{Journal, NewJournalDto, UpdateJournalDto};
 #[debug_handler]
 pub async fn get_user_journals_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<Vec<Journal>>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if session_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let journals = Journal::find_for_user(user_id, &pool)?;
     Ok(Json(journals))
 }

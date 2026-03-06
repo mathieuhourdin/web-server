@@ -108,6 +108,24 @@ impl Landmark {
         })
     }
 
+    pub fn find_user_id(id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let user_id = landmarks::table
+            .filter(landmarks::id.eq(id))
+            .select(landmarks::user_id)
+            .first::<Uuid>(&mut conn)
+            .optional()?;
+        user_id.ok_or_else(|| {
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Landmark not found".to_string(),
+            )
+        })
+    }
+
     pub fn find_parent(&self, pool: &DbPool) -> Result<Option<Landmark>, PpdcError> {
         let mut conn = pool
             .get()

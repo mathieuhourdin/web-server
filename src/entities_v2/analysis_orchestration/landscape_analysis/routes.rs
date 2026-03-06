@@ -52,11 +52,15 @@ impl LandmarksQuery {
 #[debug_handler]
 pub async fn post_analysis_route(
     Extension(pool): Extension<DbPool>,
-    Extension(_session): Extension<Session>,
+    Extension(session): Extension<Session>,
     Json(payload): Json<NewAnalysisDto>,
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if payload.user_id != session_user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let date = payload.date.unwrap_or_else(|| Utc::now().date_naive());
-    let user_id = payload.user_id;
+    let user_id = session_user_id;
     let anchor_date = date.and_hms_opt(12, 0, 0).expect("valid date");
 
     let last_analysis = find_last_analysis_resource(user_id, &pool)?;
@@ -106,9 +110,14 @@ pub async fn post_analysis_route(
 #[debug_handler]
 pub async fn delete_analysis_route(
     Extension(pool): Extension<DbPool>,
-    Extension(_session): Extension<Session>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let analysis = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    if analysis.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let analysis = delete_leaf_and_cleanup(id, &pool)?;
     Ok(Json(analysis.expect("No analysis found")))
 }
@@ -116,10 +125,15 @@ pub async fn delete_analysis_route(
 #[debug_handler]
 pub async fn get_landmarks_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Query(params): Query<LandmarksQuery>,
 ) -> Result<Json<Vec<Landmark>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    if landscape.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let relation_type = params.relation_type()?;
     let landmarks = landscape.get_landmarks(relation_type, &pool)?;
     Ok(Json(landmarks))
@@ -128,9 +142,14 @@ pub async fn get_landmarks_route(
 #[debug_handler]
 pub async fn get_elements_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<Element>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    if landscape.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let elements = landscape.get_elements(&pool)?;
     Ok(Json(elements))
 }
@@ -138,9 +157,14 @@ pub async fn get_elements_route(
 #[debug_handler]
 pub async fn get_analysis_traces_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<Trace>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    if landscape.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let inputs = landscape.get_inputs(&pool)?;
 
     let mut trace_ids: HashSet<Uuid> = HashSet::new();
@@ -174,9 +198,14 @@ pub async fn get_analysis_traces_route(
 #[debug_handler]
 pub async fn get_analysis_trace_mirrors_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<TraceMirror>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    if landscape.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let inputs = landscape.get_inputs(&pool)?;
 
     let mut trace_mirror_ids: HashSet<Uuid> = HashSet::new();
@@ -201,17 +230,27 @@ pub async fn get_analysis_trace_mirrors_route(
 pub async fn get_last_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
+    Path(user_id): Path<Uuid>,
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
-    let last_analysis = find_last_analysis_resource(session.user_id.unwrap(), &pool)?;
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if session_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    let last_analysis = find_last_analysis_resource(session_user_id, &pool)?;
     Ok(Json(last_analysis.expect("No last analysis found")))
 }
 
 #[debug_handler]
 pub async fn get_analysis_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    if landscape.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     Ok(Json(landscape))
 }
 
@@ -222,7 +261,10 @@ pub async fn get_analysis_parents_route(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<LandscapeAnalysis>>, PpdcError> {
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
-    let user_id = session.user_id.unwrap();
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if landscape.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let user = User::find(&user_id, &pool)?;
 
     let lens = if let Some(current_lens_id) = user.current_lens_id {

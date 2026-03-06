@@ -1,5 +1,6 @@
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::session::Session;
 use crate::schema::traces;
 use axum::{
     debug_handler,
@@ -75,9 +76,14 @@ pub struct HeatmapParams {
 #[debug_handler]
 pub async fn get_user_heatmap_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
     Query(params): Query<HeatmapParams>,
 ) -> Result<Json<Vec<HeatmapRow>>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if session_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let to = params.to.unwrap_or_else(|| Utc::now().date_naive());
     let from = params.from.unwrap_or_else(|| to - Duration::days(270));
     if from > to {

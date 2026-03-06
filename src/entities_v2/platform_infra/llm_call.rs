@@ -1,7 +1,8 @@
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::{landscape_analysis::LandscapeAnalysis, session::Session};
 use crate::pagination::PaginationParams;
-use crate::schema::llm_calls;
+use crate::schema::{landscape_analyses, llm_calls};
 use axum::{
     debug_handler,
     extract::{Extension, Path, Query},
@@ -62,6 +63,41 @@ pub struct NewLlmCall {
 }
 
 impl LlmCall {
+    pub fn get_paginated_for_user(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        db: &DbPool,
+    ) -> Result<Vec<Self>, PpdcError> {
+        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let llm_calls = llm_calls::table
+            .inner_join(
+                landscape_analyses::table
+                    .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
+            )
+            .filter(landscape_analyses::user_id.eq(user_id))
+            .select(LlmCall::as_select())
+            .order(llm_calls::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<Self>(&mut conn)?;
+        Ok(llm_calls)
+    }
+
+    pub fn get_by_id_for_user(id: Uuid, user_id: Uuid, db: &DbPool) -> Result<Self, PpdcError> {
+        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let llm_call = llm_calls::table
+            .inner_join(
+                landscape_analyses::table
+                    .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
+            )
+            .filter(llm_calls::id.eq(id))
+            .filter(landscape_analyses::user_id.eq(user_id))
+            .select(LlmCall::as_select())
+            .first::<Self>(&mut conn)?;
+        Ok(llm_call)
+    }
+
     pub fn get_paginated(offset: i64, limit: i64, db: &DbPool) -> Result<Vec<Self>, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
         let llm_calls = llm_calls::table
@@ -144,25 +180,36 @@ impl NewLlmCall {
 #[debug_handler]
 pub async fn get_llm_calls_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<Vec<LlmCall>>, PpdcError> {
-    let llm_calls = LlmCall::get_paginated(pagination.offset(), pagination.limit(), &pool)?;
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let llm_calls =
+        LlmCall::get_paginated_for_user(user_id, pagination.offset(), pagination.limit(), &pool)?;
     Ok(Json(llm_calls))
 }
 
 #[debug_handler]
 pub async fn get_llm_calls_by_analysis_id_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(analysis_id): Path<Uuid>,
 ) -> Result<Json<Vec<LlmCall>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
+    if analysis.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let llm_calls = LlmCall::get_by_analysis_id(analysis_id, &pool)?;
     Ok(Json(llm_calls))
 }
 #[debug_handler]
 pub async fn get_llm_call_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<LlmCall>, PpdcError> {
-    let llm_call = LlmCall::get_by_id(id, &pool)?;
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let llm_call = LlmCall::get_by_id_for_user(id, user_id, &pool)?;
     Ok(Json(llm_call))
 }

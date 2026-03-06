@@ -23,7 +23,7 @@ pub async fn post_lens_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
-    let user_id = session.user_id.unwrap();
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let lens = NewLens::new(payload, None, user_id).create(&pool)?;
     let mut lens = Lens::find_full_lens(lens.id, &pool)?;
 
@@ -41,11 +41,15 @@ pub async fn post_lens_route(
 #[debug_handler]
 pub async fn put_lens_route(
     Extension(pool): Extension<DbPool>,
-    Extension(_session): Extension<Session>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Json(payload): Json<NewLensDto>,
 ) -> Result<Json<Lens>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let mut lens = Lens::find_full_lens(id, &pool)?;
+    if lens.user_id != Some(user_id) {
+        return Err(PpdcError::unauthorized());
+    }
 
     if payload.target_trace_id != lens.target_trace_id {
         match (payload.target_trace_id, lens.target_trace_id) {
@@ -78,8 +82,14 @@ pub async fn put_lens_route(
 #[debug_handler]
 pub async fn delete_lens_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Lens>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let lens = Lens::find_full_lens(id, &pool)?;
+    if lens.user_id != Some(user_id) {
+        return Err(PpdcError::unauthorized());
+    }
     let lens = delete_lens_and_landscapes(id, &pool)?;
     Ok(Json(lens))
 }
@@ -87,8 +97,13 @@ pub async fn delete_lens_route(
 pub async fn get_user_lenses_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
+    Path(user_id): Path<Uuid>,
 ) -> Result<Json<Vec<Lens>>, PpdcError> {
-    let lenses = Lens::get_user_lenses(session.user_id.unwrap(), &pool)?;
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if session_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    let lenses = Lens::get_user_lenses(session_user_id, &pool)?;
     Ok(Json(lenses))
 }
 

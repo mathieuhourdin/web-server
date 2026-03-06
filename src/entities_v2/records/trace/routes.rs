@@ -28,7 +28,7 @@ pub async fn post_trace_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<NewTraceDto>,
 ) -> Result<Json<Trace>, PpdcError> {
-    let user_id = session.user_id.unwrap();
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(payload.journal_id, &pool)?;
     if journal.user_id != user_id {
         return Err(PpdcError::unauthorized());
@@ -66,8 +66,13 @@ pub async fn post_trace_route(
 #[debug_handler]
 pub async fn get_all_traces_for_user_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<Vec<Trace>>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if session_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let traces = Trace::get_all_for_user(user_id, &pool)?;
     Ok(Json(traces))
 }
@@ -75,9 +80,14 @@ pub async fn get_all_traces_for_user_route(
 #[debug_handler]
 pub async fn get_trace_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Trace>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != session_user_id {
+        return Err(PpdcError::unauthorized());
+    }
     Ok(Json(trace))
 }
 
@@ -87,7 +97,11 @@ pub async fn get_trace_analysis_route(
     Extension(session): Extension<Session>,
     Path(trace_id): Path<Uuid>,
 ) -> Result<Json<LandscapeAnalysis>, PpdcError> {
-    let user_id = session.user_id.unwrap();
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let user = User::find(&user_id, &pool)?;
     let current_lens_id = user.current_lens_id.ok_or_else(|| {
         PpdcError::new(
@@ -125,8 +139,14 @@ pub async fn get_trace_analysis_route(
 #[debug_handler]
 pub async fn get_traces_for_journal_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<Trace>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
     let traces = Trace::get_all_for_journal(id, &pool)?;
     Ok(Json(traces))
 }
