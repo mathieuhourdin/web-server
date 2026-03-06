@@ -526,6 +526,7 @@ pub struct NewServiceUserDto {
     pub last_name: String,
     pub biography: Option<String>,
     pub profile_picture_url: Option<String>,
+    pub welcome_message: Option<String>,
 }
 
 impl NewServiceUserDto {
@@ -567,7 +568,7 @@ impl NewServiceUserDto {
             week_analysis_weekday: None,
             timezone: Some("UTC".to_string()),
             context_anchor_at: None,
-            welcome_message: None,
+            welcome_message: self.welcome_message,
         }
     }
 
@@ -594,7 +595,7 @@ impl NewServiceUserDto {
             week_analysis_weekday: Some(existing_user.week_analysis_weekday),
             timezone: Some(existing_user.timezone.clone()),
             context_anchor_at: existing_user.context_anchor_at,
-            welcome_message: existing_user.welcome_message.clone(),
+            welcome_message: self.welcome_message,
         }
     }
 }
