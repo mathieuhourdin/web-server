@@ -367,6 +367,7 @@ pub struct User {
     pub week_analysis_weekday: WeekAnalysisWeekday,
     pub timezone: String,
     pub context_anchor_at: Option<NaiveDateTime>,
+    pub welcome_message: Option<String>,
 }
 
 pub enum UserResponse {
@@ -408,6 +409,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub week_analysis_weekday: WeekAnalysisWeekday,
     pub timezone: String,
     pub context_anchor_at: Option<NaiveDateTime>,
+    pub welcome_message: Option<String>,
     pub display_name: String,
 }
 
@@ -433,6 +435,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             week_analysis_weekday: user.week_analysis_weekday,
             timezone: user.timezone.clone(),
             context_anchor_at: user.context_anchor_at,
+            welcome_message: user.welcome_message.clone(),
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -460,6 +463,7 @@ pub struct UserPseudonymizedResponse {
     pub week_analysis_weekday: WeekAnalysisWeekday,
     pub timezone: String,
     pub context_anchor_at: Option<NaiveDateTime>,
+    pub welcome_message: Option<String>,
     pub display_name: String,
 }
 
@@ -482,6 +486,7 @@ impl From<&User> for UserPseudonymizedResponse {
             week_analysis_weekday: user.week_analysis_weekday,
             timezone: user.timezone.clone(),
             context_anchor_at: user.context_anchor_at,
+            welcome_message: user.welcome_message.clone(),
             display_name: if user.pseudonymized {
                 user.pseudonym.clone()
             } else {
@@ -512,6 +517,7 @@ pub struct NewUser {
     pub week_analysis_weekday: Option<WeekAnalysisWeekday>,
     pub timezone: Option<String>,
     pub context_anchor_at: Option<NaiveDateTime>,
+    pub welcome_message: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -561,6 +567,34 @@ impl NewServiceUserDto {
             week_analysis_weekday: None,
             timezone: Some("UTC".to_string()),
             context_anchor_at: None,
+            welcome_message: None,
+        }
+    }
+
+    fn to_service_user_update(self, existing_user: &User) -> NewUser {
+        let generated_handle = format!("@{}-{}", self.first_name.trim(), self.last_name.trim());
+        let normalized_handle = generated_handle.trim().to_string();
+
+        NewUser {
+            email: existing_user.email.clone(),
+            principal_type: Some(UserPrincipalType::Service),
+            mentor_id: existing_user.mentor_id,
+            first_name: self.first_name,
+            last_name: self.last_name,
+            handle: normalized_handle,
+            password: Some(existing_user.password.clone()),
+            profile_picture_url: self.profile_picture_url,
+            is_platform_user: Some(existing_user.is_platform_user),
+            biography: self.biography,
+            pseudonym: Some(existing_user.pseudonym.clone()),
+            pseudonymized: Some(existing_user.pseudonymized),
+            high_level_projects_definition: existing_user.high_level_projects_definition.clone(),
+            journal_theme: Some(existing_user.journal_theme),
+            current_lens_id: existing_user.current_lens_id,
+            week_analysis_weekday: Some(existing_user.week_analysis_weekday),
+            timezone: Some(existing_user.timezone.clone()),
+            context_anchor_at: existing_user.context_anchor_at,
+            welcome_message: existing_user.welcome_message.clone(),
         }
     }
 }
@@ -1142,7 +1176,7 @@ pub async fn put_admin_service_user_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    Json(mut payload): Json<NewUser>,
+    Json(payload): Json<NewServiceUserDto>,
 ) -> Result<Json<User>, PpdcError> {
     let _admin_user = ensure_admin_session_user(&session, &pool)?;
     let existing_user = User::find(&id, &pool)?;
@@ -1154,7 +1188,7 @@ pub async fn put_admin_service_user_route(
         ));
     }
 
-    payload.principal_type = Some(UserPrincipalType::Service);
+    let payload = payload.to_service_user_update(&existing_user);
     let updated_user = payload.update(&id, &pool)?;
     Ok(Json(updated_user))
 }
@@ -1310,6 +1344,7 @@ mod tests {
             week_analysis_weekday: None,
             timezone: None,
             context_anchor_at: None,
+            welcome_message: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

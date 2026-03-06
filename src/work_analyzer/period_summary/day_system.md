@@ -54,6 +54,8 @@ Return JSON only, with exactly these fields:
 Writing rules:
 
 - Write in the same language as the user traces.
+- Write in singular first person, as if the recap were written by the user about their own day.
+- Use `I`-style phrasing, not third-person phrasing like `the user`, `he`, `she`, or `they` to describe the user.
 - `title` should be short and explicit.
 - `short_content` should stand on its own and capture only the most important facts and themes of the day.
 - `content` should usually be one compact paragraph or two short paragraphs.

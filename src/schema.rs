@@ -410,6 +410,7 @@ diesel::table! {
         week_analysis_weekday -> Int2,
         timezone -> Text,
         context_anchor_at -> Nullable<Timestamp>,
+        welcome_message -> Nullable<Text>,
     }
 }
 
