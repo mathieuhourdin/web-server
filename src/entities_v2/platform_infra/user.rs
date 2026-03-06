@@ -348,6 +348,7 @@ pub struct User {
     pub id: Uuid,
     pub email: String,
     pub principal_type: UserPrincipalType,
+    pub mentor_id: Option<Uuid>,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
@@ -391,6 +392,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub id: Uuid,
     pub email: String,
     pub principal_type: UserPrincipalType,
+    pub mentor_id: Option<Uuid>,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
@@ -415,6 +417,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             id: user.id.clone(),
             email: user.email.clone(),
             principal_type: user.principal_type,
+            mentor_id: user.mentor_id,
             first_name: user.first_name.clone(),
             last_name: user.last_name.clone(),
             handle: user.handle.clone(),
@@ -443,6 +446,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
 pub struct UserPseudonymizedResponse {
     pub id: Uuid,
     pub principal_type: UserPrincipalType,
+    pub mentor_id: Option<Uuid>,
     pub handle: String,
     pub created_at: NaiveDateTime,
     pub updated_at: Option<NaiveDateTime>,
@@ -464,6 +468,7 @@ impl From<&User> for UserPseudonymizedResponse {
         UserPseudonymizedResponse {
             id: user.id.clone(),
             principal_type: user.principal_type,
+            mentor_id: user.mentor_id,
             handle: user.handle.clone(),
             created_at: user.created_at.clone(),
             updated_at: user.updated_at.clone(),
@@ -491,6 +496,7 @@ impl From<&User> for UserPseudonymizedResponse {
 pub struct NewUser {
     pub email: String,
     pub principal_type: Option<UserPrincipalType>,
+    pub mentor_id: Option<Uuid>,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
@@ -506,6 +512,57 @@ pub struct NewUser {
     pub week_analysis_weekday: Option<WeekAnalysisWeekday>,
     pub timezone: Option<String>,
     pub context_anchor_at: Option<NaiveDateTime>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NewServiceUserDto {
+    pub first_name: String,
+    pub last_name: String,
+    pub biography: Option<String>,
+    pub profile_picture_url: Option<String>,
+}
+
+impl NewServiceUserDto {
+    fn to_new_user(self) -> NewUser {
+        let generated_handle = format!("@{}-{}", self.first_name.trim(), self.last_name.trim());
+        let normalized_handle = generated_handle.trim().to_string();
+        let slug = normalized_handle
+            .trim_start_matches('@')
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    ch.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        let email_slug = if slug.is_empty() {
+            "service-user".to_string()
+        } else {
+            slug
+        };
+        NewUser {
+            email: format!("{}@service.internal", email_slug),
+            principal_type: Some(UserPrincipalType::Service),
+            mentor_id: None,
+            first_name: self.first_name,
+            last_name: self.last_name,
+            handle: normalized_handle,
+            password: None,
+            profile_picture_url: self.profile_picture_url,
+            is_platform_user: Some(false),
+            biography: self.biography,
+            pseudonym: None,
+            pseudonymized: Some(false),
+            high_level_projects_definition: None,
+            journal_theme: None,
+            current_lens_id: None,
+            week_analysis_weekday: None,
+            timezone: Some("UTC".to_string()),
+            context_anchor_at: None,
+        }
+    }
 }
 
 impl NewUser {
@@ -904,20 +961,25 @@ pub struct AdminUserRecentActivity {
     pub heatmap: Vec<AdminUserDailyActivity>,
 }
 
-#[debug_handler]
-pub async fn get_admin_recent_user_activity_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-) -> Result<Json<Vec<AdminUserRecentActivity>>, PpdcError> {
+fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let session_user = User::find(&session_user_id, &pool)?;
-    if !session_user.has_role(UserRole::Admin, &pool)? {
+    let session_user = User::find(&session_user_id, pool)?;
+    if !session_user.has_role(UserRole::Admin, pool)? {
         return Err(PpdcError::new(
             403,
             ErrorType::ApiError,
             "Admin role required".to_string(),
         ));
     }
+    Ok(session_user)
+}
+
+#[debug_handler]
+pub async fn get_admin_recent_user_activity_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<AdminUserRecentActivity>>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
 
     let mut conn = pool
         .get()
@@ -1007,6 +1069,97 @@ pub async fn get_admin_recent_user_activity_route(
 }
 
 #[debug_handler]
+pub async fn get_admin_service_users_route(
+    Query(params): Query<PaginationParams>,
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<User>>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let users = users::table
+        .filter(users::principal_type.eq(UserPrincipalType::Service))
+        .offset(params.offset())
+        .limit(params.limit())
+        .order(users::created_at.desc())
+        .select(User::as_select())
+        .load::<User>(&mut conn)?;
+
+    Ok(Json(users))
+}
+
+#[debug_handler]
+pub async fn post_admin_service_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Json(payload): Json<NewServiceUserDto>,
+) -> Result<Json<User>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let mut payload = payload.to_new_user();
+    payload.hash_password()?;
+
+    let created_user = payload.create(&pool)?;
+    if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
+                .execute(&mut conn);
+        }
+        return Err(err);
+    }
+    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
+                .execute(&mut conn);
+        }
+        return Err(err);
+    }
+
+    Ok(Json(created_user))
+}
+
+#[debug_handler]
+pub async fn get_admin_service_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<User>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let user = User::find(&id, &pool)?;
+    if user.principal_type != UserPrincipalType::Service {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Service user not found".to_string(),
+        ));
+    }
+    Ok(Json(user))
+}
+
+#[debug_handler]
+pub async fn put_admin_service_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(mut payload): Json<NewUser>,
+) -> Result<Json<User>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let existing_user = User::find(&id, &pool)?;
+    if existing_user.principal_type != UserPrincipalType::Service {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Service user not found".to_string(),
+        ));
+    }
+
+    payload.principal_type = Some(UserPrincipalType::Service);
+    let updated_user = payload.update(&id, &pool)?;
+    Ok(Json(updated_user))
+}
+
+#[debug_handler]
 pub async fn get_users(
     Query(params): Query<PaginationParams>,
     Extension(pool): Extension<DbPool>,
@@ -1019,6 +1172,28 @@ pub async fn get_users(
         .into_boxed()
         .offset(params.offset())
         .limit(params.limit())
+        .select(User::as_select())
+        .load::<User>(&mut conn)?
+        .iter()
+        .map(UserPseudonymizedResponse::from)
+        .collect();
+    Ok(Json(results))
+}
+
+#[debug_handler]
+pub async fn get_mentors_route(
+    Query(params): Query<PaginationParams>,
+    Extension(pool): Extension<DbPool>,
+) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let results: Vec<UserPseudonymizedResponse> = users::table
+        .filter(users::principal_type.eq(UserPrincipalType::Service))
+        .offset(params.offset())
+        .limit(params.limit())
+        .order(users::created_at.desc())
         .select(User::as_select())
         .load::<User>(&mut conn)?
         .iter()
@@ -1119,6 +1294,7 @@ mod tests {
         let mut user = NewUser {
             email: String::from("email"),
             principal_type: None,
+            mentor_id: None,
             first_name: String::from("first_name"),
             last_name: String::from("last_name"),
             handle: String::from("@handle"),

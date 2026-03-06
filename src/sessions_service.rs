@@ -2,7 +2,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     session::Session,
-    user::User,
+    user::{User, UserPrincipalType},
 };
 use axum::{
     body::Body,
@@ -49,6 +49,13 @@ pub async fn post_session_route(
     println!("Post session route");
 
     let existing_user = User::find_by_username(&payload.username, &pool)?;
+    if existing_user.principal_type == UserPrincipalType::Service {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            String::from("Service users cannot authenticate"),
+        ));
+    }
 
     let is_valid_password = existing_user.verify_password(&payload.password.as_bytes())?;
 

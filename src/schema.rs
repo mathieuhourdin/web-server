@@ -389,6 +389,7 @@ diesel::table! {
         id -> Uuid,
         email -> Text,
         principal_type -> Text,
+        mentor_id -> Nullable<Uuid>,
         first_name -> Text,
         last_name -> Text,
         handle -> Text,
