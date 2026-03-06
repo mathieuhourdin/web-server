@@ -152,10 +152,10 @@ impl Landmark {
         relation_type: Option<&str>,
         pool: &DbPool,
     ) -> Result<Vec<Landmark>, PpdcError> {
-        let relation_filter = relation_type.map(|value| match value {
-            "ownr" => "OWNED_BY_ANALYSIS",
-            "refr" => "REFERENCED",
-            other => other,
+        let relation_filter_values = relation_type.map(|value| match value {
+            "ownr" | "OWNED_BY_ANALYSIS" => vec!["OWNED_BY_ANALYSIS", "ownr", "OWNR"],
+            "refr" | "REFERENCED" => vec!["REFERENCED", "refr", "REFR"],
+            other => vec![other],
         });
         let mut conn = pool
             .get()
@@ -164,8 +164,8 @@ impl Landmark {
         let mut query = landscape_landmarks::table
             .filter(landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id))
             .into_boxed();
-        if let Some(filter) = relation_filter {
-            query = query.filter(landscape_landmarks::relation_type.eq(filter));
+        if let Some(filters) = relation_filter_values {
+            query = query.filter(landscape_landmarks::relation_type.eq_any(filters));
         }
 
         let landmark_ids = query

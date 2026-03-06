@@ -84,6 +84,11 @@ pub fn create_router() -> Router {
             get(landscape_analysis::get_landmarks_route),
         )
         .route("/:id/elements", get(landscape_analysis::get_elements_route))
+        .route("/:id/traces", get(landscape_analysis::get_analysis_traces_route))
+        .route(
+            "/:id/trace_mirrors",
+            get(landscape_analysis::get_analysis_trace_mirrors_route),
+        )
         .route(
             "/:id/parents",
             get(landscape_analysis::get_analysis_parents_route),

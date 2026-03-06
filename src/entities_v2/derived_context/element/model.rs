@@ -29,6 +29,7 @@ pub struct ElementRelationWithRelatedElement {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum ElementType {
     Transaction,
     Descriptive,
@@ -77,6 +78,7 @@ impl ElementType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum ElementSubtype {
     Input,
     Output,

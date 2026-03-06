@@ -66,10 +66,10 @@ impl JournalTheme {
 
     pub fn to_api_value(self) -> &'static str {
         match self {
-            JournalTheme::Classic => "Classic",
-            JournalTheme::White => "White",
-            JournalTheme::Flowers => "Flowers",
-            JournalTheme::Dark => "Dark",
+            JournalTheme::Classic => "classic",
+            JournalTheme::White => "white",
+            JournalTheme::Flowers => "flowers",
+            JournalTheme::Dark => "dark",
         }
     }
 }
@@ -176,13 +176,13 @@ impl WeekAnalysisWeekday {
 
     pub fn to_api_value(self) -> &'static str {
         match self {
-            WeekAnalysisWeekday::Monday => "Monday",
-            WeekAnalysisWeekday::Tuesday => "Tuesday",
-            WeekAnalysisWeekday::Wednesday => "Wednesday",
-            WeekAnalysisWeekday::Thursday => "Thursday",
-            WeekAnalysisWeekday::Friday => "Friday",
-            WeekAnalysisWeekday::Saturday => "Saturday",
-            WeekAnalysisWeekday::Sunday => "Sunday",
+            WeekAnalysisWeekday::Monday => "monday",
+            WeekAnalysisWeekday::Tuesday => "tuesday",
+            WeekAnalysisWeekday::Wednesday => "wednesday",
+            WeekAnalysisWeekday::Thursday => "thursday",
+            WeekAnalysisWeekday::Friday => "friday",
+            WeekAnalysisWeekday::Saturday => "saturday",
+            WeekAnalysisWeekday::Sunday => "sunday",
         }
     }
 

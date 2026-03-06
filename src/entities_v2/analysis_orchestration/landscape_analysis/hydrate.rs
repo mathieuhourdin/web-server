@@ -5,9 +5,12 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
-use crate::schema::{landscape_analyses, lens_analysis_scopes, lens_heads};
+use crate::schema::{landscape_analyses, landscape_analysis_inputs, lens_analysis_scopes, lens_heads};
 
-use super::model::{LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState};
+use super::model::{
+    LandscapeAnalysis, LandscapeAnalysisInput, LandscapeAnalysisInputType, LandscapeAnalysisType,
+    LandscapeProcessingState,
+};
 
 type LandscapeAnalysisTuple = (
     Uuid,
@@ -23,6 +26,16 @@ type LandscapeAnalysisTuple = (
     Option<Uuid>,
     Option<Uuid>,
     String,
+    String,
+    NaiveDateTime,
+    NaiveDateTime,
+);
+
+type LandscapeAnalysisInputTuple = (
+    Uuid,
+    Uuid,
+    Option<Uuid>,
+    Option<Uuid>,
     String,
     NaiveDateTime,
     NaiveDateTime,
@@ -63,6 +76,28 @@ fn tuple_to_analysis(row: LandscapeAnalysisTuple) -> LandscapeAnalysis {
         trace_mirror_id,
         landscape_analysis_type: LandscapeAnalysisType::from_db(&landscape_analysis_type_raw),
         processing_state: LandscapeProcessingState::from_db(&processing_state_raw),
+        created_at,
+        updated_at,
+    }
+}
+
+fn tuple_to_analysis_input(row: LandscapeAnalysisInputTuple) -> LandscapeAnalysisInput {
+    let (
+        id,
+        landscape_analysis_id,
+        trace_id,
+        trace_mirror_id,
+        input_type_raw,
+        created_at,
+        updated_at,
+    ) = row;
+
+    LandscapeAnalysisInput {
+        id,
+        landscape_analysis_id,
+        trace_id,
+        trace_mirror_id,
+        input_type: LandscapeAnalysisInputType::from_db(&input_type_raw),
         created_at,
         updated_at,
     }
@@ -225,5 +260,27 @@ impl LandscapeAnalysis {
             .into_iter()
             .map(|id| Lens::find_full_lens(id, pool))
             .collect()
+    }
+
+    pub fn get_inputs(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysisInput>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let rows = landscape_analysis_inputs::table
+            .filter(landscape_analysis_inputs::landscape_analysis_id.eq(self.id))
+            .select((
+                landscape_analysis_inputs::id,
+                landscape_analysis_inputs::landscape_analysis_id,
+                landscape_analysis_inputs::trace_id,
+                landscape_analysis_inputs::trace_mirror_id,
+                landscape_analysis_inputs::input_type,
+                landscape_analysis_inputs::created_at,
+                landscape_analysis_inputs::updated_at,
+            ))
+            .order(landscape_analysis_inputs::created_at.asc())
+            .load::<LandscapeAnalysisInputTuple>(&mut conn)?;
+
+        Ok(rows.into_iter().map(tuple_to_analysis_input).collect())
     }
 }

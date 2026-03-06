@@ -66,12 +66,17 @@ impl NewReference {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "snake_case")]
 pub enum ReferenceType {
+    #[serde(alias = "PROPER_NAME")]
     ProperName,
+    #[serde(alias = "NAMED_DESC")]
     NamedDesc,
+    #[serde(alias = "DEICTIC_DESC")]
     DeicticDesc,
+    #[serde(alias = "PLAIN_DESC")]
     PlainDesc,
+    #[serde(alias = "NICKNAME")]
     Nickname,
 }
 

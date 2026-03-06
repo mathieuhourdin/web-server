@@ -122,6 +122,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    landscape_analysis_inputs (id) {
+        id -> Uuid,
+        landscape_analysis_id -> Uuid,
+        trace_id -> Nullable<Uuid>,
+        trace_mirror_id -> Nullable<Uuid>,
+        input_type -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     landscape_landmarks (id) {
         id -> Uuid,
         landscape_analysis_id -> Uuid,
@@ -370,6 +382,9 @@ diesel::joinable!(journals -> users (user_id));
 diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
 diesel::joinable!(landmarks -> users (user_id));
 diesel::joinable!(landscape_analyses -> traces (analyzed_trace_id));
+diesel::joinable!(landscape_analysis_inputs -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(landscape_analysis_inputs -> trace_mirrors (trace_mirror_id));
+diesel::joinable!(landscape_analysis_inputs -> traces (trace_id));
 diesel::joinable!(landscape_analyses -> users (user_id));
 diesel::joinable!(landscape_landmarks -> landmarks (landmark_id));
 diesel::joinable!(landscape_landmarks -> landscape_analyses (landscape_analysis_id));
@@ -404,6 +419,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     landmark_relations,
     landmarks,
     landscape_analyses,
+    landscape_analysis_inputs,
     landscape_landmarks,
     lens_analysis_scopes,
     lens_heads,

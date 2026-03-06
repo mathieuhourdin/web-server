@@ -66,24 +66,44 @@ impl LandmarkType {
 
     pub fn from_code(code: &str) -> Result<Self, PpdcError> {
         match code {
-            "rsrc" | "RESOURCE" => Ok(LandmarkType::Resource),
-            "them" | "TOPIC" => Ok(LandmarkType::Topic),
-            "autr" | "PERSON" => Ok(LandmarkType::Person),
-            "PROJECT" | "miss" => Ok(LandmarkType::Project),
-            "HIGH_LEVEL_PROJECT" | "hlpr" => Ok(LandmarkType::HighLevelProject),
-            "DELIVERABLE" | "dlvr" => Ok(LandmarkType::Deliverable),
-            "ORGANIZATION" => Ok(LandmarkType::Organization),
-            "TOOL" => Ok(LandmarkType::Tool),
-            "QUESTION" | "qest" => Ok(LandmarkType::Question),
-            "HABIT" => Ok(LandmarkType::Habit),
-            "ROLE" => Ok(LandmarkType::Role),
-            "SKILL" => Ok(LandmarkType::Skill),
-            "PLACE" => Ok(LandmarkType::Place),
+            "rsrc" | "RESOURCE" | "resource" => Ok(LandmarkType::Resource),
+            "them" | "TOPIC" | "topic" => Ok(LandmarkType::Topic),
+            "autr" | "PERSON" | "person" => Ok(LandmarkType::Person),
+            "PROJECT" | "miss" | "project" => Ok(LandmarkType::Project),
+            "HIGH_LEVEL_PROJECT" | "hlpr" | "high_level_project" => {
+                Ok(LandmarkType::HighLevelProject)
+            }
+            "DELIVERABLE" | "dlvr" | "deliverable" => Ok(LandmarkType::Deliverable),
+            "ORGANIZATION" | "organization" => Ok(LandmarkType::Organization),
+            "TOOL" | "tool" => Ok(LandmarkType::Tool),
+            "QUESTION" | "qest" | "question" => Ok(LandmarkType::Question),
+            "HABIT" | "habit" => Ok(LandmarkType::Habit),
+            "ROLE" | "role" => Ok(LandmarkType::Role),
+            "SKILL" | "skill" => Ok(LandmarkType::Skill),
+            "PLACE" | "place" => Ok(LandmarkType::Place),
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
                 "Invalid landmark type".to_string(),
             )),
+        }
+    }
+
+    pub fn to_api_value(&self) -> &'static str {
+        match self {
+            LandmarkType::Project => "project",
+            LandmarkType::HighLevelProject => "high_level_project",
+            LandmarkType::Deliverable => "deliverable",
+            LandmarkType::Resource => "resource",
+            LandmarkType::Person => "person",
+            LandmarkType::Organization => "organization",
+            LandmarkType::Topic => "topic",
+            LandmarkType::Tool => "tool",
+            LandmarkType::Question => "question",
+            LandmarkType::Habit => "habit",
+            LandmarkType::Role => "role",
+            LandmarkType::Skill => "skill",
+            LandmarkType::Place => "place",
         }
     }
 }
@@ -93,7 +113,7 @@ impl Serialize for LandmarkType {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self.to_code())
+        serializer.serialize_str(self.to_api_value())
     }
 }
 

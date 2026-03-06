@@ -73,11 +73,11 @@ impl From<TraceRow> for Trace {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum TraceType {
     BioTrace,
     WorkspaceTrace,
     UserTrace,
-    #[serde(rename = "HIGH_LEVEL_PROJECTS_DEFINITION")]
     HighLevelProjectsDefinition,
 }
 
@@ -105,6 +105,7 @@ impl TraceType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum TraceStatus {
     Draft,
     Finalized,

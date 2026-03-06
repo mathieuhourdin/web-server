@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum LandscapeProcessingState {
     Pending,
     Running,
@@ -34,6 +35,7 @@ impl LandscapeProcessingState {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum LandscapeAnalysisType {
     DailyRecap,
     WeeklyRecap,
@@ -64,6 +66,29 @@ impl LandscapeAnalysisType {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LandscapeAnalysisInputType {
+    Primary,
+    Covered,
+}
+
+impl LandscapeAnalysisInputType {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            LandscapeAnalysisInputType::Primary => "PRIMARY",
+            LandscapeAnalysisInputType::Covered => "COVERED",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "PRIMARY" | "primary" => LandscapeAnalysisInputType::Primary,
+            _ => LandscapeAnalysisInputType::Covered,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LandscapeAnalysis {
     pub id: Uuid,
@@ -80,6 +105,17 @@ pub struct LandscapeAnalysis {
     pub trace_mirror_id: Option<Uuid>,
     pub landscape_analysis_type: LandscapeAnalysisType,
     pub processing_state: LandscapeProcessingState,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LandscapeAnalysisInput {
+    pub id: Uuid,
+    pub landscape_analysis_id: Uuid,
+    pub trace_id: Option<Uuid>,
+    pub trace_mirror_id: Option<Uuid>,
+    pub input_type: LandscapeAnalysisInputType,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

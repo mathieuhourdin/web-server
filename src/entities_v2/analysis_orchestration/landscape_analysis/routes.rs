@@ -15,6 +15,8 @@ use crate::entities_v2::{
     landmark::Landmark,
     lens::Lens,
     session::Session,
+    trace::Trace,
+    trace_mirror::TraceMirror,
     user::User,
 };
 
@@ -131,6 +133,68 @@ pub async fn get_elements_route(
     let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
     let elements = landscape.get_elements(&pool)?;
     Ok(Json(elements))
+}
+
+#[debug_handler]
+pub async fn get_analysis_traces_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Trace>>, PpdcError> {
+    let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    let inputs = landscape.get_inputs(&pool)?;
+
+    let mut trace_ids: HashSet<Uuid> = HashSet::new();
+    if let Some(trace_id) = landscape.analyzed_trace_id {
+        trace_ids.insert(trace_id);
+    }
+    if let Some(trace_mirror_id) = landscape.trace_mirror_id {
+        if let Ok(trace_mirror) = TraceMirror::find_full_trace_mirror(trace_mirror_id, &pool) {
+            trace_ids.insert(trace_mirror.trace_id);
+        }
+    }
+    for input in inputs {
+        if let Some(trace_id) = input.trace_id {
+            trace_ids.insert(trace_id);
+        }
+        if let Some(trace_mirror_id) = input.trace_mirror_id {
+            if let Ok(trace_mirror) = TraceMirror::find_full_trace_mirror(trace_mirror_id, &pool) {
+                trace_ids.insert(trace_mirror.trace_id);
+            }
+        }
+    }
+
+    let mut traces = trace_ids
+        .into_iter()
+        .filter_map(|trace_id| Trace::find_full_trace(trace_id, &pool).ok())
+        .collect::<Vec<_>>();
+    traces.sort_by_key(|trace| (trace.interaction_date.unwrap_or(trace.created_at), trace.id));
+    Ok(Json(traces))
+}
+
+#[debug_handler]
+pub async fn get_analysis_trace_mirrors_route(
+    Extension(pool): Extension<DbPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<TraceMirror>>, PpdcError> {
+    let landscape = LandscapeAnalysis::find_full_analysis(id, &pool)?;
+    let inputs = landscape.get_inputs(&pool)?;
+
+    let mut trace_mirror_ids: HashSet<Uuid> = HashSet::new();
+    if let Some(trace_mirror_id) = landscape.trace_mirror_id {
+        trace_mirror_ids.insert(trace_mirror_id);
+    }
+    for input in inputs {
+        if let Some(trace_mirror_id) = input.trace_mirror_id {
+            trace_mirror_ids.insert(trace_mirror_id);
+        }
+    }
+
+    let mut trace_mirrors = trace_mirror_ids
+        .into_iter()
+        .filter_map(|trace_mirror_id| TraceMirror::find_full_trace_mirror(trace_mirror_id, &pool).ok())
+        .collect::<Vec<_>>();
+    trace_mirrors.sort_by_key(|trace_mirror| trace_mirror.created_at);
+    Ok(Json(trace_mirrors))
 }
 
 #[debug_handler]

@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    landscape_analysis::LandscapeAnalysis,
+    landscape_analysis::{LandscapeAnalysis, LandscapeProcessingState},
     session::Session,
     trace::Trace,
 };
@@ -108,7 +108,11 @@ pub async fn get_lens_analysis_route(
         ));
     }
 
-    let mut analyses = lens.get_analysis_scope(&pool)?;
+    let mut analyses = lens
+        .get_analysis_scope(&pool)?
+        .into_iter()
+        .filter(|analysis| analysis.processing_state == LandscapeProcessingState::Completed)
+        .collect::<Vec<_>>();
     analyses
         .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(Json(analyses))

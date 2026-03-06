@@ -2,6 +2,7 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, U
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::sql_query;
+use diesel::sql_types::Timestamp as SqlTimestamp;
 use diesel::sql_types::Uuid as SqlUuid;
 use uuid::Uuid;
 
@@ -13,10 +14,13 @@ use crate::entities_v2::{
     trace::{Trace, TraceType},
     user::User,
 };
-use crate::schema::{landscape_analyses, landscape_landmarks, lens_analysis_scopes};
+use crate::schema::{
+    landscape_analyses, landscape_analysis_inputs, landscape_landmarks, lens_analysis_scopes,
+};
 
 use super::model::{
-    LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState, NewLandscapeAnalysis,
+    LandscapeAnalysis, LandscapeAnalysisInputType, LandscapeAnalysisType, LandscapeProcessingState,
+    NewLandscapeAnalysis,
 };
 
 #[derive(diesel::QueryableByName)]
@@ -217,12 +221,12 @@ fn week_period_for_datetime(
     ))
 }
 
-fn has_analysis_covering_moment_for_lens(
+fn find_analysis_covering_moment_for_lens(
     lens_id: Uuid,
     analysis_type: LandscapeAnalysisType,
     moment: NaiveDateTime,
     pool: &DbPool,
-) -> Result<bool, PpdcError> {
+) -> Result<Option<LandscapeAnalysis>, PpdcError> {
     let mut conn = pool
         .get()
         .expect("Failed to get a connection from the pool");
@@ -240,7 +244,10 @@ fn has_analysis_covering_moment_for_lens(
         .first::<Uuid>(&mut conn)
         .optional()?;
 
-    Ok(maybe_id.is_some())
+    match maybe_id {
+        Some(id) => Ok(Some(LandscapeAnalysis::find_full_analysis(id, pool)?)),
+        None => Ok(None),
+    }
 }
 
 fn has_trace_analysis_for_lens(
@@ -380,14 +387,23 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
     ) {
         let tz = parse_user_timezone_or_utc(&user);
 
-        if !has_analysis_covering_moment_for_lens(
+        if let Some(existing_daily) = find_analysis_covering_moment_for_lens(
             lens_id,
             LandscapeAnalysisType::DailyRecap,
             trace_datetime,
             pool,
         )? {
+            let _ = replace_covered_inputs_for_period(
+                existing_daily.id,
+                lens_id,
+                user_id,
+                existing_daily.period_start,
+                existing_daily.period_end,
+                pool,
+            )?;
+        } else {
             let (day_start, day_end) = day_period_for_datetime(trace_datetime, tz)?;
-            let daily = NewLandscapeAnalysis::new_daily_recap(
+            let mut daily = NewLandscapeAnalysis::new_daily_recap(
                 format!("Daily recap {}", day_start.date()),
                 String::new(),
                 String::new(),
@@ -395,23 +411,54 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 trace_datetime,
                 day_start,
                 day_end,
-                None,
+                lens.current_landscape_id,
                 None,
             )
             .create_for_lens(lens_id, pool)?;
+            if let Some(parent_analysis_id) = lens.current_landscape_id {
+                let copied_links =
+                    copy_landmark_links_from_analysis(parent_analysis_id, daily.id, pool)?;
+                tracing::info!(
+                    target: "work_analyzer",
+                    "create_daily_recap_seed_parent_links lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
+                    lens_id,
+                    daily.id,
+                    parent_analysis_id,
+                    copied_links
+                );
+                daily.parent_analysis_id = Some(parent_analysis_id);
+                daily = daily.update(pool)?;
+            }
+            let _ = replace_covered_inputs_for_period(
+                daily.id,
+                lens_id,
+                user_id,
+                day_start,
+                day_end,
+                pool,
+            )?;
             created.push(daily);
         }
 
-        if !has_analysis_covering_moment_for_lens(
+        if let Some(existing_weekly) = find_analysis_covering_moment_for_lens(
             lens_id,
             LandscapeAnalysisType::WeeklyRecap,
             trace_datetime,
             pool,
         )? {
+            let _ = replace_covered_inputs_for_period(
+                existing_weekly.id,
+                lens_id,
+                user_id,
+                existing_weekly.period_start,
+                existing_weekly.period_end,
+                pool,
+            )?;
+        } else {
             let week_start_weekday = user.week_analysis_weekday.to_chrono_weekday();
             let (week_start, week_end) =
                 week_period_for_datetime(trace_datetime, tz, week_start_weekday)?;
-            let weekly = NewLandscapeAnalysis::new_weekly_recap(
+            let mut weekly = NewLandscapeAnalysis::new_weekly_recap(
                 format!("Weekly recap {}", week_start.date()),
                 String::new(),
                 String::new(),
@@ -419,15 +466,91 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 trace_datetime,
                 week_start,
                 week_end,
-                None,
+                lens.current_landscape_id,
                 None,
             )
             .create_for_lens(lens_id, pool)?;
+            if let Some(parent_analysis_id) = lens.current_landscape_id {
+                let copied_links =
+                    copy_landmark_links_from_analysis(parent_analysis_id, weekly.id, pool)?;
+                tracing::info!(
+                    target: "work_analyzer",
+                    "create_weekly_recap_seed_parent_links lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
+                    lens_id,
+                    weekly.id,
+                    parent_analysis_id,
+                    copied_links
+                );
+                weekly.parent_analysis_id = Some(parent_analysis_id);
+                weekly = weekly.update(pool)?;
+            }
+            let _ = replace_covered_inputs_for_period(
+                weekly.id,
+                lens_id,
+                user_id,
+                week_start,
+                week_end,
+                pool,
+            )?;
             created.push(weekly);
         }
     }
 
     Ok(created)
+}
+
+pub fn refresh_pending_summary_covered_inputs_for_trace(
+    lens_id: Uuid,
+    user_id: Uuid,
+    trace_datetime: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<(usize, usize, usize), PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let pending_summary_rows = lens_analysis_scopes::table
+        .inner_join(
+            landscape_analyses::table
+                .on(lens_analysis_scopes::landscape_analysis_id.eq(landscape_analyses::id)),
+        )
+        .filter(lens_analysis_scopes::lens_id.eq(lens_id))
+        .filter(landscape_analyses::user_id.eq(user_id))
+        .filter(
+            landscape_analyses::landscape_analysis_type.eq_any(vec![
+                LandscapeAnalysisType::DailyRecap.to_db(),
+                LandscapeAnalysisType::WeeklyRecap.to_db(),
+            ]),
+        )
+        .filter(landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()))
+        .filter(landscape_analyses::period_start.le(trace_datetime))
+        .filter(landscape_analyses::period_end.gt(trace_datetime))
+        .select((
+            landscape_analyses::id,
+            landscape_analyses::period_start,
+            landscape_analyses::period_end,
+        ))
+        .load::<(Uuid, NaiveDateTime, NaiveDateTime)>(&mut conn)?;
+
+    let mut refreshed_analyses = 0usize;
+    let mut refreshed_traces = 0usize;
+    let mut refreshed_trace_mirrors = 0usize;
+
+    for (analysis_id, period_start, period_end) in pending_summary_rows {
+        let (trace_count, trace_mirror_count) = replace_covered_inputs_for_period(
+            analysis_id,
+            lens_id,
+            user_id,
+            period_start,
+            period_end,
+            pool,
+        )?;
+        refreshed_analyses += 1;
+        refreshed_traces += trace_count;
+        refreshed_trace_mirrors += trace_mirror_count;
+    }
+
+    Ok((refreshed_analyses, refreshed_traces, refreshed_trace_mirrors))
 }
 
 pub fn claim_next_pending_for_lens(
@@ -449,6 +572,24 @@ WITH candidate AS (
     WHERE las.lens_id = $1
       AND la.processing_state = 'PENDING'
       AND la.period_end <= $2
+      AND (
+        la.landscape_analysis_type NOT IN ('DAILY_RECAP', 'WEEKLY_RECAP')
+        OR NOT EXISTS (
+            SELECT 1
+            FROM traces t
+            WHERE t.user_id = la.user_id
+              AND COALESCE(t.interaction_date, t.created_at) >= la.period_start
+              AND COALESCE(t.interaction_date, t.created_at) < la.period_end
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM trace_mirrors tm
+                  INNER JOIN lens_analysis_scopes las_tm
+                      ON las_tm.landscape_analysis_id = tm.landscape_analysis_id
+                  WHERE las_tm.lens_id = las.lens_id
+                    AND tm.trace_id = t.id
+              )
+        )
+      )
     ORDER BY
       la.period_end ASC,
       CASE la.landscape_analysis_type
@@ -515,6 +656,155 @@ pub fn find_last_analysis_resource(
     }
 }
 
+fn add_trace_input_with_conn(
+    conn: &mut diesel::PgConnection,
+    landscape_analysis_id: Uuid,
+    trace_id: Uuid,
+    input_type: LandscapeAnalysisInputType,
+) -> Result<(), diesel::result::Error> {
+    diesel::insert_into(landscape_analysis_inputs::table)
+        .values((
+            landscape_analysis_inputs::landscape_analysis_id.eq(landscape_analysis_id),
+            landscape_analysis_inputs::trace_id.eq(Some(trace_id)),
+            landscape_analysis_inputs::trace_mirror_id.eq(None::<Uuid>),
+            landscape_analysis_inputs::input_type.eq(input_type.to_db()),
+        ))
+        .on_conflict_do_nothing()
+        .execute(conn)?;
+    Ok(())
+}
+
+fn add_trace_mirror_input_with_conn(
+    conn: &mut diesel::PgConnection,
+    landscape_analysis_id: Uuid,
+    trace_mirror_id: Uuid,
+    input_type: LandscapeAnalysisInputType,
+) -> Result<(), diesel::result::Error> {
+    diesel::insert_into(landscape_analysis_inputs::table)
+        .values((
+            landscape_analysis_inputs::landscape_analysis_id.eq(landscape_analysis_id),
+            landscape_analysis_inputs::trace_id.eq(None::<Uuid>),
+            landscape_analysis_inputs::trace_mirror_id.eq(Some(trace_mirror_id)),
+            landscape_analysis_inputs::input_type.eq(input_type.to_db()),
+        ))
+        .on_conflict_do_nothing()
+        .execute(conn)?;
+    Ok(())
+}
+
+pub fn add_trace_input(
+    landscape_analysis_id: Uuid,
+    trace_id: Uuid,
+    input_type: LandscapeAnalysisInputType,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    add_trace_input_with_conn(&mut conn, landscape_analysis_id, trace_id, input_type)?;
+    Ok(())
+}
+
+pub fn add_trace_mirror_input(
+    landscape_analysis_id: Uuid,
+    trace_mirror_id: Uuid,
+    input_type: LandscapeAnalysisInputType,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    add_trace_mirror_input_with_conn(&mut conn, landscape_analysis_id, trace_mirror_id, input_type)?;
+    Ok(())
+}
+
+pub fn replace_covered_inputs_for_period(
+    landscape_analysis_id: Uuid,
+    lens_id: Uuid,
+    user_id: Uuid,
+    period_start: NaiveDateTime,
+    period_end: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<(usize, usize), PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let counts = conn.transaction::<(usize, usize), diesel::result::Error, _>(|conn| {
+        diesel::delete(
+            landscape_analysis_inputs::table
+                .filter(landscape_analysis_inputs::landscape_analysis_id.eq(landscape_analysis_id))
+                .filter(
+                    landscape_analysis_inputs::input_type
+                        .eq(LandscapeAnalysisInputType::Covered.to_db()),
+                ),
+        )
+        .execute(conn)?;
+
+        let covered_trace_rows = sql_query(
+            r#"
+SELECT t.id
+FROM traces t
+WHERE t.user_id = $1
+  AND COALESCE(t.interaction_date, t.created_at) >= $2
+  AND COALESCE(t.interaction_date, t.created_at) < $3
+ORDER BY COALESCE(t.interaction_date, t.created_at) ASC, t.created_at ASC
+            "#,
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<SqlTimestamp, _>(period_start)
+        .bind::<SqlTimestamp, _>(period_end)
+        .load::<IdRow>(conn)?;
+
+        let mut inserted_traces = 0usize;
+        for row in covered_trace_rows {
+            add_trace_input_with_conn(
+                conn,
+                landscape_analysis_id,
+                row.id,
+                LandscapeAnalysisInputType::Covered,
+            )?;
+            inserted_traces += 1;
+        }
+
+        let covered_trace_mirror_rows = sql_query(
+            r#"
+SELECT DISTINCT tm.id
+FROM trace_mirrors tm
+INNER JOIN lens_analysis_scopes las
+    ON las.landscape_analysis_id = tm.landscape_analysis_id
+INNER JOIN traces t
+    ON t.id = tm.trace_id
+WHERE las.lens_id = $1
+  AND t.user_id = $2
+  AND COALESCE(t.interaction_date, t.created_at) >= $3
+  AND COALESCE(t.interaction_date, t.created_at) < $4
+ORDER BY tm.id ASC
+            "#,
+        )
+        .bind::<SqlUuid, _>(lens_id)
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<SqlTimestamp, _>(period_start)
+        .bind::<SqlTimestamp, _>(period_end)
+        .load::<IdRow>(conn)?;
+
+        let mut inserted_trace_mirrors = 0usize;
+        for row in covered_trace_mirror_rows {
+            add_trace_mirror_input_with_conn(
+                conn,
+                landscape_analysis_id,
+                row.id,
+                LandscapeAnalysisInputType::Covered,
+            )?;
+            inserted_trace_mirrors += 1;
+        }
+
+        Ok((inserted_traces, inserted_trace_mirrors))
+    })?;
+
+    Ok(counts)
+}
+
 pub fn add_landmark_ref(
     landscape_analysis_id: Uuid,
     landmark_id: Uuid,
@@ -549,21 +839,19 @@ pub fn copy_landmark_links_from_analysis(
         .get()
         .expect("Failed to get a connection from the pool");
 
-    let source_links = landscape_landmarks::table
+    let source_landmark_ids = landscape_landmarks::table
         .filter(landscape_landmarks::landscape_analysis_id.eq(source_landscape_analysis_id))
-        .select((
-            landscape_landmarks::landmark_id,
-            landscape_landmarks::relation_type,
-        ))
-        .load::<(Uuid, String)>(&mut conn)?;
+        .select(landscape_landmarks::landmark_id)
+        .distinct()
+        .load::<Uuid>(&mut conn)?;
 
     let mut inserted = 0usize;
-    for (landmark_id, relation_type) in source_links {
+    for landmark_id in source_landmark_ids {
         let rows = diesel::insert_into(landscape_landmarks::table)
             .values((
                 landscape_landmarks::landscape_analysis_id.eq(target_landscape_analysis_id),
                 landscape_landmarks::landmark_id.eq(landmark_id),
-                landscape_landmarks::relation_type.eq(relation_type),
+                landscape_landmarks::relation_type.eq("REFERENCED"),
             ))
             .on_conflict((
                 landscape_landmarks::landscape_analysis_id,
