@@ -29,6 +29,7 @@ pub struct DaySummaryPromptContext {
 #[derive(Debug, Serialize)]
 pub struct SummaryContextItem {
     pub title: String,
+    pub short_content: String,
     pub content: String,
 }
 
@@ -119,6 +120,7 @@ pub fn build(
     let existing_period_summary = find_period_summary_for_analysis(analysis.id, &context.pool)?
         .map(|summary| SummaryContextItem {
             title: summary.title,
+            short_content: summary.short_content,
             content: summary.content,
         });
     let previous_day_summary = find_previous_day_summary(analysis, &context.pool)?;
@@ -186,6 +188,7 @@ fn find_previous_day_summary(
         period_end: previous_daily_analysis.period_end,
         summary: SummaryContextItem {
             title: summary.title,
+            short_content: summary.short_content,
             content: summary.content,
         },
     }))

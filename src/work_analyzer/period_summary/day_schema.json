@@ -5,9 +5,12 @@
     "title": {
       "type": "string"
     },
+    "short_content": {
+      "type": "string"
+    },
     "content": {
       "type": "string"
     }
   },
-  "required": ["title", "content"]
+  "required": ["title", "short_content", "content"]
 }

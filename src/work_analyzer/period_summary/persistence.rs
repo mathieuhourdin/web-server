@@ -7,6 +7,7 @@ use crate::work_analyzer::analysis_context::AnalysisContext;
 pub fn upsert_period_recap(
     context: &AnalysisContext,
     title: String,
+    short_content: String,
     content: String,
 ) -> Result<AnalysisSummary, PpdcError> {
     let existing = AnalysisSummary::find_for_analysis(context.analysis_id, &context.pool)?
@@ -16,6 +17,7 @@ pub fn upsert_period_recap(
     match existing {
         Some(mut summary) => {
             summary.title = title;
+            summary.short_content = short_content;
             summary.content = content;
             summary.update(&context.pool)
         }
@@ -23,6 +25,7 @@ pub fn upsert_period_recap(
             NewAnalysisSummaryDto {
                 summary_type: Some(AnalysisSummaryType::PeriodRecap),
                 title,
+                short_content: Some(short_content),
                 content,
             },
             context.analysis_id,

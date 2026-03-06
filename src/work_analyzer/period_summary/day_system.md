@@ -48,12 +48,14 @@ Output format:
 Return JSON only, with exactly these fields:
 
 - `title`: a short title for the day recap
+- `short_content`: a very short recap of the day in about 2 to 3 sentences
 - `content`: the daily summary itself
 
 Writing rules:
 
 - Write in the same language as the user traces.
 - `title` should be short and explicit.
+- `short_content` should stand on its own and capture only the most important facts and themes of the day.
 - `content` should usually be one compact paragraph or two short paragraphs.
 - Focus first on actions and meaningful themes, then on interpretation.
 - Do not mention internal field names like `user_traces`, `trace_mirror`, `landmark_tag_ids`, or `previous_day_summary`.

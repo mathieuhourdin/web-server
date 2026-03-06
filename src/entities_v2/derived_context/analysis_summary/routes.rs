@@ -70,6 +70,9 @@ pub async fn put_analysis_summary_route(
     }
     summary.summary_type = payload.summary_type.unwrap_or(summary.summary_type);
     summary.title = payload.title;
+    summary.short_content = payload
+        .short_content
+        .unwrap_or_else(|| payload.content.clone());
     summary.content = payload.content;
     let summary = summary.update(&pool)?;
     Ok(Json(summary))

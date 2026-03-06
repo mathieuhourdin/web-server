@@ -11,6 +11,7 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 struct DaySummaryDraft {
     title: String,
+    short_content: String,
     content: String,
 }
 
@@ -34,5 +35,5 @@ pub async fn run_day(
     .execute::<DaySummaryDraft>()
     .await?;
 
-    upsert_period_recap(context, summary.title, summary.content)
+    upsert_period_recap(context, summary.title, summary.short_content, summary.content)
 }

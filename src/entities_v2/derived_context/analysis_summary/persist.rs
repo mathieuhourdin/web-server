@@ -16,6 +16,7 @@ impl AnalysisSummary {
             .set((
                 analysis_summaries::summary_type.eq(self.summary_type.to_db()),
                 analysis_summaries::title.eq(self.title),
+                analysis_summaries::short_content.eq(self.short_content),
                 analysis_summaries::content.eq(self.content),
             ))
             .execute(&mut conn)?;
@@ -34,6 +35,7 @@ impl NewAnalysisSummary {
                 analysis_summaries::user_id.eq(self.user_id),
                 analysis_summaries::summary_type.eq(self.summary_type.to_db()),
                 analysis_summaries::title.eq(self.title),
+                analysis_summaries::short_content.eq(self.short_content),
                 analysis_summaries::content.eq(self.content),
             ))
             .returning(analysis_summaries::id)

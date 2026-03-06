@@ -30,6 +30,7 @@ pub struct AnalysisSummary {
     pub user_id: Uuid,
     pub summary_type: AnalysisSummaryType,
     pub title: String,
+    pub short_content: String,
     pub content: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -39,6 +40,7 @@ pub struct AnalysisSummary {
 pub struct NewAnalysisSummaryDto {
     pub summary_type: Option<AnalysisSummaryType>,
     pub title: String,
+    pub short_content: Option<String>,
     pub content: String,
 }
 
@@ -48,6 +50,7 @@ pub struct NewAnalysisSummary {
     pub user_id: Uuid,
     pub summary_type: AnalysisSummaryType,
     pub title: String,
+    pub short_content: String,
     pub content: String,
 }
 
@@ -60,6 +63,7 @@ impl NewAnalysisSummary {
                 .summary_type
                 .unwrap_or(AnalysisSummaryType::PeriodRecap),
             title: payload.title,
+            short_content: payload.short_content.unwrap_or_else(|| payload.content.clone()),
             content: payload.content,
         }
     }

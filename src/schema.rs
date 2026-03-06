@@ -7,6 +7,7 @@ diesel::table! {
         user_id -> Uuid,
         summary_type -> Text,
         title -> Text,
+        short_content -> Text,
         content -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
