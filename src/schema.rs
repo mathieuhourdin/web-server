@@ -108,9 +108,6 @@ diesel::table! {
         subtitle -> Text,
         plain_text_state_summary -> Text,
         interaction_date -> Nullable<Timestamp>,
-        period_start -> Timestamp,
-        period_end -> Timestamp,
-        landscape_analysis_type -> Text,
         processing_state -> Text,
         parent_id -> Nullable<Uuid>,
         replayed_from_id -> Nullable<Uuid>,
@@ -118,6 +115,9 @@ diesel::table! {
         trace_mirror_id -> Nullable<Uuid>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        landscape_analysis_type -> Text,
+        period_start -> Timestamp,
+        period_end -> Timestamp,
     }
 }
 
@@ -183,10 +183,10 @@ diesel::table! {
         current_landscape_id -> Nullable<Uuid>,
         target_trace_id -> Nullable<Uuid>,
         autoplay -> Bool,
-        run_lock_owner -> Nullable<Uuid>,
-        run_lock_until -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        run_lock_owner -> Nullable<Uuid>,
+        run_lock_until -> Nullable<Timestamp>,
     }
 }
 
@@ -347,6 +347,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    user_roles (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        role -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -382,10 +392,10 @@ diesel::joinable!(journals -> users (user_id));
 diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
 diesel::joinable!(landmarks -> users (user_id));
 diesel::joinable!(landscape_analyses -> traces (analyzed_trace_id));
+diesel::joinable!(landscape_analyses -> users (user_id));
 diesel::joinable!(landscape_analysis_inputs -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(landscape_analysis_inputs -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(landscape_analysis_inputs -> traces (trace_id));
-diesel::joinable!(landscape_analyses -> users (user_id));
 diesel::joinable!(landscape_landmarks -> landmarks (landmark_id));
 diesel::joinable!(landscape_landmarks -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(lens_analysis_scopes -> landscape_analyses (landscape_analysis_id));
@@ -409,6 +419,7 @@ diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
 diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
+diesel::joinable!(user_roles -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     element_landmarks,
@@ -434,5 +445,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     sessions,
     trace_mirrors,
     traces,
+    user_roles,
     users,
 );

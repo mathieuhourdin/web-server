@@ -7,7 +7,7 @@ use crate::entities_v2::{
     trace::{NewTrace, TraceType},
 };
 use crate::pagination::PaginationParams;
-use crate::schema::{journals, lenses, users};
+use crate::schema::{journals, lenses, user_roles, users};
 use argon2::Config;
 use axum::{
     debug_handler,
@@ -15,14 +15,13 @@ use axum::{
     http::StatusCode as AxumStatusCode,
     response::IntoResponse,
 };
-use chrono::NaiveDateTime;
-use chrono::Weekday;
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc, Weekday};
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_query;
-use diesel::sql_types::{Float, SmallInt, Text, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Date, Float, SmallInt, Text, Uuid as SqlUuid};
 use diesel::{AsExpression, FromSqlRow};
 use rand::Rng;
 use serde::de::{self, Deserializer};
@@ -234,6 +233,47 @@ impl FromSql<SmallInt, Pg> for WeekAnalysisWeekday {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UserRole {
+    Member,
+    Admin,
+    Mentor,
+}
+
+impl UserRole {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            UserRole::Member => "MEMBER",
+            UserRole::Admin => "ADMIN",
+            UserRole::Mentor => "MENTOR",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Result<Self, PpdcError> {
+        match value {
+            "MEMBER" | "member" => Ok(UserRole::Member),
+            "ADMIN" | "admin" => Ok(UserRole::Admin),
+            "MENTOR" | "mentor" => Ok(UserRole::Mentor),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid user role: {}", value),
+            )),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable, Identifiable, Debug)]
+#[diesel(table_name = crate::schema::user_roles)]
+pub struct UserRoleAssignment {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::users)]
 pub struct User {
@@ -400,10 +440,23 @@ impl NewUser {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let user = diesel::insert_into(users::table)
-            .values(&self)
-            .returning(User::as_returning())
-            .get_result(&mut conn)?;
+        let user = conn.transaction::<User, diesel::result::Error, _>(|conn| {
+            let user = diesel::insert_into(users::table)
+                .values(&self)
+                .returning(User::as_returning())
+                .get_result(conn)?;
+
+            diesel::insert_into(user_roles::table)
+                .values((
+                    user_roles::user_id.eq(user.id),
+                    user_roles::role.eq(UserRole::Member.to_db()),
+                ))
+                .on_conflict((user_roles::user_id, user_roles::role))
+                .do_nothing()
+                .execute(conn)?;
+
+            Ok(user)
+        })?;
         Ok(user)
     }
 
@@ -490,6 +543,52 @@ impl User {
         } else {
             format!("{} {}", self.first_name, self.last_name)
         }
+    }
+
+    pub fn list_roles(&self, pool: &DbPool) -> Result<Vec<UserRole>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let role_values = user_roles::table
+            .filter(user_roles::user_id.eq(self.id))
+            .select(user_roles::role)
+            .load::<String>(&mut conn)?;
+
+        role_values
+            .into_iter()
+            .map(|role| UserRole::from_db(&role))
+            .collect()
+    }
+
+    pub fn has_role(&self, role: UserRole, pool: &DbPool) -> Result<bool, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let has_role = diesel::select(diesel::dsl::exists(
+            user_roles::table
+                .filter(user_roles::user_id.eq(self.id))
+                .filter(user_roles::role.eq(role.to_db())),
+        ))
+        .get_result::<bool>(&mut conn)?;
+        Ok(has_role)
+    }
+
+    pub fn add_role(&self, role: UserRole, pool: &DbPool) -> Result<(), PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        diesel::insert_into(user_roles::table)
+            .values((
+                user_roles::user_id.eq(self.id),
+                user_roles::role.eq(role.to_db()),
+            ))
+            .on_conflict((user_roles::user_id, user_roles::role))
+            .do_nothing()
+            .execute(&mut conn)?;
+        Ok(())
     }
 }
 
@@ -636,6 +735,30 @@ struct Row {
     score: f32,
 }
 
+#[derive(QueryableByName)]
+struct UserIdRow {
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    value: i64,
+}
+
+#[derive(QueryableByName)]
+struct UserDailyActivityRow {
+    #[diesel(sql_type = Date)]
+    day: NaiveDate,
+    #[diesel(sql_type = BigInt)]
+    trace_count: i64,
+    #[diesel(sql_type = BigInt)]
+    element_count: i64,
+    #[diesel(sql_type = BigInt)]
+    landmark_count: i64,
+}
+
 #[derive(Debug)]
 pub struct UserMatch {
     pub id: Uuid,
@@ -685,6 +808,123 @@ pub fn find_similar_users(
             score: r.score,
         })
         .collect())
+}
+
+#[derive(Serialize)]
+pub struct AdminUserDailyActivity {
+    pub day: NaiveDate,
+    pub written_traces: i64,
+    pub created_elements: i64,
+    pub created_landmarks: i64,
+}
+
+#[derive(Serialize)]
+pub struct AdminUserRecentActivity {
+    pub id: Uuid,
+    pub hlp_landmarks_count: i64,
+    pub heatmap: Vec<AdminUserDailyActivity>,
+}
+
+#[debug_handler]
+pub async fn get_admin_recent_user_activity_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<AdminUserRecentActivity>>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let session_user = User::find(&session_user_id, &pool)?;
+    if !session_user.has_role(UserRole::Admin, &pool)? {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "Admin role required".to_string(),
+        ));
+    }
+
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let user_rows = sql_query(
+        r#"
+        SELECT user_id
+        FROM traces
+        GROUP BY user_id
+        ORDER BY MAX(COALESCE(interaction_date, created_at)) DESC
+        LIMIT 10
+        "#,
+    )
+    .load::<UserIdRow>(&mut conn)?;
+
+    let to = Utc::now().date_naive();
+    let from = to - Duration::days(29);
+
+    let mut payload = Vec::with_capacity(user_rows.len());
+
+    for row in user_rows {
+        let hlp_landmarks_count = sql_query(
+            r#"
+            SELECT COUNT(*)::bigint AS value
+            FROM landmarks
+            WHERE user_id = $1
+              AND landmark_type = 'HIGH_LEVEL_PROJECT'
+            "#,
+        )
+        .bind::<SqlUuid, _>(row.user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .value;
+
+        let heatmap_rows = sql_query(
+            r#"
+            WITH days AS (
+                SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
+            )
+            SELECT
+                d.day AS day,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM traces t
+                    WHERE t.user_id = $1
+                      AND COALESCE(t.interaction_date, t.created_at)::date = d.day
+                ), 0)::bigint AS trace_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM elements e
+                    WHERE e.user_id = $1
+                      AND e.created_at::date = d.day
+                ), 0)::bigint AS element_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM landmarks l
+                    WHERE l.user_id = $1
+                      AND l.created_at::date = d.day
+                ), 0)::bigint AS landmark_count
+            FROM days d
+            ORDER BY d.day
+            "#,
+        )
+        .bind::<SqlUuid, _>(row.user_id)
+        .bind::<Date, _>(from)
+        .bind::<Date, _>(to)
+        .load::<UserDailyActivityRow>(&mut conn)?;
+
+        let heatmap = heatmap_rows
+            .into_iter()
+            .map(|r| AdminUserDailyActivity {
+                day: r.day,
+                written_traces: r.trace_count,
+                created_elements: r.element_count,
+                created_landmarks: r.landmark_count,
+            })
+            .collect::<Vec<_>>();
+
+        payload.push(AdminUserRecentActivity {
+            id: row.user_id,
+            hlp_landmarks_count,
+            heatmap,
+        });
+    }
+
+    Ok(Json(payload))
 }
 
 #[debug_handler]

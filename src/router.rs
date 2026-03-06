@@ -36,6 +36,10 @@ pub fn create_router() -> Router {
 
     let users_router = Router::new()
         .route("/", get(user::get_users))
+        .route(
+            "/admin/recent_activity",
+            get(user::get_admin_recent_user_activity_route),
+        )
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/posts", get(post::get_user_posts_route))
         .route(
