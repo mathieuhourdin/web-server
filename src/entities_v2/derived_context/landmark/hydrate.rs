@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements};
 use crate::db::DbPool;
-use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::element::model::Element;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::shared::MaturingState;
 use crate::schema::{landmarks, landscape_landmarks};
 
@@ -50,8 +50,10 @@ fn tuple_to_landmark(row: LandmarkTuple) -> Landmark {
         external_content_url,
         comment,
         image_url,
-        landmark_type: LandmarkType::from_code(&landmark_type_raw).unwrap_or(LandmarkType::Resource),
-        maturing_state: MaturingState::from_code(&maturing_state_raw).unwrap_or(MaturingState::Draft),
+        landmark_type: LandmarkType::from_code(&landmark_type_raw)
+            .unwrap_or(LandmarkType::Resource),
+        maturing_state: MaturingState::from_code(&maturing_state_raw)
+            .unwrap_or(MaturingState::Draft),
         created_at,
         updated_at,
     }
@@ -100,11 +102,7 @@ impl Landmark {
             .first::<LandmarkTuple>(&mut conn)
             .optional()?;
         row.map(tuple_to_landmark).ok_or_else(|| {
-            PpdcError::new(
-                404,
-                ErrorType::ApiError,
-                "Landmark not found".to_string(),
-            )
+            PpdcError::new(404, ErrorType::ApiError, "Landmark not found".to_string())
         })
     }
 
@@ -118,11 +116,7 @@ impl Landmark {
             .first::<Uuid>(&mut conn)
             .optional()?;
         user_id.ok_or_else(|| {
-            PpdcError::new(
-                404,
-                ErrorType::ApiError,
-                "Landmark not found".to_string(),
-            )
+            PpdcError::new(404, ErrorType::ApiError, "Landmark not found".to_string())
         })
     }
 

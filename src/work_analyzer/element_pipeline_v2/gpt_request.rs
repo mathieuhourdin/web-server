@@ -11,7 +11,7 @@ use crate::entities_v2::{
     trace_mirror::TraceMirror,
 };
 use crate::openai_handler::GptRequestConfig;
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 #[derive(Debug, Serialize)]
 struct LandmarkSummary {
@@ -314,8 +314,9 @@ fn build_prompt_input(
 
         tag_to_landmark_id.insert(reference.tag_id, landmark_id);
         if landmark.landmark_type == LandmarkType::HighLevelProject {
-            if let Some(existing_index) =
-                high_level_project_index_by_landmark_id.get(&landmark_id).copied()
+            if let Some(existing_index) = high_level_project_index_by_landmark_id
+                .get(&landmark_id)
+                .copied()
             {
                 let spans = &mut high_level_projects[existing_index].spans;
                 let normalized_span = normalize_hlp_span_for_prompt(&reference.mention);

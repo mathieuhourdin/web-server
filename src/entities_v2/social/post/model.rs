@@ -224,7 +224,9 @@ impl NewPost {
             content: payload.content,
             image_url: payload.image_url,
             post_type: payload.post_type.unwrap_or(PostType::Idea),
-            interaction_type: payload.interaction_type.unwrap_or(PostInteractionType::Output),
+            interaction_type: payload
+                .interaction_type
+                .unwrap_or(PostInteractionType::Output),
             user_id,
             publishing_date: payload.publishing_date,
             publishing_state: payload

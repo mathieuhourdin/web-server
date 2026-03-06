@@ -15,6 +15,7 @@ use crate::entities_v2::{
     trace::Trace,
 };
 use crate::work_analyzer::analysis_processor;
+use crate::work_analyzer::period_analysis_processor;
 
 const LENS_RUN_LOCK_TTL_SECONDS: i64 = 1800;
 const MAX_ANALYSES_PER_RUN: usize = 100;
@@ -222,10 +223,15 @@ async fn run_claimed_analysis(
             pool,
         )?;
         processor.process().await?
-    } else if matches!(
-        analysis.landscape_analysis_type,
-        LandscapeAnalysisType::DailyRecap | LandscapeAnalysisType::WeeklyRecap
-    ) {
+    } else if analysis.landscape_analysis_type == LandscapeAnalysisType::DailyRecap {
+        let processor = period_analysis_processor::PeriodAnalysisProcessor::setup(
+            analysis.id,
+            analysis.user_id,
+            previous_landscape_id,
+            pool,
+        )?;
+        processor.process_daily_recap().await?
+    } else if analysis.landscape_analysis_type == LandscapeAnalysisType::WeeklyRecap {
         let mut summary_analysis = analysis.clone();
         if let Some(parent_analysis_id) = previous_landscape_id {
             let parent_analysis = LandscapeAnalysis::find_full_analysis(parent_analysis_id, pool)?;
@@ -274,10 +280,7 @@ async fn run_claimed_analysis(
             refreshed_trace_mirrors,
             trace_datetime
         );
-    } else if matches!(
-        completed_analysis.landscape_analysis_type,
-        LandscapeAnalysisType::DailyRecap | LandscapeAnalysisType::WeeklyRecap
-    ) {
+    } else if completed_analysis.landscape_analysis_type == LandscapeAnalysisType::WeeklyRecap {
         let (covered_trace_count, covered_trace_mirror_count) = replace_covered_inputs_for_period(
             completed_analysis.id,
             lens.id,

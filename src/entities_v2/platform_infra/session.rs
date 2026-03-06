@@ -166,7 +166,10 @@ impl Session {
         })
     }
 
-    pub fn create_authenticated(user_id: Uuid, pool: &DbPool) -> Result<(Session, String), PpdcError> {
+    pub fn create_authenticated(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<(Session, String), PpdcError> {
         let secret = Session::generate_secret();
         let secret_hash = Session::hash_secret(&secret)?;
         let new_session = NewSession {
@@ -211,7 +214,10 @@ impl Session {
         let now = Utc::now().naive_utc();
         diesel::update(sessions::table)
             .filter(sessions::id.eq(session_id))
-            .set((sessions::last_seen_at.eq(Some(now)), sessions::updated_at.eq(now)))
+            .set((
+                sessions::last_seen_at.eq(Some(now)),
+                sessions::updated_at.eq(now),
+            ))
             .execute(&mut conn)?;
         Ok(())
     }
@@ -269,7 +275,8 @@ where
             .expect("Extension DbPool should be set");
         if let Some(auth_header) = parts.headers.get("Authorization") {
             if let Ok(auth_str) = auth_header.to_str() {
-                if let Ok(session) = Session::get_valid_session_from_authorization(auth_str, &pool) {
+                if let Ok(session) = Session::get_valid_session_from_authorization(auth_str, &pool)
+                {
                     return Ok(session);
                 }
             }

@@ -46,9 +46,7 @@ struct HighLevelProjectPromptItem {
     content: String,
 }
 
-pub fn build_high_level_project_index_map(
-    high_level_projects: &[Landmark],
-) -> HashMap<i32, Uuid> {
+pub fn build_high_level_project_index_map(high_level_projects: &[Landmark]) -> HashMap<i32, Uuid> {
     high_level_projects
         .iter()
         .enumerate()

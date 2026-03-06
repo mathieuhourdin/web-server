@@ -6,7 +6,7 @@ use crate::entities_v2::{
     trace::Trace,
     trace_mirror::{model::NewTraceMirror, TraceMirror, TraceMirrorType},
 };
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 use super::gpt_request::{MirrorHeader, MirrorHeaderTraceMirrorType, SelectedHighLevelProject};
 

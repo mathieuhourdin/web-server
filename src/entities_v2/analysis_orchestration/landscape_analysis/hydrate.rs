@@ -5,7 +5,9 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::{element::Element, landmark::Landmark, lens::Lens};
-use crate::schema::{landscape_analyses, landscape_analysis_inputs, lens_analysis_scopes, lens_heads};
+use crate::schema::{
+    landscape_analyses, landscape_analysis_inputs, lens_analysis_scopes, lens_heads,
+};
 
 use super::model::{
     LandscapeAnalysis, LandscapeAnalysisInput, LandscapeAnalysisInputType, LandscapeAnalysisType,

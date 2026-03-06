@@ -5,7 +5,7 @@ use crate::entities_v2::{
     trace::Trace,
     trace_mirror::TraceMirror,
 };
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 use super::{
     gpt_request::{
@@ -20,7 +20,8 @@ pub async fn run(
     context: &AnalysisContext,
 ) -> Result<TraceMirror, PpdcError> {
     let hlp_index_to_uuid = build_high_level_project_index_map(&high_level_projects);
-    let mut header = extract_mirror_header(trace, context.analysis_id, &high_level_projects).await?;
+    let mut header =
+        extract_mirror_header(trace, context.analysis_id, &high_level_projects).await?;
     if let Some(journal_id) = trace.journal_id {
         let journal = Journal::find_full(journal_id, &context.pool)?;
         if journal.journal_type == JournalType::ReadingNoteJournal {

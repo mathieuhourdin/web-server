@@ -190,9 +190,9 @@ impl ElementSubtype {
             | ElementSubtype::Output
             | ElementSubtype::Transformation
             | ElementSubtype::TransactionQuestion => ElementType::Transaction,
-            ElementSubtype::Unit
-            | ElementSubtype::DescriptiveQuestion
-            | ElementSubtype::Theme => ElementType::Descriptive,
+            ElementSubtype::Unit | ElementSubtype::DescriptiveQuestion | ElementSubtype::Theme => {
+                ElementType::Descriptive
+            }
             ElementSubtype::Plan
             | ElementSubtype::Obligation
             | ElementSubtype::Recommendation

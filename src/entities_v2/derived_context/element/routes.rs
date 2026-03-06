@@ -5,8 +5,8 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::{error::PpdcError, session::Session};
 use crate::entities_v2::landmark::Landmark;
+use crate::entities_v2::{error::PpdcError, session::Session};
 
 use super::model::{Element, ElementRelationWithRelatedElement};
 

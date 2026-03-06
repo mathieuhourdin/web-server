@@ -93,11 +93,7 @@ impl Reference {
             .first::<ReferenceTuple>(&mut conn)
             .optional()?;
         row.map(tuple_to_reference).ok_or_else(|| {
-            PpdcError::new(
-                404,
-                ErrorType::ApiError,
-                "Reference not found".to_string(),
-            )
+            PpdcError::new(404, ErrorType::ApiError, "Reference not found".to_string())
         })
     }
 

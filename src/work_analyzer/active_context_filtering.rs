@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landmark::Landmark, landscape_analysis::LandscapeAnalysis};
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 pub fn run(
     context: &AnalysisContext,

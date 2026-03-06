@@ -54,7 +54,8 @@ fn tuple_to_post(row: PostTuple) -> Post {
         user_id,
         publishing_date,
         publishing_state,
-        maturing_state: MaturingState::from_code(&maturing_state_raw).unwrap_or(MaturingState::Draft),
+        maturing_state: MaturingState::from_code(&maturing_state_raw)
+            .unwrap_or(MaturingState::Draft),
         created_at,
         updated_at,
     }
@@ -102,9 +103,8 @@ impl Post {
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
             .optional()?;
-        row.map(tuple_to_post).ok_or_else(|| {
-            PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string())
-        })
+        row.map(tuple_to_post)
+            .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string()))
     }
 
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {

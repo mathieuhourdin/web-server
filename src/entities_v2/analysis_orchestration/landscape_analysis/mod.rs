@@ -4,8 +4,8 @@ pub mod persist;
 pub mod routes;
 
 pub use model::{
-    LandscapeAnalysis, LandscapeAnalysisInput, LandscapeAnalysisInputType, LandscapeProcessingState,
-    NewLandscapeAnalysis,
+    LandscapeAnalysis, LandscapeAnalysisInput, LandscapeAnalysisInputType,
+    LandscapeProcessingState, NewLandscapeAnalysis,
 };
 pub use persist::{
     add_landmark_ref, add_trace_input, add_trace_mirror_input, claim_next_pending_for_lens,

@@ -2,7 +2,7 @@ use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::landmark::{Landmark, LandmarkType, NewLandmark};
 use crate::entities_v2::MaturingState;
 use crate::openai_handler::GptRequestConfig;
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 use crate::work_analyzer::mirror_pipeline::primary_resource::matching::PrimaryResourceMatched;
 use serde::{Deserialize, Serialize};
 

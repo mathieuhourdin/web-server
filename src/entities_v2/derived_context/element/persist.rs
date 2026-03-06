@@ -65,7 +65,10 @@ impl NewElement {
                     element_landmarks::element_id.eq(id),
                     element_landmarks::landmark_id.eq(lid),
                 ))
-                .on_conflict((element_landmarks::element_id, element_landmarks::landmark_id))
+                .on_conflict((
+                    element_landmarks::element_id,
+                    element_landmarks::landmark_id,
+                ))
                 .do_nothing()
                 .execute(&mut conn)?;
         }
@@ -88,7 +91,10 @@ pub fn link_to_landmark(
             element_landmarks::element_id.eq(element_id),
             element_landmarks::landmark_id.eq(landmark_id),
         ))
-        .on_conflict((element_landmarks::element_id, element_landmarks::landmark_id))
+        .on_conflict((
+            element_landmarks::element_id,
+            element_landmarks::landmark_id,
+        ))
         .do_nothing()
         .execute(&mut conn)?;
     Ok(landmark_id)

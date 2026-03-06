@@ -220,7 +220,9 @@ pub async fn get_analysis_trace_mirrors_route(
 
     let mut trace_mirrors = trace_mirror_ids
         .into_iter()
-        .filter_map(|trace_mirror_id| TraceMirror::find_full_trace_mirror(trace_mirror_id, &pool).ok())
+        .filter_map(|trace_mirror_id| {
+            TraceMirror::find_full_trace_mirror(trace_mirror_id, &pool).ok()
+        })
         .collect::<Vec<_>>();
     trace_mirrors.sort_by_key(|trace_mirror| trace_mirror.created_at);
     Ok(Json(trace_mirrors))

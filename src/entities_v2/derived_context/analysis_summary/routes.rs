@@ -6,9 +6,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
-    error::PpdcError,
-    landscape_analysis::LandscapeAnalysis,
-    session::Session,
+    error::PpdcError, landscape_analysis::LandscapeAnalysis, session::Session,
 };
 
 use super::model::{AnalysisSummary, NewAnalysisSummary, NewAnalysisSummaryDto};

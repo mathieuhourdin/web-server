@@ -127,7 +127,8 @@ pub async fn get_trace_analysis_route(
         .into_iter()
         .filter(|analysis| analysis_scope_ids.contains(&analysis.id))
         .collect::<Vec<_>>();
-    analyses.sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
+    analyses
+        .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
 
     let analysis = analyses.into_iter().next().ok_or_else(|| {
         PpdcError::new(

@@ -12,7 +12,7 @@ use crate::entities_v2::{
     trace_mirror::TraceMirror,
 };
 use crate::schema::element_relations;
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 use super::gpt_request::{
     DescriptiveKind, EvaluativeKind, GrammaticalExtractionOutput, NormativeForce, TransactionKind,
@@ -322,7 +322,10 @@ fn persist_nodes(
         for landmark_id in landmark_ids {
             link_to_landmark(element.id, landmark_id, context.user_id, &context.pool)?;
         }
-        if claim_to_element_id.insert(claim_id.clone(), element.id).is_some() {
+        if claim_to_element_id
+            .insert(claim_id.clone(), element.id)
+            .is_some()
+        {
             warn!(
                 claim_id = claim_id.as_str(),
                 "Duplicate claim id while persisting elements; keeping latest mapping"
@@ -404,7 +407,10 @@ fn persist_claim_relations(
                 return Err(PpdcError::new(
                     500,
                     ErrorType::InternalError,
-                    format!("Unsupported element relation_type in persistence: {}", other),
+                    format!(
+                        "Unsupported element relation_type in persistence: {}",
+                        other
+                    ),
                 ))
             }
         }
@@ -631,7 +637,10 @@ mod tests {
 
         let descriptive = by_id.get("des_1").expect("descriptive node");
         assert_eq!(descriptive.element_type, ElementType::Descriptive);
-        assert_eq!(descriptive.element_subtype, ElementSubtype::DescriptiveQuestion);
+        assert_eq!(
+            descriptive.element_subtype,
+            ElementSubtype::DescriptiveQuestion
+        );
 
         let normative = by_id.get("nor_1").expect("normative node");
         assert_eq!(normative.element_type, ElementType::Normative);

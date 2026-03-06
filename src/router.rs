@@ -11,22 +11,10 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
-    analysis_summary,
-    element,
+    analysis_summary, element,
     error::{ErrorType, PpdcError},
-    journal,
-    journal_import,
-    landmark,
-    landscape_analysis,
-    lens,
-    llm_call,
-    message,
-    post,
-    reference,
-    trace,
-    trace_mirror,
-    transcription,
-    user,
+    journal, journal_import, landmark, landscape_analysis, lens, llm_call, message, post,
+    reference, trace, trace_mirror, transcription, user,
 };
 use crate::sessions_service;
 
@@ -71,7 +59,10 @@ pub fn create_router() -> Router {
         .route("/", post(journal::post_journal_route))
         .route("/:id", put(journal::put_journal_route))
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
-        .route("/:id/import_text", post(journal_import::post_import_text_route))
+        .route(
+            "/:id/import_text",
+            post(journal_import::post_import_text_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let transcriptions_router = Router::new()
@@ -95,7 +86,10 @@ pub fn create_router() -> Router {
             get(landscape_analysis::get_landmarks_route),
         )
         .route("/:id/elements", get(landscape_analysis::get_elements_route))
-        .route("/:id/traces", get(landscape_analysis::get_analysis_traces_route))
+        .route(
+            "/:id/traces",
+            get(landscape_analysis::get_analysis_traces_route),
+        )
         .route(
             "/:id/trace_mirrors",
             get(landscape_analysis::get_analysis_trace_mirrors_route),
@@ -110,7 +104,11 @@ pub fn create_router() -> Router {
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let analysis_summaries_router = Router::new()
-        .route("/:id", get(analysis_summary::get_analysis_summary_route).put(analysis_summary::put_analysis_summary_route))
+        .route(
+            "/:id",
+            get(analysis_summary::get_analysis_summary_route)
+                .put(analysis_summary::put_analysis_summary_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let landmarks_router = Router::new()
         .route("/:id", get(landmark::get_landmark_route))
@@ -134,8 +132,14 @@ pub fn create_router() -> Router {
         .route("/:id", get(llm_call::get_llm_call_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let messages_router = Router::new()
-        .route("/", get(message::get_messages_route).post(message::post_message_route))
-        .route("/:id", get(message::get_message_route).put(message::put_message_route))
+        .route(
+            "/",
+            get(message::get_messages_route).post(message::post_message_route),
+        )
+        .route(
+            "/:id",
+            get(message::get_message_route).put(message::put_message_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let trace_mirrors_router = Router::new()

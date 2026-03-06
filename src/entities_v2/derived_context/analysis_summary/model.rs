@@ -56,7 +56,9 @@ impl NewAnalysisSummary {
         Self {
             landscape_analysis_id,
             user_id,
-            summary_type: payload.summary_type.unwrap_or(AnalysisSummaryType::PeriodRecap),
+            summary_type: payload
+                .summary_type
+                .unwrap_or(AnalysisSummaryType::PeriodRecap),
             title: payload.title,
             content: payload.content,
         }

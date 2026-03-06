@@ -22,7 +22,8 @@ type JournalTuple = (
 
 impl From<JournalTuple> for Journal {
     fn from(row: JournalTuple) -> Self {
-        let (id, user_id, title, subtitle, content, journal_type, status, created_at, updated_at) = row;
+        let (id, user_id, title, subtitle, content, journal_type, status, created_at, updated_at) =
+            row;
         Journal {
             id,
             title,

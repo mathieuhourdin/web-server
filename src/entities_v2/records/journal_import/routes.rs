@@ -23,11 +23,13 @@ pub async fn post_import_text_route(
     let mut preferred_file_bytes: Option<Vec<u8>> = None;
     let mut fallback_file_bytes: Option<Vec<u8>> = None;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|err| PpdcError::new(400, ErrorType::ApiError, format!("Multipart error: {}", err)))?
-    {
+    while let Some(field) = multipart.next_field().await.map_err(|err| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!("Multipart error: {}", err),
+        )
+    })? {
         let field_name = field.name().map(|name| name.to_string());
         let is_file_field = field.file_name().is_some();
         if !is_file_field {
@@ -51,13 +53,15 @@ pub async fn post_import_text_route(
         }
     }
 
-    let file_bytes = preferred_file_bytes.or(fallback_file_bytes).ok_or_else(|| {
-        PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "No file provided in multipart payload".to_string(),
-        )
-    })?;
+    let file_bytes = preferred_file_bytes
+        .or(fallback_file_bytes)
+        .ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "No file provided in multipart payload".to_string(),
+            )
+        })?;
 
     let raw_text = String::from_utf8_lossy(&file_bytes).to_string();
     let result = import_journal_text(user_id, journal_id, &raw_text, &pool)?;

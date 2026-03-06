@@ -88,8 +88,7 @@ impl<'de> Deserialize<'de> for JournalTheme {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        JournalTheme::from_code(&value)
-            .map_err(|_| de::Error::custom("unknown journal_theme"))
+        JournalTheme::from_code(&value).map_err(|_| de::Error::custom("unknown journal_theme"))
     }
 }
 
@@ -264,6 +263,75 @@ impl UserRole {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+pub enum UserPrincipalType {
+    Human,
+    Service,
+}
+
+impl UserPrincipalType {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            UserPrincipalType::Human => "HUMAN",
+            UserPrincipalType::Service => "SERVICE",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Result<Self, PpdcError> {
+        match value {
+            "HUMAN" | "human" => Ok(UserPrincipalType::Human),
+            "SERVICE" | "service" => Ok(UserPrincipalType::Service),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid user principal_type: {}", value),
+            )),
+        }
+    }
+
+    pub fn to_api_value(self) -> &'static str {
+        match self {
+            UserPrincipalType::Human => "human",
+            UserPrincipalType::Service => "service",
+        }
+    }
+}
+
+impl Serialize for UserPrincipalType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_api_value())
+    }
+}
+
+impl<'de> Deserialize<'de> for UserPrincipalType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        UserPrincipalType::from_db(&value)
+            .map_err(|_| de::Error::custom("unknown principal_type"))
+    }
+}
+
+impl ToSql<Text, Pg> for UserPrincipalType {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_db(), out)
+    }
+}
+
+impl FromSql<Text, Pg> for UserPrincipalType {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        UserPrincipalType::from_db(value.as_str())
+            .map_err(|_| "invalid principal_type value in database".into())
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = crate::schema::user_roles)]
 pub struct UserRoleAssignment {
@@ -279,6 +347,7 @@ pub struct UserRoleAssignment {
 pub struct User {
     pub id: Uuid,
     pub email: String,
+    pub principal_type: UserPrincipalType,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
@@ -321,6 +390,7 @@ impl IntoResponse for UserResponse {
 pub struct UserPseudonymizedAuthentifiedResponse {
     pub id: Uuid,
     pub email: String,
+    pub principal_type: UserPrincipalType,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
@@ -344,6 +414,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
         UserPseudonymizedAuthentifiedResponse {
             id: user.id.clone(),
             email: user.email.clone(),
+            principal_type: user.principal_type,
             first_name: user.first_name.clone(),
             last_name: user.last_name.clone(),
             handle: user.handle.clone(),
@@ -371,6 +442,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
 #[derive(Serialize)]
 pub struct UserPseudonymizedResponse {
     pub id: Uuid,
+    pub principal_type: UserPrincipalType,
     pub handle: String,
     pub created_at: NaiveDateTime,
     pub updated_at: Option<NaiveDateTime>,
@@ -391,6 +463,7 @@ impl From<&User> for UserPseudonymizedResponse {
     fn from(user: &User) -> Self {
         UserPseudonymizedResponse {
             id: user.id.clone(),
+            principal_type: user.principal_type,
             handle: user.handle.clone(),
             created_at: user.created_at.clone(),
             updated_at: user.updated_at.clone(),
@@ -417,6 +490,7 @@ impl From<&User> for UserPseudonymizedResponse {
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser {
     pub email: String,
+    pub principal_type: Option<UserPrincipalType>,
     pub first_name: String,
     pub last_name: String,
     pub handle: String,
@@ -440,9 +514,14 @@ impl NewUser {
             .get()
             .expect("Failed to get a connection from the pool");
 
+        let mut payload = self;
+        if payload.principal_type.is_none() {
+            payload.principal_type = Some(UserPrincipalType::Human);
+        }
+
         let user = conn.transaction::<User, diesel::result::Error, _>(|conn| {
             let user = diesel::insert_into(users::table)
-                .values(&self)
+                .values(&payload)
                 .returning(User::as_returning())
                 .get_result(conn)?;
 
@@ -1039,6 +1118,7 @@ mod tests {
     fn test_hash_password() {
         let mut user = NewUser {
             email: String::from("email"),
+            principal_type: None,
             first_name: String::from("first_name"),
             last_name: String::from("last_name"),
             handle: String::from("@handle"),

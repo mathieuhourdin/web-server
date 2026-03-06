@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::schema::{element_landmarks, element_relations, elements};
 use crate::entities_v2::landmark::Landmark;
+use crate::schema::{element_landmarks, element_relations, elements};
 
 use super::model::{Element, ElementRelationWithRelatedElement, ElementSubtype, ElementType};
 
@@ -229,7 +229,10 @@ impl Element {
 
         let outgoing = element_relations::table
             .filter(element_relations::origin_element_id.eq(self.id))
-            .select((element_relations::target_element_id, element_relations::relation_type))
+            .select((
+                element_relations::target_element_id,
+                element_relations::relation_type,
+            ))
             .load::<(Uuid, String)>(&mut conn)?;
         for (related_element_id, relation_type_raw) in outgoing {
             if related_element_id == self.id {
@@ -248,7 +251,10 @@ impl Element {
 
         let incoming = element_relations::table
             .filter(element_relations::target_element_id.eq(self.id))
-            .select((element_relations::origin_element_id, element_relations::relation_type))
+            .select((
+                element_relations::origin_element_id,
+                element_relations::relation_type,
+            ))
             .load::<(Uuid, String)>(&mut conn)?;
         for (related_element_id, relation_type_raw) in incoming {
             if related_element_id == self.id {

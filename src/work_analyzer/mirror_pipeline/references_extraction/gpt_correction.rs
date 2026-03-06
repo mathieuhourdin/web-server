@@ -44,9 +44,7 @@ pub async fn correct_references_drafts(
     config.execute().await
 }
 
-fn build_date_extraction_repair_hint(
-    extraction: &ReferencesExtractionResult,
-) -> Option<String> {
+fn build_date_extraction_repair_hint(extraction: &ReferencesExtractionResult) -> Option<String> {
     let mut date_like_mentions = extraction
         .references
         .iter()
@@ -78,21 +76,13 @@ fn looks_like_date_mention(mention: &str) -> bool {
     let normalized = mention.to_lowercase();
 
     // Inspired by `src/bin/import_txt.rs` date parsing patterns.
-    let iso_date_time_regex = Regex::new(
-        r"\b\d{4}-\d{2}-\d{2}(?:[ t]\d{1,2}(?::\d{2}|h\d{2}))?\b",
-    )
-    .expect("valid regex");
+    let iso_date_time_regex =
+        Regex::new(r"\b\d{4}-\d{2}-\d{2}(?:[ t]\d{1,2}(?::\d{2}|h\d{2}))?\b").expect("valid regex");
     let slash_or_dash_numeric_date_regex =
         Regex::new(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b").expect("valid regex");
 
     let days_fr = [
-        "lundi",
-        "mardi",
-        "mercredi",
-        "jeudi",
-        "vendredi",
-        "samedi",
-        "dimanche",
+        "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
     ];
     let months_fr = [
         "janvier",

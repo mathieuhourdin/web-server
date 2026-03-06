@@ -1,6 +1,6 @@
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{element::Element, trace_mirror::TraceMirror};
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 use super::gpt_correction::correct_extraction;
 use super::gpt_request::{request_extraction_with_prompts, GrammaticalExtractionOutput};

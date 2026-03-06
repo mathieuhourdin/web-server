@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::schema::{lens_analysis_scopes, lenses};
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
+use crate::schema::{lens_analysis_scopes, lenses};
 
 use super::model::{Lens, LensProcessingState};
 
@@ -72,9 +72,8 @@ impl Lens {
             .select(select_lens_columns())
             .first::<LensTuple>(&mut conn)
             .optional()?;
-        row.map(tuple_to_lens).ok_or_else(|| {
-            PpdcError::new(404, ErrorType::ApiError, "Lens not found".to_string())
-        })
+        row.map(tuple_to_lens)
+            .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Lens not found".to_string()))
     }
 
     pub fn get_user_lenses(user_id: Uuid, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {

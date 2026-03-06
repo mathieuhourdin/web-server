@@ -430,12 +430,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 daily = daily.update(pool)?;
             }
             let _ = replace_covered_inputs_for_period(
-                daily.id,
-                lens_id,
-                user_id,
-                day_start,
-                day_end,
-                pool,
+                daily.id, lens_id, user_id, day_start, day_end, pool,
             )?;
             created.push(daily);
         }
@@ -485,12 +480,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 weekly = weekly.update(pool)?;
             }
             let _ = replace_covered_inputs_for_period(
-                weekly.id,
-                lens_id,
-                user_id,
-                week_start,
-                week_end,
-                pool,
+                weekly.id, lens_id, user_id, week_start, week_end, pool,
             )?;
             created.push(weekly);
         }
@@ -516,12 +506,10 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
         )
         .filter(lens_analysis_scopes::lens_id.eq(lens_id))
         .filter(landscape_analyses::user_id.eq(user_id))
-        .filter(
-            landscape_analyses::landscape_analysis_type.eq_any(vec![
-                LandscapeAnalysisType::DailyRecap.to_db(),
-                LandscapeAnalysisType::WeeklyRecap.to_db(),
-            ]),
-        )
+        .filter(landscape_analyses::landscape_analysis_type.eq_any(vec![
+            LandscapeAnalysisType::DailyRecap.to_db(),
+            LandscapeAnalysisType::WeeklyRecap.to_db(),
+        ]))
         .filter(landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()))
         .filter(landscape_analyses::period_start.le(trace_datetime))
         .filter(landscape_analyses::period_end.gt(trace_datetime))
@@ -550,7 +538,11 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
         refreshed_trace_mirrors += trace_mirror_count;
     }
 
-    Ok((refreshed_analyses, refreshed_traces, refreshed_trace_mirrors))
+    Ok((
+        refreshed_analyses,
+        refreshed_traces,
+        refreshed_trace_mirrors,
+    ))
 }
 
 pub fn claim_next_pending_for_lens(
@@ -714,7 +706,12 @@ pub fn add_trace_mirror_input(
     let mut conn = pool
         .get()
         .expect("Failed to get a connection from the pool");
-    add_trace_mirror_input_with_conn(&mut conn, landscape_analysis_id, trace_mirror_id, input_type)?;
+    add_trace_mirror_input_with_conn(
+        &mut conn,
+        landscape_analysis_id,
+        trace_mirror_id,
+        input_type,
+    )?;
     Ok(())
 }
 

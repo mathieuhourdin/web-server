@@ -388,6 +388,7 @@ diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
+        principal_type -> Text,
         first_name -> Text,
         last_name -> Text,
         handle -> Text,

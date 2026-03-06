@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use diesel::prelude::*;
 
 use crate::entities_v2::error::PpdcError;
-use crate::schema::landmark_relations;
 use crate::entities_v2::{
     landmark::{Landmark, LandmarkType, NewLandmark},
     reference::{NewReference, ReferenceType},
@@ -11,7 +10,8 @@ use crate::entities_v2::{
     trace_mirror::{NewTraceMirror, TraceMirror, TraceMirrorType},
     MaturingState,
 };
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::schema::landmark_relations;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
 use super::gpt_request::{HighLevelProjectDraft, RelatedLandmarkDraft};
 

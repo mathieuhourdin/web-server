@@ -1,11 +1,8 @@
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landmark::Landmark, trace::Trace, trace_mirror::TraceMirror};
-use crate::work_analyzer::analysis_processor::AnalysisContext;
+use crate::work_analyzer::analysis_context::AnalysisContext;
 
-use super::{
-    gpt_request::extract_high_level_projects,
-    persistence::persist_hlp_entities,
-};
+use super::{gpt_request::extract_high_level_projects, persistence::persist_hlp_entities};
 
 #[derive(Debug, Clone)]
 pub struct HlpPipelineOutput {
