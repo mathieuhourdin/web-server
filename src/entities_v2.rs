@@ -7,8 +7,8 @@ pub mod social;
 
 // Backward-compatible re-exports for existing imports across the codebase.
 pub use analysis_orchestration::{landscape_analysis, lens};
-pub use derived_context::{element, landmark, reference, trace_mirror};
+pub use derived_context::{analysis_summary, element, landmark, reference, trace_mirror};
 pub use platform_infra::{error, llm_call, session, transcription, user};
 pub use records::{journal, journal_import, trace};
 pub use shared::MaturingState;
-pub use social::post;
+pub use social::{message, post};

@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use regex::Regex;
 use uuid::Uuid;
 
@@ -143,14 +143,18 @@ pub fn blocks_to_new_traces(
             continue;
         }
 
-        let mut interaction_date = extract_date(block.date.as_deref());
-        if let Some(date) = interaction_date {
+        let interaction_date = if let Some(date) = extract_date(block.date.as_deref()) {
             previous_date = Some(date);
+            date
         } else if let Some(previous) = previous_date {
             let next = previous + Duration::days(1);
             previous_date = Some(next);
-            interaction_date = Some(next);
-        }
+            next
+        } else {
+            let fallback = Utc::now().naive_utc();
+            previous_date = Some(fallback);
+            fallback
+        };
 
         let trace = NewTrace::new(
             "".to_string(),
@@ -239,11 +243,15 @@ mod tests {
         assert_eq!(traces.len(), 2);
         assert_eq!(
             traces[0].2.interaction_date,
-            NaiveDate::from_ymd_opt(2026, 2, 4).and_then(|d| d.and_hms_opt(12, 0, 0))
+            NaiveDate::from_ymd_opt(2026, 2, 4)
+                .and_then(|d| d.and_hms_opt(12, 0, 0))
+                .expect("valid fixed date")
         );
         assert_eq!(
             traces[1].2.interaction_date,
-            NaiveDate::from_ymd_opt(2026, 2, 5).and_then(|d| d.and_hms_opt(12, 0, 0))
+            NaiveDate::from_ymd_opt(2026, 2, 5)
+                .and_then(|d| d.and_hms_opt(12, 0, 0))
+                .expect("valid fixed date")
         );
     }
 }

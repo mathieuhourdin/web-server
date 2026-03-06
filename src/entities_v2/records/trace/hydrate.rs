@@ -12,7 +12,7 @@ type TraceTuple = (
     Uuid,
     String,
     String,
-    Option<NaiveDateTime>,
+    NaiveDateTime,
     String,
     Option<Uuid>,
     Uuid,

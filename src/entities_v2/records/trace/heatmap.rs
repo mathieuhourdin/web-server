@@ -19,7 +19,7 @@ pub struct HeatmapRow {
     pub value: i64,
 }
 
-type TraceContentRow = (Option<chrono::NaiveDateTime>, chrono::NaiveDateTime, String);
+type TraceContentRow = (chrono::NaiveDateTime, String);
 
 pub fn heatmap_sum_trace_content_len(
     conn: &mut PgConnection,
@@ -32,24 +32,16 @@ pub fn heatmap_sum_trace_content_len(
         .and_hms_opt(0, 0, 0)
         .expect("valid day start");
 
-    let interaction_window = traces::interaction_date
-        .is_not_null()
-        .and(traces::interaction_date.ge(from_dt))
-        .and(traces::interaction_date.lt(to_exclusive_dt));
-    let created_window = traces::interaction_date
-        .is_null()
-        .and(traces::created_at.ge(from_dt))
-        .and(traces::created_at.lt(to_exclusive_dt));
-
     let rows = traces::table
         .filter(traces::user_id.eq(user_id))
-        .filter(interaction_window.or(created_window))
-        .select((traces::interaction_date, traces::created_at, traces::content))
+        .filter(traces::interaction_date.ge(from_dt))
+        .filter(traces::interaction_date.lt(to_exclusive_dt))
+        .select((traces::interaction_date, traces::content))
         .load::<TraceContentRow>(conn)?;
 
     let mut by_day = HashMap::<NaiveDate, i64>::new();
-    for (interaction_date, created_at, content) in rows {
-        let day = interaction_date.unwrap_or(created_at).date();
+    for (interaction_date, content) in rows {
+        let day = interaction_date.date();
         let value = i64::try_from(content.chars().count()).unwrap_or(i64::MAX);
         *by_day.entry(day).or_insert(0) += value;
     }

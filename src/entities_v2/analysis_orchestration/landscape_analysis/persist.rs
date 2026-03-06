@@ -180,7 +180,7 @@ fn parse_user_timezone_or_utc(user: &User) -> Tz {
 }
 
 fn trace_effective_datetime(trace: &Trace) -> NaiveDateTime {
-    trace.interaction_date.unwrap_or(trace.created_at)
+    trace.interaction_date
 }
 
 fn day_period_for_datetime(
@@ -325,7 +325,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                     .unwrap_or(trace_datetime)
                     - Duration::days(1)
             } else {
-                Utc::now().naive_utc()
+                trace_datetime
             };
             (LandscapeAnalysisType::Hlp, dt)
         }
@@ -336,7 +336,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                     .unwrap_or(trace_datetime)
                     - Duration::days(1)
             } else {
-                Utc::now().naive_utc()
+                trace_datetime
             };
             (LandscapeAnalysisType::Bio, dt)
         }
@@ -578,8 +578,8 @@ WITH candidate AS (
             SELECT 1
             FROM traces t
             WHERE t.user_id = la.user_id
-              AND COALESCE(t.interaction_date, t.created_at) >= la.period_start
-              AND COALESCE(t.interaction_date, t.created_at) < la.period_end
+              AND t.interaction_date >= la.period_start
+              AND t.interaction_date < la.period_end
               AND NOT EXISTS (
                   SELECT 1
                   FROM trace_mirrors tm
@@ -746,9 +746,9 @@ pub fn replace_covered_inputs_for_period(
 SELECT t.id
 FROM traces t
 WHERE t.user_id = $1
-  AND COALESCE(t.interaction_date, t.created_at) >= $2
-  AND COALESCE(t.interaction_date, t.created_at) < $3
-ORDER BY COALESCE(t.interaction_date, t.created_at) ASC, t.created_at ASC
+  AND t.interaction_date >= $2
+  AND t.interaction_date < $3
+ORDER BY t.interaction_date ASC, t.created_at ASC
             "#,
         )
         .bind::<SqlUuid, _>(user_id)
@@ -777,8 +777,8 @@ INNER JOIN traces t
     ON t.id = tm.trace_id
 WHERE las.lens_id = $1
   AND t.user_id = $2
-  AND COALESCE(t.interaction_date, t.created_at) >= $3
-  AND COALESCE(t.interaction_date, t.created_at) < $4
+  AND t.interaction_date >= $3
+  AND t.interaction_date < $4
 ORDER BY tm.id ASC
             "#,
         )

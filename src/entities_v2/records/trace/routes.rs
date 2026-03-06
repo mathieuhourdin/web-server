@@ -2,6 +2,7 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path},
 };
+use chrono::Utc;
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -35,10 +36,12 @@ pub async fn post_trace_route(
     }
 
     let qualified = llm_qualify::qualify_trace(payload.content.as_str()).await?;
+    let request_received_at = Utc::now().naive_utc();
 
     let interaction_date = qualified
         .interaction_date
-        .and_then(|d| d.and_hms_opt(12, 0, 0));
+        .and_then(|d| d.and_hms_opt(12, 0, 0))
+        .unwrap_or(request_received_at);
 
     let trace = NewTrace::new(
         qualified.title,

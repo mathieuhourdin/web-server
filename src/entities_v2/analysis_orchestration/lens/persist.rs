@@ -62,7 +62,7 @@ fn enqueue_pending_analyses_for_lens_target(
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     let all_user_traces = Trace::get_all_for_user(user_id, pool)?;
-    let trace_effective_date = |trace: &Trace| trace.interaction_date.unwrap_or(trace.created_at);
+    let trace_effective_date = |trace: &Trace| trace.interaction_date;
 
     let anchor_date = all_user_traces
         .iter()

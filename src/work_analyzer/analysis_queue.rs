@@ -316,9 +316,7 @@ async fn run_claimed_analysis(
 fn resolve_claim_cutoff_at(lens: &Lens, pool: &DbPool) -> Result<chrono::NaiveDateTime, PpdcError> {
     if let Some(target_trace_id) = lens.target_trace_id {
         let target_trace = Trace::find_full_trace(target_trace_id, pool)?;
-        Ok(target_trace
-            .interaction_date
-            .unwrap_or(target_trace.created_at))
+        Ok(target_trace.interaction_date)
     } else {
         Ok(chrono::Utc::now().naive_utc())
     }

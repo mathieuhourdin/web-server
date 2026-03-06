@@ -18,7 +18,7 @@ pub struct Trace {
     pub id: Uuid,
     pub title: String,
     pub subtitle: String,
-    pub interaction_date: Option<NaiveDateTime>,
+    pub interaction_date: NaiveDateTime,
     pub content: String,
     pub journal_id: Option<Uuid>,
     pub user_id: Uuid,
@@ -36,8 +36,8 @@ pub(crate) struct TraceRow {
     pub title: String,
     #[diesel(sql_type = Text)]
     pub subtitle: String,
-    #[diesel(sql_type = Nullable<Timestamp>)]
-    pub interaction_date: Option<NaiveDateTime>,
+    #[diesel(sql_type = Timestamp)]
+    pub interaction_date: NaiveDateTime,
     #[diesel(sql_type = Text)]
     pub content: String,
     #[diesel(sql_type = Nullable<SqlUuid>)]
@@ -131,6 +131,10 @@ impl TraceStatus {
 }
 
 impl Trace {
+    pub fn effective_datetime(&self) -> NaiveDateTime {
+        self.interaction_date
+    }
+
     fn find_first_user_trace_for_user(
         user_id: Uuid,
         pool: &DbPool,
@@ -185,10 +189,8 @@ impl Trace {
         let start_trace = Trace::find_full_trace(start_trace_id, pool)?;
         let end_trace = Trace::find_full_trace(end_trace_id, pool)?;
 
-        let from = start_trace
-            .interaction_date
-            .unwrap_or(start_trace.created_at);
-        let to = end_trace.interaction_date.unwrap_or(end_trace.created_at);
+        let from = start_trace.interaction_date;
+        let to = end_trace.interaction_date;
 
         let mut conn = pool
             .get()
@@ -198,8 +200,8 @@ impl Trace {
             "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-               AND COALESCE(interaction_date, created_at) BETWEEN $2 AND $3
-             ORDER BY COALESCE(interaction_date, created_at) ASC, created_at ASC",
+               AND interaction_date BETWEEN $2 AND $3
+             ORDER BY interaction_date ASC, created_at ASC",
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Timestamp, _>(from)
@@ -215,7 +217,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Vec<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
-        let until = trace.interaction_date.unwrap_or(trace.created_at);
+        let until = trace.interaction_date;
 
         let mut conn = pool
             .get()
@@ -225,8 +227,8 @@ impl Trace {
             "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-               AND COALESCE(interaction_date, created_at) <= $2
-             ORDER BY COALESCE(interaction_date, created_at) ASC, created_at ASC",
+               AND interaction_date <= $2
+             ORDER BY interaction_date ASC, created_at ASC",
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Timestamp, _>(until)
@@ -310,7 +312,7 @@ impl Trace {
             return Trace::find_first_user_trace_for_user(user_id, pool);
         }
 
-        let reference_ts = trace.interaction_date.unwrap_or(trace.created_at);
+        let reference_ts = trace.interaction_date;
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -320,8 +322,8 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
-               AND COALESCE(interaction_date, created_at) > $2
-             ORDER BY COALESCE(interaction_date, created_at) ASC, created_at ASC
+               AND interaction_date > $2
+             ORDER BY interaction_date ASC, created_at ASC
              LIMIT 1",
         )
         .bind::<SqlUuid, _>(user_id)
@@ -372,7 +374,7 @@ pub struct NewTrace {
     pub title: String,
     pub subtitle: String,
     pub content: String,
-    pub interaction_date: Option<NaiveDateTime>,
+    pub interaction_date: NaiveDateTime,
     pub user_id: Uuid,
     pub trace_type: TraceType,
     pub journal_id: Uuid,
@@ -383,7 +385,7 @@ impl NewTrace {
         title: String,
         subtitle: String,
         content: String,
-        interaction_date: Option<NaiveDateTime>,
+        interaction_date: NaiveDateTime,
         user_id: Uuid,
         journal_id: Uuid,
     ) -> NewTrace {

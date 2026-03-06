@@ -56,8 +56,7 @@ pub async fn put_lens_route(
             (Some(new_target_trace_id), Some(current_target_trace_id)) => {
                 let payload_trace = Trace::find_full_trace(new_target_trace_id, &pool)?;
                 let current_trace = Trace::find_full_trace(current_target_trace_id, &pool)?;
-                if payload_trace.interaction_date.unwrap() > current_trace.interaction_date.unwrap()
-                {
+                if payload_trace.interaction_date > current_trace.interaction_date {
                     lens = lens.update_target_trace(Some(new_target_trace_id), &pool)?;
                     tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
                 }

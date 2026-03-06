@@ -1,6 +1,19 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    analysis_summaries (id) {
+        id -> Uuid,
+        landscape_analysis_id -> Uuid,
+        user_id -> Uuid,
+        summary_type -> Text,
+        title -> Text,
+        content -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     element_landmarks (id) {
         id -> Uuid,
         element_id -> Uuid,
@@ -216,6 +229,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    messages (id) {
+        id -> Uuid,
+        sender_user_id -> Uuid,
+        recipient_user_id -> Uuid,
+        landscape_analysis_id -> Nullable<Uuid>,
+        trace_id -> Nullable<Uuid>,
+        message_type -> Text,
+        title -> Text,
+        content -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     post_relations (id) {
         id -> Uuid,
         origin_post_id -> Uuid,
@@ -338,7 +366,7 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        interaction_date -> Nullable<Timestamp>,
+        interaction_date -> Timestamp,
         trace_type -> Text,
         status -> Text,
         created_at -> Timestamp,
@@ -380,6 +408,8 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(analysis_summaries -> users (user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
 diesel::joinable!(element_landmarks -> landmarks (landmark_id));
 diesel::joinable!(elements -> landscape_analyses (analysis_id));
@@ -407,6 +437,8 @@ diesel::joinable!(lens_targets -> traces (trace_id));
 diesel::joinable!(lenses -> traces (target_trace_id));
 diesel::joinable!(lenses -> users (user_id));
 diesel::joinable!(llm_calls -> landscape_analyses (analysis_id));
+diesel::joinable!(messages -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(messages -> traces (trace_id));
 diesel::joinable!(posts -> users (user_id));
 diesel::joinable!(references -> landmarks (landmark_id));
 diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));
@@ -447,4 +479,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     traces,
     user_roles,
     users,
+    analysis_summaries,
+    messages,
 );

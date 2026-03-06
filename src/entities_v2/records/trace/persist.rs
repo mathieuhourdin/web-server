@@ -34,7 +34,7 @@ impl Trace {
         .bind::<Text, _>(&self.title)
         .bind::<Text, _>(&self.subtitle)
         .bind::<Text, _>(&self.content)
-        .bind::<Nullable<Timestamp>, _>(self.interaction_date)
+        .bind::<Timestamp, _>(self.interaction_date)
         .bind::<Text, _>(self.trace_type.to_db())
         .bind::<Text, _>(self.status.to_db())
         .bind::<Nullable<SqlUuid>, _>(self.journal_id)
@@ -84,7 +84,7 @@ impl NewTrace {
         .bind::<Text, _>(self.title)
         .bind::<Text, _>(self.subtitle)
         .bind::<Text, _>(self.content)
-        .bind::<Nullable<Timestamp>, _>(self.interaction_date)
+        .bind::<Timestamp, _>(self.interaction_date)
         .bind::<Text, _>(self.trace_type.to_db())
         .get_result::<IdRow>(&mut conn)?;
 

@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use regex::{self, Regex};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -202,13 +202,18 @@ fn blocks_to_traces(blocks: Vec<Block>) -> Vec<NewTrace> {
         }
         println!("Block header : {:?}\n\n", block.header.clone());
         println!("Block date : {:?}\n\n", block.date.clone());
-        let mut date = extract_date(block.date);
-        if let Some(date) = date {
+        let date = if let Some(date) = extract_date(block.date) {
             previous_date = Some(date);
-        } else if previous_date.is_some() {
-            previous_date = Some(previous_date.unwrap() + Duration::days(1));
-            date = previous_date;
-        }
+            date
+        } else if let Some(previous) = previous_date {
+            let next = previous + Duration::days(1);
+            previous_date = Some(next);
+            next
+        } else {
+            let fallback = Utc::now().naive_utc();
+            previous_date = Some(fallback);
+            fallback
+        };
         println!("Date: {:?}", date);
         traces.push(NewTrace::new(
             "".to_string(),

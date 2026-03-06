@@ -191,7 +191,7 @@ pub async fn get_analysis_traces_route(
         .into_iter()
         .filter_map(|trace_id| Trace::find_full_trace(trace_id, &pool).ok())
         .collect::<Vec<_>>();
-    traces.sort_by_key(|trace| (trace.interaction_date.unwrap_or(trace.created_at), trace.id));
+    traces.sort_by_key(|trace| (trace.interaction_date, trace.id));
     Ok(Json(traces))
 }
 

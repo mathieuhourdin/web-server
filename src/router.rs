@@ -11,6 +11,7 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
+    analysis_summary,
     element,
     error::{ErrorType, PpdcError},
     journal,
@@ -19,6 +20,7 @@ use crate::entities_v2::{
     landscape_analysis,
     lens,
     llm_call,
+    message,
     post,
     reference,
     trace,
@@ -84,6 +86,11 @@ pub fn create_router() -> Router {
                 .get(landscape_analysis::get_analysis_route),
         )
         .route(
+            "/:id/summaries",
+            get(analysis_summary::get_analysis_summaries_route)
+                .post(analysis_summary::post_analysis_summary_route),
+        )
+        .route(
             "/:id/landmarks",
             get(landscape_analysis::get_landmarks_route),
         )
@@ -101,6 +108,9 @@ pub fn create_router() -> Router {
             "/:id/llm_calls",
             get(llm_call::get_llm_calls_by_analysis_id_route),
         )
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+    let analysis_summaries_router = Router::new()
+        .route("/:id", get(analysis_summary::get_analysis_summary_route).put(analysis_summary::put_analysis_summary_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let landmarks_router = Router::new()
         .route("/:id", get(landmark::get_landmark_route))
@@ -122,6 +132,10 @@ pub fn create_router() -> Router {
     let llm_calls_router = Router::new()
         .route("/", get(llm_call::get_llm_calls_route))
         .route("/:id", get(llm_call::get_llm_call_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+    let messages_router = Router::new()
+        .route("/", get(message::get_messages_route).post(message::post_message_route))
+        .route("/:id", get(message::get_message_route).put(message::put_message_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let trace_mirrors_router = Router::new()
@@ -157,8 +171,10 @@ pub fn create_router() -> Router {
         .nest("/transcriptions", transcriptions_router)
         .nest("/sessions", sessions_router)
         .nest("/analysis", analysis_router)
+        .nest("/analysis_summaries", analysis_summaries_router)
         .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)
+        .nest("/messages", messages_router)
         .nest("/landmarks", landmarks_router)
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)

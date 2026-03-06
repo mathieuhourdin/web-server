@@ -687,7 +687,7 @@ fn create_bio_trace_for_user(
         "Biography Update".to_string(),
         "".to_string(),
         biography,
-        None,
+        Utc::now().naive_utc(),
         user_id,
         journal_id,
     );
@@ -714,7 +714,7 @@ fn create_high_level_projects_definition_trace_for_user(
         "High Level Projects Definition Update".to_string(),
         "".to_string(),
         high_level_projects_definition,
-        None,
+        Utc::now().naive_utc(),
         user_id,
         journal_id,
     );
