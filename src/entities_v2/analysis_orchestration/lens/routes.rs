@@ -74,6 +74,11 @@ pub async fn put_lens_route(
     if let Some(next_processing_state) = payload.processing_state {
         lens = lens.set_processing_state(next_processing_state, &pool)?;
     }
+    if let Some(next_autoplay) = payload.autoplay {
+        if lens.autoplay != next_autoplay {
+            lens = lens.update_autoplay(next_autoplay, &pool)?;
+        }
+    }
     let lens = Lens::find_full_lens(lens.id, &pool)?;
     Ok(Json(lens))
 }

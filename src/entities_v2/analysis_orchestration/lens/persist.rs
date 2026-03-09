@@ -299,6 +299,16 @@ impl Lens {
             .execute(&mut conn)?;
         Lens::find_full_lens(self.id, pool)
     }
+
+    pub fn update_autoplay(self, autoplay: bool, pool: &DbPool) -> Result<Lens, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
+            .set(lenses::autoplay.eq(autoplay))
+            .execute(&mut conn)?;
+        Lens::find_full_lens(self.id, pool)
+    }
 }
 
 impl NewLens {
