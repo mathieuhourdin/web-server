@@ -48,6 +48,13 @@ fn strip_markdown_heading_prefix(line: &str) -> &str {
     }
 }
 
+fn is_export_generated_date_line(line: &str) -> bool {
+    let normalized_line = strip_markdown_heading_prefix(line).trim();
+    normalized_line
+        .to_ascii_lowercase()
+        .starts_with("export_generated_date:")
+}
+
 fn get_block_date(line: &str) -> Option<String> {
     let normalized_line = strip_markdown_heading_prefix(line);
     let date_time_regex = Regex::new(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})").expect("valid regex");
@@ -143,6 +150,17 @@ pub fn blocks_to_new_traces(
             continue;
         }
 
+        let trace_content = if is_export_generated_date_line(&block.header) {
+            block
+                .content
+                .lines()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            block.content.clone()
+        };
+
         let interaction_date = if let Some(date) = extract_date(block.date.as_deref()) {
             previous_date = Some(date);
             date
@@ -159,7 +177,7 @@ pub fn blocks_to_new_traces(
         let trace = NewTrace::new(
             "".to_string(),
             "".to_string(),
-            block.content.clone(),
+            trace_content,
             interaction_date,
             user_id,
             journal_id,
@@ -194,6 +212,10 @@ mod tests {
         );
         assert_eq!(
             get_block_date("header 2026-02-04 17:35"),
+            Some("2026-02-04 17:35".to_string())
+        );
+        assert_eq!(
+            get_block_date("export_generated_date: 2026-02-04 17:35:42"),
             Some("2026-02-04 17:35".to_string())
         );
     }
@@ -253,5 +275,21 @@ mod tests {
                 .and_then(|d| d.and_hms_opt(12, 0, 0))
                 .expect("valid fixed date")
         );
+    }
+
+    #[test]
+    fn export_generated_date_header_is_not_kept_in_trace_content() {
+        let user_id = Uuid::new_v4();
+        let journal_id = Uuid::new_v4();
+        let blocks = vec![ImportBlock {
+            header: "export_generated_date: 2026-03-09 11:00:00".to_string(),
+            content: "export_generated_date: 2026-03-09 11:00:00\nDid focused work on exports."
+                .to_string(),
+            date: Some("2026-03-09 11:00".to_string()),
+        }];
+
+        let traces = blocks_to_new_traces(blocks, user_id, journal_id);
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].2.content, "Did focused work on exports.");
     }
 }

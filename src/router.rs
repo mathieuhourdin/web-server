@@ -13,8 +13,8 @@ use tower_http::{
 use crate::entities_v2::{
     analysis_summary, element,
     error::{ErrorType, PpdcError},
-    journal, journal_import, landmark, landscape_analysis, lens, llm_call, message, post,
-    reference, trace, trace_mirror, transcription, user,
+    journal, landmark, landscape_analysis, lens, llm_call, message, post, reference, trace,
+    trace_mirror, transcription, user,
 };
 use crate::sessions_service;
 
@@ -77,11 +77,9 @@ pub fn create_router() -> Router {
     let journals_router = Router::new()
         .route("/", post(journal::post_journal_route))
         .route("/:id", put(journal::put_journal_route))
+        .route("/:id/exports", post(journal::post_journal_export_route))
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
-        .route(
-            "/:id/import_text",
-            post(journal_import::post_import_text_route),
-        )
+        .route("/:id/imports", post(journal::post_journal_import_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let transcriptions_router = Router::new()
