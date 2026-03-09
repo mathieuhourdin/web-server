@@ -9,6 +9,9 @@ diesel::table! {
         title -> Text,
         short_content -> Text,
         content -> Text,
+        meaningful_event_title -> Nullable<Text>,
+        meaningful_event_description -> Nullable<Text>,
+        meaningful_event_date -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

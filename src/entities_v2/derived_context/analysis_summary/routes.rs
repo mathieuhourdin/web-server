@@ -74,6 +74,7 @@ pub async fn put_analysis_summary_route(
         .short_content
         .unwrap_or_else(|| payload.content.clone());
     summary.content = payload.content;
+    summary.meaningful_event = payload.meaningful_event;
     let summary = summary.update(&pool)?;
     Ok(Json(summary))
 }

@@ -9,7 +9,7 @@ use crate::entities_v2::{
     landscape_analysis::{
         add_trace_input, add_trace_mirror_input, claim_next_pending_for_lens,
         copy_landmark_links_from_analysis, refresh_pending_summary_covered_inputs_for_trace,
-        replace_covered_inputs_for_period, LandscapeAnalysis, LandscapeProcessingState,
+        LandscapeAnalysis, LandscapeProcessingState,
     },
     lens::{Lens, LensProcessingState},
     trace::Trace,
@@ -232,14 +232,13 @@ async fn run_claimed_analysis(
         )?;
         processor.process_daily_recap().await?
     } else if analysis.landscape_analysis_type == LandscapeAnalysisType::WeeklyRecap {
-        let mut summary_analysis = analysis.clone();
-        if let Some(parent_analysis_id) = previous_landscape_id {
-            let parent_analysis = LandscapeAnalysis::find_full_analysis(parent_analysis_id, pool)?;
-            summary_analysis.plain_text_state_summary = parent_analysis.plain_text_state_summary;
-            summary_analysis.trace_mirror_id = parent_analysis.trace_mirror_id;
-        }
-        summary_analysis.processing_state = LandscapeProcessingState::Completed;
-        summary_analysis.update(pool)?
+        let processor = period_analysis_processor::PeriodAnalysisProcessor::setup(
+            analysis.id,
+            analysis.user_id,
+            previous_landscape_id,
+            pool,
+        )?;
+        processor.process_weekly_recap().await?
     } else {
         analysis.set_processing_state(LandscapeProcessingState::Completed, pool)?
     };
@@ -279,26 +278,6 @@ async fn run_claimed_analysis(
             refreshed_traces,
             refreshed_trace_mirrors,
             trace_datetime
-        );
-    } else if completed_analysis.landscape_analysis_type == LandscapeAnalysisType::WeeklyRecap {
-        let (covered_trace_count, covered_trace_mirror_count) = replace_covered_inputs_for_period(
-            completed_analysis.id,
-            lens.id,
-            completed_analysis.user_id,
-            completed_analysis.period_start,
-            completed_analysis.period_end,
-            pool,
-        )?;
-        tracing::info!(
-            target: "work_analyzer",
-            "run_lens_analysis_inputs_covered_refresh lens_id={} analysis_id={} analysis_type={} traces={} trace_mirrors={} period_start={} period_end={}",
-            lens.id,
-            completed_analysis.id,
-            completed_analysis.landscape_analysis_type.to_db(),
-            covered_trace_count,
-            covered_trace_mirror_count,
-            completed_analysis.period_start,
-            completed_analysis.period_end
         );
     }
 

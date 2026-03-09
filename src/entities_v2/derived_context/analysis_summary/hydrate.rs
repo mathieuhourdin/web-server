@@ -16,6 +16,9 @@ type AnalysisSummaryTuple = (
     String,
     String,
     String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -29,6 +32,9 @@ fn tuple_to_analysis_summary(row: AnalysisSummaryTuple) -> AnalysisSummary {
         title,
         short_content,
         content,
+        meaningful_event_title,
+        meaningful_event_description,
+        meaningful_event_date,
         created_at,
         updated_at,
     ) = row;
@@ -41,6 +47,20 @@ fn tuple_to_analysis_summary(row: AnalysisSummaryTuple) -> AnalysisSummary {
         title,
         short_content,
         content,
+        meaningful_event: match (
+            meaningful_event_title,
+            meaningful_event_description,
+            meaningful_event_date,
+        ) {
+            (Some(title), Some(description), Some(event_date)) => {
+                Some(super::model::MeaningfulEvent {
+                    title,
+                    description,
+                    event_date,
+                })
+            }
+            _ => None,
+        },
         created_at,
         updated_at,
     }
@@ -54,6 +74,9 @@ fn select_analysis_summary_columns() -> (
     analysis_summaries::title,
     analysis_summaries::short_content,
     analysis_summaries::content,
+    analysis_summaries::meaningful_event_title,
+    analysis_summaries::meaningful_event_description,
+    analysis_summaries::meaningful_event_date,
     analysis_summaries::created_at,
     analysis_summaries::updated_at,
 ) {
@@ -65,6 +88,9 @@ fn select_analysis_summary_columns() -> (
         analysis_summaries::title,
         analysis_summaries::short_content,
         analysis_summaries::content,
+        analysis_summaries::meaningful_event_title,
+        analysis_summaries::meaningful_event_description,
+        analysis_summaries::meaningful_event_date,
         analysis_summaries::created_at,
         analysis_summaries::updated_at,
     )

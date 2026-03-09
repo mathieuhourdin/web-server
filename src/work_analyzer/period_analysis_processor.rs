@@ -106,4 +106,55 @@ impl PeriodAnalysisProcessor {
         analysis.processing_state = LandscapeProcessingState::Completed;
         analysis.update(&self.context.pool)
     }
+
+    pub async fn process_weekly_recap(self) -> Result<LandscapeAnalysis, PpdcError> {
+        let mut current_landscape =
+            LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
+
+        if let Some(parent_analysis) = &self.previous_landscape {
+            current_landscape.plain_text_state_summary =
+                parent_analysis.plain_text_state_summary.clone();
+            current_landscape.trace_mirror_id = parent_analysis.trace_mirror_id;
+            current_landscape = current_landscape.update(&self.context.pool)?;
+        }
+
+        let lens = current_landscape
+            .get_scoped_lenses(&self.context.pool)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!(
+                        "Weekly recap analysis {} is missing a scoped lens",
+                        current_landscape.id
+                    ),
+                )
+            })?;
+
+        let _ = replace_covered_inputs_for_period(
+            current_landscape.id,
+            lens.id,
+            current_landscape.user_id,
+            current_landscape.period_start,
+            current_landscape.period_end,
+            &self.context.pool,
+        )?;
+
+        let _summary = period_summary::run_week(&self.context, &current_landscape).await?;
+        let current_landscape =
+            LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
+        let _linked_landmarks = active_context_filtering::run(
+            &self.context,
+            &current_landscape,
+            &self.previous_landscape_landmarks,
+            &self.user_high_level_projects,
+        )?;
+
+        let mut analysis =
+            LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
+        analysis.processing_state = LandscapeProcessingState::Completed;
+        analysis.update(&self.context.pool)
+    }
 }

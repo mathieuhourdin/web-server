@@ -12,12 +12,24 @@ impl AnalysisSummary {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let meaningful_event_title = self.meaningful_event.as_ref().map(|event| event.title.clone());
+        let meaningful_event_description = self
+            .meaningful_event
+            .as_ref()
+            .map(|event| event.description.clone());
+        let meaningful_event_date = self
+            .meaningful_event
+            .as_ref()
+            .map(|event| event.event_date.clone());
         diesel::update(analysis_summaries::table.filter(analysis_summaries::id.eq(self.id)))
             .set((
                 analysis_summaries::summary_type.eq(self.summary_type.to_db()),
                 analysis_summaries::title.eq(self.title),
                 analysis_summaries::short_content.eq(self.short_content),
                 analysis_summaries::content.eq(self.content),
+                analysis_summaries::meaningful_event_title.eq(meaningful_event_title),
+                analysis_summaries::meaningful_event_description.eq(meaningful_event_description),
+                analysis_summaries::meaningful_event_date.eq(meaningful_event_date),
             ))
             .execute(&mut conn)?;
         AnalysisSummary::find(self.id, pool)
@@ -29,6 +41,15 @@ impl NewAnalysisSummary {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let meaningful_event_title = self.meaningful_event.as_ref().map(|event| event.title.clone());
+        let meaningful_event_description = self
+            .meaningful_event
+            .as_ref()
+            .map(|event| event.description.clone());
+        let meaningful_event_date = self
+            .meaningful_event
+            .as_ref()
+            .map(|event| event.event_date.clone());
         let id: Uuid = diesel::insert_into(analysis_summaries::table)
             .values((
                 analysis_summaries::landscape_analysis_id.eq(self.landscape_analysis_id),
@@ -37,6 +58,9 @@ impl NewAnalysisSummary {
                 analysis_summaries::title.eq(self.title),
                 analysis_summaries::short_content.eq(self.short_content),
                 analysis_summaries::content.eq(self.content),
+                analysis_summaries::meaningful_event_title.eq(meaningful_event_title),
+                analysis_summaries::meaningful_event_description.eq(meaningful_event_description),
+                analysis_summaries::meaningful_event_date.eq(meaningful_event_date),
             ))
             .returning(analysis_summaries::id)
             .get_result(&mut conn)?;
