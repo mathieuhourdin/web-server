@@ -23,6 +23,8 @@ pub fn create_mentor_feedback(
             message_type: Some(MessageType::MentorFeedback),
             title: Some(title),
             content,
+            attachment_type: None,
+            attachment: None,
         },
         sender_user_id,
     )

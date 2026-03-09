@@ -244,6 +244,8 @@ diesel::table! {
         processing_state -> Text,
         title -> Text,
         content -> Text,
+        attachment_type -> Nullable<Text>,
+        attachment -> Nullable<Jsonb>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

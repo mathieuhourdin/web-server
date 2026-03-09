@@ -2,6 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::attachment::{MessageAttachment, MessageAttachmentType};
 pub use super::enums::{MessageProcessingState, MessageType};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -16,6 +17,8 @@ pub struct Message {
     pub processing_state: MessageProcessingState,
     pub title: String,
     pub content: String,
+    pub attachment_type: Option<MessageAttachmentType>,
+    pub attachment: Option<MessageAttachment>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -28,6 +31,8 @@ pub struct NewMessageDto {
     pub message_type: Option<MessageType>,
     pub title: Option<String>,
     pub content: String,
+    pub attachment_type: Option<MessageAttachmentType>,
+    pub attachment: Option<MessageAttachment>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +46,8 @@ pub struct NewMessage {
     pub processing_state: MessageProcessingState,
     pub title: String,
     pub content: String,
+    pub attachment_type: Option<MessageAttachmentType>,
+    pub attachment: Option<MessageAttachment>,
 }
 
 impl NewMessage {
@@ -55,6 +62,8 @@ impl NewMessage {
             processing_state: MessageProcessingState::Processed,
             title: payload.title.unwrap_or_default(),
             content: payload.content,
+            attachment_type: payload.attachment_type,
+            attachment: payload.attachment,
         }
     }
 }

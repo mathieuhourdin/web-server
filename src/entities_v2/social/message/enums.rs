@@ -7,6 +7,7 @@ pub enum MessageType {
     MentorFeedback,
     Question,
     MentorReply,
+    TarotReadingRequest,
 }
 
 impl MessageType {
@@ -16,6 +17,7 @@ impl MessageType {
             MessageType::MentorFeedback => "MENTOR_FEEDBACK",
             MessageType::Question => "QUESTION",
             MessageType::MentorReply => "MENTOR_REPLY",
+            MessageType::TarotReadingRequest => "TAROT_READING_REQUEST",
         }
     }
 
@@ -24,6 +26,7 @@ impl MessageType {
             "MENTOR_FEEDBACK" | "mentor_feedback" => MessageType::MentorFeedback,
             "QUESTION" | "question" => MessageType::Question,
             "MENTOR_REPLY" | "mentor_reply" => MessageType::MentorReply,
+            "TAROT_READING_REQUEST" | "tarot_reading_request" => MessageType::TarotReadingRequest,
             _ => MessageType::General,
         }
     }

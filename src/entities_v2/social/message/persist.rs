@@ -1,31 +1,88 @@
-use chrono::Utc;
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{Nullable, Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::error::PpdcError;
-use crate::schema::messages;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 
+use super::attachment::MessageAttachment;
 use super::model::{Message, NewMessage};
+
+#[derive(QueryableByName)]
+struct IdRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+}
+
+fn serialize_attachment(
+    attachment_type: Option<super::attachment::MessageAttachmentType>,
+    attachment: Option<&MessageAttachment>,
+) -> Result<(Option<String>, Option<String>), PpdcError> {
+    match (attachment_type, attachment) {
+        (None, None) => Ok((None, None)),
+        (Some(_), None) | (None, Some(_)) => Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "attachment_type and attachment must both be provided or both be null".to_string(),
+        )),
+        (Some(kind), Some(value)) => {
+            if value.attachment_type() != kind {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "attachment does not match attachment_type".to_string(),
+                ));
+            }
+            let attachment_json = value.to_json_string().map_err(|err| {
+                PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    format!("Invalid attachment payload: {}", err),
+                )
+            })?;
+            Ok((Some(kind.to_db().to_string()), Some(attachment_json)))
+        }
+    }
+}
 
 impl Message {
     pub fn update(self, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        diesel::update(messages::table.filter(messages::id.eq(self.id)))
-            .set((
-                messages::recipient_user_id.eq(self.recipient_user_id),
-                messages::landscape_analysis_id.eq(self.landscape_analysis_id),
-                messages::trace_id.eq(self.trace_id),
-                messages::reply_to_message_id.eq(self.reply_to_message_id),
-                messages::message_type.eq(self.message_type.to_db()),
-                messages::processing_state.eq(self.processing_state.to_db()),
-                messages::title.eq(self.title),
-                messages::content.eq(self.content),
-                messages::updated_at.eq(Utc::now().naive_utc()),
-            ))
-            .execute(&mut conn)?;
+        let (attachment_type_db, attachment_json) =
+            serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
+
+        sql_query(
+            r#"
+            UPDATE messages
+            SET recipient_user_id = $1,
+                landscape_analysis_id = $2,
+                trace_id = $3,
+                reply_to_message_id = $4,
+                message_type = $5,
+                processing_state = $6,
+                title = $7,
+                content = $8,
+                attachment_type = $9,
+                attachment = CAST($10 AS jsonb),
+                updated_at = NOW()
+            WHERE id = $11
+            "#,
+        )
+        .bind::<SqlUuid, _>(self.recipient_user_id)
+        .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
+        .bind::<Nullable<SqlUuid>, _>(self.trace_id)
+        .bind::<Nullable<SqlUuid>, _>(self.reply_to_message_id)
+        .bind::<Text, _>(self.message_type.to_db())
+        .bind::<Text, _>(self.processing_state.to_db())
+        .bind::<Text, _>(self.title)
+        .bind::<Text, _>(self.content)
+        .bind::<Nullable<Text>, _>(attachment_type_db)
+        .bind::<Nullable<Text>, _>(attachment_json)
+        .bind::<SqlUuid, _>(self.id)
+        .execute(&mut conn)?;
         Message::find(self.id, pool)
     }
 }
@@ -35,20 +92,43 @@ impl NewMessage {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let id: Uuid = diesel::insert_into(messages::table)
-            .values((
-                messages::sender_user_id.eq(self.sender_user_id),
-                messages::recipient_user_id.eq(self.recipient_user_id),
-                messages::landscape_analysis_id.eq(self.landscape_analysis_id),
-                messages::trace_id.eq(self.trace_id),
-                messages::reply_to_message_id.eq(self.reply_to_message_id),
-                messages::message_type.eq(self.message_type.to_db()),
-                messages::processing_state.eq(self.processing_state.to_db()),
-                messages::title.eq(self.title),
-                messages::content.eq(self.content),
-            ))
-            .returning(messages::id)
-            .get_result(&mut conn)?;
+        let (attachment_type_db, attachment_json) =
+            serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
+
+        let id = sql_query(
+            r#"
+            INSERT INTO messages (
+                sender_user_id,
+                recipient_user_id,
+                landscape_analysis_id,
+                trace_id,
+                reply_to_message_id,
+                message_type,
+                processing_state,
+                title,
+                content,
+                attachment_type,
+                attachment
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CAST($11 AS jsonb)
+            )
+            RETURNING id
+            "#,
+        )
+        .bind::<SqlUuid, _>(self.sender_user_id)
+        .bind::<SqlUuid, _>(self.recipient_user_id)
+        .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
+        .bind::<Nullable<SqlUuid>, _>(self.trace_id)
+        .bind::<Nullable<SqlUuid>, _>(self.reply_to_message_id)
+        .bind::<Text, _>(self.message_type.to_db())
+        .bind::<Text, _>(self.processing_state.to_db())
+        .bind::<Text, _>(self.title)
+        .bind::<Text, _>(self.content)
+        .bind::<Nullable<Text>, _>(attachment_type_db)
+        .bind::<Nullable<Text>, _>(attachment_json)
+        .get_result::<IdRow>(&mut conn)?
+        .id;
         Message::find(id, pool)
     }
 }

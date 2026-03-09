@@ -2,7 +2,7 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -12,8 +12,10 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
 };
+use crate::work_analyzer;
 
-use super::model::{Message, NewMessage, NewMessageDto};
+use super::attachment::{MessageAttachment, MessageAttachmentType};
+use super::model::{Message, MessageProcessingState, MessageType, NewMessage, NewMessageDto};
 
 #[derive(Deserialize)]
 pub struct MessageFiltersQuery {
@@ -24,6 +26,12 @@ pub struct MessageFiltersQuery {
 #[derive(Deserialize)]
 pub struct AnalysisMessagesQuery {
     pub limit: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct MessageCreationResponse {
+    pub question_message: Message,
+    pub pending_reply_message: Option<Message>,
 }
 
 #[debug_handler]
@@ -55,7 +63,12 @@ pub async fn get_analysis_messages_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let messages = Message::find_for_participant(user_id, Some(analysis_id), params.limit.unwrap_or(50), &pool)?;
+    let messages = Message::find_for_participant(
+        user_id,
+        Some(analysis_id),
+        params.limit.unwrap_or(50),
+        &pool,
+    )?;
     Ok(Json(messages))
 }
 
@@ -78,8 +91,9 @@ pub async fn post_message_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Json(payload): Json<NewMessageDto>,
-) -> Result<Json<Message>, PpdcError> {
+) -> Result<Json<MessageCreationResponse>, PpdcError> {
     let sender_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let message_type = payload.message_type.unwrap_or(MessageType::General);
 
     if let Some(analysis_id) = payload.landscape_analysis_id {
         let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
@@ -94,17 +108,67 @@ pub async fn post_message_route(
 
     if let Some(trace_id) = payload.trace_id {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
-        if trace.user_id != payload.recipient_user_id {
+        if trace.user_id != payload.recipient_user_id && trace.user_id != sender_user_id {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Recipient must own the linked trace".to_string(),
+                "Linked trace must belong to sender or recipient".to_string(),
             ));
         }
     }
+    if matches!(
+        message_type,
+        MessageType::Question | MessageType::TarotReadingRequest
+    ) {
+        if message_type == MessageType::TarotReadingRequest {
+            let has_tarot_attachment = matches!(
+                (payload.attachment_type, payload.attachment.as_ref()),
+                (
+                    Some(MessageAttachmentType::TarotReading),
+                    Some(MessageAttachment::TarotReading(_))
+                )
+            );
+            if !has_tarot_attachment {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "tarot_reading_request requires attachment_type=tarot_reading and a tarot attachment payload".to_string(),
+                ));
+            }
+        }
+
+        let question_message = NewMessage::new(payload, sender_user_id).create(&pool)?;
+        let pending_reply_message = NewMessage {
+            sender_user_id: question_message.recipient_user_id,
+            recipient_user_id: sender_user_id,
+            landscape_analysis_id: question_message.landscape_analysis_id,
+            trace_id: question_message.trace_id,
+            reply_to_message_id: Some(question_message.id),
+            message_type: MessageType::MentorReply,
+            processing_state: MessageProcessingState::Pending,
+            title: String::new(),
+            content: String::new(),
+            attachment_type: None,
+            attachment: None,
+        }
+        .create(&pool)?;
+
+        let pool_for_task = pool.clone();
+        tokio::spawn(async move {
+            let _ = work_analyzer::run_message(pending_reply_message.id, &pool_for_task).await;
+        });
+
+        return Ok(Json(MessageCreationResponse {
+            question_message,
+            pending_reply_message: Some(pending_reply_message),
+        }));
+    }
 
     let message = NewMessage::new(payload, sender_user_id).create(&pool)?;
-    Ok(Json(message))
+    Ok(Json(MessageCreationResponse {
+        question_message: message,
+        pending_reply_message: None,
+    }))
 }
 
 #[debug_handler]
@@ -133,11 +197,11 @@ pub async fn put_message_route(
 
     if let Some(trace_id) = payload.trace_id {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
-        if trace.user_id != payload.recipient_user_id {
+        if trace.user_id != payload.recipient_user_id && trace.user_id != sender_user_id {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Recipient must own the linked trace".to_string(),
+                "Linked trace must belong to sender or recipient".to_string(),
             ));
         }
     }
@@ -148,6 +212,8 @@ pub async fn put_message_route(
     message.message_type = payload.message_type.unwrap_or(message.message_type);
     message.title = payload.title.unwrap_or_default();
     message.content = payload.content;
+    message.attachment_type = payload.attachment_type;
+    message.attachment = payload.attachment;
     let message = message.update(&pool)?;
     Ok(Json(message))
 }

@@ -1,11 +1,14 @@
 use chrono::NaiveDateTime;
+use diesel::dsl::sql;
 use diesel::prelude::*;
+use diesel::sql_types::{Nullable, Text};
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::messages;
 
+use super::attachment::{MessageAttachment, MessageAttachmentType};
 use super::model::{Message, MessageProcessingState, MessageType};
 
 type MessageTuple = (
@@ -19,6 +22,8 @@ type MessageTuple = (
     String,
     String,
     String,
+    Option<String>,
+    Option<String>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -35,9 +40,19 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         processing_state_raw,
         title,
         content,
+        attachment_type_raw,
+        attachment_json,
         created_at,
         updated_at,
     ) = row;
+
+    let attachment_type = attachment_type_raw
+        .as_deref()
+        .and_then(MessageAttachmentType::from_db);
+    let attachment = match (attachment_type, attachment_json) {
+        (Some(kind), Some(json)) => MessageAttachment::from_json_string(kind, &json),
+        _ => None,
+    };
 
     Message {
         id,
@@ -50,39 +65,11 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         processing_state: MessageProcessingState::from_db(&processing_state_raw),
         title,
         content,
+        attachment_type,
+        attachment,
         created_at,
         updated_at,
     }
-}
-
-fn select_message_columns() -> (
-    messages::id,
-    messages::sender_user_id,
-    messages::recipient_user_id,
-    messages::landscape_analysis_id,
-    messages::trace_id,
-    messages::reply_to_message_id,
-    messages::message_type,
-    messages::processing_state,
-    messages::title,
-    messages::content,
-    messages::created_at,
-    messages::updated_at,
-) {
-    (
-        messages::id,
-        messages::sender_user_id,
-        messages::recipient_user_id,
-        messages::landscape_analysis_id,
-        messages::trace_id,
-        messages::reply_to_message_id,
-        messages::message_type,
-        messages::processing_state,
-        messages::title,
-        messages::content,
-        messages::created_at,
-        messages::updated_at,
-    )
 }
 
 impl Message {
@@ -92,7 +79,22 @@ impl Message {
             .expect("Failed to get a connection from the pool");
         let row = messages::table
             .filter(messages::id.eq(id))
-            .select(select_message_columns())
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                messages::created_at,
+                messages::updated_at,
+            ))
             .first::<MessageTuple>(&mut conn)
             .optional()?;
         row.map(tuple_to_message).ok_or_else(|| {
@@ -122,7 +124,22 @@ impl Message {
         }
 
         let rows = query
-            .select(select_message_columns())
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                messages::created_at,
+                messages::updated_at,
+            ))
             .order(messages::created_at.desc())
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
@@ -145,7 +162,22 @@ impl Message {
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
             )
-            .select(select_message_columns())
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                messages::created_at,
+                messages::updated_at,
+            ))
             .order(messages::created_at.asc())
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;

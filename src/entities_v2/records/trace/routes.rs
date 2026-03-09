@@ -13,7 +13,10 @@ use crate::entities_v2::{
     journal::Journal,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
-    message::{Message, MessageProcessingState, MessageType, NewMessage},
+    message::{
+        Message, MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType,
+        NewMessage,
+    },
     session::Session,
     user::User,
 };
@@ -34,6 +37,9 @@ pub struct TraceMessagesQuery {
 pub struct NewTraceMessageDto {
     pub title: Option<String>,
     pub content: String,
+    pub message_type: Option<MessageType>,
+    pub attachment_type: Option<MessageAttachmentType>,
+    pub attachment: Option<MessageAttachment>,
 }
 
 #[derive(Serialize)]
@@ -172,7 +178,12 @@ pub async fn get_trace_messages_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let messages = Message::find_for_trace_conversation(user_id, trace_id, params.limit.unwrap_or(100), &pool)?;
+    let messages = Message::find_for_trace_conversation(
+        user_id,
+        trace_id,
+        params.limit.unwrap_or(100),
+        &pool,
+    )?;
     Ok(Json(messages))
 }
 
@@ -197,6 +208,33 @@ pub async fn post_trace_message_route(
             "No mentor assigned to user".to_string(),
         )
     })?;
+    let question_message_type = payload.message_type.unwrap_or(MessageType::Question);
+    if !matches!(
+        question_message_type,
+        MessageType::Question | MessageType::TarotReadingRequest
+    ) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "trace message message_type must be question or tarot_reading_request".to_string(),
+        ));
+    }
+    if question_message_type == MessageType::TarotReadingRequest {
+        let has_tarot_attachment = matches!(
+            (payload.attachment_type, payload.attachment.as_ref()),
+            (
+                Some(MessageAttachmentType::TarotReading),
+                Some(MessageAttachment::TarotReading(_))
+            )
+        );
+        if !has_tarot_attachment {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "tarot_reading_request requires attachment_type=tarot_reading and a tarot attachment payload".to_string(),
+            ));
+        }
+    }
 
     let question_message = NewMessage {
         sender_user_id: user_id,
@@ -204,10 +242,12 @@ pub async fn post_trace_message_route(
         landscape_analysis_id: None,
         trace_id: Some(trace_id),
         reply_to_message_id: None,
-        message_type: MessageType::Question,
+        message_type: question_message_type,
         processing_state: MessageProcessingState::Processed,
         title: payload.title.unwrap_or_default(),
         content: payload.content,
+        attachment_type: payload.attachment_type,
+        attachment: payload.attachment,
     }
     .create(&pool)?;
 
@@ -221,6 +261,8 @@ pub async fn post_trace_message_route(
         processing_state: MessageProcessingState::Pending,
         title: String::new(),
         content: String::new(),
+        attachment_type: None,
+        attachment: None,
     }
     .create(&pool)?;
 
