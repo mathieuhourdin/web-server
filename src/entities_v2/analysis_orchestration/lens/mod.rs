@@ -1,3 +1,4 @@
+pub mod enums;
 pub mod hydrate;
 pub mod model;
 pub mod persist;

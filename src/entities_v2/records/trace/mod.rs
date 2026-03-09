@@ -1,3 +1,4 @@
+pub mod enums;
 pub mod heatmap;
 pub mod hydrate;
 pub mod llm_qualify;
