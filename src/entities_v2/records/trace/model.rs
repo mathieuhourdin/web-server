@@ -1,7 +1,8 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -13,6 +14,10 @@ pub use super::enums::{TraceStatus, TraceType};
 pub struct NewTraceDto {
     pub content: String,
     pub journal_id: Uuid,
+    #[serde(default, alias = "is_ecrypted")]
+    pub is_encrypted: Option<bool>,
+    #[serde(default)]
+    pub encryption_metadata: Option<Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -22,6 +27,8 @@ pub struct Trace {
     pub subtitle: String,
     pub interaction_date: NaiveDateTime,
     pub content: String,
+    pub is_encrypted: bool,
+    pub encryption_metadata: Option<Value>,
     pub journal_id: Option<Uuid>,
     pub user_id: Uuid,
     pub trace_type: TraceType,
@@ -42,6 +49,10 @@ pub(crate) struct TraceRow {
     pub interaction_date: NaiveDateTime,
     #[diesel(sql_type = Text)]
     pub content: String,
+    #[diesel(sql_type = Bool)]
+    pub is_encrypted: bool,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub encryption_metadata: Option<String>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     pub journal_id: Option<Uuid>,
     #[diesel(sql_type = SqlUuid)]
@@ -64,6 +75,10 @@ impl From<TraceRow> for Trace {
             subtitle: row.subtitle,
             interaction_date: row.interaction_date,
             content: row.content,
+            is_encrypted: row.is_encrypted,
+            encryption_metadata: row
+                .encryption_metadata
+                .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
             journal_id: row.journal_id,
             user_id: row.user_id,
             trace_type: TraceType::from_db(&row.trace_type),
@@ -88,7 +103,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let row = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -111,7 +126,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let row = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
@@ -141,7 +156,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND interaction_date BETWEEN $2 AND $3
@@ -168,7 +183,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND interaction_date <= $2
@@ -187,7 +202,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let latest_hlp = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'HIGH_LEVEL_PROJECTS_DEFINITION'
@@ -203,7 +218,7 @@ impl Trace {
         }
 
         let latest_bio = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'BIO_TRACE'
@@ -234,7 +249,7 @@ impl Trace {
                 .expect("Failed to get a connection from the pool");
 
             let latest_bio = diesel::sql_query(
-                "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+                "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
                  FROM traces
                  WHERE user_id = $1
                    AND trace_type = 'BIO_TRACE'
@@ -262,7 +277,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let next = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -284,7 +299,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE user_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
@@ -301,7 +316,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, journal_id, user_id, trace_type, status, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, created_at, updated_at
              FROM traces
              WHERE journal_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
@@ -318,6 +333,8 @@ pub struct NewTrace {
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    pub is_encrypted: bool,
+    pub encryption_metadata: Option<Value>,
     pub interaction_date: NaiveDateTime,
     pub user_id: Uuid,
     pub trace_type: TraceType,
@@ -337,6 +354,8 @@ impl NewTrace {
             title,
             subtitle,
             content,
+            is_encrypted: false,
+            encryption_metadata: None,
             interaction_date,
             user_id,
             trace_type: TraceType::UserTrace,

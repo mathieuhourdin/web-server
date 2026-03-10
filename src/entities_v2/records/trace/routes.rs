@@ -60,7 +60,14 @@ pub async fn post_trace_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let qualified = llm_qualify::qualify_trace(payload.content.as_str()).await?;
+    let NewTraceDto {
+        content,
+        journal_id: _,
+        is_encrypted,
+        encryption_metadata,
+    } = payload;
+
+    let qualified = llm_qualify::qualify_trace(content.as_str()).await?;
     let request_received_at = Utc::now().naive_utc();
 
     let interaction_date = qualified
@@ -68,24 +75,38 @@ pub async fn post_trace_route(
         .and_then(|d| d.and_hms_opt(12, 0, 0))
         .unwrap_or(request_received_at);
 
-    let trace = NewTrace::new(
+    let mut trace = NewTrace::new(
         qualified.title,
         qualified.subtitle,
-        payload.content,
+        content,
         interaction_date,
         user_id,
         journal.id,
-    )
-    .create(&pool)?;
+    );
+    trace.is_encrypted = is_encrypted.unwrap_or(false);
+    trace.encryption_metadata = encryption_metadata;
+    if trace.is_encrypted && trace.encryption_metadata.is_none() {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "encryption_metadata is required when is_encrypted is true".to_string(),
+        ));
+    }
+    if !trace.is_encrypted {
+        trace.encryption_metadata = None;
+    }
+    let trace = trace.create(&pool)?;
 
-    let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
-    for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
-        let lens = if lens.target_trace_id != Some(trace.id) {
-            lens.update_target_trace(Some(trace.id), &pool)?
-        } else {
-            lens
-        };
-        tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+    if !trace.is_encrypted {
+        let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
+        for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
+            let lens = if lens.target_trace_id != Some(trace.id) {
+                lens.update_target_trace(Some(trace.id), &pool)?
+            } else {
+                lens
+            };
+            tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+        }
     }
 
     Ok(Json(trace))

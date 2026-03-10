@@ -234,6 +234,17 @@ async fn run_claimed_analysis(
         analysis.analyzed_trace_id
     );
     let completed_analysis = if let Some(trace_id) = analysis.analyzed_trace_id {
+        let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.is_encrypted {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!(
+                    "Trace {} is encrypted and cannot be processed server-side",
+                    trace_id
+                ),
+            ));
+        }
         let processor = analysis_processor::AnalysisProcessor::setup(
             analysis.id,
             trace_id,

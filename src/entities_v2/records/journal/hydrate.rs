@@ -14,6 +14,7 @@ type JournalTuple = (
     String,
     String,
     String,
+    bool,
     String,
     String,
     NaiveDateTime,
@@ -22,13 +23,25 @@ type JournalTuple = (
 
 impl From<JournalTuple> for Journal {
     fn from(row: JournalTuple) -> Self {
-        let (id, user_id, title, subtitle, content, journal_type, status, created_at, updated_at) =
+        let (
+            id,
+            user_id,
+            title,
+            subtitle,
+            content,
+            is_encrypted,
+            journal_type,
+            status,
+            created_at,
+            updated_at,
+        ) =
             row;
         Journal {
             id,
             title,
             subtitle,
             content,
+            is_encrypted,
             user_id,
             status: JournalStatus::from_db(&status),
             journal_type: JournalType::from_db(&journal_type),
@@ -52,6 +65,7 @@ impl Journal {
                 journals::title,
                 journals::subtitle,
                 journals::content,
+                journals::is_encrypted,
                 journals::journal_type,
                 journals::status,
                 journals::created_at,
@@ -79,6 +93,7 @@ impl Journal {
                 journals::title,
                 journals::subtitle,
                 journals::content,
+                journals::is_encrypted,
                 journals::journal_type,
                 journals::status,
                 journals::created_at,

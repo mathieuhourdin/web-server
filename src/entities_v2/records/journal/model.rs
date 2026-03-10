@@ -10,6 +10,7 @@ pub struct Journal {
     pub title: String,
     pub subtitle: String,
     pub content: String,
+    pub is_encrypted: bool,
     pub user_id: Uuid,
     pub status: JournalStatus,
     pub journal_type: JournalType,
@@ -24,6 +25,8 @@ pub struct NewJournalDto {
     pub subtitle: Option<String>,
     #[serde(default)]
     pub content: Option<String>,
+    #[serde(default, alias = "is_ecrypted")]
+    pub is_encrypted: Option<bool>,
     #[serde(default)]
     pub journal_type: Option<JournalType>,
 }
@@ -33,6 +36,8 @@ pub struct UpdateJournalDto {
     pub title: Option<String>,
     pub subtitle: Option<String>,
     pub content: Option<String>,
+    #[serde(default, alias = "is_ecrypted")]
+    pub is_encrypted: Option<bool>,
     pub journal_type: Option<JournalType>,
     pub status: Option<JournalStatus>,
 }

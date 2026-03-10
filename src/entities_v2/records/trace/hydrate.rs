@@ -1,5 +1,8 @@
 use chrono::NaiveDateTime;
+use diesel::dsl::sql;
 use diesel::prelude::*;
+use diesel::sql_types::{Nullable, Text};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -14,6 +17,8 @@ type TraceTuple = (
     String,
     NaiveDateTime,
     String,
+    bool,
+    Option<String>,
     Option<Uuid>,
     Uuid,
     String,
@@ -29,6 +34,8 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         subtitle,
         interaction_date,
         content,
+        is_encrypted,
+        encryption_metadata_json,
         journal_id,
         user_id,
         trace_type_raw,
@@ -43,6 +50,9 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         subtitle,
         interaction_date,
         content,
+        is_encrypted,
+        encryption_metadata: encryption_metadata_json
+            .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
         journal_id,
         user_id,
         trace_type: TraceType::from_db(&trace_type_raw),
@@ -66,6 +76,8 @@ impl Trace {
                 traces::subtitle,
                 traces::interaction_date,
                 traces::content,
+                traces::is_encrypted,
+                sql::<Nullable<Text>>("encryption_metadata::text"),
                 traces::journal_id.nullable(),
                 traces::user_id,
                 traces::trace_type,

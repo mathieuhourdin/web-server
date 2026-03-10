@@ -1,8 +1,8 @@
 use diesel::prelude::*;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
 
 use crate::db::DbPool;
-use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 
 use super::model::{NewTrace, Trace, TraceStatus};
 
@@ -14,6 +14,13 @@ struct IdRow {
 
 impl Trace {
     pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
+        if self.is_encrypted && self.encryption_metadata.is_none() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "encryption_metadata is required when is_encrypted is true".to_string(),
+            ));
+        }
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -23,10 +30,12 @@ impl Trace {
              SET title = $2,
                  subtitle = $3,
                  content = $4,
-                 interaction_date = $5,
-                 trace_type = $6,
-                 status = $7,
-                 journal_id = $8,
+                 is_encrypted = $5,
+                 encryption_metadata = CAST($6 AS jsonb),
+                 interaction_date = $7,
+                 trace_type = $8,
+                 status = $9,
+                 journal_id = $10,
                  updated_at = NOW()
              WHERE id = $1",
         )
@@ -34,6 +43,12 @@ impl Trace {
         .bind::<Text, _>(&self.title)
         .bind::<Text, _>(&self.subtitle)
         .bind::<Text, _>(&self.content)
+        .bind::<Bool, _>(self.is_encrypted)
+        .bind::<Nullable<Text>, _>(
+            self.encryption_metadata
+                .as_ref()
+                .map(|value| value.to_string()),
+        )
         .bind::<Timestamp, _>(self.interaction_date)
         .bind::<Text, _>(self.trace_type.to_db())
         .bind::<Text, _>(self.status.to_db())
@@ -51,6 +66,13 @@ impl Trace {
 
 impl NewTrace {
     pub fn create(self, pool: &DbPool) -> Result<Trace, PpdcError> {
+        if self.is_encrypted && self.encryption_metadata.is_none() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "encryption_metadata is required when is_encrypted is true".to_string(),
+            ));
+        }
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
@@ -63,6 +85,8 @@ impl NewTrace {
                 title,
                 subtitle,
                 content,
+                is_encrypted,
+                encryption_metadata,
                 interaction_date,
                 trace_type,
                 status
@@ -74,7 +98,9 @@ impl NewTrace {
                 $4,
                 $5,
                 $6,
-                $7,
+                CAST($7 AS jsonb),
+                $8,
+                $9,
                 'DRAFT'
              )
              RETURNING id",
@@ -84,6 +110,12 @@ impl NewTrace {
         .bind::<Text, _>(self.title)
         .bind::<Text, _>(self.subtitle)
         .bind::<Text, _>(self.content)
+        .bind::<Bool, _>(self.is_encrypted)
+        .bind::<Nullable<Text>, _>(
+            self.encryption_metadata
+                .as_ref()
+                .map(|value| value.to_string()),
+        )
         .bind::<Timestamp, _>(self.interaction_date)
         .bind::<Text, _>(self.trace_type.to_db())
         .get_result::<IdRow>(&mut conn)?;

@@ -1,0 +1,3 @@
+ALTER TABLE traces
+ADD COLUMN is_encrypted BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN encryption_metadata JSONB NULL;

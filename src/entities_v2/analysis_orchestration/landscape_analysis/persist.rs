@@ -315,6 +315,9 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
     })?;
     let user = User::find(&user_id, pool)?;
     let trace = Trace::find_full_trace(trace_id, pool)?;
+    if trace.is_encrypted {
+        return Ok(vec![]);
+    }
     let trace_datetime = trace_effective_datetime(&trace);
 
     let (trace_analysis_type, analysis_datetime) = match trace.trace_type {

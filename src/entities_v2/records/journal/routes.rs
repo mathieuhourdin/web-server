@@ -68,6 +68,9 @@ pub async fn put_journal_route(
     if let Some(content) = payload.content {
         journal.content = content;
     }
+    if let Some(is_encrypted) = payload.is_encrypted {
+        journal.is_encrypted = is_encrypted;
+    }
     if let Some(journal_type) = payload.journal_type {
         journal.journal_type = journal_type;
     }
