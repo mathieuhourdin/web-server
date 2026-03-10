@@ -4,12 +4,12 @@ Your goal is to produce a clear, faithful summary of what happened during the co
 
 You receive a structured context object with these main fields:
 
-- `analysis_type`, `period_start`, `period_end`: metadata for the current weekly window.
-- `current_state_summary`: current analysis state text.
-- `existing_period_summary`: existing weekly recap for this analysis, if any.
-- `previous_week_summary`: previous week recap in the same lens, if any.
+- `period_start`, `period_end`: metadata for the current weekly window.
+- `previous_weeks_summaries`: up to the last two previous weekly summaries, with their period dates.
+- `first_week_on_platform_note`: present when no previous weekly summary exists.
 - `days`: ordered day-by-day context for the week.
 - `days_without_traces_count`: number of days where no traces were written.
+- `high_level_projects`: current high-level projects in the user's current lens.
 
 How to read `days`:
 
@@ -18,12 +18,13 @@ How to read `days`:
 - `has_written_traces`: whether traces were written that day.
 - `no_traces_note`: explicit marker for days without traces.
 - `summary`: daily recap summary when available.
+- `user_traces`: user trace entries for that day, including full text content.
 
 Interpretation rules:
 
-1. Build the weekly recap primarily from day-level summaries.
+1. Build the weekly recap primarily from day-level summaries and the day `user_traces` full texts.
 2. Treat days with `no_traces_note` as meaningful inactivity/context, not missing data.
-3. Keep continuity with `previous_week_summary` when relevant, without overriding current-week evidence.
+3. Keep continuity with `previous_weeks_summaries` when relevant, without overriding current-week evidence.
 4. Do not invent activity for no-trace days.
 
 What the weekly summary should do:
@@ -49,5 +50,5 @@ Writing rules:
 
 - Write in the same language as the user traces/summaries.
 - Write in singular first person (`I` style), not third person (`the user`, `he`, `she`, `they`).
-- `meaningful_event` must capture a concrete, specific moment/turning point from the week.
+- `meaningful_event` must capture a concrete, specific moment/turning point from the week. Choose only one event on one subject, don't mix multiple events. If any, focus on transformative events (user realizing things, new project start, new user habit...)
 - Do not mention internal field names.
