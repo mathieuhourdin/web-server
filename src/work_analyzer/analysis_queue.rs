@@ -127,44 +127,54 @@ async fn run_claim_loop(
             claimed_analysis.period_end
         );
 
-        let previous_landscape_id = lens.current_landscape_id;
-        if claimed_analysis.parent_analysis_id != previous_landscape_id {
-            tracing::info!(
-                target: "work_analyzer",
-                "run_lens_set_parent lens_id={} analysis_id={} old_parent={:?} new_parent={:?}",
-                lens.id,
-                claimed_analysis.id,
-                claimed_analysis.parent_analysis_id,
-                previous_landscape_id
-            );
-            claimed_analysis.parent_analysis_id = previous_landscape_id;
-            claimed_analysis = claimed_analysis.update(pool)?;
-        }
-        if let Some(parent_analysis_id) = previous_landscape_id {
-            let copied_links =
-                copy_landmark_links_from_analysis(parent_analysis_id, claimed_analysis.id, pool)?;
-            tracing::info!(
-                target: "work_analyzer",
-                "run_lens_transfer_parent_landmarks lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
-                lens.id,
-                claimed_analysis.id,
-                parent_analysis_id,
-                copied_links
-            );
-        }
+        let claimed_analysis_for_fail = claimed_analysis.clone();
+        let claimed_analysis_id = claimed_analysis.id;
+        let claimed_analysis_type = claimed_analysis.landscape_analysis_type;
+        let run_result = async {
+            let previous_landscape_id = lens.current_landscape_id;
+            if claimed_analysis.parent_analysis_id != previous_landscape_id {
+                tracing::info!(
+                    target: "work_analyzer",
+                    "run_lens_set_parent lens_id={} analysis_id={} old_parent={:?} new_parent={:?}",
+                    lens.id,
+                    claimed_analysis.id,
+                    claimed_analysis.parent_analysis_id,
+                    previous_landscape_id
+                );
+                claimed_analysis.parent_analysis_id = previous_landscape_id;
+                claimed_analysis = claimed_analysis.update(pool)?;
+            }
+            if let Some(parent_analysis_id) = previous_landscape_id {
+                let copied_links = copy_landmark_links_from_analysis(
+                    parent_analysis_id,
+                    claimed_analysis.id,
+                    pool,
+                )?;
+                tracing::info!(
+                    target: "work_analyzer",
+                    "run_lens_transfer_parent_landmarks lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
+                    lens.id,
+                    claimed_analysis.id,
+                    parent_analysis_id,
+                    copied_links
+                );
+            }
 
-        let run_result =
-            run_claimed_analysis(lens, claimed_analysis.clone(), previous_landscape_id, pool).await;
+            run_claimed_analysis(lens, claimed_analysis.clone(), previous_landscape_id, pool).await
+        }
+        .await;
+
         if let Err(err) = run_result {
             tracing::error!(
                 target: "work_analyzer",
                 "run_lens_analysis_failed lens_id={} analysis_id={} analysis_type={} error={}",
                 lens.id,
-                claimed_analysis.id,
-                claimed_analysis.landscape_analysis_type.to_db(),
+                claimed_analysis_id,
+                claimed_analysis_type.to_db(),
                 err
             );
-            let _ = claimed_analysis.set_processing_state(LandscapeProcessingState::Failed, pool);
+            let _ =
+                claimed_analysis_for_fail.set_processing_state(LandscapeProcessingState::Failed, pool);
             return Err(err);
         }
     }

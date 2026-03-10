@@ -216,6 +216,27 @@ impl Element {
         load_elements_from_query(rows, pool)
     }
 
+    pub fn find_for_analysis_scope(
+        user_id: Uuid,
+        analysis_ids: Vec<Uuid>,
+        pool: &DbPool,
+    ) -> Result<Vec<Element>, PpdcError> {
+        if analysis_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = elements::table
+            .filter(elements::user_id.eq(user_id))
+            .filter(elements::analysis_id.eq_any(analysis_ids))
+            .select(select_element_columns())
+            .order(elements::created_at.asc())
+            .load::<ElementTuple>(&mut conn)?;
+        load_elements_from_query(rows, pool)
+    }
+
     pub fn find_related_elements(
         &self,
         pool: &DbPool,

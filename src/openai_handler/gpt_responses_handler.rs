@@ -3,6 +3,7 @@ use crate::entities_v2::llm_call::NewLlmCall;
 use crate::environment;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tracing::info;
 use uuid::Uuid;
 
@@ -92,6 +93,30 @@ fn extract_output_text(body: &str) -> Option<String> {
     None
 }
 
+fn strip_nul_chars(input: &str) -> (String, usize) {
+    let removed = input.chars().filter(|c| *c == '\0').count();
+    if removed == 0 {
+        return (input.to_string(), 0);
+    }
+    let sanitized = input.chars().filter(|c| *c != '\0').collect::<String>();
+    (sanitized, removed)
+}
+
+fn sanitize_json_value_nuls(value: &mut Value) -> usize {
+    match value {
+        Value::String(s) => {
+            let (sanitized, removed) = strip_nul_chars(s);
+            if removed > 0 {
+                *s = sanitized;
+            }
+            removed
+        }
+        Value::Array(items) => items.iter_mut().map(sanitize_json_value_nuls).sum(),
+        Value::Object(map) => map.values_mut().map(sanitize_json_value_nuls).sum(),
+        _ => 0,
+    }
+}
+
 pub async fn make_gpt_request<T>(
     system_prompt: String,
     user_prompt: String,
@@ -164,6 +189,7 @@ where
 
     // Try to parse response to extract output text (best effort before persistence)
     let output_text = extract_output_text(&body).unwrap_or_default();
+    let (output_text, output_text_nuls_removed) = strip_nul_chars(&output_text);
 
     let resolved_log_header = analysis_id
         .map(|id| format!("analysis_id: {}", id))
@@ -176,6 +202,15 @@ where
         user_prompt,
         output_text
     );
+    if output_text_nuls_removed > 0 {
+        tracing::warn!(
+            target: "work_analyzer",
+            "{} llm_output_sanitized_nul name={} removed_nuls={}",
+            resolved_log_header,
+            display_name.unwrap_or("unknown"),
+            output_text_nuls_removed
+        );
+    }
 
     let env = environment::get_env();
     if env != "bintest" && analysis_id.is_some() {
@@ -242,17 +277,65 @@ where
         return Err(format!("Failed to parse GPT response body: {}", body).into());
     };
 
-    // Si pas de schéma, on parse directement le texte brut comme String
-    // Sinon, on parse comme JSON selon le schéma
+    let (json_text, removed_nuls_in_json_text) = strip_nul_chars(&json_text);
+    if removed_nuls_in_json_text > 0 {
+        tracing::warn!(
+            target: "work_analyzer",
+            "{} llm_json_text_sanitized_nul name={} removed_nuls={}",
+            resolved_log_header,
+            display_name.unwrap_or("unknown"),
+            removed_nuls_in_json_text
+        );
+    }
+
+    // Si pas de schéma, on parse directement le texte brut comme String.
+    // Sinon, on parse comme JSON puis on nettoie les NUL dans tous les champs texte.
     let result: T = if schema.is_none() {
-        // Pas de schéma : texte brut, on parse directement comme String
-        serde_json::from_value(serde_json::Value::String(json_text))
+        serde_json::from_value(Value::String(json_text))
             .map_err(|e| format!("Failed to deserialize text into target type: {e}"))?
     } else {
-        // Avec schéma : on parse comme JSON
-        serde_json::from_str(&json_text)
+        let mut json_value: Value = serde_json::from_str(&json_text)
+            .map_err(|e| format!("Failed to deserialize JSON text into Value: {e}"))?;
+        let removed_nuls_in_json_value = sanitize_json_value_nuls(&mut json_value);
+        if removed_nuls_in_json_value > 0 {
+            tracing::warn!(
+                target: "work_analyzer",
+                "{} llm_json_value_sanitized_nul name={} removed_nuls={}",
+                resolved_log_header,
+                display_name.unwrap_or("unknown"),
+                removed_nuls_in_json_value
+            );
+        }
+        serde_json::from_value(json_value)
             .map_err(|e| format!("Failed to deserialize JSON into target type: {e}"))?
     };
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sanitize_json_value_nuls, strip_nul_chars};
+    use serde_json::json;
+
+    #[test]
+    fn strip_nul_chars_removes_nuls_only() {
+        let (sanitized, removed) = strip_nul_chars("ab\0cd");
+        assert_eq!(sanitized, "abcd");
+        assert_eq!(removed, 1);
+    }
+
+    #[test]
+    fn sanitize_json_value_nuls_removes_nuls_recursively() {
+        let mut value = json!({
+            "title": "d\0e9ni",
+            "tags": ["toxicit\0e9", "ok"],
+            "nested": { "content": "psychoth\0e9rapie" }
+        });
+        let removed = sanitize_json_value_nuls(&mut value);
+        assert_eq!(removed, 3);
+        assert_eq!(value["title"], "de9ni");
+        assert_eq!(value["tags"][0], "toxicite9");
+        assert_eq!(value["nested"]["content"], "psychothe9rapie");
+    }
 }

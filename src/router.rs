@@ -132,6 +132,7 @@ pub fn create_router() -> Router {
         .route("/:id", get(landmark::get_landmark_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let elements_router = Router::new()
+        .route("/", get(element::get_elements_route))
         .route("/:id/landmarks", get(element::get_element_landmarks_route))
         .route("/:id/relations", get(element::get_element_relations_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));

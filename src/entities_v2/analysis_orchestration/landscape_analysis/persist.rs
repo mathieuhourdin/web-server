@@ -403,7 +403,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             )?;
         } else {
             let (day_start, day_end) = day_period_for_datetime(trace_datetime, tz)?;
-            let mut daily = NewLandscapeAnalysis::new_daily_recap(
+            let daily = NewLandscapeAnalysis::new_daily_recap(
                 format!("Daily recap {}", day_start.date()),
                 String::new(),
                 String::new(),
@@ -411,24 +411,10 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 trace_datetime,
                 day_start,
                 day_end,
-                lens.current_landscape_id,
+                None,
                 None,
             )
             .create_for_lens(lens_id, pool)?;
-            if let Some(parent_analysis_id) = lens.current_landscape_id {
-                let copied_links =
-                    copy_landmark_links_from_analysis(parent_analysis_id, daily.id, pool)?;
-                tracing::info!(
-                    target: "work_analyzer",
-                    "create_daily_recap_seed_parent_links lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
-                    lens_id,
-                    daily.id,
-                    parent_analysis_id,
-                    copied_links
-                );
-                daily.parent_analysis_id = Some(parent_analysis_id);
-                daily = daily.update(pool)?;
-            }
             let _ = replace_covered_inputs_for_period(
                 daily.id, lens_id, user_id, day_start, day_end, pool,
             )?;
@@ -453,7 +439,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             let week_start_weekday = user.week_analysis_weekday.to_chrono_weekday();
             let (week_start, week_end) =
                 week_period_for_datetime(trace_datetime, tz, week_start_weekday)?;
-            let mut weekly = NewLandscapeAnalysis::new_weekly_recap(
+            let weekly = NewLandscapeAnalysis::new_weekly_recap(
                 format!("Weekly recap {}", week_start.date()),
                 String::new(),
                 String::new(),
@@ -461,24 +447,10 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 trace_datetime,
                 week_start,
                 week_end,
-                lens.current_landscape_id,
+                None,
                 None,
             )
             .create_for_lens(lens_id, pool)?;
-            if let Some(parent_analysis_id) = lens.current_landscape_id {
-                let copied_links =
-                    copy_landmark_links_from_analysis(parent_analysis_id, weekly.id, pool)?;
-                tracing::info!(
-                    target: "work_analyzer",
-                    "create_weekly_recap_seed_parent_links lens_id={} analysis_id={} parent_analysis_id={} copied_links={}",
-                    lens_id,
-                    weekly.id,
-                    parent_analysis_id,
-                    copied_links
-                );
-                weekly.parent_analysis_id = Some(parent_analysis_id);
-                weekly = weekly.update(pool)?;
-            }
             let _ = replace_covered_inputs_for_period(
                 weekly.id, lens_id, user_id, week_start, week_end, pool,
             )?;
