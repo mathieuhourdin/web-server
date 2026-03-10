@@ -8,7 +8,9 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    landscape_analysis::{LandscapeAnalysis, LandscapeProcessingState},
+    landscape_analysis::{
+        model::LandscapeAnalysisType, LandscapeAnalysis, LandscapeProcessingState,
+    },
     session::Session,
     trace::Trace,
 };
@@ -135,4 +137,60 @@ pub async fn get_lens_analysis_route(
     analyses
         .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(Json(analyses))
+}
+
+#[debug_handler]
+pub async fn post_lens_retry_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Lens>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let lens = Lens::find_full_lens(id, &pool)?;
+    if lens.user_id != Some(user_id) {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "Lens does not belong to current user".to_string(),
+        ));
+    }
+
+    let mut failed_analyses = lens
+        .get_analysis_scope(&pool)?
+        .into_iter()
+        .filter(|analysis| analysis.processing_state == LandscapeProcessingState::Failed)
+        .collect::<Vec<_>>();
+    if failed_analyses.is_empty() {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "No failed analysis found for this lens".to_string(),
+        ));
+    }
+    failed_analyses.sort_by_key(|analysis| {
+        (
+            analysis.period_end,
+            retry_priority_for_analysis_type(analysis.landscape_analysis_type),
+            analysis.created_at,
+        )
+    });
+    let analysis_to_retry = failed_analyses
+        .into_iter()
+        .next()
+        .expect("failed analyses not empty");
+
+    let _ = analysis_to_retry.set_processing_state(LandscapeProcessingState::Pending, &pool)?;
+
+    tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+
+    let lens = Lens::find_full_lens(id, &pool)?;
+    Ok(Json(lens))
+}
+
+fn retry_priority_for_analysis_type(analysis_type: LandscapeAnalysisType) -> i32 {
+    match analysis_type {
+        LandscapeAnalysisType::DailyRecap => 0,
+        LandscapeAnalysisType::WeeklyRecap => 1,
+        _ => 0,
+    }
 }

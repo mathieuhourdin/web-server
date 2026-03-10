@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum LensProcessingState {
     OutOfSync,
     InSync,
+    Failed,
 }
 
 impl LensProcessingState {
@@ -12,12 +13,14 @@ impl LensProcessingState {
         match self {
             LensProcessingState::OutOfSync => "OUT_OF_SYNC",
             LensProcessingState::InSync => "IN_SYNC",
+            LensProcessingState::Failed => "FAILED",
         }
     }
 
     pub fn from_db(value: &str) -> Self {
         match value {
             "IN_SYNC" | "in_sync" => LensProcessingState::InSync,
+            "FAILED" | "failed" => LensProcessingState::Failed,
             _ => LensProcessingState::OutOfSync,
         }
     }

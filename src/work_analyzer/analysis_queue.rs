@@ -67,6 +67,9 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
             Ok(lens)
         }
         (Err(err), Ok(_)) => {
+            let _ = lens
+                .clone()
+                .set_processing_state(LensProcessingState::Failed, pool);
             tracing::error!(
                 target: "work_analyzer",
                 "run_lens_failed lens_id={} worker_id={} error={}",
@@ -86,7 +89,12 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
             );
             Err(err)
         }
-        (Err(err), Err(_release_err)) => Err(err),
+        (Err(err), Err(_release_err)) => {
+            let _ = lens
+                .clone()
+                .set_processing_state(LensProcessingState::Failed, pool);
+            Err(err)
+        }
     }
 }
 

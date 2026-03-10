@@ -140,6 +140,7 @@ pub fn create_router() -> Router {
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
         .route("/:id/analysis", get(lens::get_lens_analysis_route))
+        .route("/:id/retry", post(lens::post_lens_retry_route))
         .route(
             "/:id",
             delete(lens::delete_lens_route).put(lens::put_lens_route),
