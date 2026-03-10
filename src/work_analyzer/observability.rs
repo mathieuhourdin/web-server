@@ -2,6 +2,37 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::environment;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservabilityMode {
+    Full,
+    Redacted,
+}
+
+pub fn get_observability_mode() -> ObservabilityMode {
+    match environment::get_observability_mode()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "redacted" => ObservabilityMode::Redacted,
+        _ => ObservabilityMode::Full,
+    }
+}
+
+pub fn should_log_sensitive_text() -> bool {
+    matches!(get_observability_mode(), ObservabilityMode::Full)
+}
+
+pub fn format_text_log_field(name: &str, value: &str) -> String {
+    if should_log_sensitive_text() {
+        format!("{name}={value}")
+    } else {
+        format!("{name}_len={}", value.chars().count())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisEvent {
     pub analysis_id: Uuid,

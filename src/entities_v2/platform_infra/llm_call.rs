@@ -124,6 +124,25 @@ impl LlmCall {
             .load::<Self>(&mut conn)?;
         Ok(llm_calls)
     }
+
+    pub fn get_by_analysis_id_for_user(
+        analysis_id: Uuid,
+        user_id: Uuid,
+        db: &DbPool,
+    ) -> Result<Vec<Self>, PpdcError> {
+        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let llm_calls = llm_calls::table
+            .inner_join(
+                landscape_analyses::table
+                    .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
+            )
+            .filter(llm_calls::analysis_id.eq(analysis_id))
+            .filter(landscape_analyses::user_id.eq(user_id))
+            .select(LlmCall::as_select())
+            .order(llm_calls::created_at.desc())
+            .load::<Self>(&mut conn)?;
+        Ok(llm_calls)
+    }
 }
 
 impl NewLlmCall {
@@ -200,7 +219,7 @@ pub async fn get_llm_calls_by_analysis_id_route(
     if analysis.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    let llm_calls = LlmCall::get_by_analysis_id(analysis_id, &pool)?;
+    let llm_calls = LlmCall::get_by_analysis_id_for_user(analysis_id, user_id, &pool)?;
     Ok(Json(llm_calls))
 }
 #[debug_handler]

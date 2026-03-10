@@ -85,7 +85,6 @@ impl HttpRequest {
             })?
             .to_string();
         let mut uri = uri.split("?");
-        println!("Method line : {:?}", method_line);
         let path = uri
             .next()
             .ok_or_else(|| {
@@ -106,7 +105,6 @@ impl HttpRequest {
 
     pub fn parse_headers(&mut self, headers_lines: String) -> Result<(), PpdcError> {
         let mut headers_lines_iterator = headers_lines.split("\r\n");
-        dbg!(&headers_lines_iterator);
         for row in &mut headers_lines_iterator {
             let row = row.split(": ").collect::<Vec<&str>>();
             if row.len() > 1 {
@@ -160,11 +158,8 @@ impl HttpRequest {
             header_lines = &request_data[first_line_break_index + 2..header_end_index];
         }
         let header_lines = String::from_utf8(header_lines.to_vec()).unwrap();
-        dbg!(&header_lines);
         request.parse_headers(header_lines)?;
 
-        dbg!(header_end_index);
-        dbg!(request_data.len());
         let body_bytes = request_data[header_end_index + 4..].to_vec();
 
         // TODO need to implement FormData case
@@ -188,13 +183,7 @@ impl HttpRequest {
                 .as_ref()
                 .expect("Delimiter should be defined");
 
-            dbg!(&multipart_delimiter_string);
-
             let multipart_delimiter = &multipart_delimiter_string.as_bytes();
-
-            dbg!(&multipart_delimiter);
-            dbg!(&body_bytes);
-            //dbg!(&request_data);
 
             let multipart_end_delimiter = multipart_delimiter_string.to_owned() + "--";
             let multipart_end_delimiter = multipart_end_delimiter.as_bytes();
@@ -228,7 +217,6 @@ impl HttpRequest {
                     break;
                 }
             }
-            dbg!(&request);
         }
 
         Ok(request)
@@ -267,14 +255,9 @@ impl HttpRequest {
                 request.content_type = Some(ContentType::ApplicationJson);
             }
         }
-
-        println!("Continue script");
-
         for row in request_lines_iterator {
             request.body = request.body + row + "\r\n"
         }
-
-        println!("Request : {:?}", request);
 
         Ok(request)
     }

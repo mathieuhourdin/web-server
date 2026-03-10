@@ -1,4 +1,5 @@
 use crate::openai_handler::whisper_handler::transcribe_audio_with_openai;
+use crate::work_analyzer::observability::format_text_log_field;
 use axum::{extract::Multipart, Json};
 use serde::Serialize;
 use std::path::Path;
@@ -18,7 +19,10 @@ pub async fn post_transcription_route(
     use tokio::io::AsyncWriteExt;
 
     // Log that the request has been received
-    println!("Received a request to process audio via multipart/form-data");
+    tracing::info!(
+        target: "api",
+        "transcription_request_received"
+    );
 
     let mut file_path = None;
 
@@ -74,7 +78,11 @@ pub async fn post_transcription_route(
         match transcribe_audio_with_openai(&path).await {
             Ok(text) => Some(text),
             Err(e) => {
-                println!("OpenAI transcription error: {}", e);
+                tracing::error!(
+                    target: "api",
+                    "transcription_openai_error {}",
+                    format_text_log_field("error", &e.to_string())
+                );
                 None
             }
         }

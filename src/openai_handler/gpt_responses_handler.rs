@@ -1,6 +1,7 @@
 use crate::db;
 use crate::entities_v2::llm_call::NewLlmCall;
 use crate::environment;
+use crate::work_analyzer::observability::format_text_log_field;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -196,11 +197,11 @@ where
         .unwrap_or_else(|| "analysis_id: unknown".to_string());
     info!(
         target: "work_analyzer",
-        "{} llm_result name={} prompt={} output={}",
+        "{} llm_result name={} {} {}",
         resolved_log_header,
         display_name.unwrap_or("unknown"),
-        user_prompt,
-        output_text
+        format_text_log_field("prompt", &user_prompt),
+        format_text_log_field("output", &output_text)
     );
     if output_text_nuls_removed > 0 {
         tracing::warn!(

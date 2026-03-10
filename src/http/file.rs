@@ -69,11 +69,9 @@ impl File {
             .expect("Should have a content");
         let headers_part = file_bytes[..content_start_index].to_vec();
         let headers_part = String::from_utf8(headers_part).unwrap();
-        dbg!(&headers_part);
 
         let splitted_content = headers_part[2..].split("\r\n");
         for row in splitted_content {
-            dbg!(row);
             let row = row.split(": ").collect::<Vec<&str>>();
             self.headers
                 .insert(row[0].to_string().to_lowercase(), row[1].to_string());

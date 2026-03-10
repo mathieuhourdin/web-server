@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use crate::work_analyzer::observability::format_text_log_field;
 use diesel::result::Error as DieselError;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as SerdeError;
@@ -24,7 +25,12 @@ pub enum ErrorType {
 
 impl PpdcError {
     pub fn new(status_code: u32, error_type: ErrorType, message: String) -> PpdcError {
-        println!("status code: {status_code}; message : {message}");
+        tracing::error!(
+            target: "api",
+            "ppdc_error_created status_code={} {}",
+            status_code,
+            format_text_log_field("message", &message)
+        );
         PpdcError {
             status_code,
             error_type,

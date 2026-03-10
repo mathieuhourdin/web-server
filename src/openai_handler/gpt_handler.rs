@@ -1,4 +1,5 @@
 use crate::environment;
+use crate::work_analyzer::observability::format_text_log_field;
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -113,7 +114,11 @@ where
         .ok_or("No response content from GPT")?;
 
     // Parse the JSON response into ExtractionProperties
-    println!("GPT response : {}", json_content);
+    tracing::info!(
+        target: "openai",
+        "gpt_chat_completion_result {}",
+        format_text_log_field("response", &json_content)
+    );
     Ok(serde_json::from_str(&json_content)
         .map_err(|e| format!("Failed to parse GPT JSON response: {}", e))?)
 }

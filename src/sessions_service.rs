@@ -46,8 +46,6 @@ pub async fn post_session_route(
     Extension(session): Extension<Session>,
     Json(payload): Json<LoginCheck>,
 ) -> Result<Json<Session>, PpdcError> {
-    println!("Post session route");
-
     let existing_user = User::find_by_username(&payload.username, &pool)?;
     if existing_user.principal_type == UserPrincipalType::Service {
         return Err(PpdcError::new(
@@ -60,7 +58,6 @@ pub async fn post_session_route(
     let is_valid_password = existing_user.verify_password(&payload.password.as_bytes())?;
 
     if is_valid_password {
-        println!("Password is valid. Let's authenticate session");
         if session.user_id.is_some() {
             let _ = Session::revoke(session.id, &pool);
         }

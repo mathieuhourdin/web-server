@@ -1,4 +1,5 @@
 use crate::environment;
+use crate::work_analyzer::observability::format_text_log_field;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -108,7 +109,11 @@ where
         return Err(format!("GPT API error ({}): {}", status, error_text).into());
     }
     let response_json: serde_json::Value = response.json().await?;
-    println!("GPT response : {}", &response_json);
+    tracing::info!(
+        target: "openai",
+        "gpt_reasoning_response {}",
+        format_text_log_field("response", &response_json.to_string())
+    );
 
     // Extract the output array from the response
     let output_array = response_json
@@ -127,8 +132,12 @@ where
                             if content_type == "output_text" {
                                 if let Some(text) = content_item.get("text").and_then(|t| t.as_str()) {
                                     extracted_text = Some(text.to_string());
-                                    println!("Extracted text (raw): {:?}", text);
-                                    println!("Extracted text length: {}", text.len());
+                                    tracing::info!(
+                                        target: "openai",
+                                        "gpt_reasoning_extracted {} extracted_text_len={}",
+                                        format_text_log_field("extracted_text", text),
+                                        text.len()
+                                    );
                                     break;
                                 }
                             }
@@ -148,7 +157,11 @@ where
 
     // Trim whitespace and remove any potential trailing characters
     let trimmed_text = text.trim();
-    println!("Trimmed extracted text: {:?}", trimmed_text);
+    tracing::info!(
+        target: "openai",
+        "gpt_reasoning_trimmed {}",
+        format_text_log_field("trimmed_text", trimmed_text)
+    );
     
     // Find the first complete JSON object by looking for matching braces
     let json_start = trimmed_text.find('{');
@@ -160,10 +173,14 @@ where
         trimmed_text
     };
     
-    println!("Final JSON text to parse: {:?}", json_text);
+    tracing::info!(
+        target: "openai",
+        "gpt_reasoning_final_json {}",
+        format_text_log_field("json_text", json_text)
+    );
     
     // Parse the JSON text into the desired type
     let gpt_response: T = serde_json::from_str(json_text)
-        .map_err(|e| format!("Failed to parse extracted JSON '{}': {}", json_text, e))?;
+        .map_err(|e| format!("Failed to parse extracted JSON: {}", e))?;
     Ok(gpt_response)
 }

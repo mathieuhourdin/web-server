@@ -46,3 +46,8 @@ pub fn get_env() -> String {
     dotenv().ok();
     std::env::var("ENV").unwrap_or_else(|_| "development".to_string())
 }
+
+pub fn get_observability_mode() -> String {
+    dotenv().ok();
+    std::env::var("OBSERVABILITY_MODE").unwrap_or_else(|_| "redacted".to_string())
+}
