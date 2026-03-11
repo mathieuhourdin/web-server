@@ -74,6 +74,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    journal_grants (id) {
+        id -> Uuid,
+        journal_id -> Uuid,
+        owner_user_id -> Uuid,
+        grantee_user_id -> Nullable<Uuid>,
+        grantee_scope -> Nullable<Text>,
+        access_level -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     journals (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -81,6 +95,7 @@ diesel::table! {
         subtitle -> Text,
         content -> Text,
         is_encrypted -> Bool,
+        last_trace_at -> Nullable<Timestamp>,
         journal_type -> Text,
         status -> Text,
         created_at -> Timestamp,
@@ -301,6 +316,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    relationships (id) {
+        id -> Uuid,
+        requester_user_id -> Uuid,
+        target_user_id -> Uuid,
+        relationship_type -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     resource_relations (id) {
         id -> Uuid,
         origin_resource_id -> Uuid,
@@ -432,6 +459,7 @@ diesel::joinable!(elements -> traces (trace_id));
 diesel::joinable!(elements -> users (user_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
+diesel::joinable!(journal_grants -> journals (journal_id));
 diesel::joinable!(journals -> users (user_id));
 diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
 diesel::joinable!(landmarks -> users (user_id));
@@ -472,6 +500,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     element_relations,
     elements,
     interactions,
+    journal_grants,
     journals,
     landmark_relations,
     landmarks,
@@ -485,6 +514,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     llm_calls,
     post_relations,
     posts,
+    relationships,
     references,
     resource_relations,
     resources,

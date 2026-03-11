@@ -9,6 +9,6 @@ pub use model::{
     NewJournalDto, UpdateJournalDto,
 };
 pub use routes::{
-    get_user_journals_route, post_journal_export_route, post_journal_import_route,
-    post_journal_route, put_journal_route,
+    get_journal_route, get_shared_journals_route, get_user_journals_route,
+    post_journal_export_route, post_journal_import_route, post_journal_route, put_journal_route,
 };

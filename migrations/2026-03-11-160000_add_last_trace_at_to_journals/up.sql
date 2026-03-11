@@ -1,0 +1,2 @@
+ALTER TABLE journals
+ADD COLUMN last_trace_at TIMESTAMP NULL;

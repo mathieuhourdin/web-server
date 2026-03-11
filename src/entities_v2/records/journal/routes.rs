@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
+    journal_grant::JournalGrant,
     message::Message,
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
@@ -33,6 +34,34 @@ pub async fn get_user_journals_route(
     }
     let journals = Journal::find_for_user(user_id, &pool)?;
     Ok(Json(journals))
+}
+
+#[debug_handler]
+pub async fn get_shared_journals_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<Journal>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let shared_ids = JournalGrant::find_shared_journal_ids_for_user(user_id, &pool)?;
+    let journals = Journal::find_many(shared_ids, &pool)?
+        .into_iter()
+        .filter(|journal| !journal.is_encrypted)
+        .collect::<Vec<_>>();
+    Ok(Json(journals))
+}
+
+#[debug_handler]
+pub async fn get_journal_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Journal>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(id, &pool)?;
+    if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
+    Ok(Json(journal))
 }
 
 #[debug_handler]
@@ -69,6 +98,13 @@ pub async fn put_journal_route(
         journal.content = content;
     }
     if let Some(is_encrypted) = payload.is_encrypted {
+        if is_encrypted && JournalGrant::has_active_grants_for_journal(journal.id, &pool)? {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Revoke active journal grants before enabling encryption".to_string(),
+            ));
+        }
         journal.is_encrypted = is_encrypted;
     }
     if let Some(journal_type) = payload.journal_type {

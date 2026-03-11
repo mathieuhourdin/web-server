@@ -21,7 +21,7 @@ use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Date, Float, SmallInt, Text, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Date, Float, Nullable, SmallInt, Text, Uuid as SqlUuid};
 use diesel::{AsExpression, FromSqlRow};
 use rand::Rng;
 use serde::de::{self, Deserializer};
@@ -496,6 +496,82 @@ impl From<&User> for UserPseudonymizedResponse {
     }
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct UserSearchParams {
+    pub q: String,
+    pub limit: Option<i64>,
+}
+
+#[derive(QueryableByName)]
+struct UserSearchRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = Text)]
+    handle: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    first_name: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    last_name: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    profile_picture_url: Option<String>,
+    #[diesel(sql_type = Text)]
+    principal_type: String,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pseudonymized: bool,
+    #[diesel(sql_type = Text)]
+    pseudonym: String,
+}
+
+#[derive(Serialize)]
+pub struct UserSearchResult {
+    pub id: Uuid,
+    pub handle: String,
+    pub principal_type: UserPrincipalType,
+    pub profile_picture_url: Option<String>,
+    pub display_name: String,
+}
+
+impl From<UserSearchRow> for UserSearchResult {
+    fn from(row: UserSearchRow) -> Self {
+        let principal_type = UserPrincipalType::from_db(&row.principal_type)
+            .unwrap_or(UserPrincipalType::Human);
+        let display_name = if row.pseudonymized {
+            row.pseudonym
+        } else {
+            match (row.first_name, row.last_name) {
+                (Some(first_name), Some(last_name))
+                    if !first_name.trim().is_empty() || !last_name.trim().is_empty() =>
+                {
+                    format!("{} {}", first_name, last_name).trim().to_string()
+                }
+                (Some(first_name), None) if !first_name.trim().is_empty() => first_name,
+                (None, Some(last_name)) if !last_name.trim().is_empty() => last_name,
+                _ => row.handle.clone(),
+            }
+        };
+
+        UserSearchResult {
+            id: row.id,
+            handle: row.handle,
+            principal_type,
+            profile_picture_url: row.profile_picture_url,
+            display_name,
+        }
+    }
+}
+
+impl From<&User> for UserSearchResult {
+    fn from(user: &User) -> Self {
+        UserSearchResult {
+            id: user.id,
+            handle: user.handle.clone(),
+            principal_type: user.principal_type,
+            profile_picture_url: user.profile_picture_url.clone(),
+            display_name: user.display_name(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::users)]
 pub struct NewUser {
@@ -706,6 +782,22 @@ impl User {
             .select(User::as_select())
             .first(&mut conn)?;
         Ok(user)
+    }
+
+    pub fn find_many(ids: &[Uuid], pool: &DbPool) -> Result<Vec<User>, PpdcError> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let users = users::table
+            .filter(users::id.eq_any(ids))
+            .select(User::as_select())
+            .load(&mut conn)?;
+        Ok(users)
     }
 
     pub fn display_name(&self) -> String {
@@ -1214,6 +1306,65 @@ pub async fn get_users(
         .map(UserPseudonymizedResponse::from)
         .collect();
     Ok(Json(results))
+}
+
+#[debug_handler]
+pub async fn get_user_search_route(
+    Query(params): Query<UserSearchParams>,
+    Extension(pool): Extension<DbPool>,
+) -> Result<Json<Vec<UserSearchResult>>, PpdcError> {
+    let query = params.q.trim();
+    if query.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    let limit = params.limit.unwrap_or(20).clamp(1, 50);
+    let contains_query = format!("%{}%", query);
+    let prefix_query = format!("{}%", query);
+
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let rows = sql_query(
+        r#"
+        SELECT
+            id,
+            handle,
+            NULLIF(first_name, '') AS first_name,
+            NULLIF(last_name, '') AS last_name,
+            profile_picture_url,
+            principal_type,
+            pseudonymized,
+            pseudonym
+        FROM users
+        WHERE principal_type = 'HUMAN'
+          AND (
+            handle ILIKE $1
+            OR first_name ILIKE $1
+            OR last_name ILIKE $1
+            OR CONCAT_WS(' ', first_name, last_name) ILIKE $1
+          )
+        ORDER BY
+          CASE
+            WHEN LOWER(handle) = LOWER($2) THEN 0
+            WHEN handle ILIKE $3 THEN 1
+            WHEN first_name ILIKE $3 OR last_name ILIKE $3 THEN 2
+            WHEN CONCAT_WS(' ', first_name, last_name) ILIKE $3 THEN 3
+            ELSE 4
+          END,
+          updated_at DESC NULLS LAST,
+          created_at DESC
+        LIMIT $4
+        "#,
+    )
+    .bind::<Text, _>(contains_query)
+    .bind::<Text, _>(query.to_string())
+    .bind::<Text, _>(prefix_query)
+    .bind::<BigInt, _>(limit)
+    .load::<UserSearchRow>(&mut conn)?;
+
+    Ok(Json(rows.into_iter().map(UserSearchResult::from).collect()))
 }
 
 #[debug_handler]

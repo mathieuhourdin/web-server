@@ -2,11 +2,13 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path},
 };
+use serde::Serialize;
 use std::cmp::Reverse;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    analysis_summary::{AnalysisSummary, AnalysisSummaryType, MeaningfulEvent},
     error::{ErrorType, PpdcError},
     landscape_analysis::{
         model::LandscapeAnalysisType, LandscapeAnalysis, LandscapeProcessingState,
@@ -18,6 +20,15 @@ use crate::work_analyzer;
 
 use super::model::{Lens, NewLens, NewLensDto};
 use super::persist::delete_lens_and_landscapes;
+
+#[derive(Serialize)]
+pub struct LensWeekEventAggregate {
+    pub week_start: chrono::NaiveDateTime,
+    pub week_end: chrono::NaiveDateTime,
+    pub weekly_analysis_id: Uuid,
+    pub analysis_summary_id: Option<Uuid>,
+    pub meaningful_event: Option<MeaningfulEvent>,
+}
 
 #[debug_handler]
 pub async fn post_lens_route(
@@ -137,6 +148,50 @@ pub async fn get_lens_analysis_route(
     analyses
         .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(Json(analyses))
+}
+
+#[debug_handler]
+pub async fn get_lens_week_events_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<LensWeekEventAggregate>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let lens = Lens::find_full_lens(id, &pool)?;
+    if lens.user_id != Some(user_id) {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "Lens does not belong to current user".to_string(),
+        ));
+    }
+
+    let mut weekly_analyses = lens
+        .get_analysis_scope(&pool)?
+        .into_iter()
+        .filter(|analysis| {
+            analysis.processing_state == LandscapeProcessingState::Completed
+                && analysis.landscape_analysis_type == LandscapeAnalysisType::WeeklyRecap
+        })
+        .collect::<Vec<_>>();
+    weekly_analyses.sort_by_key(|analysis| Reverse(analysis.period_start));
+
+    let mut week_events = Vec::with_capacity(weekly_analyses.len());
+    for analysis in weekly_analyses {
+        let summary = AnalysisSummary::find_for_analysis(analysis.id, &pool)?
+            .into_iter()
+            .find(|summary| summary.summary_type == AnalysisSummaryType::PeriodRecap);
+
+        week_events.push(LensWeekEventAggregate {
+            week_start: analysis.period_start,
+            week_end: analysis.period_end,
+            weekly_analysis_id: analysis.id,
+            analysis_summary_id: summary.as_ref().map(|summary| summary.id),
+            meaningful_event: summary.and_then(|summary| summary.meaningful_event),
+        });
+    }
+
+    Ok(Json(week_events))
 }
 
 #[debug_handler]

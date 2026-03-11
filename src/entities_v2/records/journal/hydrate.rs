@@ -1,5 +1,6 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use diesel::PgSortExpressionMethods;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -15,6 +16,7 @@ type JournalTuple = (
     String,
     String,
     bool,
+    Option<NaiveDateTime>,
     String,
     String,
     NaiveDateTime,
@@ -30,6 +32,7 @@ impl From<JournalTuple> for Journal {
             subtitle,
             content,
             is_encrypted,
+            last_trace_at,
             journal_type,
             status,
             created_at,
@@ -42,6 +45,7 @@ impl From<JournalTuple> for Journal {
             subtitle,
             content,
             is_encrypted,
+            last_trace_at,
             user_id,
             status: JournalStatus::from_db(&status),
             journal_type: JournalType::from_db(&journal_type),
@@ -66,6 +70,7 @@ impl Journal {
                 journals::subtitle,
                 journals::content,
                 journals::is_encrypted,
+                journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
                 journals::created_at,
@@ -94,12 +99,49 @@ impl Journal {
                 journals::subtitle,
                 journals::content,
                 journals::is_encrypted,
+                journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
                 journals::created_at,
                 journals::updated_at,
             ))
-            .order(journals::updated_at.desc())
+            .order((
+                journals::last_trace_at.desc().nulls_last(),
+                journals::updated_at.desc(),
+            ))
+            .load::<JournalTuple>(&mut conn)?;
+
+        Ok(rows.into_iter().map(Journal::from).collect())
+    }
+
+    pub fn find_many(ids: Vec<Uuid>, pool: &DbPool) -> Result<Vec<Journal>, PpdcError> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let rows = journals::table
+            .filter(journals::id.eq_any(ids))
+            .select((
+                journals::id,
+                journals::user_id,
+                journals::title,
+                journals::subtitle,
+                journals::content,
+                journals::is_encrypted,
+                journals::last_trace_at,
+                journals::journal_type,
+                journals::status,
+                journals::created_at,
+                journals::updated_at,
+            ))
+            .order((
+                journals::last_trace_at.desc().nulls_last(),
+                journals::updated_at.desc(),
+            ))
             .load::<JournalTuple>(&mut conn)?;
 
         Ok(rows.into_iter().map(Journal::from).collect())

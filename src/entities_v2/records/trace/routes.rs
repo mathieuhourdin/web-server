@@ -11,6 +11,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::Journal,
+    journal_grant::JournalGrant,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
@@ -135,7 +136,11 @@ pub async fn get_trace_route(
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != session_user_id {
-        return Err(PpdcError::unauthorized());
+        let journal_id = trace.journal_id.ok_or_else(PpdcError::unauthorized)?;
+        let journal = Journal::find_full(journal_id, &pool)?;
+        if !JournalGrant::user_can_read_journal(&journal, session_user_id, &pool)? {
+            return Err(PpdcError::unauthorized());
+        }
     }
     Ok(Json(trace))
 }
@@ -307,7 +312,7 @@ pub async fn get_traces_for_journal_route(
 ) -> Result<Json<Vec<Trace>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
-    if journal.user_id != user_id {
+    if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     let traces = Trace::get_all_for_journal(id, &pool)?;

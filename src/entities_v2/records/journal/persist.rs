@@ -54,8 +54,8 @@ impl Journal {
         let is_encrypted = payload.is_encrypted.unwrap_or(false);
 
         let inserted = diesel::sql_query(
-            "INSERT INTO journals (id, user_id, title, subtitle, content, is_encrypted, journal_type, status)
-             VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, 'DRAFT')
+            "INSERT INTO journals (id, user_id, title, subtitle, content, is_encrypted, last_trace_at, journal_type, status)
+             VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, NULL, $6, 'DRAFT')
              RETURNING id",
         )
         .bind::<SqlUuid, _>(user_id)

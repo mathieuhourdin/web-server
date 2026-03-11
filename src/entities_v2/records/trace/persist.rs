@@ -77,48 +77,65 @@ impl NewTrace {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let inserted = diesel::sql_query(
-            "INSERT INTO traces (
-                id,
-                user_id,
-                journal_id,
-                title,
-                subtitle,
-                content,
-                is_encrypted,
-                encryption_metadata,
-                interaction_date,
-                trace_type,
-                status
-             ) VALUES (
-                uuid_generate_v4(),
-                $1,
-                $2,
-                $3,
-                $4,
-                $5,
-                $6,
-                CAST($7 AS jsonb),
-                $8,
-                $9,
-                'DRAFT'
-             )
-             RETURNING id",
-        )
-        .bind::<SqlUuid, _>(self.user_id)
-        .bind::<SqlUuid, _>(self.journal_id)
-        .bind::<Text, _>(self.title)
-        .bind::<Text, _>(self.subtitle)
-        .bind::<Text, _>(self.content)
-        .bind::<Bool, _>(self.is_encrypted)
-        .bind::<Nullable<Text>, _>(
-            self.encryption_metadata
-                .as_ref()
-                .map(|value| value.to_string()),
-        )
-        .bind::<Timestamp, _>(self.interaction_date)
-        .bind::<Text, _>(self.trace_type.to_db())
-        .get_result::<IdRow>(&mut conn)?;
+        let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
+            let inserted = diesel::sql_query(
+                "INSERT INTO traces (
+                    id,
+                    user_id,
+                    journal_id,
+                    title,
+                    subtitle,
+                    content,
+                    is_encrypted,
+                    encryption_metadata,
+                    interaction_date,
+                    trace_type,
+                    status
+                 ) VALUES (
+                    uuid_generate_v4(),
+                    $1,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    CAST($7 AS jsonb),
+                    $8,
+                    $9,
+                    'DRAFT'
+                 )
+                 RETURNING id",
+            )
+            .bind::<SqlUuid, _>(self.user_id)
+            .bind::<SqlUuid, _>(self.journal_id)
+            .bind::<Text, _>(&self.title)
+            .bind::<Text, _>(&self.subtitle)
+            .bind::<Text, _>(&self.content)
+            .bind::<Bool, _>(self.is_encrypted)
+            .bind::<Nullable<Text>, _>(
+                self.encryption_metadata
+                    .as_ref()
+                    .map(|value| value.to_string()),
+            )
+            .bind::<Timestamp, _>(self.interaction_date)
+            .bind::<Text, _>(self.trace_type.to_db())
+            .get_result::<IdRow>(conn)?;
+
+            diesel::sql_query(
+                "UPDATE journals
+                 SET last_trace_at = CASE
+                     WHEN last_trace_at IS NULL THEN $2
+                     ELSE GREATEST(last_trace_at, $2)
+                 END,
+                 updated_at = NOW()
+                 WHERE id = $1",
+            )
+            .bind::<SqlUuid, _>(self.journal_id)
+            .bind::<Timestamp, _>(self.interaction_date)
+            .execute(conn)?;
+
+            Ok(inserted)
+        })?;
 
         Trace::find_full_trace(inserted.id, pool)
     }

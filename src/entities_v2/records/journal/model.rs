@@ -11,6 +11,7 @@ pub struct Journal {
     pub subtitle: String,
     pub content: String,
     pub is_encrypted: bool,
+    pub last_trace_at: Option<NaiveDateTime>,
     pub user_id: Uuid,
     pub status: JournalStatus,
     pub journal_type: JournalType,

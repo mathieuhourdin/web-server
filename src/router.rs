@@ -13,8 +13,8 @@ use tower_http::{
 use crate::entities_v2::{
     analysis_summary, element,
     error::{ErrorType, PpdcError},
-    journal, landmark, landscape_analysis, lens, llm_call, message, post, reference, trace,
-    trace_mirror, transcription, user,
+    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post,
+    reference, relationship, trace, trace_mirror, transcription, user,
 };
 use crate::sessions_service;
 
@@ -26,6 +26,7 @@ pub fn create_router() -> Router {
 
     let users_router = Router::new()
         .route("/", get(user::get_users))
+        .route("/search", get(user::get_user_search_route))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/posts", get(post::get_user_posts_route))
         .route(
@@ -76,10 +77,38 @@ pub fn create_router() -> Router {
 
     let journals_router = Router::new()
         .route("/", post(journal::post_journal_route))
-        .route("/:id", put(journal::put_journal_route))
+        .route("/shared", get(journal::get_shared_journals_route))
+        .route("/:id", get(journal::get_journal_route).put(journal::put_journal_route))
         .route("/:id/exports", post(journal::post_journal_export_route))
+        .route(
+            "/:id/grants",
+            get(journal_grant::get_journal_grants_route)
+                .post(journal_grant::post_journal_grant_route),
+        )
+        .route(
+            "/:journal_id/grants/:grant_id",
+            delete(journal_grant::delete_journal_grant_route),
+        )
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
         .route("/:id/imports", post(journal::post_journal_import_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let relationships_router = Router::new()
+        .route("/followers", get(relationship::get_followers_route))
+        .route("/following", get(relationship::get_following_route))
+        .route(
+            "/requests/incoming",
+            get(relationship::get_incoming_relationship_requests_route),
+        )
+        .route(
+            "/requests/outgoing",
+            get(relationship::get_outgoing_relationship_requests_route),
+        )
+        .route(
+            "/",
+            get(relationship::get_relationships_route).post(relationship::post_relationship_route),
+        )
+        .route("/:id", put(relationship::put_relationship_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let transcriptions_router = Router::new()
@@ -140,6 +169,10 @@ pub fn create_router() -> Router {
     let lens_router = Router::new()
         .route("/", post(lens::post_lens_route))
         .route("/:id/analysis", get(lens::get_lens_analysis_route))
+        .route(
+            "/:id/aggregates/week_events",
+            get(lens::get_lens_week_events_route),
+        )
         .route("/:id/retry", post(lens::post_lens_retry_route))
         .route(
             "/:id",
@@ -201,6 +234,7 @@ pub fn create_router() -> Router {
         .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)
         .nest("/messages", messages_router)
+        .nest("/relationships", relationships_router)
         .nest("/landmarks", landmarks_router)
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)
