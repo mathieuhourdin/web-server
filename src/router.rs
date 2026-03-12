@@ -21,7 +21,13 @@ use crate::sessions_service;
 pub fn create_router() -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods(vec![Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_methods(vec![
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
         .allow_headers([CONTENT_TYPE, ACCEPT, AUTHORIZATION]);
 
     let users_router = Router::new()
@@ -60,8 +66,12 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
-        .route("/", post(trace::post_trace_route))
-        .route("/:id", get(trace::get_trace_route))
+        .route(
+            "/:id",
+            get(trace::get_trace_route)
+                .put(trace::put_trace_route)
+                .patch(trace::patch_trace_route),
+        )
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
         .route(
             "/:id/messages",
@@ -78,6 +88,10 @@ pub fn create_router() -> Router {
     let journals_router = Router::new()
         .route("/", post(journal::post_journal_route))
         .route("/shared", get(journal::get_shared_journals_route))
+        .route(
+            "/:id/draft",
+            get(trace::get_journal_draft_route).post(trace::post_journal_draft_route),
+        )
         .route("/:id", get(journal::get_journal_route).put(journal::put_journal_route))
         .route("/:id/exports", post(journal::post_journal_export_route))
         .route(

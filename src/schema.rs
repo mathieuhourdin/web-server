@@ -7,13 +7,13 @@ diesel::table! {
         user_id -> Uuid,
         summary_type -> Text,
         title -> Text,
-        short_content -> Text,
         content -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        short_content -> Text,
         meaningful_event_title -> Nullable<Text>,
         meaningful_event_description -> Nullable<Text>,
         meaningful_event_date -> Nullable<Text>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
     }
 }
 
@@ -94,12 +94,12 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        is_encrypted -> Bool,
-        last_trace_at -> Nullable<Timestamp>,
         journal_type -> Text,
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        is_encrypted -> Bool,
+        last_trace_at -> Nullable<Timestamp>,
     }
 }
 
@@ -255,15 +255,15 @@ diesel::table! {
         recipient_user_id -> Uuid,
         landscape_analysis_id -> Nullable<Uuid>,
         trace_id -> Nullable<Uuid>,
-        reply_to_message_id -> Nullable<Uuid>,
         message_type -> Text,
-        processing_state -> Text,
         title -> Text,
         content -> Text,
-        attachment_type -> Nullable<Text>,
-        attachment -> Nullable<Jsonb>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        reply_to_message_id -> Nullable<Uuid>,
+        processing_state -> Text,
+        attachment_type -> Nullable<Text>,
+        attachment -> Nullable<Jsonb>,
     }
 }
 
@@ -402,13 +402,15 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        is_encrypted -> Bool,
-        encryption_metadata -> Nullable<Jsonb>,
         interaction_date -> Timestamp,
         trace_type -> Text,
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        is_encrypted -> Bool,
+        encryption_metadata -> Nullable<Jsonb>,
+        start_writing_at -> Timestamp,
+        finalized_at -> Nullable<Timestamp>,
     }
 }
 
@@ -426,8 +428,6 @@ diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
-        principal_type -> Text,
-        mentor_id -> Nullable<Uuid>,
         first_name -> Text,
         last_name -> Text,
         handle -> Text,
@@ -445,6 +445,8 @@ diesel::table! {
         week_analysis_weekday -> Int2,
         timezone -> Text,
         context_anchor_at -> Nullable<Timestamp>,
+        principal_type -> Text,
+        mentor_id -> Nullable<Uuid>,
         welcome_message -> Nullable<Text>,
     }
 }
@@ -496,6 +498,7 @@ diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    analysis_summaries,
     element_landmarks,
     element_relations,
     elements,
@@ -512,10 +515,11 @@ diesel::allow_tables_to_appear_in_same_query!(
     lens_targets,
     lenses,
     llm_calls,
+    messages,
     post_relations,
     posts,
-    relationships,
     references,
+    relationships,
     resource_relations,
     resources,
     sessions,
@@ -523,6 +527,4 @@ diesel::allow_tables_to_appear_in_same_query!(
     traces,
     user_roles,
     users,
-    analysis_summaries,
-    messages,
 );

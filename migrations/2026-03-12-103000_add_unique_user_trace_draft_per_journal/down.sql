@@ -1,0 +1,1 @@
+DROP INDEX traces_one_draft_user_trace_per_journal_idx;

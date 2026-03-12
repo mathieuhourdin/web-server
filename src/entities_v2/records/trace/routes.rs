@@ -25,7 +25,7 @@ use crate::work_analyzer;
 
 use super::{
     llm_qualify,
-    model::{NewTrace, NewTraceDto, Trace},
+    model::{NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
 };
 use serde::{Deserialize, Serialize};
 
@@ -49,36 +49,61 @@ pub struct TraceMessageCreationResponse {
     pub pending_reply_message: Message,
 }
 
-#[debug_handler]
-pub async fn post_trace_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Json(payload): Json<NewTraceDto>,
-) -> Result<Json<Trace>, PpdcError> {
-    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let journal = Journal::find_full(payload.journal_id, &pool)?;
+#[derive(Deserialize)]
+pub struct CreateJournalDraftDto {
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub interaction_date: Option<chrono::NaiveDateTime>,
+    #[serde(default, alias = "is_ecrypted")]
+    pub is_encrypted: Option<bool>,
+    #[serde(default)]
+    pub encryption_metadata: Option<serde_json::Value>,
+}
+
+fn spawn_autoplay_lens_runs_for_trace(
+    user_id: Uuid,
+    trace_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let user_lenses = Lens::get_user_lenses(user_id, pool)?;
+    for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
+        let lens = if lens.target_trace_id != Some(trace_id) {
+            lens.update_target_trace(Some(trace_id), pool)?
+        } else {
+            lens
+        };
+        tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+    }
+    Ok(())
+}
+
+fn create_or_get_journal_draft(
+    journal: Journal,
+    user_id: Uuid,
+    payload: CreateJournalDraftDto,
+    pool: &DbPool,
+) -> Result<Trace, PpdcError> {
     if journal.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
 
-    let NewTraceDto {
+    if let Some(existing_draft) = Trace::find_draft_for_journal(journal.id, &pool)? {
+        return Ok(existing_draft);
+    }
+
+    let CreateJournalDraftDto {
         content,
-        journal_id: _,
+        interaction_date,
         is_encrypted,
         encryption_metadata,
     } = payload;
 
-    let qualified = llm_qualify::qualify_trace(content.as_str()).await?;
-    let request_received_at = Utc::now().naive_utc();
-
-    let interaction_date = qualified
-        .interaction_date
-        .and_then(|d| d.and_hms_opt(12, 0, 0))
-        .unwrap_or(request_received_at);
+    let interaction_date = interaction_date.unwrap_or_else(|| Utc::now().naive_utc());
 
     let mut trace = NewTrace::new(
-        qualified.title,
-        qualified.subtitle,
+        String::new(),
+        String::new(),
         content,
         interaction_date,
         user_id,
@@ -96,20 +121,199 @@ pub async fn post_trace_route(
     if !trace.is_encrypted {
         trace.encryption_metadata = None;
     }
-    let trace = trace.create(&pool)?;
+    trace.create(pool)
+}
 
-    if !trace.is_encrypted {
-        let user_lenses = Lens::get_user_lenses(user_id, &pool)?;
-        for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
-            let lens = if lens.target_trace_id != Some(trace.id) {
-                lens.update_target_trace(Some(trace.id), &pool)?
-            } else {
-                lens
-            };
-            tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
+#[debug_handler]
+pub async fn post_journal_draft_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Json(payload): Json<CreateJournalDraftDto>,
+) -> Result<Json<Trace>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    let trace = create_or_get_journal_draft(journal, user_id, payload, &pool)?;
+    Ok(Json(trace))
+}
+
+#[debug_handler]
+pub async fn get_journal_draft_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+) -> Result<Json<Option<Trace>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let draft = Trace::find_draft_for_journal(journal_id, &pool)?;
+    Ok(Json(draft))
+}
+
+#[debug_handler]
+pub async fn put_trace_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateTraceDto>,
+) -> Result<Json<Trace>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let content_changed = payload
+        .content
+        .as_ref()
+        .map(|content| content != &trace.content)
+        .unwrap_or(false);
+    let interaction_date_changed = payload
+        .interaction_date
+        .map(|interaction_date| interaction_date != trace.interaction_date)
+        .unwrap_or(false);
+    let has_explicit_interaction_date = payload.interaction_date.is_some();
+    let previous_status = trace.status;
+
+    match trace.status {
+        super::enums::TraceStatus::Draft => {
+            if let Some(content) = payload.content {
+                trace.content = content;
+            }
+            if let Some(interaction_date) = payload.interaction_date {
+                trace.interaction_date = interaction_date;
+            }
+
+            if let Some(status) = payload.status {
+                match status {
+                    super::enums::TraceStatus::Draft => {}
+                    super::enums::TraceStatus::Finalized => {
+                        if trace.content.trim().is_empty() {
+                            return Err(PpdcError::new(
+                                400,
+                                ErrorType::ApiError,
+                                "Cannot finalize an empty trace".to_string(),
+                            ));
+                        }
+                        if !trace.is_encrypted {
+                            let qualified = llm_qualify::qualify_trace(trace.content.as_str()).await?;
+                            trace.title = qualified.title;
+                            trace.subtitle = qualified.subtitle;
+                            if !has_explicit_interaction_date {
+                                if let Some(qualified_interaction_date) = qualified
+                                    .interaction_date
+                                    .and_then(|d| d.and_hms_opt(12, 0, 0))
+                                {
+                                    trace.interaction_date = qualified_interaction_date;
+                                }
+                            }
+                        }
+                        trace.status = super::enums::TraceStatus::Finalized;
+                        trace.finalized_at = Some(Utc::now().naive_utc());
+                    }
+                    super::enums::TraceStatus::Archived => {
+                        trace.status = super::enums::TraceStatus::Archived;
+                    }
+                }
+            }
+        }
+        super::enums::TraceStatus::Finalized => {
+            if content_changed || interaction_date_changed {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Cannot update content or interaction_date once trace is finalized"
+                        .to_string(),
+                ));
+            }
+
+            match payload.status {
+                Some(super::enums::TraceStatus::Archived) => {
+                    trace.status = super::enums::TraceStatus::Archived;
+                }
+                Some(super::enums::TraceStatus::Draft) => {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "Cannot move a finalized trace back to draft".to_string(),
+                    ));
+                }
+                Some(super::enums::TraceStatus::Finalized) | None => {}
+            }
+        }
+        super::enums::TraceStatus::Archived => {
+            if content_changed || interaction_date_changed {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Cannot update content or interaction_date once trace is archived"
+                        .to_string(),
+                ));
+            }
+
+            match payload.status {
+                Some(super::enums::TraceStatus::Archived) | None => {}
+                Some(super::enums::TraceStatus::Draft) => {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "Cannot move an archived trace back to draft".to_string(),
+                    ));
+                }
+                Some(super::enums::TraceStatus::Finalized) => {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "Cannot finalize an archived trace".to_string(),
+                    ));
+                }
+            }
         }
     }
 
+    let trace = trace.update(&pool)?;
+
+    if previous_status == super::enums::TraceStatus::Draft
+        && trace.status == super::enums::TraceStatus::Finalized
+        && !trace.is_encrypted
+    {
+        spawn_autoplay_lens_runs_for_trace(user_id, trace.id, &pool)?;
+    }
+
+    Ok(Json(trace))
+}
+
+#[debug_handler]
+pub async fn patch_trace_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<PatchTraceDto>,
+) -> Result<Json<Trace>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if trace.status != super::enums::TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can be patched".to_string(),
+        ));
+    }
+
+    if let Some(content) = payload.content {
+        trace.content = content;
+    }
+    if let Some(interaction_date) = payload.interaction_date {
+        trace.interaction_date = interaction_date;
+    }
+
+    let trace = trace.update(&pool)?;
     Ok(Json(trace))
 }
 

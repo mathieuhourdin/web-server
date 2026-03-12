@@ -24,6 +24,8 @@ type TraceTuple = (
     String,
     String,
     NaiveDateTime,
+    Option<NaiveDateTime>,
+    NaiveDateTime,
     NaiveDateTime,
 );
 
@@ -40,6 +42,8 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         user_id,
         trace_type_raw,
         status_raw,
+        start_writing_at,
+        finalized_at,
         created_at,
         updated_at,
     ) = row;
@@ -57,6 +61,8 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         user_id,
         trace_type: TraceType::from_db(&trace_type_raw),
         status: TraceStatus::from_db(&status_raw),
+        start_writing_at,
+        finalized_at,
         created_at,
         updated_at,
     }
@@ -82,6 +88,8 @@ impl Trace {
                 traces::user_id,
                 traces::trace_type,
                 traces::status,
+                traces::start_writing_at,
+                traces::finalized_at,
                 traces::created_at,
                 traces::updated_at,
             ))
