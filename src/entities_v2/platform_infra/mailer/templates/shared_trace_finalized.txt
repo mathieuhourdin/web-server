@@ -1,0 +1,9 @@
+Bonjour {{recipient_display_name}},
+
+{{owner_display_name}} wrote a new journal entry in a journal you can access.
+
+Journal: {{journal_title}}
+Date: {{interaction_date}}
+
+Extract:
+{{excerpt}}

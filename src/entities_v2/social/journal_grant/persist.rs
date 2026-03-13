@@ -263,7 +263,38 @@ impl JournalGrant {
         Ok(ids.into_iter().collect())
     }
 
-    pub fn has_active_grants_for_journal(journal_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+    pub fn find_active_recipient_user_ids_for_journal(
+        journal: &Journal,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        use std::collections::HashSet;
+
+        let mut ids = HashSet::new();
+        let grants = JournalGrant::find_for_journal(journal.id, pool)?;
+
+        for grant in grants
+            .into_iter()
+            .filter(|grant| grant.status == JournalGrantStatus::Active)
+        {
+            if let Some(grantee_user_id) = grant.grantee_user_id {
+                ids.insert(grantee_user_id);
+            }
+
+            if grant.grantee_scope == Some(JournalGrantScope::AllAcceptedFollowers) {
+                for relationship in Relationship::find_followers_for_user(journal.user_id, pool)? {
+                    ids.insert(relationship.requester_user_id);
+                }
+            }
+        }
+
+        ids.remove(&journal.user_id);
+        Ok(ids.into_iter().collect())
+    }
+
+    pub fn has_active_grants_for_journal(
+        journal_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
         let count = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))

@@ -7,6 +7,8 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::schema::outbound_emails;
 
+use super::{send_email, SendEmailRequest};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OutboundEmailStatus {
@@ -128,6 +130,7 @@ impl OutboundEmail {
             .set((
                 outbound_emails::status.eq(OutboundEmailStatus::Sent.to_db()),
                 outbound_emails::provider_message_id.eq(provider_message_id),
+                outbound_emails::attempt_count.eq(outbound_emails::attempt_count + 1),
                 outbound_emails::sent_at.eq(diesel::dsl::now),
                 outbound_emails::last_error.eq::<Option<String>>(None),
                 outbound_emails::updated_at.eq(diesel::dsl::now),
@@ -213,4 +216,37 @@ impl NewOutboundEmail {
             .get_result(&mut conn)?;
         Ok(email)
     }
+}
+
+pub async fn process_pending_email(id: Uuid, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
+    let email = OutboundEmail::find(id, pool)?;
+    if email.status_enum() != OutboundEmailStatus::Pending {
+        return Ok(email);
+    }
+
+    let result = match email.provider_enum() {
+        OutboundEmailProvider::Resend => {
+            send_email(SendEmailRequest {
+                from: email.from_email.clone(),
+                to: vec![email.to_email.clone()],
+                subject: email.subject.clone(),
+                text: email.text_body.clone(),
+                html: email.html_body.clone(),
+            })
+            .await
+            .map(|sent| sent.id)
+        }
+    };
+
+    match result {
+        Ok(provider_message_id) => OutboundEmail::mark_sent(id, Some(provider_message_id), pool),
+        Err(err) => OutboundEmail::mark_failed(id, err.message, pool),
+    }
+}
+
+pub async fn process_pending_emails(ids: Vec<Uuid>, pool: &DbPool) -> Result<(), PpdcError> {
+    for id in ids {
+        let _ = process_pending_email(id, pool).await?;
+    }
+    Ok(())
 }
