@@ -32,6 +32,20 @@ pub fn get_openai_api_base_url() -> String {
     std::env::var("OPENAI_API_BASE_URL").unwrap_or_else(|_| "https://api.openai.com".to_string())
 }
 
+pub fn get_resend_api_key() -> String {
+    dotenv().ok();
+    std::env::var("RESEND_API_KEY")
+        .or_else(|_| std::env::var("resend_api_key"))
+        .expect("RESEND_API_KEY should be provided")
+}
+
+pub fn get_resend_api_base_url() -> String {
+    dotenv().ok();
+    std::env::var("RESEND_API_BASE_URL")
+        .or_else(|_| std::env::var("resend_api_base_url"))
+        .unwrap_or_else(|_| "https://api.resend.com".to_string())
+}
+
 pub fn get_search_api_key() -> String {
     dotenv().ok();
     std::env::var("SEARCH_API_KEY").unwrap_or_else(|_| "".to_string())

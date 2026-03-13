@@ -3,6 +3,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::Journal;
+use crate::entities_v2::trace::TraceStatus;
 
 use super::{
     model::{ImportBlock, ImportJournalResult, ImportTraceFailure},
@@ -63,7 +64,14 @@ pub fn import_journal_text(
 
     for (block_index, block, trace) in traces {
         match trace.create(pool) {
-            Ok(created_trace) => created_trace_ids.push(created_trace.id),
+            Ok(created_trace) => match created_trace.set_status(TraceStatus::Finalized, pool) {
+                Ok(finalized_trace) => created_trace_ids.push(finalized_trace.id),
+                Err(err) => failures.push(ImportTraceFailure {
+                    block_index,
+                    header: block.header,
+                    error: err.message,
+                }),
+            },
             Err(err) => failures.push(ImportTraceFailure {
                 block_index,
                 header: block.header,

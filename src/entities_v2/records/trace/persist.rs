@@ -1,5 +1,6 @@
 use diesel::prelude::*;
 use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use chrono::Utc;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
@@ -90,6 +91,16 @@ impl Trace {
 
     pub fn set_status(mut self, status: TraceStatus, pool: &DbPool) -> Result<Trace, PpdcError> {
         self.status = status;
+        match status {
+            TraceStatus::Draft => {
+                self.finalized_at = None;
+            }
+            TraceStatus::Finalized | TraceStatus::Archived => {
+                if self.finalized_at.is_none() {
+                    self.finalized_at = Some(Utc::now().naive_utc());
+                }
+            }
+        }
         self.update(pool)
     }
 }
