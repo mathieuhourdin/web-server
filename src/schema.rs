@@ -268,6 +268,30 @@ diesel::table! {
 }
 
 diesel::table! {
+    outbound_emails (id) {
+        id -> Uuid,
+        recipient_user_id -> Nullable<Uuid>,
+        reason -> Text,
+        resource_type -> Nullable<Text>,
+        resource_id -> Nullable<Uuid>,
+        to_email -> Text,
+        from_email -> Text,
+        subject -> Text,
+        text_body -> Nullable<Text>,
+        html_body -> Nullable<Text>,
+        status -> Text,
+        provider -> Text,
+        provider_message_id -> Nullable<Text>,
+        attempt_count -> Int4,
+        last_error -> Nullable<Text>,
+        scheduled_at -> Nullable<Timestamp>,
+        sent_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     post_relations (id) {
         id -> Uuid,
         origin_post_id -> Uuid,
@@ -483,6 +507,7 @@ diesel::joinable!(lenses -> users (user_id));
 diesel::joinable!(llm_calls -> landscape_analyses (analysis_id));
 diesel::joinable!(messages -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(messages -> traces (trace_id));
+diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(posts -> users (user_id));
 diesel::joinable!(references -> landmarks (landmark_id));
 diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));
@@ -516,6 +541,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lenses,
     llm_calls,
     messages,
+    outbound_emails,
     post_relations,
     posts,
     references,
