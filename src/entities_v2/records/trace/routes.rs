@@ -516,7 +516,25 @@ pub async fn post_trace_message_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     let sender_is_owner = trace.user_id == user_id;
-    let message_type = payload.message_type.unwrap_or(MessageType::General);
+    let owner = if sender_is_owner {
+        Some(User::find(&user_id, &pool)?)
+    } else {
+        None
+    };
+    let mentor_id = owner.as_ref().and_then(|user| user.mentor_id);
+    let message_type = payload.message_type.unwrap_or_else(|| {
+        if sender_is_owner {
+            match (payload.recipient_user_id, mentor_id) {
+                (None, _) => MessageType::Question,
+                (Some(recipient_user_id), Some(mentor_id)) if recipient_user_id == mentor_id => {
+                    MessageType::Question
+                }
+                _ => MessageType::General,
+            }
+        } else {
+            MessageType::General
+        }
+    });
 
     if matches!(message_type, MessageType::Question | MessageType::TarotReadingRequest) {
         if !sender_is_owner {
@@ -527,8 +545,7 @@ pub async fn post_trace_message_route(
             ));
         }
 
-        let user = User::find(&user_id, &pool)?;
-        let mentor_id = user.mentor_id.ok_or_else(|| {
+        let mentor_id = mentor_id.ok_or_else(|| {
             PpdcError::new(
                 400,
                 ErrorType::ApiError,
