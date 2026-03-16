@@ -16,6 +16,7 @@ pub struct Relationship {
     pub target_user_id: Uuid,
     pub relationship_type: RelationshipType,
     pub status: RelationshipStatus,
+    pub accepted_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -37,6 +38,7 @@ type RelationshipTuple = (
     Uuid,
     String,
     String,
+    Option<NaiveDateTime>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -48,6 +50,7 @@ fn tuple_to_relationship(row: RelationshipTuple) -> Relationship {
         target_user_id,
         relationship_type_raw,
         status_raw,
+        accepted_at,
         created_at,
         updated_at,
     ) = row;
@@ -58,6 +61,7 @@ fn tuple_to_relationship(row: RelationshipTuple) -> Relationship {
         target_user_id,
         relationship_type: RelationshipType::from_db(&relationship_type_raw),
         status: RelationshipStatus::from_db(&status_raw),
+        accepted_at,
         created_at,
         updated_at,
     }
@@ -69,6 +73,7 @@ fn select_relationship_columns() -> (
     relationships::target_user_id,
     relationships::relationship_type,
     relationships::status,
+    relationships::accepted_at,
     relationships::created_at,
     relationships::updated_at,
 ) {
@@ -78,6 +83,7 @@ fn select_relationship_columns() -> (
         relationships::target_user_id,
         relationships::relationship_type,
         relationships::status,
+        relationships::accepted_at,
         relationships::created_at,
         relationships::updated_at,
     )
@@ -148,7 +154,10 @@ impl Relationship {
             .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
             .filter(relationships::status.eq(RelationshipStatus::Accepted.to_db()))
             .select(select_relationship_columns())
-            .order(relationships::updated_at.desc())
+            .order((
+                relationships::accepted_at.desc().nulls_last(),
+                relationships::updated_at.desc(),
+            ))
             .load::<RelationshipTuple>(&mut conn)?;
         Ok(rows.into_iter().map(tuple_to_relationship).collect())
     }
@@ -163,7 +172,10 @@ impl Relationship {
             .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
             .filter(relationships::status.eq(RelationshipStatus::Accepted.to_db()))
             .select(select_relationship_columns())
-            .order(relationships::updated_at.desc())
+            .order((
+                relationships::accepted_at.desc().nulls_last(),
+                relationships::updated_at.desc(),
+            ))
             .load::<RelationshipTuple>(&mut conn)?;
         Ok(rows.into_iter().map(tuple_to_relationship).collect())
     }

@@ -347,6 +347,7 @@ diesel::table! {
         target_user_id -> Uuid,
         relationship_type -> Text,
         status -> Text,
+        accepted_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
