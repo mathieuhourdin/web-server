@@ -21,6 +21,8 @@ type LandmarkTuple = (
     Option<String>,
     String,
     String,
+    i32,
+    Option<NaiveDateTime>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -38,6 +40,8 @@ fn tuple_to_landmark(row: LandmarkTuple) -> Landmark {
         image_url,
         landmark_type_raw,
         maturing_state_raw,
+        related_elements_count,
+        last_related_element_at,
         created_at,
         updated_at,
     ) = row;
@@ -54,6 +58,8 @@ fn tuple_to_landmark(row: LandmarkTuple) -> Landmark {
             .unwrap_or(LandmarkType::Resource),
         maturing_state: MaturingState::from_code(&maturing_state_raw)
             .unwrap_or(MaturingState::Draft),
+        related_elements_count,
+        last_related_element_at,
         created_at,
         updated_at,
     }
@@ -71,6 +77,8 @@ fn select_landmark_columns() -> (
     landmarks::image_url,
     landmarks::landmark_type,
     landmarks::maturing_state,
+    landmarks::related_elements_count,
+    landmarks::last_related_element_at,
     landmarks::created_at,
     landmarks::updated_at,
 ) {
@@ -86,6 +94,8 @@ fn select_landmark_columns() -> (
         landmarks::image_url,
         landmarks::landmark_type,
         landmarks::maturing_state,
+        landmarks::related_elements_count,
+        landmarks::last_related_element_at,
         landmarks::created_at,
         landmarks::updated_at,
     )

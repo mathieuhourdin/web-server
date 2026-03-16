@@ -18,6 +18,8 @@ pub struct Landmark {
     pub image_url: Option<String>,
     pub landmark_type: LandmarkType,
     pub maturing_state: MaturingState,
+    pub related_elements_count: i32,
+    pub last_related_element_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
