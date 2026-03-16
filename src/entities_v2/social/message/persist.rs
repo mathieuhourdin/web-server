@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{Nullable, Text, Uuid as SqlUuid};
+use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -67,8 +67,9 @@ impl Message {
                 content = $8,
                 attachment_type = $9,
                 attachment = CAST($10 AS jsonb),
+                seen_at = $11,
                 updated_at = NOW()
-            WHERE id = $11
+            WHERE id = $12
             "#,
         )
         .bind::<SqlUuid, _>(self.recipient_user_id)
@@ -81,6 +82,31 @@ impl Message {
         .bind::<Text, _>(self.content)
         .bind::<Nullable<Text>, _>(attachment_type_db)
         .bind::<Nullable<Text>, _>(attachment_json)
+        .bind::<Nullable<Timestamp>, _>(self.seen_at)
+        .bind::<SqlUuid, _>(self.id)
+        .execute(&mut conn)?;
+        Message::find(self.id, pool)
+    }
+
+    pub fn mark_seen(self, viewer_user_id: Uuid, pool: &DbPool) -> Result<Message, PpdcError> {
+        if self.recipient_user_id != viewer_user_id {
+            return Err(PpdcError::unauthorized());
+        }
+        if self.seen_at.is_some() {
+            return Ok(self);
+        }
+
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        sql_query(
+            r#"
+            UPDATE messages
+            SET seen_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
         .bind::<SqlUuid, _>(self.id)
         .execute(&mut conn)?;
         Message::find(self.id, pool)
@@ -108,10 +134,11 @@ impl NewMessage {
                 title,
                 content,
                 attachment_type,
-                attachment
+                attachment,
+                seen_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CAST($11 AS jsonb)
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CAST($11 AS jsonb), NULL
             )
             RETURNING id
             "#,

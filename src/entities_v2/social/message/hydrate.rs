@@ -24,6 +24,7 @@ type MessageTuple = (
     String,
     Option<String>,
     Option<String>,
+    Option<NaiveDateTime>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -42,6 +43,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         content,
         attachment_type_raw,
         attachment_json,
+        seen_at,
         created_at,
         updated_at,
     ) = row;
@@ -67,6 +69,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         content,
         attachment_type,
         attachment,
+        seen_at,
         created_at,
         updated_at,
     }
@@ -92,6 +95,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
             ))
@@ -137,6 +141,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
             ))
@@ -175,6 +180,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
             ))

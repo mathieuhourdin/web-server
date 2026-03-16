@@ -19,6 +19,7 @@ pub struct Message {
     pub content: String,
     pub attachment_type: Option<MessageAttachmentType>,
     pub attachment: Option<MessageAttachment>,
+    pub seen_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

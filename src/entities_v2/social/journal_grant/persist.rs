@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::entities_v2::journal::Journal;
+use crate::entities_v2::journal::{Journal, JournalStatus};
 use crate::entities_v2::relationship::{Relationship, RelationshipStatus};
 use crate::schema::journal_grants;
 
@@ -195,6 +195,9 @@ impl JournalGrant {
     ) -> Result<bool, PpdcError> {
         if journal.user_id == user_id {
             return Ok(true);
+        }
+        if journal.status == JournalStatus::Archived {
+            return Ok(false);
         }
         if journal.is_encrypted {
             return Ok(false);

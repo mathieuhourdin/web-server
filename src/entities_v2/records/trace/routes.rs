@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    journal::Journal,
+    journal::{Journal, JournalStatus},
     journal_grant::JournalGrant,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
@@ -37,6 +37,7 @@ pub struct TraceMessagesQuery {
 
 #[derive(Deserialize)]
 pub struct NewTraceMessageDto {
+    pub recipient_user_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub message_type: Option<MessageType>,
@@ -47,7 +48,7 @@ pub struct NewTraceMessageDto {
 #[derive(Serialize)]
 pub struct TraceMessageCreationResponse {
     pub question_message: Message,
-    pub pending_reply_message: Message,
+    pub pending_reply_message: Option<Message>,
 }
 
 #[derive(Deserialize)]
@@ -89,7 +90,7 @@ fn enqueue_shared_trace_finalized_notification_emails(
     };
 
     let journal = Journal::find_full(journal_id, pool)?;
-    if journal.is_encrypted {
+    if journal.is_encrypted || journal.status == JournalStatus::Archived {
         return Ok(vec![]);
     }
 
@@ -97,6 +98,10 @@ fn enqueue_shared_trace_finalized_notification_emails(
     let recipients = User::find_many(&recipient_ids, pool)?;
     let scheduled_at = Some(Utc::now().naive_utc());
     let owner_display_name = owner.display_name();
+    let journal_url = format!(
+        "https://matieregrise.ppdcoeur.fr/me/journals/{}",
+        journal.id
+    );
     let mut email_ids = Vec::new();
     for recipient in recipients.into_iter().filter(|recipient| {
         recipient.id != owner.id
@@ -107,6 +112,7 @@ fn enqueue_shared_trace_finalized_notification_emails(
             &recipient.display_name(),
             &owner_display_name,
             &journal.title,
+            &journal_url,
             trace.interaction_date,
             &trace.content,
         );
@@ -138,6 +144,13 @@ fn create_or_get_journal_draft(
 ) -> Result<Trace, PpdcError> {
     if journal.user_id != user_id {
         return Err(PpdcError::unauthorized());
+    }
+    if journal.status == JournalStatus::Archived {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Cannot create a draft in an archived journal".to_string(),
+        ));
     }
 
     if let Some(existing_draft) = Trace::find_draft_for_journal(journal.id, &pool)? {
@@ -477,7 +490,11 @@ pub async fn get_trace_messages_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
+        let journal_id = trace.journal_id.ok_or_else(PpdcError::unauthorized)?;
+        let journal = Journal::find_full(journal_id, &pool)?;
+        if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
+            return Err(PpdcError::unauthorized());
+        }
     }
 
     let messages = Message::find_for_trace_conversation(
@@ -498,53 +515,127 @@ pub async fn post_trace_message_route(
 ) -> Result<Json<TraceMessageCreationResponse>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
-    if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
+    let sender_is_owner = trace.user_id == user_id;
+    let message_type = payload.message_type.unwrap_or(MessageType::General);
+
+    if matches!(message_type, MessageType::Question | MessageType::TarotReadingRequest) {
+        if !sender_is_owner {
+            return Err(PpdcError::new(
+                401,
+                ErrorType::ApiError,
+                "Only the trace owner can send mentor requests for this trace".to_string(),
+            ));
+        }
+
+        let user = User::find(&user_id, &pool)?;
+        let mentor_id = user.mentor_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "No mentor assigned to user".to_string(),
+            )
+        })?;
+
+        if message_type == MessageType::TarotReadingRequest {
+            let has_tarot_attachment = matches!(
+                (payload.attachment_type, payload.attachment.as_ref()),
+                (
+                    Some(MessageAttachmentType::TarotReading),
+                    Some(MessageAttachment::TarotReading(_))
+                )
+            );
+            if !has_tarot_attachment {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "tarot_reading_request requires attachment_type=tarot_reading and a tarot attachment payload".to_string(),
+                ));
+            }
+        }
+
+        let question_message = NewMessage {
+            sender_user_id: user_id,
+            recipient_user_id: mentor_id,
+            landscape_analysis_id: None,
+            trace_id: Some(trace_id),
+            reply_to_message_id: None,
+            message_type,
+            processing_state: MessageProcessingState::Processed,
+            title: payload.title.unwrap_or_default(),
+            content: payload.content,
+            attachment_type: payload.attachment_type,
+            attachment: payload.attachment,
+        }
+        .create(&pool)?;
+
+        let pending_reply_message = NewMessage {
+            sender_user_id: mentor_id,
+            recipient_user_id: user_id,
+            landscape_analysis_id: None,
+            trace_id: Some(trace_id),
+            reply_to_message_id: Some(question_message.id),
+            message_type: MessageType::MentorReply,
+            processing_state: MessageProcessingState::Pending,
+            title: String::new(),
+            content: String::new(),
+            attachment_type: None,
+            attachment: None,
+        }
+        .create(&pool)?;
+
+        let pool_for_task = pool.clone();
+        let pending_reply_id = pending_reply_message.id;
+        tokio::spawn(async move {
+            let _ = work_analyzer::run_message(pending_reply_id, &pool_for_task).await;
+        });
+
+        return Ok(Json(TraceMessageCreationResponse {
+            question_message,
+            pending_reply_message: Some(pending_reply_message),
+        }));
     }
 
-    let user = User::find(&user_id, &pool)?;
-    let mentor_id = user.mentor_id.ok_or_else(|| {
-        PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "No mentor assigned to user".to_string(),
-        )
-    })?;
-    let question_message_type = payload.message_type.unwrap_or(MessageType::Question);
-    if !matches!(
-        question_message_type,
-        MessageType::Question | MessageType::TarotReadingRequest
-    ) {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "trace message message_type must be question or tarot_reading_request".to_string(),
-        ));
-    }
-    if question_message_type == MessageType::TarotReadingRequest {
-        let has_tarot_attachment = matches!(
-            (payload.attachment_type, payload.attachment.as_ref()),
-            (
-                Some(MessageAttachmentType::TarotReading),
-                Some(MessageAttachment::TarotReading(_))
+    let journal_id = trace.journal_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+
+    let recipient_user_id = if sender_is_owner {
+        let recipient_user_id = payload.recipient_user_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "recipient_user_id is required when the trace owner sends a user message"
+                    .to_string(),
             )
-        );
-        if !has_tarot_attachment {
+        })?;
+        if recipient_user_id == user_id {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "tarot_reading_request requires attachment_type=tarot_reading and a tarot attachment payload".to_string(),
+                "Cannot send a trace message to yourself".to_string(),
             ));
         }
-    }
+        if !JournalGrant::user_can_read_journal(&journal, recipient_user_id, &pool)? {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Recipient must currently have access to the trace journal".to_string(),
+            ));
+        }
+        recipient_user_id
+    } else {
+        if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
+            return Err(PpdcError::unauthorized());
+        }
+        trace.user_id
+    };
 
-    let question_message = NewMessage {
+    let message = NewMessage {
         sender_user_id: user_id,
-        recipient_user_id: mentor_id,
+        recipient_user_id,
         landscape_analysis_id: None,
         trace_id: Some(trace_id),
         reply_to_message_id: None,
-        message_type: question_message_type,
+        message_type,
         processing_state: MessageProcessingState::Processed,
         title: payload.title.unwrap_or_default(),
         content: payload.content,
@@ -553,30 +644,9 @@ pub async fn post_trace_message_route(
     }
     .create(&pool)?;
 
-    let pending_reply_message = NewMessage {
-        sender_user_id: mentor_id,
-        recipient_user_id: user_id,
-        landscape_analysis_id: None,
-        trace_id: Some(trace_id),
-        reply_to_message_id: Some(question_message.id),
-        message_type: MessageType::MentorReply,
-        processing_state: MessageProcessingState::Pending,
-        title: String::new(),
-        content: String::new(),
-        attachment_type: None,
-        attachment: None,
-    }
-    .create(&pool)?;
-
-    let pool_for_task = pool.clone();
-    let pending_reply_id = pending_reply_message.id;
-    tokio::spawn(async move {
-        let _ = work_analyzer::run_message(pending_reply_id, &pool_for_task).await;
-    });
-
     Ok(Json(TraceMessageCreationResponse {
-        question_message,
-        pending_reply_message,
+        question_message: message,
+        pending_reply_message: None,
     }))
 }
 

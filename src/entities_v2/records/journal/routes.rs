@@ -18,8 +18,8 @@ use crate::entities_v2::{
 };
 
 use super::model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, NewJournalDto,
-    UpdateJournalDto,
+    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalStatus,
+    NewJournalDto, UpdateJournalDto,
 };
 
 #[debug_handler]
@@ -45,7 +45,7 @@ pub async fn get_shared_journals_route(
     let shared_ids = JournalGrant::find_shared_journal_ids_for_user(user_id, &pool)?;
     let journals = Journal::find_many(shared_ids, &pool)?
         .into_iter()
-        .filter(|journal| !journal.is_encrypted)
+        .filter(|journal| !journal.is_encrypted && journal.status != JournalStatus::Archived)
         .collect::<Vec<_>>();
     Ok(Json(journals))
 }

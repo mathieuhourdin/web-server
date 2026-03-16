@@ -4,6 +4,7 @@ Bonjour {{recipient_display_name}},
 
 Journal: {{journal_title}}
 Date: {{interaction_date}}
+Lien: {{journal_url}}
 
 Extract:
 {{excerpt}}

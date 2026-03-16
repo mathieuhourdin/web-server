@@ -40,6 +40,7 @@ pub fn shared_trace_finalized_email(
     recipient_display_name: &str,
     owner_display_name: &str,
     journal_title: &str,
+    journal_url: &str,
     interaction_date: NaiveDateTime,
     trace_content: &str,
 ) -> EmailTemplate {
@@ -52,6 +53,7 @@ pub fn shared_trace_finalized_email(
             ("recipient_display_name", recipient_display_name.to_string()),
             ("owner_display_name", owner_display_name.to_string()),
             ("journal_title", journal_title.to_string()),
+            ("journal_url", journal_url.to_string()),
             ("interaction_date", interaction_date.clone()),
             ("excerpt", excerpt.clone()),
         ],
@@ -62,6 +64,7 @@ pub fn shared_trace_finalized_email(
             ("recipient_display_name", escape_html(recipient_display_name)),
             ("owner_display_name", escape_html(owner_display_name)),
             ("journal_title", escape_html(journal_title)),
+            ("journal_url", escape_html(journal_url)),
             ("interaction_date", escape_html(&interaction_date)),
             ("excerpt_html", escape_html(&excerpt)),
         ],
