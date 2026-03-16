@@ -55,6 +55,7 @@ diesel::table! {
         interaction_date -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        status -> Nullable<Text>,
     }
 }
 
@@ -128,10 +129,10 @@ diesel::table! {
         image_url -> Nullable<Text>,
         landmark_type -> Text,
         maturing_state -> Text,
-        related_elements_count -> Int4,
-        last_related_element_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        related_elements_count -> Int4,
+        last_related_element_at -> Nullable<Timestamp>,
     }
 }
 
@@ -349,9 +350,9 @@ diesel::table! {
         target_user_id -> Uuid,
         relationship_type -> Text,
         status -> Text,
-        accepted_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        accepted_at -> Nullable<Timestamp>,
     }
 }
 

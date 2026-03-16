@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::{
-    element::{link_to_landmark, Element, ElementSubtype, ElementType, NewElement},
+    element::{link_to_landmark, Element, ElementStatus, ElementSubtype, ElementType, NewElement},
     trace::Trace,
     trace_mirror::TraceMirror,
 };
@@ -28,6 +28,7 @@ struct ClaimNode {
     interaction_date: Option<NaiveDateTime>,
     element_type: ElementType,
     element_subtype: ElementSubtype,
+    status: Option<ElementStatus>,
     direct_landmark_ids: HashSet<Uuid>,
     neighbors: HashSet<String>,
 }
@@ -104,6 +105,7 @@ fn build_claim_nodes(
             interaction_date: apply_date_offset(default_interaction_date, &claim.date_offset),
             element_type: ElementType::Transaction,
             element_subtype: map_transaction_kind(claim.kind),
+            status: Some(map_transaction_status(&claim.status)),
             direct_landmark_ids,
             neighbors,
         });
@@ -136,6 +138,7 @@ fn build_claim_nodes(
             interaction_date: default_interaction_date,
             element_type: ElementType::Descriptive,
             element_subtype: map_descriptive_kind(claim.kind),
+            status: None,
             direct_landmark_ids,
             neighbors,
         });
@@ -156,6 +159,7 @@ fn build_claim_nodes(
             interaction_date: default_interaction_date,
             element_type: ElementType::Normative,
             element_subtype: map_normative_force(claim.force),
+            status: None,
             direct_landmark_ids: HashSet::new(),
             neighbors,
         });
@@ -176,6 +180,7 @@ fn build_claim_nodes(
             interaction_date: default_interaction_date,
             element_type: ElementType::Evaluative,
             element_subtype: map_evaluative_kind(claim.kind),
+            status: None,
             direct_landmark_ids: HashSet::new(),
             neighbors,
         });
@@ -309,6 +314,7 @@ fn persist_nodes(
             node.content,
             node.element_type,
             node.element_subtype,
+            node.status,
             node.verb,
             node.interaction_date,
             trace_mirror.trace_id,
@@ -508,6 +514,14 @@ fn map_transaction_kind(kind: TransactionKind) -> ElementSubtype {
         TransactionKind::Input => ElementSubtype::Input,
         TransactionKind::Output => ElementSubtype::Output,
         TransactionKind::Transformation => ElementSubtype::Transformation,
+    }
+}
+
+fn map_transaction_status(status: &str) -> ElementStatus {
+    match status {
+        "IN_PROGRESS" => ElementStatus::InProgress,
+        "INTENDED" => ElementStatus::Intended,
+        _ => ElementStatus::Done,
     }
 }
 

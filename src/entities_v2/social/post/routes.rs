@@ -13,13 +13,25 @@ use super::model::{NewPost, NewPostDto, Post, PostInteractionType, PostType};
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
-    pub interaction_type: Option<PostInteractionType>,
-    pub post_type: Option<PostType>,
+    #[serde(default)]
+    pub interaction_type: Vec<PostInteractionType>,
+    #[serde(default)]
+    pub post_type: Vec<PostType>,
     pub is_external: Option<bool>,
     pub resource_type: Option<String>, // Legacy fallback mapped to post_type
     pub user_id: Option<Uuid>,
     pub maturing_state: Option<MaturingState>,
     pub limit: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct UserPostsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    #[serde(default)]
+    pub interaction_type: Vec<PostInteractionType>,
+    #[serde(default)]
+    pub post_type: Vec<PostType>,
 }
 
 #[debug_handler]
@@ -53,9 +65,16 @@ pub async fn get_post_route(
 pub async fn get_user_posts_route(
     Extension(pool): Extension<DbPool>,
     Path(user_id): Path<Uuid>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<UserPostsQuery>,
 ) -> Result<Json<Vec<Post>>, PpdcError> {
-    let posts = Post::find_for_user(user_id, params.offset(), params.limit(), &pool)?;
+    let posts = Post::find_for_user_filtered(
+        user_id,
+        params.interaction_type,
+        params.post_type,
+        params.pagination.offset(),
+        params.pagination.limit(),
+        &pool,
+    )?;
     Ok(Json(posts))
 }
 

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct PaginationParams {
     offset: Option<i64>,
     limit: Option<i64>,

@@ -62,6 +62,14 @@ pub struct NewLlmCall {
     pub user_prompt: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LlmCallFiltersQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub created_at_from: Option<NaiveDateTime>,
+    pub created_at_to: Option<NaiveDateTime>,
+}
+
 impl LlmCall {
     pub fn get_paginated_for_user(
         user_id: Uuid,
@@ -69,13 +77,32 @@ impl LlmCall {
         limit: i64,
         db: &DbPool,
     ) -> Result<Vec<Self>, PpdcError> {
+        Self::get_paginated_for_user_filtered(user_id, offset, limit, None, None, db)
+    }
+
+    pub fn get_paginated_for_user_filtered(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        created_at_from: Option<NaiveDateTime>,
+        created_at_to: Option<NaiveDateTime>,
+        db: &DbPool,
+    ) -> Result<Vec<Self>, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
-        let llm_calls = llm_calls::table
+        let mut query = llm_calls::table
             .inner_join(
                 landscape_analyses::table
                     .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
             )
             .filter(landscape_analyses::user_id.eq(user_id))
+            .into_boxed();
+        if let Some(from) = created_at_from {
+            query = query.filter(llm_calls::created_at.ge(from));
+        }
+        if let Some(to) = created_at_to {
+            query = query.filter(llm_calls::created_at.le(to));
+        }
+        let llm_calls = query
             .select(LlmCall::as_select())
             .order(llm_calls::created_at.desc())
             .offset(offset)
@@ -130,14 +157,32 @@ impl LlmCall {
         user_id: Uuid,
         db: &DbPool,
     ) -> Result<Vec<Self>, PpdcError> {
+        Self::get_by_analysis_id_for_user_filtered(analysis_id, user_id, None, None, db)
+    }
+
+    pub fn get_by_analysis_id_for_user_filtered(
+        analysis_id: Uuid,
+        user_id: Uuid,
+        created_at_from: Option<NaiveDateTime>,
+        created_at_to: Option<NaiveDateTime>,
+        db: &DbPool,
+    ) -> Result<Vec<Self>, PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
-        let llm_calls = llm_calls::table
+        let mut query = llm_calls::table
             .inner_join(
                 landscape_analyses::table
                     .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
             )
             .filter(llm_calls::analysis_id.eq(analysis_id))
             .filter(landscape_analyses::user_id.eq(user_id))
+            .into_boxed();
+        if let Some(from) = created_at_from {
+            query = query.filter(llm_calls::created_at.ge(from));
+        }
+        if let Some(to) = created_at_to {
+            query = query.filter(llm_calls::created_at.le(to));
+        }
+        let llm_calls = query
             .select(LlmCall::as_select())
             .order(llm_calls::created_at.desc())
             .load::<Self>(&mut conn)?;
@@ -200,11 +245,17 @@ impl NewLlmCall {
 pub async fn get_llm_calls_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-    Query(pagination): Query<PaginationParams>,
+    Query(filters): Query<LlmCallFiltersQuery>,
 ) -> Result<Json<Vec<LlmCall>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let llm_calls =
-        LlmCall::get_paginated_for_user(user_id, pagination.offset(), pagination.limit(), &pool)?;
+    let llm_calls = LlmCall::get_paginated_for_user_filtered(
+        user_id,
+        filters.pagination.offset(),
+        filters.pagination.limit(),
+        filters.created_at_from,
+        filters.created_at_to,
+        &pool,
+    )?;
     Ok(Json(llm_calls))
 }
 
@@ -213,13 +264,20 @@ pub async fn get_llm_calls_by_analysis_id_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(analysis_id): Path<Uuid>,
+    Query(filters): Query<LlmCallFiltersQuery>,
 ) -> Result<Json<Vec<LlmCall>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
     if analysis.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    let llm_calls = LlmCall::get_by_analysis_id_for_user(analysis_id, user_id, &pool)?;
+    let llm_calls = LlmCall::get_by_analysis_id_for_user_filtered(
+        analysis_id,
+        user_id,
+        filters.created_at_from,
+        filters.created_at_to,
+        &pool,
+    )?;
     Ok(Json(llm_calls))
 }
 #[debug_handler]

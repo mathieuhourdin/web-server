@@ -117,11 +117,40 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
+        Self::find_for_user_filtered(user_id, vec![], vec![], offset, limit, pool)
+    }
+
+    pub fn find_for_user_filtered(
+        user_id: Uuid,
+        interaction_types: Vec<PostInteractionType>,
+        post_types: Vec<PostType>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<Vec<Post>, PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let rows = posts::table
+        let mut query = posts::table
             .filter(posts::user_id.eq(user_id))
+            .into_boxed();
+
+        if !interaction_types.is_empty() {
+            let interaction_type_values = interaction_types
+                .into_iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
+        }
+        if !post_types.is_empty() {
+            let post_type_values = post_types
+                .into_iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            query = query.filter(posts::post_type.eq_any(post_type_values));
+        }
+
+        let rows = query
             .select(select_post_columns())
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
@@ -132,8 +161,8 @@ impl Post {
     }
 
     pub fn find_filtered(
-        interaction_type: Option<PostInteractionType>,
-        post_type: Option<PostType>,
+        interaction_types: Vec<PostInteractionType>,
+        post_types: Vec<PostType>,
         legacy_resource_type: Option<String>,
         _is_external: Option<bool>,
         user_id: Option<Uuid>,
@@ -154,11 +183,24 @@ impl Post {
             .expect("Failed to get a connection from the pool");
 
         let mut query = posts::table.into_boxed();
-        if let Some(interaction_type) = interaction_type {
-            query = query.filter(posts::interaction_type.eq(interaction_type.to_db()));
+        if !interaction_types.is_empty() {
+            let interaction_type_values = interaction_types
+                .into_iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
         }
-        if let Some(post_type) = post_type.or(mapped_post_type) {
-            query = query.filter(posts::post_type.eq(post_type.to_db()));
+        let effective_post_types = if post_types.is_empty() {
+            mapped_post_type.into_iter().collect::<Vec<_>>()
+        } else {
+            post_types
+        };
+        if !effective_post_types.is_empty() {
+            let post_type_values = effective_post_types
+                .into_iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            query = query.filter(posts::post_type.eq_any(post_type_values));
         }
         if let Some(user_id) = user_id {
             query = query.filter(posts::user_id.eq(user_id));

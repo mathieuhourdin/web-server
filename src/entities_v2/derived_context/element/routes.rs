@@ -1,7 +1,9 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path},
+    extract::{Extension, Json, Path, Query},
 };
+use chrono::NaiveDateTime;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -13,12 +15,27 @@ use crate::entities_v2::{
     user::User,
 };
 
-use super::model::{Element, ElementRelationWithRelatedElement};
+use super::model::{Element, ElementRelationWithRelatedElement, ElementStatus};
+
+#[derive(Deserialize)]
+pub struct ElementFiltersQuery {
+    #[serde(default)]
+    pub element_type: Vec<super::model::ElementType>,
+    #[serde(default)]
+    pub element_subtype: Vec<super::model::ElementSubtype>,
+    #[serde(default)]
+    pub status: Vec<ElementStatus>,
+    pub interaction_date_from: Option<NaiveDateTime>,
+    pub interaction_date_to: Option<NaiveDateTime>,
+    pub created_at_from: Option<NaiveDateTime>,
+    pub created_at_to: Option<NaiveDateTime>,
+}
 
 #[debug_handler]
 pub async fn get_elements_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
+    Query(filters): Query<ElementFiltersQuery>,
 ) -> Result<Json<Vec<Element>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let user = User::find(&user_id, &pool)?;
@@ -36,7 +53,18 @@ pub async fn get_elements_route(
     }
 
     let analysis_ids = lens.get_analysis_scope_ids(&pool)?;
-    let elements = Element::find_for_analysis_scope(user_id, analysis_ids, &pool)?;
+    let elements = Element::find_for_analysis_scope_filtered(
+        user_id,
+        analysis_ids,
+        filters.element_type,
+        filters.element_subtype,
+        filters.status,
+        filters.interaction_date_from,
+        filters.interaction_date_to,
+        filters.created_at_from,
+        filters.created_at_to,
+        &pool,
+    )?;
     Ok(Json(elements))
 }
 

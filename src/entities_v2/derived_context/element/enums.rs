@@ -185,3 +185,30 @@ impl ElementSubtype {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ElementStatus {
+    Done,
+    InProgress,
+    Intended,
+}
+
+impl ElementStatus {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            ElementStatus::Done => "DONE",
+            ElementStatus::InProgress => "IN_PROGRESS",
+            ElementStatus::Intended => "INTENDED",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Option<ElementStatus> {
+        match value {
+            "DONE" | "done" => Some(ElementStatus::Done),
+            "IN_PROGRESS" | "in_progress" => Some(ElementStatus::InProgress),
+            "INTENDED" | "intended" => Some(ElementStatus::Intended),
+            _ => None,
+        }
+    }
+}

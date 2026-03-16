@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub use super::enums::{ElementSubtype, ElementType};
+pub use super::enums::{ElementStatus, ElementSubtype, ElementType};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Element {
@@ -13,6 +13,7 @@ pub struct Element {
     pub extended_content: Option<String>,
     pub element_type: ElementType,
     pub element_subtype: ElementSubtype,
+    pub status: Option<ElementStatus>,
     pub verb: String,
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
@@ -37,6 +38,7 @@ pub struct NewElement {
     pub content: String,
     pub element_type: ElementType,
     pub element_subtype: ElementSubtype,
+    pub status: Option<ElementStatus>,
     pub verb: String,
     pub interaction_date: Option<NaiveDateTime>,
     pub user_id: Uuid,
@@ -54,6 +56,7 @@ impl NewElement {
         content: String,
         element_type: ElementType,
         element_subtype: ElementSubtype,
+        status: Option<ElementStatus>,
         verb: String,
         interaction_date: Option<NaiveDateTime>,
         trace_id: Uuid,
@@ -68,6 +71,7 @@ impl NewElement {
             content,
             element_type,
             element_subtype,
+            status,
             verb,
             interaction_date,
             user_id,
