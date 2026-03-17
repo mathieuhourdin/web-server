@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{error::PpdcError, session::Session, shared::MaturingState};
-use crate::pagination::PaginationParams;
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use serde::Deserialize;
 
 use super::model::{NewPost, NewPostDto, Post};
@@ -31,24 +31,26 @@ pub async fn get_posts_route(
     Extension(pool): Extension<DbPool>,
     RawQuery(raw_query): RawQuery,
     Query(filters): Query<PostFiltersQuery>,
-) -> Result<Json<Vec<Post>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let pagination = PaginationParams::from_parts(Some(0), filters.limit).validate()?;
     let interaction_type = crate::pagination::parse_repeated_query_param(
         raw_query.as_deref(),
         "interaction_type",
     )?;
     let post_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
-    let posts = Post::find_filtered(
+    let (posts, total) = Post::find_filtered_paginated(
         interaction_type,
         post_type,
         filters.resource_type,
         filters.is_external,
         filters.user_id,
         filters.maturing_state,
-        filters.limit.unwrap_or(20),
+        pagination.offset,
+        pagination.limit,
         &pool,
     )?;
-    Ok(Json(posts))
+    Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 
 #[debug_handler]
@@ -66,22 +68,23 @@ pub async fn get_user_posts_route(
     Path(user_id): Path<Uuid>,
     RawQuery(raw_query): RawQuery,
     Query(params): Query<UserPostsQuery>,
-) -> Result<Json<Vec<Post>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let pagination = params.pagination.validate()?;
     let interaction_type = crate::pagination::parse_repeated_query_param(
         raw_query.as_deref(),
         "interaction_type",
     )?;
     let post_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
-    let posts = Post::find_for_user_filtered(
+    let (posts, total) = Post::find_for_user_filtered_paginated(
         user_id,
         interaction_type,
         post_type,
-        params.pagination.offset(),
-        params.pagination.limit(),
+        pagination.offset,
+        pagination.limit,
         &pool,
     )?;
-    Ok(Json(posts))
+    Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 
 #[debug_handler]

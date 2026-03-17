@@ -12,6 +12,7 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
 };
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
@@ -20,12 +21,14 @@ use super::model::{Message, MessageProcessingState, MessageType, NewMessage, New
 #[derive(Deserialize)]
 pub struct MessageFiltersQuery {
     pub landscape_analysis_id: Option<Uuid>,
-    pub limit: Option<i64>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 #[derive(Deserialize)]
 pub struct AnalysisMessagesQuery {
-    pub limit: Option<i64>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 #[derive(Serialize)]
@@ -39,15 +42,17 @@ pub async fn get_messages_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Query(filters): Query<MessageFiltersQuery>,
-) -> Result<Json<Vec<Message>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let messages = Message::find_for_participant(
+    let pagination = filters.pagination.validate()?;
+    let (messages, total) = Message::find_for_participant_paginated(
         user_id,
         filters.landscape_analysis_id,
-        filters.limit.unwrap_or(50),
+        pagination.offset,
+        pagination.limit,
         &pool,
     )?;
-    Ok(Json(messages))
+    Ok(Json(PaginatedResponse::new(messages, pagination, total)))
 }
 
 #[debug_handler]
@@ -56,20 +61,22 @@ pub async fn get_analysis_messages_route(
     Extension(session): Extension<Session>,
     Path(analysis_id): Path<Uuid>,
     Query(params): Query<AnalysisMessagesQuery>,
-) -> Result<Json<Vec<Message>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
     if analysis.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
 
-    let messages = Message::find_for_participant(
+    let pagination = params.pagination.validate()?;
+    let (messages, total) = Message::find_for_participant_paginated(
         user_id,
         Some(analysis_id),
-        params.limit.unwrap_or(50),
+        pagination.offset,
+        pagination.limit,
         &pool,
     )?;
-    Ok(Json(messages))
+    Ok(Json(PaginatedResponse::new(messages, pagination, total)))
 }
 
 #[debug_handler]

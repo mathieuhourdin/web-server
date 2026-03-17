@@ -117,7 +117,15 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
-        Self::find_for_user_filtered(user_id, vec![], vec![], offset, limit, pool)
+        let (items, _) = Self::find_for_user_filtered_paginated(
+            user_id,
+            vec![],
+            vec![],
+            offset,
+            limit,
+            pool,
+        )?;
+        Ok(items)
     }
 
     pub fn find_for_user_filtered(
@@ -128,25 +136,57 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
+        let (items, _) = Self::find_for_user_filtered_paginated(
+            user_id,
+            interaction_types,
+            post_types,
+            offset,
+            limit,
+            pool,
+        )?;
+        Ok(items)
+    }
+
+    pub fn find_for_user_filtered_paginated(
+        user_id: Uuid,
+        interaction_types: Vec<PostInteractionType>,
+        post_types: Vec<PostType>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let mut count_query = posts::table
+            .filter(posts::user_id.eq(user_id))
+            .into_boxed();
+        let interaction_type_values = interaction_types
+            .iter()
+            .map(|value| value.to_db())
+            .collect::<Vec<_>>();
+        let post_type_values = post_types
+            .iter()
+            .map(|value| value.to_db())
+            .collect::<Vec<_>>();
+
+        if !interaction_type_values.is_empty() {
+            count_query = count_query.filter(posts::interaction_type.eq_any(interaction_type_values.clone()));
+        }
+        if !post_type_values.is_empty() {
+            count_query = count_query.filter(posts::post_type.eq_any(post_type_values.clone()));
+        }
+
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
         let mut query = posts::table
             .filter(posts::user_id.eq(user_id))
             .into_boxed();
 
-        if !interaction_types.is_empty() {
-            let interaction_type_values = interaction_types
-                .into_iter()
-                .map(|value| value.to_db())
-                .collect::<Vec<_>>();
+        if !interaction_type_values.is_empty() {
             query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
         }
-        if !post_types.is_empty() {
-            let post_type_values = post_types
-                .into_iter()
-                .map(|value| value.to_db())
-                .collect::<Vec<_>>();
+        if !post_type_values.is_empty() {
             query = query.filter(posts::post_type.eq_any(post_type_values));
         }
 
@@ -157,7 +197,7 @@ impl Post {
             .offset(offset)
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_post).collect())
+        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
 
     pub fn find_filtered(
@@ -170,6 +210,32 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
+        let (items, _) = Self::find_filtered_paginated(
+            interaction_types,
+            post_types,
+            legacy_resource_type,
+            _is_external,
+            user_id,
+            maturing_state,
+            0,
+            limit,
+            pool,
+        )?;
+        Ok(items)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_filtered_paginated(
+        interaction_types: Vec<PostInteractionType>,
+        post_types: Vec<PostType>,
+        legacy_resource_type: Option<String>,
+        _is_external: Option<bool>,
+        user_id: Option<Uuid>,
+        maturing_state: Option<MaturingState>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
         let mapped_post_type = legacy_resource_type.as_deref().and_then(|value| {
             if value == "all" {
                 None
@@ -182,24 +248,41 @@ impl Post {
             .get()
             .expect("Failed to get a connection from the pool");
 
-        let mut query = posts::table.into_boxed();
-        if !interaction_types.is_empty() {
-            let interaction_type_values = interaction_types
-                .into_iter()
-                .map(|value| value.to_db())
-                .collect::<Vec<_>>();
-            query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
-        }
+        let mut count_query = posts::table.into_boxed();
         let effective_post_types = if post_types.is_empty() {
             mapped_post_type.into_iter().collect::<Vec<_>>()
         } else {
             post_types
         };
+        let interaction_type_values = interaction_types
+            .iter()
+            .map(|value| value.to_db())
+            .collect::<Vec<_>>();
+        let post_type_values = effective_post_types
+            .iter()
+            .map(|value| value.to_db())
+            .collect::<Vec<_>>();
+        if !interaction_type_values.is_empty() {
+            count_query = count_query.filter(posts::interaction_type.eq_any(interaction_type_values.clone()));
+        }
+        if !post_type_values.is_empty() {
+            count_query = count_query.filter(posts::post_type.eq_any(post_type_values.clone()));
+        }
+        if let Some(user_id) = user_id {
+            count_query = count_query.filter(posts::user_id.eq(user_id));
+        }
+        if let Some(maturing_state) = maturing_state {
+            let maturing_state_code = maturing_state.to_code().to_string();
+            count_query = count_query.filter(posts::maturing_state.eq(maturing_state_code));
+        }
+
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
+        let mut query = posts::table.into_boxed();
+        if !interaction_type_values.is_empty() {
+            query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
+        }
         if !effective_post_types.is_empty() {
-            let post_type_values = effective_post_types
-                .into_iter()
-                .map(|value| value.to_db())
-                .collect::<Vec<_>>();
             query = query.filter(posts::post_type.eq_any(post_type_values));
         }
         if let Some(user_id) = user_id {
@@ -214,9 +297,10 @@ impl Post {
             .select(select_post_columns())
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
-            .limit(limit.max(1))
+            .offset(offset)
+            .limit(limit)
             .load::<PostTuple>(&mut conn)?;
 
-        Ok(rows.into_iter().map(tuple_to_post).collect())
+        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
 }

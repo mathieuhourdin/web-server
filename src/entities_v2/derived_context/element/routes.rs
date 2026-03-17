@@ -7,6 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::entities_v2::landmark::Landmark;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
@@ -19,6 +20,8 @@ use super::model::{Element, ElementRelationWithRelatedElement, ElementStatus};
 
 #[derive(Deserialize)]
 pub struct ElementFiltersQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
     pub interaction_date_from: Option<NaiveDateTime>,
     pub interaction_date_to: Option<NaiveDateTime>,
     pub created_at_from: Option<NaiveDateTime>,
@@ -31,7 +34,7 @@ pub async fn get_elements_route(
     Extension(session): Extension<Session>,
     RawQuery(raw_query): RawQuery,
     Query(filters): Query<ElementFiltersQuery>,
-) -> Result<Json<Vec<Element>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<Element>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let user = User::find(&user_id, &pool)?;
     let current_lens_id = user.current_lens_id.ok_or_else(|| {
@@ -57,9 +60,10 @@ pub async fn get_elements_route(
     )?;
     let status =
         crate::pagination::parse_repeated_query_param::<ElementStatus>(raw_query.as_deref(), "status")?;
+    let pagination = filters.pagination.validate()?;
 
     let analysis_ids = lens.get_analysis_scope_ids(&pool)?;
-    let elements = Element::find_for_analysis_scope_filtered(
+    let (elements, total) = Element::find_for_analysis_scope_filtered_paginated(
         user_id,
         analysis_ids,
         element_type,
@@ -69,9 +73,11 @@ pub async fn get_elements_route(
         filters.interaction_date_to,
         filters.created_at_from,
         filters.created_at_to,
+        pagination.offset,
+        pagination.limit,
         &pool,
     )?;
-    Ok(Json(elements))
+    Ok(Json(PaginatedResponse::new(elements, pagination, total)))
 }
 
 #[debug_handler]

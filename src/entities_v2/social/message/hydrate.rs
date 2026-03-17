@@ -112,9 +112,36 @@ impl Message {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Message>, PpdcError> {
+        let (items, _) =
+            Self::find_for_participant_paginated(user_id, landscape_analysis_id, 0, limit, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_for_participant_paginated(
+        user_id: Uuid,
+        landscape_analysis_id: Option<Uuid>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let mut count_query = messages::table
+            .filter(
+                messages::sender_user_id
+                    .eq(user_id)
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
+            .into_boxed();
+
+        if let Some(landscape_analysis_id) = landscape_analysis_id {
+            count_query =
+                count_query.filter(messages::landscape_analysis_id.eq(Some(landscape_analysis_id)));
+        }
+
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
         let mut query = messages::table
             .filter(
                 messages::sender_user_id
@@ -146,9 +173,10 @@ impl Message {
                 messages::updated_at,
             ))
             .order(messages::created_at.desc())
+            .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_message).collect())
+        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
     }
 
     pub fn find_for_trace_conversation(
@@ -157,9 +185,31 @@ impl Message {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Message>, PpdcError> {
+        let (items, _) =
+            Self::find_for_trace_conversation_paginated(user_id, trace_id, 0, limit, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_for_trace_conversation_paginated(
+        user_id: Uuid,
+        trace_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let total = messages::table
+            .filter(messages::trace_id.eq(Some(trace_id)))
+            .filter(
+                messages::sender_user_id
+                    .eq(user_id)
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
         let rows = messages::table
             .filter(messages::trace_id.eq(Some(trace_id)))
             .filter(
@@ -185,9 +235,10 @@ impl Message {
                 messages::updated_at,
             ))
             .order(messages::created_at.asc())
+            .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_message).collect())
+        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
     }
 
     pub fn find_latest_feedback_for_analysis(

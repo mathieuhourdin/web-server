@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path},
+    extract::{Extension, Json, Path, Query},
 };
 use uuid::Uuid;
 
@@ -10,6 +10,7 @@ use crate::entities_v2::{
     session::Session,
     user::{User, UserSearchResult},
 };
+use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{NewRelationshipDto, Relationship, UpdateRelationshipDto};
 
@@ -30,58 +31,93 @@ fn hydrate_user_results(ids: Vec<Uuid>, pool: &DbPool) -> Result<Vec<UserSearchR
 pub async fn get_relationships_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<Relationship>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Relationship>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationships = Relationship::find_for_user(user_id, &pool)?;
-    Ok(Json(relationships))
+    let pagination = params.validate()?;
+    let (relationships, total) =
+        Relationship::find_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(relationships, pagination, total)))
 }
 
 #[debug_handler]
 pub async fn get_incoming_relationship_requests_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<Relationship>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Relationship>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationships = Relationship::find_incoming_pending_for_user(user_id, &pool)?;
-    Ok(Json(relationships))
+    let pagination = params.validate()?;
+    let (relationships, total) = Relationship::find_incoming_pending_for_user_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(relationships, pagination, total)))
 }
 
 #[debug_handler]
 pub async fn get_outgoing_relationship_requests_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<Relationship>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Relationship>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationships = Relationship::find_outgoing_pending_for_user(user_id, &pool)?;
-    Ok(Json(relationships))
+    let pagination = params.validate()?;
+    let (relationships, total) = Relationship::find_outgoing_pending_for_user_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(relationships, pagination, total)))
 }
 
 #[debug_handler]
 pub async fn get_followers_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<UserSearchResult>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<UserSearchResult>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationships = Relationship::find_followers_for_user(user_id, &pool)?;
+    let pagination = params.validate()?;
+    let (relationships, total) =
+        Relationship::find_followers_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
     let follower_ids = relationships
         .into_iter()
         .map(|relationship| relationship.requester_user_id)
         .collect();
-    Ok(Json(hydrate_user_results(follower_ids, &pool)?))
+    Ok(Json(PaginatedResponse::new(
+        hydrate_user_results(follower_ids, &pool)?,
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]
 pub async fn get_following_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<UserSearchResult>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<UserSearchResult>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationships = Relationship::find_following_for_user(user_id, &pool)?;
+    let pagination = params.validate()?;
+    let (relationships, total) = Relationship::find_following_for_user_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
     let following_ids = relationships
         .into_iter()
         .map(|relationship| relationship.target_user_id)
         .collect();
-    Ok(Json(hydrate_user_results(following_ids, &pool)?))
+    Ok(Json(PaginatedResponse::new(
+        hydrate_user_results(following_ids, &pool)?,
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]

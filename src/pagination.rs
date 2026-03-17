@@ -1,7 +1,10 @@
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::entities_v2::error::{ErrorType, PpdcError};
+
+pub const DEFAULT_LIMIT: i64 = 20;
+pub const MAX_LIMIT: i64 = 100;
 
 pub fn deserialize_one_or_many<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
@@ -78,12 +81,72 @@ pub struct PaginationParams {
     limit: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ValidatedPagination {
+    pub offset: i64,
+    pub limit: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PaginatedResponse<T> {
+    pub items: Vec<T>,
+    pub limit: i64,
+    pub offset: i64,
+    pub total: i64,
+}
+
 impl PaginationParams {
+    pub fn from_parts(offset: Option<i64>, limit: Option<i64>) -> Self {
+        Self { offset, limit }
+    }
+
     pub fn offset(&self) -> i64 {
         self.offset.unwrap_or(0)
     }
 
     pub fn limit(&self) -> i64 {
-        self.limit.unwrap_or(20)
+        self.limit.unwrap_or(DEFAULT_LIMIT)
+    }
+
+    pub fn validate(&self) -> Result<ValidatedPagination, PpdcError> {
+        let offset = self.offset();
+        let limit = self.limit();
+
+        if offset < 0 {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "offset must be greater than or equal to 0".to_string(),
+            ));
+        }
+
+        if limit <= 0 {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "limit must be greater than 0".to_string(),
+            ));
+        }
+
+        if limit > MAX_LIMIT {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("limit must be less than or equal to {}", MAX_LIMIT),
+            ));
+        }
+
+        Ok(ValidatedPagination { offset, limit })
+    }
+}
+
+impl<T> PaginatedResponse<T> {
+    pub fn new(items: Vec<T>, pagination: ValidatedPagination, total: i64) -> Self {
+        Self {
+            items,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            total,
+        }
     }
 }

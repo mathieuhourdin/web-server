@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landscape_analysis::LandscapeAnalysis, session::Session};
-use crate::pagination::PaginationParams;
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::schema::{landscape_analyses, llm_calls};
 use axum::{
     debug_handler,
@@ -77,7 +77,9 @@ impl LlmCall {
         limit: i64,
         db: &DbPool,
     ) -> Result<Vec<Self>, PpdcError> {
-        Self::get_paginated_for_user_filtered(user_id, offset, limit, None, None, db)
+        let (items, _) =
+            Self::get_paginated_for_user_filtered(user_id, offset, limit, None, None, db)?;
+        Ok(items)
     }
 
     pub fn get_paginated_for_user_filtered(
@@ -87,8 +89,22 @@ impl LlmCall {
         created_at_from: Option<NaiveDateTime>,
         created_at_to: Option<NaiveDateTime>,
         db: &DbPool,
-    ) -> Result<Vec<Self>, PpdcError> {
+    ) -> Result<(Vec<Self>, i64), PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut count_query = llm_calls::table
+            .inner_join(
+                landscape_analyses::table
+                    .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
+            )
+            .filter(landscape_analyses::user_id.eq(user_id))
+            .into_boxed();
+        if let Some(from) = created_at_from {
+            count_query = count_query.filter(llm_calls::created_at.ge(from));
+        }
+        if let Some(to) = created_at_to {
+            count_query = count_query.filter(llm_calls::created_at.le(to));
+        }
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
         let mut query = llm_calls::table
             .inner_join(
                 landscape_analyses::table
@@ -108,7 +124,7 @@ impl LlmCall {
             .offset(offset)
             .limit(limit)
             .load::<Self>(&mut conn)?;
-        Ok(llm_calls)
+        Ok((llm_calls, total))
     }
 
     pub fn get_by_id_for_user(id: Uuid, user_id: Uuid, db: &DbPool) -> Result<Self, PpdcError> {
@@ -157,17 +173,36 @@ impl LlmCall {
         user_id: Uuid,
         db: &DbPool,
     ) -> Result<Vec<Self>, PpdcError> {
-        Self::get_by_analysis_id_for_user_filtered(analysis_id, user_id, None, None, db)
+        let (items, _) =
+            Self::get_by_analysis_id_for_user_filtered(analysis_id, user_id, 0, i64::MAX / 4, None, None, db)?;
+        Ok(items)
     }
 
     pub fn get_by_analysis_id_for_user_filtered(
         analysis_id: Uuid,
         user_id: Uuid,
+        offset: i64,
+        limit: i64,
         created_at_from: Option<NaiveDateTime>,
         created_at_to: Option<NaiveDateTime>,
         db: &DbPool,
-    ) -> Result<Vec<Self>, PpdcError> {
+    ) -> Result<(Vec<Self>, i64), PpdcError> {
         let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut count_query = llm_calls::table
+            .inner_join(
+                landscape_analyses::table
+                    .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
+            )
+            .filter(llm_calls::analysis_id.eq(analysis_id))
+            .filter(landscape_analyses::user_id.eq(user_id))
+            .into_boxed();
+        if let Some(from) = created_at_from {
+            count_query = count_query.filter(llm_calls::created_at.ge(from));
+        }
+        if let Some(to) = created_at_to {
+            count_query = count_query.filter(llm_calls::created_at.le(to));
+        }
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
         let mut query = llm_calls::table
             .inner_join(
                 landscape_analyses::table
@@ -185,8 +220,10 @@ impl LlmCall {
         let llm_calls = query
             .select(LlmCall::as_select())
             .order(llm_calls::created_at.desc())
+            .offset(offset)
+            .limit(limit)
             .load::<Self>(&mut conn)?;
-        Ok(llm_calls)
+        Ok((llm_calls, total))
     }
 }
 
@@ -246,17 +283,18 @@ pub async fn get_llm_calls_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Query(filters): Query<LlmCallFiltersQuery>,
-) -> Result<Json<Vec<LlmCall>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<LlmCall>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let llm_calls = LlmCall::get_paginated_for_user_filtered(
+    let pagination = filters.pagination.validate()?;
+    let (llm_calls, total) = LlmCall::get_paginated_for_user_filtered(
         user_id,
-        filters.pagination.offset(),
-        filters.pagination.limit(),
+        pagination.offset,
+        pagination.limit,
         filters.created_at_from,
         filters.created_at_to,
         &pool,
     )?;
-    Ok(Json(llm_calls))
+    Ok(Json(PaginatedResponse::new(llm_calls, pagination, total)))
 }
 
 #[debug_handler]
@@ -265,20 +303,23 @@ pub async fn get_llm_calls_by_analysis_id_route(
     Extension(session): Extension<Session>,
     Path(analysis_id): Path<Uuid>,
     Query(filters): Query<LlmCallFiltersQuery>,
-) -> Result<Json<Vec<LlmCall>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<LlmCall>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
     if analysis.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    let llm_calls = LlmCall::get_by_analysis_id_for_user_filtered(
+    let pagination = filters.pagination.validate()?;
+    let (llm_calls, total) = LlmCall::get_by_analysis_id_for_user_filtered(
         analysis_id,
         user_id,
+        pagination.offset,
+        pagination.limit,
         filters.created_at_from,
         filters.created_at_to,
         &pool,
     )?;
-    Ok(Json(llm_calls))
+    Ok(Json(PaginatedResponse::new(llm_calls, pagination, total)))
 }
 #[debug_handler]
 pub async fn get_llm_call_route(

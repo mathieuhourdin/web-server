@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
@@ -32,7 +33,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct TraceMessagesQuery {
-    pub limit: Option<i64>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 #[derive(Deserialize)]
@@ -407,13 +409,16 @@ pub async fn get_all_traces_for_user_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<Trace>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     if session_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    let traces = Trace::get_all_for_user(user_id, &pool)?;
-    Ok(Json(traces))
+    let pagination = params.validate()?;
+    let (traces, total) =
+        Trace::get_all_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
 #[debug_handler]
@@ -486,7 +491,7 @@ pub async fn get_trace_messages_route(
     Extension(session): Extension<Session>,
     Path(trace_id): Path<Uuid>,
     Query(params): Query<TraceMessagesQuery>,
-) -> Result<Json<Vec<Message>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     if trace.user_id != user_id {
@@ -497,13 +502,15 @@ pub async fn get_trace_messages_route(
         }
     }
 
-    let messages = Message::find_for_trace_conversation(
+    let pagination = params.pagination.validate()?;
+    let (messages, total) = Message::find_for_trace_conversation_paginated(
         user_id,
         trace_id,
-        params.limit.unwrap_or(100),
+        pagination.offset,
+        pagination.limit,
         &pool,
     )?;
-    Ok(Json(messages))
+    Ok(Json(PaginatedResponse::new(messages, pagination, total)))
 }
 
 #[debug_handler]
@@ -672,12 +679,15 @@ pub async fn get_traces_for_journal_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Vec<Trace>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
     if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
-    let traces = Trace::get_all_for_journal(id, &pool)?;
-    Ok(Json(traces))
+    let pagination = params.validate()?;
+    let (traces, total) =
+        Trace::get_all_for_journal_paginated(id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

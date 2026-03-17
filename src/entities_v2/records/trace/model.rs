@@ -342,38 +342,92 @@ impl Trace {
     }
 
     pub fn get_all_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+        let (items, _) = Self::get_all_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn get_all_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Trace>, i64), PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+
+        let total = diesel::sql_query(
+            "SELECT COUNT(*)::bigint AS count
+             FROM traces
+             WHERE user_id = $1"
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .count;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             OFFSET $2
+             LIMIT $3",
         )
         .bind::<SqlUuid, _>(user_id)
+        .bind::<diesel::sql_types::BigInt, _>(offset)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
         .load::<TraceRow>(&mut conn)?;
 
-        Ok(rows.into_iter().map(Trace::from).collect())
+        Ok((rows.into_iter().map(Trace::from).collect(), total))
     }
 
     pub fn get_all_for_journal(journal_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+        let (items, _) = Self::get_all_for_journal_paginated(journal_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn get_all_for_journal_paginated(
+        journal_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Trace>, i64), PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+
+        let total = diesel::sql_query(
+            "SELECT COUNT(*)::bigint AS count
+             FROM traces
+             WHERE journal_id = $1
+               AND status <> 'DRAFT'"
+        )
+        .bind::<SqlUuid, _>(journal_id)
+        .get_result::<CountRow>(&mut conn)?
+        .count;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE journal_id = $1
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
+               AND status <> 'DRAFT'
+             ORDER BY finalized_at DESC NULLS LAST, created_at DESC
+             OFFSET $2
+             LIMIT $3",
         )
         .bind::<SqlUuid, _>(journal_id)
+        .bind::<diesel::sql_types::BigInt, _>(offset)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
         .load::<TraceRow>(&mut conn)?;
 
-        Ok(rows.into_iter().map(Trace::from).collect())
+        Ok((rows.into_iter().map(Trace::from).collect(), total))
     }
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    count: i64,
 }
 
 #[derive(Debug, Clone)]

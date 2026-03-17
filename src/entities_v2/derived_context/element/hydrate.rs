@@ -258,13 +258,85 @@ impl Element {
         created_at_to: Option<NaiveDateTime>,
         pool: &DbPool,
     ) -> Result<Vec<Element>, PpdcError> {
+        let (items, _) = Self::find_for_analysis_scope_filtered_paginated(
+            user_id,
+            analysis_ids,
+            element_types,
+            element_subtypes,
+            statuses,
+            interaction_date_from,
+            interaction_date_to,
+            created_at_from,
+            created_at_to,
+            0,
+            i64::MAX / 4,
+            pool,
+        )?;
+        Ok(items)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_for_analysis_scope_filtered_paginated(
+        user_id: Uuid,
+        analysis_ids: Vec<Uuid>,
+        element_types: Vec<ElementType>,
+        element_subtypes: Vec<ElementSubtype>,
+        statuses: Vec<ElementStatus>,
+        interaction_date_from: Option<NaiveDateTime>,
+        interaction_date_to: Option<NaiveDateTime>,
+        created_at_from: Option<NaiveDateTime>,
+        created_at_to: Option<NaiveDateTime>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Element>, i64), PpdcError> {
         if analysis_ids.is_empty() {
-            return Ok(vec![]);
+            return Ok((vec![], 0));
         }
 
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let mut count_query = elements::table
+            .filter(elements::user_id.eq(user_id))
+            .filter(elements::analysis_id.eq_any(&analysis_ids))
+            .into_boxed();
+        if !element_types.is_empty() {
+            let values = element_types
+                .iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            count_query = count_query.filter(elements::element_type.eq_any(values));
+        }
+        if !element_subtypes.is_empty() {
+            let values = element_subtypes
+                .iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            count_query = count_query.filter(elements::element_subtype.eq_any(values));
+        }
+        if !statuses.is_empty() {
+            let values = statuses
+                .iter()
+                .map(|value| value.to_db())
+                .collect::<Vec<_>>();
+            count_query = count_query.filter(elements::status.eq_any(values));
+        }
+        if let Some(from) = interaction_date_from {
+            count_query = count_query.filter(elements::interaction_date.ge(Some(from)));
+        }
+        if let Some(to) = interaction_date_to {
+            count_query = count_query.filter(elements::interaction_date.le(Some(to)));
+        }
+        if let Some(from) = created_at_from {
+            count_query = count_query.filter(elements::created_at.ge(from));
+        }
+        if let Some(to) = created_at_to {
+            count_query = count_query.filter(elements::created_at.le(to));
+        }
+
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
         let mut query = elements::table
             .filter(elements::user_id.eq(user_id))
             .filter(elements::analysis_id.eq_any(analysis_ids))
@@ -306,8 +378,10 @@ impl Element {
         let rows = query
             .select(select_element_columns())
             .order(elements::interaction_date.desc())
+            .offset(offset)
+            .limit(limit)
             .load::<ElementTuple>(&mut conn)?;
-        load_elements_from_query(rows, pool)
+        Ok((load_elements_from_query(rows, pool)?, total))
     }
 
     pub fn find_related_elements(

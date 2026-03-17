@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Multipart, Path},
+    extract::{Extension, Json, Multipart, Path, Query},
 };
 use chrono::Utc;
 use serde_json::json;
@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal_grant::JournalGrant,
@@ -18,7 +19,7 @@ use crate::entities_v2::{
 };
 
 use super::model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalStatus,
+    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse,
     NewJournalDto, UpdateJournalDto,
 };
 
@@ -27,27 +28,35 @@ pub async fn get_user_journals_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<Vec<Journal>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Journal>>, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     if session_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    let journals = Journal::find_for_user(user_id, &pool)?;
-    Ok(Json(journals))
+    let pagination = params.validate()?;
+    let (journals, total) =
+        Journal::find_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
 #[debug_handler]
 pub async fn get_shared_journals_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<Journal>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Journal>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.validate()?;
     let shared_ids = JournalGrant::find_shared_journal_ids_for_user(user_id, &pool)?;
-    let journals = Journal::find_many(shared_ids, &pool)?
-        .into_iter()
-        .filter(|journal| !journal.is_encrypted && journal.status != JournalStatus::Archived)
-        .collect::<Vec<_>>();
-    Ok(Json(journals))
+    let (journals, total) = Journal::find_many_paginated(
+        shared_ids,
+        pagination.offset,
+        pagination.limit,
+        true,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
 #[debug_handler]

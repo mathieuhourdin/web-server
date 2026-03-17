@@ -110,12 +110,28 @@ impl JournalGrant {
         journal_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<JournalGrant>, PpdcError> {
+        let (items, _) = Self::find_for_journal_paginated(journal_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_for_journal_paginated(
+        journal_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<JournalGrant>, i64), PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let total = journal_grants::table
+            .filter(journal_grants::journal_id.eq(journal_id))
+            .count()
+            .get_result::<i64>(&mut conn)?;
         let rows = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .select(select_journal_grant_columns())
             .order(journal_grants::updated_at.desc())
+            .offset(offset)
+            .limit(limit)
             .load::<JournalGrantTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_journal_grant).collect())
+        Ok((rows.into_iter().map(tuple_to_journal_grant).collect(), total))
     }
 }

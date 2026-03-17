@@ -103,7 +103,25 @@ impl Relationship {
     }
 
     pub fn find_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Relationship>, PpdcError> {
+        let (items, _) = Self::find_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let total = relationships::table
+            .filter(
+                relationships::requester_user_id
+                    .eq(user_id)
+                    .or(relationships::target_user_id.eq(user_id)),
+            )
+            .count()
+            .get_result::<i64>(&mut conn)?;
         let rows = relationships::table
             .filter(
                 relationships::requester_user_id
@@ -112,43 +130,97 @@ impl Relationship {
             )
             .select(select_relationship_columns())
             .order(relationships::updated_at.desc())
+            .offset(offset)
+            .limit(limit)
             .load::<RelationshipTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_relationship).collect())
+        Ok((rows.into_iter().map(tuple_to_relationship).collect(), total))
     }
 
     pub fn find_incoming_pending_for_user(
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Relationship>, PpdcError> {
+        let (items, _) =
+            Self::find_incoming_pending_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_incoming_pending_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let total = relationships::table
+            .filter(relationships::target_user_id.eq(user_id))
+            .filter(relationships::status.eq(RelationshipStatus::Pending.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
         let rows = relationships::table
             .filter(relationships::target_user_id.eq(user_id))
             .filter(relationships::status.eq(RelationshipStatus::Pending.to_db()))
             .select(select_relationship_columns())
             .order(relationships::updated_at.desc())
+            .offset(offset)
+            .limit(limit)
             .load::<RelationshipTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_relationship).collect())
+        Ok((rows.into_iter().map(tuple_to_relationship).collect(), total))
     }
 
     pub fn find_outgoing_pending_for_user(
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Relationship>, PpdcError> {
+        let (items, _) =
+            Self::find_outgoing_pending_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_outgoing_pending_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let total = relationships::table
+            .filter(relationships::requester_user_id.eq(user_id))
+            .filter(relationships::status.eq(RelationshipStatus::Pending.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
         let rows = relationships::table
             .filter(relationships::requester_user_id.eq(user_id))
             .filter(relationships::status.eq(RelationshipStatus::Pending.to_db()))
             .select(select_relationship_columns())
             .order(relationships::updated_at.desc())
+            .offset(offset)
+            .limit(limit)
             .load::<RelationshipTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_relationship).collect())
+        Ok((rows.into_iter().map(tuple_to_relationship).collect(), total))
     }
 
     pub fn find_followers_for_user(
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Relationship>, PpdcError> {
+        let (items, _) = Self::find_followers_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_followers_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let total = relationships::table
+            .filter(relationships::target_user_id.eq(user_id))
+            .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
+            .filter(relationships::status.eq(RelationshipStatus::Accepted.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
         let rows = relationships::table
             .filter(relationships::target_user_id.eq(user_id))
             .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
@@ -158,15 +230,33 @@ impl Relationship {
                 relationships::accepted_at.desc().nulls_last(),
                 relationships::updated_at.desc(),
             ))
+            .offset(offset)
+            .limit(limit)
             .load::<RelationshipTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_relationship).collect())
+        Ok((rows.into_iter().map(tuple_to_relationship).collect(), total))
     }
 
     pub fn find_following_for_user(
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Relationship>, PpdcError> {
+        let (items, _) = Self::find_following_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_following_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let total = relationships::table
+            .filter(relationships::requester_user_id.eq(user_id))
+            .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
+            .filter(relationships::status.eq(RelationshipStatus::Accepted.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
         let rows = relationships::table
             .filter(relationships::requester_user_id.eq(user_id))
             .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
@@ -176,8 +266,10 @@ impl Relationship {
                 relationships::accepted_at.desc().nulls_last(),
                 relationships::updated_at.desc(),
             ))
+            .offset(offset)
+            .limit(limit)
             .load::<RelationshipTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_relationship).collect())
+        Ok((rows.into_iter().map(tuple_to_relationship).collect(), total))
     }
 
     pub fn find_between(
