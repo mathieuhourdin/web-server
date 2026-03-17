@@ -32,6 +32,8 @@ pub struct NewAnalysisDto {
 #[derive(Deserialize)]
 pub struct LandmarksQuery {
     pub kind: Option<String>,
+    pub order_by: Option<String>,
+    pub order: Option<String>,
 }
 
 impl LandmarksQuery {
@@ -45,6 +47,79 @@ impl LandmarksQuery {
                 ErrorType::ApiError,
                 format!("Invalid landmarks kind: {}", other),
             )),
+        }
+    }
+
+    fn sort(&self) -> Result<(LandmarkOrderBy, SortOrder), PpdcError> {
+        let order_by = match self.order_by.as_deref() {
+            None | Some("related_elements_count") => LandmarkOrderBy::RelatedElementsCount,
+            Some("last_related_element_at") => LandmarkOrderBy::LastRelatedElementAt,
+            Some("created_at") => LandmarkOrderBy::CreatedAt,
+            Some(other) => {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    format!("Invalid landmarks order_by: {}", other),
+                ))
+            }
+        };
+
+        let order = match self.order.as_deref() {
+            None | Some("desc") => SortOrder::Desc,
+            Some("asc") => SortOrder::Asc,
+            Some(other) => {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    format!("Invalid landmarks order: {}", other),
+                ))
+            }
+        };
+
+        Ok((order_by, order))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LandmarkOrderBy {
+    RelatedElementsCount,
+    LastRelatedElementAt,
+    CreatedAt,
+}
+
+#[derive(Clone, Copy)]
+enum SortOrder {
+    Asc,
+    Desc,
+}
+
+fn sort_landmarks(landmarks: &mut [Landmark], order_by: LandmarkOrderBy, order: SortOrder) {
+    match (order_by, order) {
+        (LandmarkOrderBy::RelatedElementsCount, SortOrder::Desc) => landmarks.sort_by(|a, b| {
+            b.related_elements_count
+                .cmp(&a.related_elements_count)
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        (LandmarkOrderBy::RelatedElementsCount, SortOrder::Asc) => landmarks.sort_by(|a, b| {
+            a.related_elements_count
+                .cmp(&b.related_elements_count)
+                .then_with(|| a.created_at.cmp(&b.created_at))
+        }),
+        (LandmarkOrderBy::LastRelatedElementAt, SortOrder::Desc) => landmarks.sort_by(|a, b| {
+            b.last_related_element_at
+                .cmp(&a.last_related_element_at)
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        (LandmarkOrderBy::LastRelatedElementAt, SortOrder::Asc) => landmarks.sort_by(|a, b| {
+            a.last_related_element_at
+                .cmp(&b.last_related_element_at)
+                .then_with(|| a.created_at.cmp(&b.created_at))
+        }),
+        (LandmarkOrderBy::CreatedAt, SortOrder::Desc) => {
+            landmarks.sort_by(|a, b| b.created_at.cmp(&a.created_at))
+        }
+        (LandmarkOrderBy::CreatedAt, SortOrder::Asc) => {
+            landmarks.sort_by(|a, b| a.created_at.cmp(&b.created_at))
         }
     }
 }
@@ -135,7 +210,9 @@ pub async fn get_landmarks_route(
         return Err(PpdcError::unauthorized());
     }
     let relation_type = params.relation_type()?;
-    let landmarks = landscape.get_landmarks(relation_type, &pool)?;
+    let (order_by, order) = params.sort()?;
+    let mut landmarks = landscape.get_landmarks(relation_type, &pool)?;
+    sort_landmarks(&mut landmarks, order_by, order);
     Ok(Json(landmarks))
 }
 
