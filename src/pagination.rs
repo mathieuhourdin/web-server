@@ -24,6 +24,27 @@ where
     }
 }
 
+pub fn deserialize_optional_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IntValue {
+        Int(i64),
+        String(String),
+    }
+
+    let value = Option::<IntValue>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(IntValue::Int(value)) => Ok(Some(value)),
+        Some(IntValue::String(value)) => value.parse::<i64>().map(Some).map_err(|error| {
+            serde::de::Error::custom(format!("invalid integer value '{}': {}", value, error))
+        }),
+    }
+}
+
 pub fn parse_repeated_query_param<T>(raw_query: Option<&str>, key: &str) -> Result<Vec<T>, PpdcError>
 where
     T: for<'de> Deserialize<'de>,
@@ -77,7 +98,9 @@ where
 
 #[derive(Debug, Deserialize)]
 pub struct PaginationParams {
+    #[serde(default, deserialize_with = "deserialize_optional_i64")]
     offset: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_optional_i64")]
     limit: Option<i64>,
 }
 

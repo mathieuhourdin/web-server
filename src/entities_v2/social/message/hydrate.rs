@@ -234,7 +234,7 @@ impl Message {
                 messages::created_at,
                 messages::updated_at,
             ))
-            .order(messages::created_at.asc())
+            .order(messages::created_at.desc())
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;

@@ -83,7 +83,7 @@ impl Lens {
         let rows = lenses::table
             .filter(lenses::user_id.eq(user_id))
             .select(select_lens_columns())
-            .order(lenses::created_at.desc())
+            .order(lenses::updated_at.desc())
             .load::<LensTuple>(&mut conn)?;
         Ok(rows.into_iter().map(tuple_to_lens).collect())
     }

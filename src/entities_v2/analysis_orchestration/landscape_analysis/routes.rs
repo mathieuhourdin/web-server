@@ -191,7 +191,7 @@ pub async fn get_analysis_traces_route(
         .into_iter()
         .filter_map(|trace_id| Trace::find_full_trace(trace_id, &pool).ok())
         .collect::<Vec<_>>();
-    traces.sort_by_key(|trace| (trace.interaction_date, trace.id));
+    traces.sort_by_key(|trace| Reverse((trace.interaction_date, trace.created_at, trace.id)));
     Ok(Json(traces))
 }
 
@@ -224,7 +224,7 @@ pub async fn get_analysis_trace_mirrors_route(
             TraceMirror::find_full_trace_mirror(trace_mirror_id, &pool).ok()
         })
         .collect::<Vec<_>>();
-    trace_mirrors.sort_by_key(|trace_mirror| trace_mirror.created_at);
+    trace_mirrors.sort_by_key(|trace_mirror| Reverse(trace_mirror.created_at));
     Ok(Json(trace_mirrors))
 }
 

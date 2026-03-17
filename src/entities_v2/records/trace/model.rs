@@ -411,7 +411,7 @@ impl Trace {
              FROM traces
              WHERE journal_id = $1
                AND status <> 'DRAFT'
-             ORDER BY finalized_at DESC NULLS LAST, created_at DESC
+             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
              OFFSET $2
              LIMIT $3",
         )

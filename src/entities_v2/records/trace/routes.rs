@@ -444,7 +444,7 @@ pub async fn get_trace_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(trace_id): Path<Uuid>,
-) -> Result<Json<LandscapeAnalysis>, PpdcError> {
+) -> Result<Json<Option<LandscapeAnalysis>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     if trace.user_id != user_id {
@@ -475,14 +475,7 @@ pub async fn get_trace_analysis_route(
     analyses
         .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
 
-    let analysis = analyses.into_iter().next().ok_or_else(|| {
-        PpdcError::new(
-            404,
-            ErrorType::ApiError,
-            "No analysis found for trace in current lens scope".to_string(),
-        )
-    })?;
-    Ok(Json(analysis))
+    Ok(Json(analyses.into_iter().next()))
 }
 
 #[debug_handler]
