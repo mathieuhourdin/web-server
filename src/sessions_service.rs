@@ -8,7 +8,7 @@ use axum::{
     body::Body,
     debug_handler,
     extract::{Extension, Json},
-    http::{Request, StatusCode as AxumStatusCode},
+    http::{HeaderMap, Request, StatusCode as AxumStatusCode},
     middleware::Next,
     response::IntoResponse,
 };
@@ -44,6 +44,7 @@ pub async fn auth_middleware_custom(
 pub async fn post_session_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
+    headers: HeaderMap,
     Json(payload): Json<LoginCheck>,
 ) -> Result<Json<Session>, PpdcError> {
     let existing_user = User::find_by_username(&payload.username, &pool)?;
@@ -58,6 +59,15 @@ pub async fn post_session_route(
     let is_valid_password = existing_user.verify_password(&payload.password.as_bytes())?;
 
     if is_valid_password {
+        if session.user_id == Some(existing_user.id) {
+            let mut session = session;
+            session.token = headers
+                .get("Authorization")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            return Ok(Json(session));
+        }
+
         if session.user_id.is_some() {
             let _ = Session::revoke(session.id, &pool);
         }
