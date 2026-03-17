@@ -305,7 +305,7 @@ impl Element {
 
         let rows = query
             .select(select_element_columns())
-            .order(elements::created_at.asc())
+            .order(elements::interaction_date.desc())
             .load::<ElementTuple>(&mut conn)?;
         load_elements_from_query(rows, pool)
     }
