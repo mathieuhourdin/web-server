@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path},
+    extract::{Extension, Json, Path, RawQuery},
 };
 use serde::Serialize;
 use std::cmp::Reverse;
@@ -129,6 +129,7 @@ pub async fn get_lens_analysis_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Json<Vec<LandscapeAnalysis>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let lens = Lens::find_full_lens(id, &pool)?;
@@ -140,10 +141,18 @@ pub async fn get_lens_analysis_route(
         ));
     }
 
+    let landscape_analysis_type = crate::pagination::parse_repeated_query_param::<
+        LandscapeAnalysisType,
+    >(raw_query.as_deref(), "landscape_analysis_type")?;
+
     let mut analyses = lens
         .get_analysis_scope(&pool)?
         .into_iter()
-        .filter(|analysis| analysis.processing_state == LandscapeProcessingState::Completed)
+        .filter(|analysis| {
+            analysis.processing_state == LandscapeProcessingState::Completed
+                && (landscape_analysis_type.is_empty()
+                    || landscape_analysis_type.contains(&analysis.landscape_analysis_type))
+        })
         .collect::<Vec<_>>();
     analyses
         .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));

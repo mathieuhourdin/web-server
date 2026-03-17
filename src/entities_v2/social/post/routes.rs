@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::{Extension, Json, Path, Query, RawQuery},
 };
 use uuid::Uuid;
 
@@ -9,14 +9,10 @@ use crate::entities_v2::{error::PpdcError, session::Session, shared::MaturingSta
 use crate::pagination::PaginationParams;
 use serde::Deserialize;
 
-use super::model::{NewPost, NewPostDto, Post, PostInteractionType, PostType};
+use super::model::{NewPost, NewPostDto, Post};
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
-    #[serde(default)]
-    pub interaction_type: Vec<PostInteractionType>,
-    #[serde(default)]
-    pub post_type: Vec<PostType>,
     pub is_external: Option<bool>,
     pub resource_type: Option<String>, // Legacy fallback mapped to post_type
     pub user_id: Option<Uuid>,
@@ -28,20 +24,23 @@ pub struct PostFiltersQuery {
 pub struct UserPostsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
-    #[serde(default)]
-    pub interaction_type: Vec<PostInteractionType>,
-    #[serde(default)]
-    pub post_type: Vec<PostType>,
 }
 
 #[debug_handler]
 pub async fn get_posts_route(
     Extension(pool): Extension<DbPool>,
+    RawQuery(raw_query): RawQuery,
     Query(filters): Query<PostFiltersQuery>,
 ) -> Result<Json<Vec<Post>>, PpdcError> {
+    let interaction_type = crate::pagination::parse_repeated_query_param(
+        raw_query.as_deref(),
+        "interaction_type",
+    )?;
+    let post_type =
+        crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
     let posts = Post::find_filtered(
-        filters.interaction_type,
-        filters.post_type,
+        interaction_type,
+        post_type,
         filters.resource_type,
         filters.is_external,
         filters.user_id,
@@ -65,12 +64,19 @@ pub async fn get_post_route(
 pub async fn get_user_posts_route(
     Extension(pool): Extension<DbPool>,
     Path(user_id): Path<Uuid>,
+    RawQuery(raw_query): RawQuery,
     Query(params): Query<UserPostsQuery>,
 ) -> Result<Json<Vec<Post>>, PpdcError> {
+    let interaction_type = crate::pagination::parse_repeated_query_param(
+        raw_query.as_deref(),
+        "interaction_type",
+    )?;
+    let post_type =
+        crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
     let posts = Post::find_for_user_filtered(
         user_id,
-        params.interaction_type,
-        params.post_type,
+        interaction_type,
+        post_type,
         params.pagination.offset(),
         params.pagination.limit(),
         &pool,

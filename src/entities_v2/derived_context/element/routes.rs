@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::{Extension, Json, Path, Query, RawQuery},
 };
 use chrono::NaiveDateTime;
 use serde::Deserialize;
@@ -19,12 +19,6 @@ use super::model::{Element, ElementRelationWithRelatedElement, ElementStatus};
 
 #[derive(Deserialize)]
 pub struct ElementFiltersQuery {
-    #[serde(default)]
-    pub element_type: Vec<super::model::ElementType>,
-    #[serde(default)]
-    pub element_subtype: Vec<super::model::ElementSubtype>,
-    #[serde(default)]
-    pub status: Vec<ElementStatus>,
     pub interaction_date_from: Option<NaiveDateTime>,
     pub interaction_date_to: Option<NaiveDateTime>,
     pub created_at_from: Option<NaiveDateTime>,
@@ -35,6 +29,7 @@ pub struct ElementFiltersQuery {
 pub async fn get_elements_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
+    RawQuery(raw_query): RawQuery,
     Query(filters): Query<ElementFiltersQuery>,
 ) -> Result<Json<Vec<Element>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
@@ -52,13 +47,24 @@ pub async fn get_elements_route(
         return Err(PpdcError::unauthorized());
     }
 
+    let element_type = crate::pagination::parse_repeated_query_param(
+        raw_query.as_deref(),
+        "element_type",
+    )?;
+    let element_subtype = crate::pagination::parse_repeated_query_param(
+        raw_query.as_deref(),
+        "element_subtype",
+    )?;
+    let status =
+        crate::pagination::parse_repeated_query_param::<ElementStatus>(raw_query.as_deref(), "status")?;
+
     let analysis_ids = lens.get_analysis_scope_ids(&pool)?;
     let elements = Element::find_for_analysis_scope_filtered(
         user_id,
         analysis_ids,
-        filters.element_type,
-        filters.element_subtype,
-        filters.status,
+        element_type,
+        element_subtype,
+        status,
         filters.interaction_date_from,
         filters.interaction_date_to,
         filters.created_at_from,

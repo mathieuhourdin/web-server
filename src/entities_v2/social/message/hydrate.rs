@@ -189,4 +189,41 @@ impl Message {
             .load::<MessageTuple>(&mut conn)?;
         Ok(rows.into_iter().map(tuple_to_message).collect())
     }
+
+    pub fn find_latest_feedback_for_analysis(
+        analysis_id: Uuid,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Message>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let row = messages::table
+            .filter(messages::landscape_analysis_id.eq(Some(analysis_id)))
+            .filter(messages::recipient_user_id.eq(user_id))
+            .filter(messages::sender_user_id.ne(user_id))
+            .filter(messages::message_type.eq(MessageType::MentorFeedback.to_db()))
+            .filter(messages::content.ne(""))
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .order(messages::created_at.desc())
+            .first::<MessageTuple>(&mut conn)
+            .optional()?;
+        Ok(row.map(tuple_to_message))
+    }
 }

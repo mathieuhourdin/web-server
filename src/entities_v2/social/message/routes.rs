@@ -73,6 +73,22 @@ pub async fn get_analysis_messages_route(
 }
 
 #[debug_handler]
+pub async fn get_analysis_feedback_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(analysis_id): Path<Uuid>,
+) -> Result<Json<Option<Message>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, &pool)?;
+    if analysis.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let feedback = Message::find_latest_feedback_for_analysis(analysis_id, user_id, &pool)?;
+    Ok(Json(feedback))
+}
+
+#[debug_handler]
 pub async fn get_message_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
