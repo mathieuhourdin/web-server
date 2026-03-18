@@ -313,8 +313,7 @@ impl<'de> Deserialize<'de> for UserPrincipalType {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        UserPrincipalType::from_db(&value)
-            .map_err(|_| de::Error::custom("unknown principal_type"))
+        UserPrincipalType::from_db(&value).map_err(|_| de::Error::custom("unknown principal_type"))
     }
 }
 
@@ -436,11 +435,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             timezone: user.timezone.clone(),
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
-            display_name: if user.pseudonymized {
-                user.pseudonym.clone()
-            } else {
-                user.first_name.clone() + " " + user.last_name.as_str()
-            },
+            display_name: user.display_name(),
         }
     }
 }
@@ -487,11 +482,7 @@ impl From<&User> for UserPseudonymizedResponse {
             timezone: user.timezone.clone(),
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
-            display_name: if user.pseudonymized {
-                user.pseudonym.clone()
-            } else {
-                user.first_name.clone() + " " + user.last_name.as_str()
-            },
+            display_name: user.display_name(),
         }
     }
 }
@@ -533,8 +524,8 @@ pub struct UserSearchResult {
 
 impl From<UserSearchRow> for UserSearchResult {
     fn from(row: UserSearchRow) -> Self {
-        let principal_type = UserPrincipalType::from_db(&row.principal_type)
-            .unwrap_or(UserPrincipalType::Human);
+        let principal_type =
+            UserPrincipalType::from_db(&row.principal_type).unwrap_or(UserPrincipalType::Human);
         let display_name = if row.pseudonymized {
             row.pseudonym
         } else {
@@ -1475,6 +1466,34 @@ pub async fn get_user_route(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+
+    fn build_test_user(pseudonymized: bool) -> User {
+        User {
+            id: Uuid::new_v4(),
+            email: "test@example.com".to_string(),
+            principal_type: UserPrincipalType::Human,
+            mentor_id: None,
+            first_name: "Ada".to_string(),
+            last_name: "Lovelace".to_string(),
+            handle: "@ada".to_string(),
+            password: "hashed-password".to_string(),
+            created_at: Utc::now().naive_utc(),
+            updated_at: None,
+            profile_picture_url: None,
+            is_platform_user: false,
+            biography: None,
+            pseudonym: "Analytical Poet".to_string(),
+            pseudonymized,
+            high_level_projects_definition: None,
+            journal_theme: JournalTheme::Classic,
+            current_lens_id: None,
+            week_analysis_weekday: WeekAnalysisWeekday::Monday,
+            timezone: "Europe/Monaco".to_string(),
+            context_anchor_at: None,
+            welcome_message: None,
+        }
+    }
 
     #[test]
     fn test_hash_password() {
@@ -1501,6 +1520,42 @@ mod tests {
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));
+    }
+
+    #[test]
+    fn test_user_pseudonymized_response_uses_real_name_as_display_name() {
+        let user = build_test_user(false);
+
+        let response = UserPseudonymizedResponse::from(&user);
+
+        assert_eq!(response.display_name, "Ada Lovelace");
+    }
+
+    #[test]
+    fn test_user_pseudonymized_response_uses_pseudonym_as_display_name() {
+        let user = build_test_user(true);
+
+        let response = UserPseudonymizedResponse::from(&user);
+
+        assert_eq!(response.display_name, "Analytical Poet");
+    }
+
+    #[test]
+    fn test_user_pseudonymized_authenticated_response_uses_real_name_as_display_name() {
+        let user = build_test_user(false);
+
+        let response = UserPseudonymizedAuthentifiedResponse::from(&user);
+
+        assert_eq!(response.display_name, "Ada Lovelace");
+    }
+
+    #[test]
+    fn test_user_pseudonymized_authenticated_response_uses_pseudonym_as_display_name() {
+        let user = build_test_user(true);
+
+        let response = UserPseudonymizedAuthentifiedResponse::from(&user);
+
+        assert_eq!(response.display_name, "Analytical Poet");
     }
 
     #[test]

@@ -124,16 +124,44 @@ impl Message {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
+        Self::find_for_participant_filtered_paginated(
+            user_id,
+            landscape_analysis_id,
+            false,
+            false,
+            offset,
+            limit,
+            pool,
+        )
+    }
+
+    pub fn find_for_participant_filtered_paginated(
+        user_id: Uuid,
+        landscape_analysis_id: Option<Uuid>,
+        received_only: bool,
+        unread_only: bool,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let mut count_query = messages::table
-            .filter(
+        let mut count_query = messages::table.into_boxed();
+
+        if received_only || unread_only {
+            count_query = count_query.filter(messages::recipient_user_id.eq(user_id));
+        } else {
+            count_query = count_query.filter(
                 messages::sender_user_id
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
-            )
-            .into_boxed();
+            );
+        }
+
+        if unread_only {
+            count_query = count_query.filter(messages::seen_at.is_null());
+        }
 
         if let Some(landscape_analysis_id) = landscape_analysis_id {
             count_query =
@@ -142,13 +170,21 @@ impl Message {
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let mut query = messages::table
-            .filter(
+        let mut query = messages::table.into_boxed();
+
+        if received_only || unread_only {
+            query = query.filter(messages::recipient_user_id.eq(user_id));
+        } else {
+            query = query.filter(
                 messages::sender_user_id
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
-            )
-            .into_boxed();
+            );
+        }
+
+        if unread_only {
+            query = query.filter(messages::seen_at.is_null());
+        }
 
         if let Some(landscape_analysis_id) = landscape_analysis_id {
             query = query.filter(messages::landscape_analysis_id.eq(Some(landscape_analysis_id)));

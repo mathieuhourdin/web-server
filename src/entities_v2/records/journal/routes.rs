@@ -8,7 +8,6 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal_grant::JournalGrant,
@@ -17,10 +16,11 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
 };
+use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse,
-    NewJournalDto, UpdateJournalDto,
+    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, NewJournalDto,
+    UpdateJournalDto,
 };
 
 #[debug_handler]
@@ -49,13 +49,8 @@ pub async fn get_shared_journals_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.validate()?;
     let shared_ids = JournalGrant::find_shared_journal_ids_for_user(user_id, &pool)?;
-    let (journals, total) = Journal::find_many_paginated(
-        shared_ids,
-        pagination.offset,
-        pagination.limit,
-        true,
-        &pool,
-    )?;
+    let (journals, total) =
+        Journal::find_many_paginated(shared_ids, pagination.offset, pagination.limit, true, &pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
@@ -204,7 +199,8 @@ pub async fn post_journal_export_route(
         let mut seen = HashSet::new();
         let mut collected = Vec::new();
         for trace in &traces {
-            let trace_messages = Message::find_for_trace_conversation(user_id, trace.id, 500, &pool)?;
+            let trace_messages =
+                Message::find_for_trace_conversation(user_id, trace.id, 500, &pool)?;
             for message in trace_messages {
                 if seen.insert(message.id) {
                     collected.push(message);

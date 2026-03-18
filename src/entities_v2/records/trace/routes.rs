@@ -8,7 +8,6 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
@@ -23,6 +22,7 @@ use crate::entities_v2::{
     session::Session,
     user::{User, UserPrincipalType},
 };
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::{
@@ -266,7 +266,8 @@ pub async fn put_trace_route(
                             ));
                         }
                         if !trace.is_encrypted {
-                            let qualified = llm_qualify::qualify_trace(trace.content.as_str()).await?;
+                            let qualified =
+                                llm_qualify::qualify_trace(trace.content.as_str()).await?;
                             trace.title = qualified.title;
                             trace.subtitle = qualified.subtitle;
                             if !has_explicit_interaction_date {
@@ -292,8 +293,7 @@ pub async fn put_trace_route(
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content or interaction_date once trace is finalized"
-                        .to_string(),
+                    "Cannot update content or interaction_date once trace is finalized".to_string(),
                 ));
             }
 
@@ -316,8 +316,7 @@ pub async fn put_trace_route(
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content or interaction_date once trace is archived"
-                        .to_string(),
+                    "Cannot update content or interaction_date once trace is archived".to_string(),
                 ));
             }
 
@@ -536,7 +535,10 @@ pub async fn post_trace_message_route(
         }
     });
 
-    if matches!(message_type, MessageType::Question | MessageType::TarotReadingRequest) {
+    if matches!(
+        message_type,
+        MessageType::Question | MessageType::TarotReadingRequest
+    ) {
         if !sender_is_owner {
             return Err(PpdcError::new(
                 401,

@@ -23,8 +23,12 @@ pub async fn get_journal_grants_route(
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.validate()?;
-    let (grants, total) =
-        JournalGrant::find_for_journal_paginated(journal_id, pagination.offset, pagination.limit, &pool)?;
+    let (grants, total) = JournalGrant::find_for_journal_paginated(
+        journal_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(grants, pagination, total)))
 }
 

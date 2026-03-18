@@ -7,7 +7,6 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::entities_v2::landmark::Landmark;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
@@ -15,6 +14,7 @@ use crate::entities_v2::{
     session::Session,
     user::User,
 };
+use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{Element, ElementRelationWithRelatedElement, ElementStatus};
 
@@ -50,16 +50,14 @@ pub async fn get_elements_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let element_type = crate::pagination::parse_repeated_query_param(
+    let element_type =
+        crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "element_type")?;
+    let element_subtype =
+        crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "element_subtype")?;
+    let status = crate::pagination::parse_repeated_query_param::<ElementStatus>(
         raw_query.as_deref(),
-        "element_type",
+        "status",
     )?;
-    let element_subtype = crate::pagination::parse_repeated_query_param(
-        raw_query.as_deref(),
-        "element_subtype",
-    )?;
-    let status =
-        crate::pagination::parse_repeated_query_param::<ElementStatus>(raw_query.as_deref(), "status")?;
     let pagination = filters.pagination.validate()?;
 
     let analysis_ids = lens.get_analysis_scope_ids(&pool)?;

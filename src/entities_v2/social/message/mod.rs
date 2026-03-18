@@ -11,5 +11,5 @@ pub use attachment::{
 pub use model::{Message, MessageProcessingState, MessageType, NewMessage, NewMessageDto};
 pub use routes::{
     get_analysis_feedback_route, get_analysis_messages_route, get_message_route,
-    get_messages_route, post_message_route, put_message_route,
+    get_messages_route, patch_message_seen_route, post_message_route, put_message_route,
 };

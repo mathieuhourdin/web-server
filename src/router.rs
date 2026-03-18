@@ -2,7 +2,7 @@ use axum::{
     http::{Method, StatusCode},
     middleware::from_fn,
     response::IntoResponse,
-    routing::{delete, get, post, put, Router},
+    routing::{delete, get, patch, post, put, Router},
 };
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use tower_http::{
@@ -13,8 +13,8 @@ use tower_http::{
 use crate::entities_v2::{
     analysis_summary, element,
     error::{ErrorType, PpdcError},
-    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post,
-    reference, relationship, trace, trace_mirror, transcription, user,
+    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post, reference,
+    relationship, trace, trace_mirror, transcription, user,
 };
 use crate::sessions_service;
 
@@ -92,7 +92,10 @@ pub fn create_router() -> Router {
             "/:id/draft",
             get(trace::get_journal_draft_route).post(trace::post_journal_draft_route),
         )
-        .route("/:id", get(journal::get_journal_route).put(journal::put_journal_route))
+        .route(
+            "/:id",
+            get(journal::get_journal_route).put(journal::put_journal_route),
+        )
         .route("/:id/exports", post(journal::post_journal_export_route))
         .route(
             "/:id/grants",
@@ -208,6 +211,7 @@ pub fn create_router() -> Router {
             "/:id",
             get(message::get_message_route).put(message::put_message_route),
         )
+        .route("/:id/seen", patch(message::patch_message_seen_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let trace_mirrors_router = Router::new()

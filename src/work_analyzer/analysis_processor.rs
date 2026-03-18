@@ -12,10 +12,7 @@ use crate::entities_v2::{
 use crate::work_analyzer::{
     active_context_filtering,
     analysis_context::{load_previous_landscape_inputs, AnalysisContext},
-    element_pipeline_v2,
-    high_level_analysis,
-    hlp_pipeline,
-    mirror_pipeline,
+    element_pipeline_v2, high_level_analysis, hlp_pipeline, mirror_pipeline,
 };
 
 pub struct AnalysisConfig {
@@ -118,11 +115,12 @@ impl AnalysisProcessor {
         .await?;
 
         if trace_mirror.trace_mirror_type == TraceMirrorType::Note {
-            let primary_resource_suggestion = mirror_pipeline::primary_resource::suggestion::extract(
-                &self.inputs.trace,
-                self.context.analysis_id,
-            )
-            .await?;
+            let primary_resource_suggestion =
+                mirror_pipeline::primary_resource::suggestion::extract(
+                    &self.inputs.trace,
+                    self.context.analysis_id,
+                )
+                .await?;
             let primary_resource_matched = mirror_pipeline::primary_resource::matching::run(
                 &self.context,
                 primary_resource_suggestion,

@@ -58,9 +58,7 @@ fn tuple_to_element(row: ElementTuple, landmark_id: Option<Uuid>) -> Element {
         )
     });
     let element_type = element_subtype.element_type();
-    let status = status_raw
-        .as_deref()
-        .and_then(ElementStatus::from_db);
+    let status = status_raw.as_deref().and_then(ElementStatus::from_db);
 
     Element {
         id,

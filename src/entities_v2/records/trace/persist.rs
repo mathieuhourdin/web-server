@@ -1,6 +1,6 @@
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
-use chrono::Utc;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};

@@ -13,17 +13,28 @@ use super::model::{JournalGrant, NewJournalGrantDto};
 impl JournalGrant {
     fn validate_target_fields(
         payload: &NewJournalGrantDto,
-    ) -> Result<(Option<Uuid>, Option<JournalGrantScope>, JournalGrantAccessLevel), PpdcError> {
+    ) -> Result<
+        (
+            Option<Uuid>,
+            Option<JournalGrantScope>,
+            JournalGrantAccessLevel,
+        ),
+        PpdcError,
+    > {
         match (payload.grantee_user_id, payload.grantee_scope) {
             (Some(grantee_user_id), None) => Ok((
                 Some(grantee_user_id),
                 None,
-                payload.access_level.unwrap_or(JournalGrantAccessLevel::Read),
+                payload
+                    .access_level
+                    .unwrap_or(JournalGrantAccessLevel::Read),
             )),
             (None, Some(scope)) => Ok((
                 None,
                 Some(scope),
-                payload.access_level.unwrap_or(JournalGrantAccessLevel::Read),
+                payload
+                    .access_level
+                    .unwrap_or(JournalGrantAccessLevel::Read),
             )),
             _ => Err(PpdcError::new(
                 400,
@@ -39,7 +50,9 @@ impl JournalGrant {
         grantee_scope: Option<JournalGrantScope>,
         pool: &DbPool,
     ) -> Result<Option<JournalGrant>, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let mut query = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .into_boxed();
@@ -132,7 +145,9 @@ impl JournalGrant {
         if let Some(existing) =
             JournalGrant::find_existing(journal.id, grantee_user_id, grantee_scope, pool)?
         {
-            let mut conn = pool.get().expect("Failed to get a connection from the pool");
+            let mut conn = pool
+                .get()
+                .expect("Failed to get a connection from the pool");
             diesel::update(journal_grants::table.filter(journal_grants::id.eq(existing.id)))
                 .set((
                     journal_grants::access_level.eq(access_level.to_db()),
@@ -143,7 +158,9 @@ impl JournalGrant {
             return JournalGrant::find(existing.id, pool);
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let id = Uuid::new_v4();
         diesel::insert_into(journal_grants::table)
             .values((
@@ -178,7 +195,9 @@ impl JournalGrant {
             ));
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         diesel::update(journal_grants::table.filter(journal_grants::id.eq(grant_id)))
             .set((
                 journal_grants::status.eq(JournalGrantStatus::Revoked.to_db()),
@@ -240,7 +259,9 @@ impl JournalGrant {
         use std::collections::HashSet;
 
         let mut ids = HashSet::new();
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let direct_ids = journal_grants::table
             .filter(journal_grants::grantee_user_id.eq(Some(user_id)))
             .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
@@ -298,7 +319,9 @@ impl JournalGrant {
         journal_id: Uuid,
         pool: &DbPool,
     ) -> Result<bool, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let count = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))

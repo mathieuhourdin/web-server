@@ -181,8 +181,8 @@ async fn run_claim_loop(
                 claimed_analysis_type.to_db(),
                 err
             );
-            let _ =
-                claimed_analysis_for_fail.set_processing_state(LandscapeProcessingState::Failed, pool);
+            let _ = claimed_analysis_for_fail
+                .set_processing_state(LandscapeProcessingState::Failed, pool);
             return Err(err);
         }
     }

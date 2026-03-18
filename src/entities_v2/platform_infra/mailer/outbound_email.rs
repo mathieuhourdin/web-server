@@ -93,7 +93,9 @@ impl OutboundEmail {
     }
 
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Self, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let email = outbound_emails::table
             .select(Self::as_select())
             .filter(outbound_emails::id.eq(id))
@@ -102,7 +104,9 @@ impl OutboundEmail {
     }
 
     pub fn list_due_pending(limit: i64, pool: &DbPool) -> Result<Vec<Self>, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let emails = outbound_emails::table
             .filter(outbound_emails::status.eq(OutboundEmailStatus::Pending.to_db()))
             .filter(
@@ -125,7 +129,9 @@ impl OutboundEmail {
         provider_message_id: Option<String>,
         pool: &DbPool,
     ) -> Result<Self, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         diesel::update(outbound_emails::table.filter(outbound_emails::id.eq(id)))
             .set((
                 outbound_emails::status.eq(OutboundEmailStatus::Sent.to_db()),
@@ -140,7 +146,9 @@ impl OutboundEmail {
     }
 
     pub fn mark_failed(id: Uuid, error: String, pool: &DbPool) -> Result<Self, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         diesel::update(outbound_emails::table.filter(outbound_emails::id.eq(id)))
             .set((
                 outbound_emails::status.eq(OutboundEmailStatus::Failed.to_db()),
@@ -209,7 +217,9 @@ impl NewOutboundEmail {
     }
 
     pub fn create(self, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let email = diesel::insert_into(outbound_emails::table)
             .values(&self)
             .returning(OutboundEmail::as_returning())
@@ -225,17 +235,15 @@ pub async fn process_pending_email(id: Uuid, pool: &DbPool) -> Result<OutboundEm
     }
 
     let result = match email.provider_enum() {
-        OutboundEmailProvider::Resend => {
-            send_email(SendEmailRequest {
-                from: email.from_email.clone(),
-                to: vec![email.to_email.clone()],
-                subject: email.subject.clone(),
-                text: email.text_body.clone(),
-                html: email.html_body.clone(),
-            })
-            .await
-            .map(|sent| sent.id)
-        }
+        OutboundEmailProvider::Resend => send_email(SendEmailRequest {
+            from: email.from_email.clone(),
+            to: vec![email.to_email.clone()],
+            subject: email.subject.clone(),
+            text: email.text_body.clone(),
+            html: email.html_body.clone(),
+        })
+        .await
+        .map(|sent| sent.id),
     };
 
     match result {

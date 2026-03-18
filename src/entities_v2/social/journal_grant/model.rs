@@ -95,14 +95,20 @@ fn select_journal_grant_columns() -> (
 
 impl JournalGrant {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<JournalGrant, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let row = journal_grants::table
             .filter(journal_grants::id.eq(id))
             .select(select_journal_grant_columns())
             .first::<JournalGrantTuple>(&mut conn)
             .optional()?;
         row.map(tuple_to_journal_grant).ok_or_else(|| {
-            PpdcError::new(404, ErrorType::ApiError, "Journal grant not found".to_string())
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Journal grant not found".to_string(),
+            )
         })
     }
 
@@ -120,7 +126,9 @@ impl JournalGrant {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<JournalGrant>, i64), PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let total = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .count()
@@ -132,6 +140,9 @@ impl JournalGrant {
             .offset(offset)
             .limit(limit)
             .load::<JournalGrantTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_journal_grant).collect(), total))
+        Ok((
+            rows.into_iter().map(tuple_to_journal_grant).collect(),
+            total,
+        ))
     }
 }

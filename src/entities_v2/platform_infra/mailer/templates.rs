@@ -61,7 +61,10 @@ pub fn shared_trace_finalized_email(
     let html_body = render_template(
         SHARED_TRACE_FINALIZED_HTML,
         &[
-            ("recipient_display_name", escape_html(recipient_display_name)),
+            (
+                "recipient_display_name",
+                escape_html(recipient_display_name),
+            ),
             ("owner_display_name", escape_html(owner_display_name)),
             ("journal_title", escape_html(journal_title)),
             ("journal_url", escape_html(journal_url)),

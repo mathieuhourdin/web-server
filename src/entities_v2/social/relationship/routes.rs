@@ -37,7 +37,11 @@ pub async fn get_relationships_route(
     let pagination = params.validate()?;
     let (relationships, total) =
         Relationship::find_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
-    Ok(Json(PaginatedResponse::new(relationships, pagination, total)))
+    Ok(Json(PaginatedResponse::new(
+        relationships,
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]
@@ -54,7 +58,11 @@ pub async fn get_incoming_relationship_requests_route(
         pagination.limit,
         &pool,
     )?;
-    Ok(Json(PaginatedResponse::new(relationships, pagination, total)))
+    Ok(Json(PaginatedResponse::new(
+        relationships,
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]
@@ -71,7 +79,11 @@ pub async fn get_outgoing_relationship_requests_route(
         pagination.limit,
         &pool,
     )?;
-    Ok(Json(PaginatedResponse::new(relationships, pagination, total)))
+    Ok(Json(PaginatedResponse::new(
+        relationships,
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]
@@ -82,8 +94,12 @@ pub async fn get_followers_route(
 ) -> Result<Json<PaginatedResponse<UserSearchResult>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.validate()?;
-    let (relationships, total) =
-        Relationship::find_followers_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    let (relationships, total) = Relationship::find_followers_for_user_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
     let follower_ids = relationships
         .into_iter()
         .map(|relationship| relationship.requester_user_id)

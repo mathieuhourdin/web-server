@@ -45,7 +45,10 @@ where
     }
 }
 
-pub fn parse_repeated_query_param<T>(raw_query: Option<&str>, key: &str) -> Result<Vec<T>, PpdcError>
+pub fn parse_repeated_query_param<T>(
+    raw_query: Option<&str>,
+    key: &str,
+) -> Result<Vec<T>, PpdcError>
 where
     T: for<'de> Deserialize<'de>,
 {
@@ -77,18 +80,21 @@ where
             PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                format!("Invalid query parameter value encoding for {}: {}", key, error),
+                format!(
+                    "Invalid query parameter value encoding for {}: {}",
+                    key, error
+                ),
             )
         })?;
 
         let parsed_value = serde_json::from_value::<T>(Value::String(decoded_value.into_owned()))
             .map_err(|error| {
-                PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    format!("Invalid query parameter value for {}: {}", key, error),
-                )
-            })?;
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid query parameter value for {}: {}", key, error),
+            )
+        })?;
 
         values.push(parsed_value);
     }

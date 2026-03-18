@@ -1,7 +1,7 @@
+use crate::work_analyzer::observability::format_text_log_field;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use crate::work_analyzer::observability::format_text_log_field;
 use diesel::result::Error as DieselError;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as SerdeError;

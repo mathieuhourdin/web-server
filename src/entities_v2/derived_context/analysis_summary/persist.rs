@@ -12,7 +12,10 @@ impl AnalysisSummary {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let meaningful_event_title = self.meaningful_event.as_ref().map(|event| event.title.clone());
+        let meaningful_event_title = self
+            .meaningful_event
+            .as_ref()
+            .map(|event| event.title.clone());
         let meaningful_event_description = self
             .meaningful_event
             .as_ref()
@@ -41,7 +44,10 @@ impl NewAnalysisSummary {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let meaningful_event_title = self.meaningful_event.as_ref().map(|event| event.title.clone());
+        let meaningful_event_title = self
+            .meaningful_event
+            .as_ref()
+            .map(|event| event.title.clone());
         let meaningful_event_description = self
             .meaningful_event
             .as_ref()

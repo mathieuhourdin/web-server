@@ -22,7 +22,9 @@ impl Relationship {
             ));
         }
 
-        let relationship_type = payload.relationship_type.unwrap_or(RelationshipType::Follow);
+        let relationship_type = payload
+            .relationship_type
+            .unwrap_or(RelationshipType::Follow);
         if let Some(existing) = Relationship::find_between(
             requester_user_id,
             payload.target_user_id,
@@ -39,7 +41,9 @@ impl Relationship {
                     ))
                 }
                 RelationshipStatus::Rejected => {
-                    let mut conn = pool.get().expect("Failed to get a connection from the pool");
+                    let mut conn = pool
+                        .get()
+                        .expect("Failed to get a connection from the pool");
                     diesel::update(relationships::table.filter(relationships::id.eq(existing.id)))
                         .set((
                             relationships::status.eq(RelationshipStatus::Pending.to_db()),
@@ -52,7 +56,9 @@ impl Relationship {
             }
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         let id = Uuid::new_v4();
         diesel::insert_into(relationships::table)
             .values((
@@ -89,15 +95,18 @@ impl Relationship {
             ));
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
         if status == RelationshipStatus::Accepted {
             diesel::update(relationships::table.filter(relationships::id.eq(id)))
                 .set((
                     relationships::status.eq(status.to_db()),
-                    relationships::accepted_at
-                        .eq(diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Timestamp>>(
-                            "COALESCE(accepted_at, NOW())",
-                        )),
+                    relationships::accepted_at.eq(diesel::dsl::sql::<
+                        diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                    >(
+                        "COALESCE(accepted_at, NOW())"
+                    )),
                     relationships::updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(&mut conn)?;

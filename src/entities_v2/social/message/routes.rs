@@ -21,12 +21,16 @@ use super::model::{Message, MessageProcessingState, MessageType, NewMessage, New
 #[derive(Deserialize)]
 pub struct MessageFiltersQuery {
     pub landscape_analysis_id: Option<Uuid>,
+    pub received_only: Option<bool>,
+    pub unread_only: Option<bool>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
 
 #[derive(Deserialize)]
 pub struct AnalysisMessagesQuery {
+    pub received_only: Option<bool>,
+    pub unread_only: Option<bool>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -45,9 +49,11 @@ pub async fn get_messages_route(
 ) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = filters.pagination.validate()?;
-    let (messages, total) = Message::find_for_participant_paginated(
+    let (messages, total) = Message::find_for_participant_filtered_paginated(
         user_id,
         filters.landscape_analysis_id,
+        filters.received_only.unwrap_or(false),
+        filters.unread_only.unwrap_or(false),
         pagination.offset,
         pagination.limit,
         &pool,
@@ -69,9 +75,11 @@ pub async fn get_analysis_messages_route(
     }
 
     let pagination = params.pagination.validate()?;
-    let (messages, total) = Message::find_for_participant_paginated(
+    let (messages, total) = Message::find_for_participant_filtered_paginated(
         user_id,
         Some(analysis_id),
+        params.received_only.unwrap_or(false),
+        params.unread_only.unwrap_or(false),
         pagination.offset,
         pagination.limit,
         &pool,
@@ -106,6 +114,18 @@ pub async fn get_message_route(
     if message.sender_user_id != user_id && message.recipient_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    Ok(Json(message))
+}
+
+#[debug_handler]
+pub async fn patch_message_seen_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Message>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let message = Message::find(id, &pool)?;
+    let message = message.mark_seen(user_id, &pool)?;
     Ok(Json(message))
 }
 

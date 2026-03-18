@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::message::Message;
 use crate::entities_v2::user::User;
 use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::analysis_context::AnalysisContext;
+use serde::{Deserialize, Serialize};
 
 use super::context::build as build_context;
 use super::persistence::create_mentor_feedback;

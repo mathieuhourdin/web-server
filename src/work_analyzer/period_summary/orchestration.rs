@@ -6,8 +6,8 @@ use crate::openai_handler::GptRequestConfig;
 use crate::work_analyzer::analysis_context::AnalysisContext;
 
 use super::day_context::build as build_day_context;
-use super::week_context::build as build_week_context;
 use super::persistence::upsert_period_recap;
+use super::week_context::build as build_week_context;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

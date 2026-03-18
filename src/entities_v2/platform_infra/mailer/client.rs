@@ -108,13 +108,16 @@ pub async fn send_email(request: SendEmailRequest) -> Result<SentEmail, PpdcErro
         ));
     }
 
-    let response_body = response.json::<ResendSendEmailResponse>().await.map_err(|error| {
-        PpdcError::new(
-            502,
-            ErrorType::InternalError,
-            format!("Failed to decode Resend response: {}", error),
-        )
-    })?;
+    let response_body = response
+        .json::<ResendSendEmailResponse>()
+        .await
+        .map_err(|error| {
+            PpdcError::new(
+                502,
+                ErrorType::InternalError,
+                format!("Failed to decode Resend response: {}", error),
+            )
+        })?;
 
     tracing::info!(
         target: "mailer",

@@ -151,12 +151,7 @@ pub fn blocks_to_new_traces(
         }
 
         let trace_content = if is_export_generated_date_line(&block.header) {
-            block
-                .content
-                .lines()
-                .skip(1)
-                .collect::<Vec<_>>()
-                .join("\n")
+            block.content.lines().skip(1).collect::<Vec<_>>().join("\n")
         } else {
             block.content.clone()
         };

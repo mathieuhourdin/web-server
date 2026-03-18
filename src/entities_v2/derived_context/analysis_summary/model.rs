@@ -54,7 +54,9 @@ impl NewAnalysisSummary {
                 .summary_type
                 .unwrap_or(AnalysisSummaryType::PeriodRecap),
             title: payload.title,
-            short_content: payload.short_content.unwrap_or_else(|| payload.content.clone()),
+            short_content: payload
+                .short_content
+                .unwrap_or_else(|| payload.content.clone()),
             content: payload.content,
             meaningful_event: payload.meaningful_event,
         }

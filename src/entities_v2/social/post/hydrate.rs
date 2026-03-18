@@ -117,14 +117,8 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
-        let (items, _) = Self::find_for_user_filtered_paginated(
-            user_id,
-            vec![],
-            vec![],
-            offset,
-            limit,
-            pool,
-        )?;
+        let (items, _) =
+            Self::find_for_user_filtered_paginated(user_id, vec![], vec![], offset, limit, pool)?;
         Ok(items)
     }
 
@@ -158,9 +152,7 @@ impl Post {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        let mut count_query = posts::table
-            .filter(posts::user_id.eq(user_id))
-            .into_boxed();
+        let mut count_query = posts::table.filter(posts::user_id.eq(user_id)).into_boxed();
         let interaction_type_values = interaction_types
             .iter()
             .map(|value| value.to_db())
@@ -171,7 +163,8 @@ impl Post {
             .collect::<Vec<_>>();
 
         if !interaction_type_values.is_empty() {
-            count_query = count_query.filter(posts::interaction_type.eq_any(interaction_type_values.clone()));
+            count_query =
+                count_query.filter(posts::interaction_type.eq_any(interaction_type_values.clone()));
         }
         if !post_type_values.is_empty() {
             count_query = count_query.filter(posts::post_type.eq_any(post_type_values.clone()));
@@ -179,9 +172,7 @@ impl Post {
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let mut query = posts::table
-            .filter(posts::user_id.eq(user_id))
-            .into_boxed();
+        let mut query = posts::table.filter(posts::user_id.eq(user_id)).into_boxed();
 
         if !interaction_type_values.is_empty() {
             query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
@@ -263,7 +254,8 @@ impl Post {
             .map(|value| value.to_db())
             .collect::<Vec<_>>();
         if !interaction_type_values.is_empty() {
-            count_query = count_query.filter(posts::interaction_type.eq_any(interaction_type_values.clone()));
+            count_query =
+                count_query.filter(posts::interaction_type.eq_any(interaction_type_values.clone()));
         }
         if !post_type_values.is_empty() {
             count_query = count_query.filter(posts::post_type.eq_any(post_type_values.clone()));

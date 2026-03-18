@@ -173,8 +173,15 @@ impl LlmCall {
         user_id: Uuid,
         db: &DbPool,
     ) -> Result<Vec<Self>, PpdcError> {
-        let (items, _) =
-            Self::get_by_analysis_id_for_user_filtered(analysis_id, user_id, 0, i64::MAX / 4, None, None, db)?;
+        let (items, _) = Self::get_by_analysis_id_for_user_filtered(
+            analysis_id,
+            user_id,
+            0,
+            i64::MAX / 4,
+            None,
+            None,
+            db,
+        )?;
         Ok(items)
     }
 

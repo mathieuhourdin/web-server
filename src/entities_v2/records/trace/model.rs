@@ -359,7 +359,7 @@ impl Trace {
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
              FROM traces
-             WHERE user_id = $1"
+             WHERE user_id = $1",
         )
         .bind::<SqlUuid, _>(user_id)
         .get_result::<CountRow>(&mut conn)?
@@ -400,7 +400,7 @@ impl Trace {
             "SELECT COUNT(*)::bigint AS count
              FROM traces
              WHERE journal_id = $1
-               AND status <> 'DRAFT'"
+               AND status <> 'DRAFT'",
         )
         .bind::<SqlUuid, _>(journal_id)
         .get_result::<CountRow>(&mut conn)?

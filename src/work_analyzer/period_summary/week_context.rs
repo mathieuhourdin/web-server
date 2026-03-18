@@ -80,15 +80,18 @@ pub fn build(
 
     let (daily_analyses_by_day, previous_weeks_summaries, high_level_projects) =
         if let Some(current_lens) = current_lens {
-        let all_scope_analyses = current_lens.get_analysis_scope(&context.pool)?;
-        (
-            build_daily_analysis_map(&all_scope_analyses, analysis),
-            find_previous_weeks_summaries(analysis, &all_scope_analyses, &context.pool, 2)?,
-            find_current_lens_high_level_projects(current_lens.current_landscape_id, &context.pool)?,
-        )
-    } else {
-        (HashMap::new(), vec![], vec![])
-    };
+            let all_scope_analyses = current_lens.get_analysis_scope(&context.pool)?;
+            (
+                build_daily_analysis_map(&all_scope_analyses, analysis),
+                find_previous_weeks_summaries(analysis, &all_scope_analyses, &context.pool, 2)?,
+                find_current_lens_high_level_projects(
+                    current_lens.current_landscape_id,
+                    &context.pool,
+                )?,
+            )
+        } else {
+            (HashMap::new(), vec![], vec![])
+        };
     let first_week_on_platform_note = if previous_weeks_summaries.is_empty() {
         Some("This is the first week of the user on the platform.".to_string())
     } else {
@@ -115,12 +118,13 @@ pub fn build(
         let has_written_traces = !user_traces.is_empty();
 
         let day_context = if let Some(daily_analysis) = daily_analyses_by_day.get(&cursor) {
-            let summary = find_period_summary_for_analysis(daily_analysis.id, &context.pool)?
-                .map(|summary| SummaryContextItem {
+            let summary = find_period_summary_for_analysis(daily_analysis.id, &context.pool)?.map(
+                |summary| SummaryContextItem {
                     title: summary.title,
                     short_content: summary.short_content,
                     content: summary.content,
-                });
+                },
+            );
             let no_traces_note = if has_written_traces {
                 None
             } else {
@@ -274,7 +278,9 @@ fn find_user_traces_by_day_for_period(
     let user_traces = Trace::get_all_for_user(user_id, pool)?
         .into_iter()
         .filter(|trace| trace.trace_type == TraceType::UserTrace)
-        .filter(|trace| trace.interaction_date >= period_start && trace.interaction_date < period_end)
+        .filter(|trace| {
+            trace.interaction_date >= period_start && trace.interaction_date < period_end
+        })
         .collect::<Vec<_>>();
 
     let mut by_day: HashMap<NaiveDate, Vec<WeekDayUserTraceContextItem>> = HashMap::new();

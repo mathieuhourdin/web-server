@@ -37,8 +37,7 @@ impl From<JournalTuple> for Journal {
             status,
             created_at,
             updated_at,
-        ) =
-            row;
+        ) = row;
         Journal {
             id,
             title,

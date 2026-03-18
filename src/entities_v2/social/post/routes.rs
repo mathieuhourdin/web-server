@@ -33,10 +33,8 @@ pub async fn get_posts_route(
     Query(filters): Query<PostFiltersQuery>,
 ) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
     let pagination = PaginationParams::from_parts(Some(0), filters.limit).validate()?;
-    let interaction_type = crate::pagination::parse_repeated_query_param(
-        raw_query.as_deref(),
-        "interaction_type",
-    )?;
+    let interaction_type =
+        crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "interaction_type")?;
     let post_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
     let (posts, total) = Post::find_filtered_paginated(
@@ -70,10 +68,8 @@ pub async fn get_user_posts_route(
     Query(params): Query<UserPostsQuery>,
 ) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
     let pagination = params.pagination.validate()?;
-    let interaction_type = crate::pagination::parse_repeated_query_param(
-        raw_query.as_deref(),
-        "interaction_type",
-    )?;
+    let interaction_type =
+        crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "interaction_type")?;
     let post_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
     let (posts, total) = Post::find_for_user_filtered_paginated(
