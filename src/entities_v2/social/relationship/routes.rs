@@ -62,7 +62,7 @@ fn enqueue_follow_request_notification_email(
         Some("RELATIONSHIP".to_string()),
         Some(relationship.id),
         recipient.email,
-        "Matiere Grise <notifications@ppdcoeur.fr>".to_string(),
+        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
         template.subject,
         template.text_body,
         template.html_body,

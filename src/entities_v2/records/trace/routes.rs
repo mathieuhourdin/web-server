@@ -124,7 +124,7 @@ fn enqueue_shared_trace_finalized_notification_emails(
             Some("TRACE".to_string()),
             Some(trace.id),
             recipient.email,
-            "Matière Grise <notifications@ppdcoeur.fr>".to_string(),
+            "Matière Grise <noreply@ppdcoeur.fr>".to_string(),
             template.subject.clone(),
             template.text_body.clone(),
             template.html_body.clone(),
