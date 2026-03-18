@@ -2,17 +2,22 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::PpdcError,
+    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
-    user::{User, UserSearchResult},
+    user::{User, UserPrincipalType, UserSearchResult},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
-use super::model::{NewRelationshipDto, Relationship, UpdateRelationshipDto};
+use super::{
+    enums::{RelationshipStatus, RelationshipType},
+    model::{NewRelationshipDto, Relationship, UpdateRelationshipDto},
+};
 
 fn hydrate_user_results(ids: Vec<Uuid>, pool: &DbPool) -> Result<Vec<UserSearchResult>, PpdcError> {
     let users = User::find_many(&ids, pool)?;
@@ -25,6 +30,47 @@ fn hydrate_user_results(ids: Vec<Uuid>, pool: &DbPool) -> Result<Vec<UserSearchR
         .into_iter()
         .filter_map(|id| users_by_id.get(&id).map(UserSearchResult::from))
         .collect())
+}
+
+fn enqueue_follow_request_notification_email(
+    relationship: &Relationship,
+    pool: &DbPool,
+) -> Result<Option<Uuid>, PpdcError> {
+    if relationship.relationship_type != RelationshipType::Follow
+        || relationship.status != RelationshipStatus::Pending
+    {
+        return Ok(None);
+    }
+
+    let requester = User::find(&relationship.requester_user_id, pool)?;
+    let recipient = User::find(&relationship.target_user_id, pool)?;
+    if requester.principal_type != UserPrincipalType::Human
+        || recipient.principal_type != UserPrincipalType::Human
+        || recipient.email.trim().is_empty()
+    {
+        return Ok(None);
+    }
+
+    let template = mailer::follow_request_received_email(
+        &recipient.display_name(),
+        &requester.display_name(),
+        &requester.handle,
+    );
+    let email = NewOutboundEmail::new(
+        Some(recipient.id),
+        "FOLLOW_REQUEST_RECEIVED".to_string(),
+        Some("RELATIONSHIP".to_string()),
+        Some(relationship.id),
+        recipient.email,
+        "Matiere Grise <notifications@ppdcoeur.fr>".to_string(),
+        template.subject,
+        template.text_body,
+        template.html_body,
+        OutboundEmailProvider::Resend,
+        Some(Utc::now().naive_utc()),
+    )
+    .create(pool)?;
+    Ok(Some(email.id))
 }
 
 #[debug_handler]
@@ -143,7 +189,15 @@ pub async fn post_relationship_route(
     Json(payload): Json<NewRelationshipDto>,
 ) -> Result<Json<Relationship>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationship = Relationship::create_request(user_id, payload, &pool)?;
+    let (relationship, should_notify) = Relationship::create_request(user_id, payload, &pool)?;
+    if should_notify {
+        if let Some(email_id) = enqueue_follow_request_notification_email(&relationship, &pool)? {
+            let pool_for_task = pool.clone();
+            tokio::spawn(async move {
+                let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
+            });
+        }
+    }
     Ok(Json(relationship))
 }
 

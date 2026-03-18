@@ -13,7 +13,7 @@ impl Relationship {
         requester_user_id: Uuid,
         payload: NewRelationshipDto,
         pool: &DbPool,
-    ) -> Result<Relationship, PpdcError> {
+    ) -> Result<(Relationship, bool), PpdcError> {
         if requester_user_id == payload.target_user_id {
             return Err(PpdcError::new(
                 400,
@@ -32,7 +32,9 @@ impl Relationship {
             pool,
         )? {
             match existing.status {
-                RelationshipStatus::Pending | RelationshipStatus::Accepted => return Ok(existing),
+                RelationshipStatus::Pending | RelationshipStatus::Accepted => {
+                    return Ok((existing, false))
+                }
                 RelationshipStatus::Blocked => {
                     return Err(PpdcError::new(
                         403,
@@ -51,7 +53,7 @@ impl Relationship {
                             relationships::updated_at.eq(diesel::dsl::now),
                         ))
                         .execute(&mut conn)?;
-                    return Relationship::find(existing.id, pool);
+                    return Ok((Relationship::find(existing.id, pool)?, true));
                 }
             }
         }
@@ -69,7 +71,7 @@ impl Relationship {
                 relationships::status.eq(RelationshipStatus::Pending.to_db()),
             ))
             .execute(&mut conn)?;
-        Relationship::find(id, pool)
+        Ok((Relationship::find(id, pool)?, true))
     }
 
     pub fn update_status(

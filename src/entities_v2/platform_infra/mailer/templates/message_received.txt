@@ -1,0 +1,8 @@
+Bonjour {{recipient_display_name}},
+
+{{sender_display_name}} vous a envoye un message sur Matiere Grise.
+
+Titre : {{message_title}}
+Extrait : {{excerpt}}
+
+Connectez-vous a Matiere Grise pour lire et repondre au message.

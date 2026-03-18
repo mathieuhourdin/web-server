@@ -2,6 +2,7 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -9,8 +10,10 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     landscape_analysis::LandscapeAnalysis,
+    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
     trace::Trace,
+    user::{User, UserPrincipalType},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -39,6 +42,44 @@ pub struct AnalysisMessagesQuery {
 pub struct MessageCreationResponse {
     pub question_message: Message,
     pub pending_reply_message: Option<Message>,
+}
+
+pub(crate) fn enqueue_received_message_notification_email(
+    message: &Message,
+    pool: &DbPool,
+) -> Result<Option<Uuid>, PpdcError> {
+    let sender = User::find(&message.sender_user_id, pool)?;
+    let recipient = User::find(&message.recipient_user_id, pool)?;
+    if sender.principal_type != UserPrincipalType::Human
+        || recipient.principal_type != UserPrincipalType::Human
+        || recipient.email.trim().is_empty()
+        || sender.id == recipient.id
+    {
+        return Ok(None);
+    }
+
+    let template = mailer::message_received_email(
+        &recipient.display_name(),
+        &sender.display_name(),
+        &message.title,
+        &message.content,
+    );
+    let email = NewOutboundEmail::new(
+        Some(recipient.id),
+        "USER_MESSAGE_RECEIVED".to_string(),
+        Some("MESSAGE".to_string()),
+        Some(message.id),
+        recipient.email,
+        "Matiere Grise <notifications@ppdcoeur.fr>".to_string(),
+        template.subject,
+        template.text_body,
+        template.html_body,
+        OutboundEmailProvider::Resend,
+        Some(Utc::now().naive_utc()),
+    )
+    .create(pool)?;
+
+    Ok(Some(email.id))
 }
 
 #[debug_handler]
@@ -208,6 +249,12 @@ pub async fn post_message_route(
     }
 
     let message = NewMessage::new(payload, sender_user_id).create(&pool)?;
+    if let Some(email_id) = enqueue_received_message_notification_email(&message, &pool)? {
+        let pool_for_task = pool.clone();
+        tokio::spawn(async move {
+            let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
+        });
+    }
     Ok(Json(MessageCreationResponse {
         question_message: message,
         pending_reply_message: None,

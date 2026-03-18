@@ -7,4 +7,7 @@ pub use outbound_email::{
     process_pending_email, process_pending_emails, NewOutboundEmail, OutboundEmail,
     OutboundEmailProvider, OutboundEmailStatus,
 };
-pub use templates::{shared_trace_finalized_email, EmailTemplate};
+pub use templates::{
+    follow_request_received_email, message_received_email, shared_trace_finalized_email,
+    EmailTemplate,
+};

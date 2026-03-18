@@ -15,8 +15,8 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
-        Message, MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType,
-        NewMessage,
+        routes::enqueue_received_message_notification_email, Message, MessageAttachment,
+        MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
     },
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
@@ -662,6 +662,12 @@ pub async fn post_trace_message_route(
         attachment: payload.attachment,
     }
     .create(&pool)?;
+    if let Some(email_id) = enqueue_received_message_notification_email(&message, &pool)? {
+        let pool_for_task = pool.clone();
+        tokio::spawn(async move {
+            let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
+        });
+    }
 
     Ok(Json(TraceMessageCreationResponse {
         question_message: message,
