@@ -2,6 +2,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
+    session::Session,
     user::{User, UserPrincipalType},
 };
 use crate::environment;
@@ -120,6 +121,11 @@ pub struct UserSecureActionResponse {
     pub message: String,
 }
 
+#[derive(Serialize)]
+pub struct ConsumeUserSecureActionResponse {
+    pub session: Session,
+}
+
 impl UserSecureAction {
     fn action_type_enum(&self) -> Result<UserSecureActionType, PpdcError> {
         UserSecureActionType::from_db(&self.action_type)
@@ -215,7 +221,7 @@ impl UserSecureAction {
         token: &str,
         new_password: &str,
         pool: &DbPool,
-    ) -> Result<(), PpdcError> {
+    ) -> Result<Uuid, PpdcError> {
         let (action_id, secret) = Self::parse_token(token).ok_or_else(|| {
             PpdcError::new(
                 400,
@@ -289,7 +295,7 @@ impl UserSecureAction {
             Ok(())
         })?;
 
-        Ok(())
+        Ok(action.user_id)
     }
 }
 
@@ -375,7 +381,7 @@ pub async fn post_user_secure_action_route(
 pub async fn post_user_secure_action_consume_route(
     Extension(pool): Extension<DbPool>,
     Json(payload): Json<ConsumeUserSecureActionDto>,
-) -> Result<Json<UserSecureActionResponse>, PpdcError> {
+) -> Result<Json<ConsumeUserSecureActionResponse>, PpdcError> {
     match payload.action_type {
         UserSecureActionType::PasswordReset => {
             let new_password = payload.new_password.ok_or_else(|| {
@@ -385,10 +391,10 @@ pub async fn post_user_secure_action_consume_route(
                     "new_password is required for password_reset".to_string(),
                 )
             })?;
-            UserSecureAction::consume_password_reset(&payload.token, &new_password, &pool)?;
-            Ok(Json(UserSecureActionResponse {
-                message: "Password updated successfully".to_string(),
-            }))
+            let user_id =
+                UserSecureAction::consume_password_reset(&payload.token, &new_password, &pool)?;
+            let (session, _bearer_token) = Session::create_authenticated(user_id, &pool)?;
+            Ok(Json(ConsumeUserSecureActionResponse { session }))
         }
     }
 }
