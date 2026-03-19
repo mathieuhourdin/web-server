@@ -14,7 +14,7 @@ use crate::entities_v2::{
     analysis_summary, element,
     error::{ErrorType, PpdcError},
     journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post, reference,
-    relationship, trace, trace_mirror, transcription, user,
+    relationship, trace, trace_mirror, transcription, user, user_secure_action,
 };
 use crate::sessions_service;
 
@@ -237,6 +237,12 @@ pub fn create_router() -> Router {
             .post(sessions_service::post_session_route)
             .delete(sessions_service::delete_session_route),
     );
+    let user_secure_actions_router = Router::new()
+        .route("/", post(user_secure_action::post_user_secure_action_route))
+        .route(
+            "/consume",
+            post(user_secure_action::post_user_secure_action_consume_route),
+        );
 
     Router::new()
         .route("/users", post(user::post_user))
@@ -248,6 +254,7 @@ pub fn create_router() -> Router {
         .nest("/journals", journals_router)
         .nest("/transcriptions", transcriptions_router)
         .nest("/sessions", sessions_router)
+        .nest("/user_secure_actions", user_secure_actions_router)
         .nest("/analysis", analysis_router)
         .nest("/analysis_summaries", analysis_summaries_router)
         .nest("/lens", lens_router)

@@ -13,6 +13,8 @@ const MESSAGE_RECEIVED_TEXT: &str = include_str!("templates/message_received.txt
 const MESSAGE_RECEIVED_HTML: &str = include_str!("templates/message_received.html");
 const FOLLOW_REQUEST_RECEIVED_TEXT: &str = include_str!("templates/follow_request_received.txt");
 const FOLLOW_REQUEST_RECEIVED_HTML: &str = include_str!("templates/follow_request_received.html");
+const PASSWORD_RESET_TEXT: &str = include_str!("templates/password_reset.txt");
+const PASSWORD_RESET_HTML: &str = include_str!("templates/password_reset.html");
 
 fn build_trace_excerpt(content: &str, max_chars: usize) -> String {
     let excerpt = content.trim().chars().take(max_chars).collect::<String>();
@@ -154,6 +156,33 @@ pub fn follow_request_received_email(
                 escape_html(requester_display_name),
             ),
             ("requester_handle", escape_html(requester_handle)),
+        ],
+    );
+
+    EmailTemplate {
+        subject,
+        text_body: Some(text_body),
+        html_body: Some(html_body),
+    }
+}
+
+pub fn password_reset_email(recipient_display_name: &str, reset_url: &str) -> EmailTemplate {
+    let subject = "Reinitialisation de votre mot de passe Matiere Grise".to_string();
+    let text_body = render_template(
+        PASSWORD_RESET_TEXT,
+        &[
+            ("recipient_display_name", recipient_display_name.to_string()),
+            ("reset_url", reset_url.to_string()),
+        ],
+    );
+    let html_body = render_template(
+        PASSWORD_RESET_HTML,
+        &[
+            (
+                "recipient_display_name",
+                escape_html(recipient_display_name),
+            ),
+            ("reset_url", escape_html(reset_url)),
         ],
     );
 

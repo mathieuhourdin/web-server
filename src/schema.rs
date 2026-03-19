@@ -454,6 +454,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    user_secure_actions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        action_type -> Text,
+        payload -> Nullable<Text>,
+        secret_hash -> Text,
+        expires_at -> Timestamp,
+        used_at -> Nullable<Timestamp>,
+        revoked_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -526,6 +541,7 @@ diesel::joinable!(trace_mirrors -> users (user_id));
 diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
+diesel::joinable!(user_secure_actions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     analysis_summaries,
@@ -557,5 +573,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     trace_mirrors,
     traces,
     user_roles,
+    user_secure_actions,
     users,
 );

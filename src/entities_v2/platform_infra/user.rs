@@ -739,19 +739,8 @@ impl NewUser {
     }
 
     pub fn hash_password(&mut self) -> Result<(), PpdcError> {
-        let salt: [u8; 32] = rand::thread_rng().gen();
-        let config = Config::default();
-
         if let Some(password) = &self.password {
-            self.password = Some(
-                argon2::hash_encoded(password.as_bytes(), &salt, &config).map_err(|err| {
-                    PpdcError::new(
-                        500,
-                        ErrorType::InternalError,
-                        format!("Unable to encode password: {:#?}", err),
-                    )
-                })?,
-            );
+            self.password = Some(User::hash_password_value(password)?);
             Ok(())
         } else {
             if self.is_platform_user.is_none() || self.is_platform_user.unwrap() == false {
@@ -769,6 +758,18 @@ impl NewUser {
 }
 
 impl User {
+    pub fn hash_password_value(password: &str) -> Result<String, PpdcError> {
+        let salt: [u8; 32] = rand::thread_rng().gen();
+        let config = Config::default();
+        argon2::hash_encoded(password.as_bytes(), &salt, &config).map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Unable to encode password: {:#?}", err),
+            )
+        })
+    }
+
     pub fn verify_password(&self, tested_password_bytes: &[u8]) -> Result<bool, PpdcError> {
         argon2::verify_encoded(&self.password, tested_password_bytes).map_err(|err| {
             PpdcError::new(
