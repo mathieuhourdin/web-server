@@ -19,6 +19,7 @@ use chrono::{Duration, NaiveDate, NaiveDateTime, Utc, Weekday};
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
 use diesel::prelude::*;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Date, Float, Nullable, SmallInt, Text, Uuid as SqlUuid};
@@ -677,6 +678,7 @@ impl NewUser {
         if payload.principal_type.is_none() {
             payload.principal_type = Some(UserPrincipalType::Human);
         }
+        let email = payload.email.clone();
 
         let user = conn.transaction::<User, diesel::result::Error, _>(|conn| {
             let user = diesel::insert_into(users::table)
@@ -694,8 +696,33 @@ impl NewUser {
                 .execute(conn)?;
 
             Ok(user)
-        })?;
-        Ok(user)
+        });
+
+        match user {
+            Ok(user) => Ok(user),
+            Err(error @ DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+                let existing_user = users::table
+                    .filter(users::email.eq(&email))
+                    .select(User::as_select())
+                    .first::<User>(&mut conn)
+                    .optional()?;
+
+                if let Some(existing_user) = existing_user {
+                    return Err(PpdcError::new(
+                        409,
+                        ErrorType::ApiError,
+                        "User email already exists".to_string(),
+                    )
+                    .with_details(serde_json::json!({
+                        "email": existing_user.email,
+                        "created_at": existing_user.created_at.to_string()
+                    })));
+                }
+
+                Err(error.into())
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {

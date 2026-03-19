@@ -14,6 +14,8 @@ pub struct PpdcError {
     #[serde(skip_serializing)]
     pub error_type: ErrorType,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -35,11 +37,17 @@ impl PpdcError {
             status_code,
             error_type,
             message,
+            details: None,
         }
     }
 
     pub fn unauthorized() -> PpdcError {
         Self::new(401, ErrorType::ApiError, "Unauthorized".into())
+    }
+
+    pub fn with_details(mut self, details: serde_json::Value) -> PpdcError {
+        self.details = Some(details);
+        self
     }
 }
 
@@ -104,11 +112,15 @@ impl IntoResponse for PpdcError {
             ErrorType::DatabaseError => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
+        let mut error_object = serde_json::json!({
+            "status_code": self.status_code,
+            "message": self.message
+        });
+        if let Some(details) = self.details {
+            error_object["details"] = details;
+        }
         let error_json = serde_json::json!({
-            "error": {
-                "status_code": self.status_code,
-                "message": self.message
-            }
+            "error": error_object
         });
 
         (status, Json(error_json)).into_response()
