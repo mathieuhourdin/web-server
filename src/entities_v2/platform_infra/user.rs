@@ -3,9 +3,11 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalType, NewJournalDto},
     lens::{LensProcessingState, NewLens},
+    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
     trace::{NewTrace, TraceType},
 };
+use crate::environment;
 use crate::pagination::PaginationParams;
 use crate::schema::{journals, lenses, user_roles, users};
 use argon2::Config;
@@ -28,6 +30,32 @@ use rand::Rng;
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
 use uuid::Uuid;
+
+fn enqueue_new_user_signup_notification_email(
+    user: &User,
+    pool: &DbPool,
+) -> Result<Uuid, PpdcError> {
+    let users_url = format!(
+        "{}/social/users",
+        environment::get_app_base_url().trim_end_matches('/')
+    );
+    let template = mailer::new_user_signup_email(&user.first_name, &user.last_name, &users_url);
+    let email = NewOutboundEmail::new(
+        None,
+        "NEW_USER_SIGNUP".to_string(),
+        Some("USER".to_string()),
+        Some(user.id),
+        "mathieu.hourdin@gmail.com".to_string(),
+        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
+        template.subject,
+        template.text_body,
+        template.html_body,
+        OutboundEmailProvider::Resend,
+        Some(Utc::now().naive_utc()),
+    )
+    .create(pool)?;
+    Ok(email.id)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Text)]
@@ -1428,6 +1456,24 @@ pub async fn post_user(
                 .execute(&mut conn);
         }
         return Err(err);
+    }
+    if created_user.principal_type == UserPrincipalType::Human {
+        match enqueue_new_user_signup_notification_email(&created_user, &pool) {
+            Ok(email_id) => {
+                let pool_for_task = pool.clone();
+                tokio::spawn(async move {
+                    let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
+                });
+            }
+            Err(err) => {
+                tracing::error!(
+                    target: "mailer",
+                    "new_user_signup_notification_failed user_id={} message={}",
+                    created_user.id,
+                    err.message
+                );
+            }
+        }
     }
     Ok(Json(created_user))
 }

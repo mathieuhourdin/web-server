@@ -15,6 +15,8 @@ const FOLLOW_REQUEST_RECEIVED_TEXT: &str = include_str!("templates/follow_reques
 const FOLLOW_REQUEST_RECEIVED_HTML: &str = include_str!("templates/follow_request_received.html");
 const PASSWORD_RESET_TEXT: &str = include_str!("templates/password_reset.txt");
 const PASSWORD_RESET_HTML: &str = include_str!("templates/password_reset.html");
+const NEW_USER_SIGNUP_TEXT: &str = include_str!("templates/new_user_signup.txt");
+const NEW_USER_SIGNUP_HTML: &str = include_str!("templates/new_user_signup.html");
 
 fn build_trace_excerpt(content: &str, max_chars: usize) -> String {
     let excerpt = content.trim().chars().take(max_chars).collect::<String>();
@@ -183,6 +185,32 @@ pub fn password_reset_email(recipient_display_name: &str, reset_url: &str) -> Em
                 escape_html(recipient_display_name),
             ),
             ("reset_url", escape_html(reset_url)),
+        ],
+    );
+
+    EmailTemplate {
+        subject,
+        text_body: Some(text_body),
+        html_body: Some(html_body),
+    }
+}
+
+pub fn new_user_signup_email(first_name: &str, last_name: &str, users_url: &str) -> EmailTemplate {
+    let subject = format!("Nouvel utilisateur inscrit : {} {}", first_name, last_name);
+    let text_body = render_template(
+        NEW_USER_SIGNUP_TEXT,
+        &[
+            ("first_name", first_name.to_string()),
+            ("last_name", last_name.to_string()),
+            ("users_url", users_url.to_string()),
+        ],
+    );
+    let html_body = render_template(
+        NEW_USER_SIGNUP_HTML,
+        &[
+            ("first_name", escape_html(first_name)),
+            ("last_name", escape_html(last_name)),
+            ("users_url", escape_html(users_url)),
         ],
     );
 

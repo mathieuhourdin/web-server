@@ -8,6 +8,6 @@ pub use outbound_email::{
     OutboundEmailProvider, OutboundEmailStatus,
 };
 pub use templates::{
-    follow_request_received_email, message_received_email, password_reset_email,
-    shared_trace_finalized_email, EmailTemplate,
+    follow_request_received_email, message_received_email, new_user_signup_email,
+    password_reset_email, shared_trace_finalized_email, EmailTemplate,
 };
