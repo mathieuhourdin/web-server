@@ -7,6 +7,228 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+###
+User observation
+- dark mode
+- heatmap size not shrinking ok
+- Journal title setting not great (should be automatically on journal editing when created) ok
+- Acceptance status update should be more dynamic
+- Display of names in the user spaces should be better.
+- Strange black lines on apple
+- Placeholder on non mentor trace message should be removed
+- Should be easier to see when you have unread messages.
+
+There is a strange bug giving a 411 email already exists for some users when they create their accounts. Maybe because of the latency ? Needs investigation.
+
+### 2026-03-17 Note about landmarks
+
+There is an issue with landmarks : they are shared accross lenses and that creates an wrong value for the count of elements etc.
+We should have a stable landmark entity, with a landmark_version entity that is attached to each landscape_analysis in order to have the exact count for any time and any lens. It also allows for some evolutions in the landmarks.
+
+### 2026-03-17 TODO afternoon
+
+- Debug server side filters
+- Implement envelope and pagination in the API
+- Implement envelope and pagination client side
+- Check session in db
+
+### 2026-03-17 Ideas on traces
+
+I could have a vocal mode on a draft trace.
+Instead of recording the whole trace by one vocal, I could add the transcripted vocal note at the end of the opened draft trace. This way I can record things about the trace during the whole session defined by the trace, instead of holding everything in my head and record at the end.
+It could allow space for some repair during the process (I correct the missed understanding in what is already written and more I have written more the system has evidence to support clarification work).
+
+
+### 2026-03-16 Work on pagination
+
+Currently I don't really use pagination in the api. The result is slow loading in the user space. Because of traces I think mostly. We should try a paginated fetch at some point.
+
+### 2026-03-13 feedback on mentor feedbacks
+
+When i ask question to the mentor about a given trace that I wrote, the response is mostly fiting what i wrote, the mentor doesn't add a lot of things to the content.
+He also tends to repeat exactly what is said in the bio of the mentor, or in the bio of me.
+
+### 2026-03-13 thoughts about internal notes
+
+If I am reading an article, i take traces as long as i work on the article. It may be multiple traces created at different times. 
+All those traces are identified as reading notes (maybe).
+However at some point we want something more than a draft like reading note : we want to analyze all the traces we took, and create a redacted reading note about the article.
+
+I think this reading note should be a Post. Posts don't need to be published. What matters is that they are readacted for broader audience. They are formatted for reading without familiarity. Reading without familiarity could be other users but also me in the future. I need to put some investissements de forme in the note to make it readable later. Just like the plan engagement regime vs the familiarity regime.
+
+### 2026-03-13 Mailer and email scheduling
+
+What I want first for the notifications by email is an email that says : you have n updates of people you are following. This way people are going to go look at my journal.
+For that, I want emails scheduled at a nice time in the day : 9 in the morning for instance.
+
+What I imagine is a LLM generated recap of what has been written by your friend this day, or last day.
+What I was seing as a nice design is that it would come with the daily analysis. We have a me summary for what I did, we could have a following summary, for what the followed people did.
+The daily recap is processed during the night, and an email is sceduled for the morning 9am.
+This design sounds good. However maybe a little bit overkilled for now. The daily analysis are not created for days where we write nothing. So some design choices need to be made about that.
+
+For now we mostly need a real time notification. What we could do for that is just to send an immediate email to every people with read access to a journal when the owner writes in its journal.
+This solution is nice because it creates fast engagement on the new trace, people can reply in real time... It is very good until we have many people writing on the platform. The day where too much people are going to write, the daily recap of who wrote what will be a very nice feature.
+
+What I can see for now is the fact that it is going to be very painful for a user to decide and to manage who is going to see what on its journals. You write something only for your close friends, then something for your parents, then something for everyone... very fastidious and you can make mistakes on who sees what.
+Maybe this is where the posts are going to play a big role. The journals are only for very close friends access, and if we want to share specific traces more broadly, we create a post from the trace. Then the post have specific access rights, or are public.
+
+### 2026-03-10 Privacy and ecryption
+
+We are going to set two different modes : 
+- Normal mode : everything is in clear in the db, search working with full capabilities
+- Encrypted mode : a given journal will not store anything in clear in the server. Everything is encrypted using a user password or a user key. The server only stores things encrypted, that the user decrypts when he receives it's data. We only keep metadata like dates etc. The user can make some client side searches one he has retrieve it's data. He can make some LLM requests through the server but nothing is stored. We should work on storage of local backups for this too. Easy for apps, harder for browser.
+
+
+### 2026-03-10 TODO on mentor space
+
+We should work more on the list of last interactions with the mentor.
+Today we retrieve the last mentor feedbacks.
+But we want maybe some other things to come back : some threads of discussion with the mentor, the tarot tirages etc... 
+Not implemented yet, we should not forget.
+
+### 2026-03-10 Work on the retry policy
+
+I have worked a little bit on the retry policy.
+Now the lens has a retry route, it restarts run.
+
+In future implementations (when i work on cron etc impl) i will need something like : 
+- separated blocking (need to solve an issue in code or infra) and non blocking errors (that can be managed by an automatic retry)
+- for non blocking errors, schedule a retry : retry_count, next_retry_at, last_error_code, last_error_message, last_failed_at on analysis.
+- I also think we should change the processing states of the lens.
+
+### 2026-03-10 feedbacks on writing
+
+The textarea where i write in the ui is too small, it should grow with the writing.
+
+For the trace validation, i think I could do something with even more impact : when we start a trace, we could give it a defined expiration time, that is the time we expect as the end of the work session.
+examples : 
+- I could want to open a trace for the whole day of work, so I set the end at the end of my workday.
+- I could want to open a trace for just 20 minutes of journaling in the morning.
+- I could open a trace for 45 minutes of reading something and note taking.
+
+Then the open traces are shown on top of the 
+
+### 2026-03-09 Ideas on trace validation
+
+Trace should really have a workflow that forces some kind of work rhythm.
+A trace can be open for some time before to be validated, because we want to be able to produce something nice. For a reading note for instance, we want to read the article and take notes at the same time. We can have two traces open at the same time etc.
+However we don't want the user to keep dozens of opened traces or to search in his space for the opened trace on this subject. Traces must be flushed after each work unit.
+My idea about this is some kind of timeout. After some time of inactivity, the trace is flushed and cannot be updated. However we could give some autonomy to the user to set the duration of the timeout. It could be set to two minutes, 10 minuts, 20 minutes depending on what the user wants to do.
+but on the whole, we force a rhythm of publication on the user.
+
+Make the traces opperant : 
+- I should be able to pin a trace for some time in the UI. Like my todos traces of the day.
+- Should have a fullscreen page for a trace. If I want to keep my todo trace fullscreen in a tab for instance.
+
+### 2026-03-05 New pipeline orchestration architecture : 
+
+Create a function on landscape_analysis : create_for_trace_and_lens(trace_id, lens_id)
+- Create the new landscape_analysis for lens and trace with pending state, and all the dates are set to the trace date.
+- Check if a Day and/or Week ananysis exist for this lens that includes the trace analysis date.
+- If not, create them. Day analysis dates are the start and end datetimes of this day, and for week you set the time period using the weekday of the user.
+- All those landscape_analysis are properly linked to the lens.
+
+
+When this function is called ?
+- Trace creation : for each autoplay lens, we run create_for_trace_and_lens
+- Lens creation / target_trace update : we get all traces in the proper range and we run the create_for_trace_and_lens method for each of them.
+A question remain : how do we deal with HLP and Biography traces ? Maybe we could keep a special use case for lens creation. It will be easy in this case. However for trace creation with an autoplay lens, it could create some issues. Issue to tackle : the analysis date of the HLP and Bio traces should be before the other traces.
+
+Then how the run is performed : 
+- We have a trigger (api call, cron, event)
+- It gets all lens (cron) or targets a given lens
+- For a lens, we run the run_lens function.
+- It gets all pending landscape_analysis with period_end before now.
+- Maybe it marks them as running for lock ?
+- It orders them by period_end
+- For each landscape_analysis, it links it to the last processed landscape_analysis of this lens with the parent link
+- It runs it.
+
+Codex remarks : 
+- Timezone on user
+- Idempotency on trace creation
+- Lock state for the analysis run
+- Treat HLP & Bio as context-priority analysis.
+
+### 2026-03-05 Todo
+
+What i should do now :
+
+- Implement the day analysis and the week analysis
+- Implement the User feedbacks -> I think I should use a general message entity, that can be related to a given trace. Mentors are other users in the infra but with no rights. Maybe I should have a multi part users : A social part user (bio...) That is related to messages, a record part user with some data, and a infra part user with the data for connection. Here a platform mentor would have only the social part. But for now I can keep only one entity in infra.
+- The social part could be extended. Create relationships between users (necessary to pick mentors, even if first we can have only one mentor as FK in user), and read/write rights on journals between users. This way, I can give access to my journal to a friend, and he reads it. We can have story like updates that mean that a friend wrote something in its journal, and then we go see it in a journal like page.
+- Work on the main pipeline : 
+  - 2nd call should provide diffs instead of same schema
+  - 2nd ref extraction call should give some trace level landmarks if any.
+
+- Work on routes rights to avoid seeing other peoples traces
+- Work on a small dashboard to see the last active users. It could display : 
+  - Active users per day (What is an active user ??) -> The session should have a "last used at ?" Session should be used for tracking 
+  - The list of active users for each day : who created a trace ?
+  - For now we should have 
+
+
+For the week analysis, I think the user should be able to choose a weekday for the analysis to run. Then for each run we look at the last weekday for this user, and we check if a week analysis has been run. If not, run. If yes, don't run.
+
+For day and week analysis, I need to be carefull about :
+- If someone doesnt write traces during sevral days or weeks...
+- If we run a lens for multiple traces and multiple days.
+Lets consider an idea : when we create an analysis for a day, if there is no day analysis for the day, we create a new analysis, linked to the lens but as a pending analysis. For each run on the lens, we check if we don't have a pending analysis that should be run (day analysis and we are the day after)
+
+  What should I pick first ?
+  
+
+
+### 2026-03-04 Ideas
+
+If a trace is too long, i could split it in different trace mirrors. I already can have multiple trace_mirrors for a trace and an analysis si it would really be ok. Maybe I would need a chunck index or somthing else to be able to display the trace mirrors in the right order in the front.
+
+### 2026-03-02 Onboarding ideas
+
+Instead of having a strict choice of missions, I could display default HLP in the HLP definition page, and the user can click on them to add a already written description to it's HLP. eg. Take care of myself etc.
+I could also use something similar for the mentor : I could add a short description of the mentor in a user field and we use it to frame the feedbacks he does.
+
+
+### 2026-03-02 Plan of the week and of the day.
+
+For the week I said : 
+- Today do the data schema migration
+- Tomorrow start to use the platform for my own journaling
+- Wednesday Setup missing features such as emails, mentor feedback, day/week analysis, share...
+- Thursday setup elements related to observability : user actions logs, pipeline logs (in db)
+- friday : some slack to finish this in time.
+
+Next week could be used to rework on the extraction pipeline, and to try to implement a mobile app.
+I should find some time at some point to work on data encryption.
+
+For today :
+
+- Define the enums for most entities to make the migration more clear
+- Remove again some unused parts in the codebase
+- Look for other things to clean.
+
+- Work more deeply on entities definition (use the right list of fields)
+
+Then : 
+- For each domain
+- Create the new tables
+- Copy the data from the resources/interactions/resources_relations tables
+- Delete the data from the old tables.
+- Change the hydration/persistence modules to use the new tables.
+
+I should try a first implementation with the records domain. Then I will do the others quicker if it works well.
+
+
+I should pay attention to publishing/maturing state for the new entities. (Who should have such states ? Trace for draft mode ?)
+
+
+### 2026-02-27 End of the week
+
+I have worked in direction of the database migration today. I have cleaned the legacy entities a bit.
+I still need to do a little bit of cleaning before to really start. I really could use some well defined enums for some types. Then I think it will be possible to go.
+I will probably migrate domain by domain.
+
+
 ### 2026-02-27 design questions for the API
 
 The API should have multiple routes that are lens dependant : 
