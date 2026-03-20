@@ -706,6 +706,9 @@ impl NewUser {
         if payload.principal_type.is_none() {
             payload.principal_type = Some(UserPrincipalType::Human);
         }
+        if payload.journal_theme.is_none() {
+            payload.journal_theme = Some(JournalTheme::White);
+        }
         let email = payload.email.clone();
 
         let user = conn.transaction::<User, diesel::result::Error, _>(|conn| {
