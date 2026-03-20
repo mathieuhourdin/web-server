@@ -5,4 +5,4 @@ Bonjour {{recipient_display_name}},
 Titre : {{message_title}}
 Extrait : {{excerpt}}
 
-Connectez-vous a Matiere Grise pour lire et repondre au message.
+{{conversation_cta}}

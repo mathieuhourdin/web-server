@@ -15,6 +15,7 @@ use crate::entities_v2::{
     trace::Trace,
     user::{User, UserPrincipalType},
 };
+use crate::environment;
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
@@ -63,6 +64,18 @@ pub(crate) fn enqueue_received_message_notification_email(
         &sender.display_name(),
         &message.title,
         &message.content,
+        message
+            .trace_id
+            .as_ref()
+            .map(|trace_id| {
+                format!(
+                    "{}/me/journal-pad?trace_id={}&recipient_user_id={}",
+                    environment::get_app_base_url().trim_end_matches('/'),
+                    trace_id,
+                    sender.id
+                )
+            })
+            .as_deref(),
     );
     let email = NewOutboundEmail::new(
         Some(recipient.id),

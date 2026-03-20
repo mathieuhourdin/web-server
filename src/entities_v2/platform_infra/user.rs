@@ -522,6 +522,14 @@ pub struct UserSearchParams {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct UserListParams {
+    pub principal_type: Option<UserPrincipalType>,
+    pub is_platform_user: Option<bool>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
 #[derive(QueryableByName)]
 struct UserSearchRow {
     #[diesel(sql_type = SqlUuid)]
@@ -1339,17 +1347,24 @@ pub async fn put_admin_service_user_route(
 
 #[debug_handler]
 pub async fn get_users(
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<UserListParams>,
     Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
     let mut conn = pool
         .get()
         .expect("Failed to get a connection from the pool");
 
-    let results: Vec<UserPseudonymizedResponse> = users::table
-        .into_boxed()
-        .offset(params.offset())
-        .limit(params.limit())
+    let mut query = users::table.into_boxed();
+    if let Some(principal_type) = params.principal_type {
+        query = query.filter(users::principal_type.eq(principal_type));
+    }
+    if let Some(is_platform_user) = params.is_platform_user {
+        query = query.filter(users::is_platform_user.eq(is_platform_user));
+    }
+
+    let results: Vec<UserPseudonymizedResponse> = query
+        .offset(params.pagination.offset())
+        .limit(params.pagination.limit())
         .select(User::as_select())
         .load::<User>(&mut conn)?
         .iter()

@@ -93,6 +93,7 @@ pub fn message_received_email(
     sender_display_name: &str,
     message_title: &str,
     message_content: &str,
+    conversation_url: Option<&str>,
 ) -> EmailTemplate {
     let excerpt = build_trace_excerpt(message_content, 180);
     let subject = if message_title.trim().is_empty() {
@@ -110,6 +111,15 @@ pub fn message_received_email(
             ("sender_display_name", sender_display_name.to_string()),
             ("message_title", message_title.to_string()),
             ("excerpt", excerpt.clone()),
+            (
+                "conversation_cta",
+                conversation_url
+                    .map(|url| format!("Ouvrir la conversation : {}", url))
+                    .unwrap_or_else(|| {
+                        "Connectez-vous a Matiere Grise pour lire et repondre au message."
+                            .to_string()
+                    }),
+            ),
         ],
     );
     let html_body = render_template(
@@ -122,6 +132,20 @@ pub fn message_received_email(
             ("sender_display_name", escape_html(sender_display_name)),
             ("message_title", escape_html(message_title)),
             ("excerpt_html", escape_html(&excerpt)),
+            (
+                "conversation_link_html",
+                conversation_url
+                    .map(|url| {
+                        format!(
+                            "<a href=\"{url}\">Ouvrir la conversation</a>",
+                            url = escape_html(url)
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        "Connectez-vous a Matiere Grise pour lire et repondre au message."
+                            .to_string()
+                    }),
+            ),
         ],
     );
 
