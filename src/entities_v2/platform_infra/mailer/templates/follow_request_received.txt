@@ -2,4 +2,5 @@ Bonjour {{recipient_display_name}},
 
 {{requester_display_name}} ({{requester_handle}}) souhaite vous suivre sur Matiere Grise.
 
-Connectez-vous a Matiere Grise pour accepter ou refuser cette demande.
+Ouvrir la page des followers :
+https://matieregrise.ppdcoeur.fr/social/followers
