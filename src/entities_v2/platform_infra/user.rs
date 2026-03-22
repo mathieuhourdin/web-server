@@ -416,6 +416,14 @@ impl IntoResponse for UserResponse {
     }
 }
 
+fn visible_biography_for_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Option<String> {
+    if viewer_user_id == Some(user.id) || user.principal_type != UserPrincipalType::Human {
+        user.biography.clone()
+    } else {
+        None
+    }
+}
+
 #[derive(Serialize)]
 pub struct UserPseudonymizedAuthentifiedResponse {
     pub id: Uuid,
@@ -443,6 +451,12 @@ pub struct UserPseudonymizedAuthentifiedResponse {
 
 impl From<&User> for UserPseudonymizedAuthentifiedResponse {
     fn from(user: &User) -> Self {
+        Self::from_viewer(user, None)
+    }
+}
+
+impl UserPseudonymizedAuthentifiedResponse {
+    fn from_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Self {
         UserPseudonymizedAuthentifiedResponse {
             id: user.id.clone(),
             email: user.email.clone(),
@@ -455,7 +469,7 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
             updated_at: user.updated_at.clone(),
             profile_picture_url: user.profile_picture_url.clone(),
             is_platform_user: user.is_platform_user.clone(),
-            biography: user.biography.clone(),
+            biography: visible_biography_for_viewer(user, viewer_user_id),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
             journal_theme: user.journal_theme,
@@ -493,6 +507,12 @@ pub struct UserPseudonymizedResponse {
 
 impl From<&User> for UserPseudonymizedResponse {
     fn from(user: &User) -> Self {
+        Self::from_viewer(user, None)
+    }
+}
+
+impl UserPseudonymizedResponse {
+    fn from_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Self {
         UserPseudonymizedResponse {
             id: user.id.clone(),
             principal_type: user.principal_type,
@@ -502,7 +522,7 @@ impl From<&User> for UserPseudonymizedResponse {
             updated_at: user.updated_at.clone(),
             profile_picture_url: user.profile_picture_url.clone(),
             is_platform_user: user.is_platform_user.clone(),
-            biography: user.biography.clone(),
+            biography: visible_biography_for_viewer(user, viewer_user_id),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
             pseudonymized: user.pseudonymized.clone(),
             journal_theme: user.journal_theme,
@@ -1546,11 +1566,13 @@ pub async fn get_user_route(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, PpdcError> {
     let user = User::find(&id, &pool)?;
+    let viewer_user_id = session.user_id;
     if !user.is_platform_user || session.user_id.unwrap() == id {
-        let user_response = UserPseudonymizedAuthentifiedResponse::from(&user);
+        let user_response =
+            UserPseudonymizedAuthentifiedResponse::from_viewer(&user, viewer_user_id);
         Ok(UserResponse::PseudonymizedAuthentified(user_response))
     } else {
-        let user_response = UserPseudonymizedResponse::from(&user);
+        let user_response = UserPseudonymizedResponse::from_viewer(&user, viewer_user_id);
         Ok(UserResponse::Pseudonymized(user_response))
     }
 }
@@ -1560,11 +1582,11 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
-    fn build_test_user(pseudonymized: bool) -> User {
+    fn build_test_user(pseudonymized: bool, principal_type: UserPrincipalType) -> User {
         User {
             id: Uuid::new_v4(),
             email: "test@example.com".to_string(),
-            principal_type: UserPrincipalType::Human,
+            principal_type,
             mentor_id: None,
             first_name: "Ada".to_string(),
             last_name: "Lovelace".to_string(),
@@ -1574,7 +1596,7 @@ mod tests {
             updated_at: None,
             profile_picture_url: None,
             is_platform_user: false,
-            biography: None,
+            biography: Some("Biography".to_string()),
             pseudonym: "Analytical Poet".to_string(),
             pseudonymized,
             high_level_projects_definition: None,
@@ -1616,7 +1638,7 @@ mod tests {
 
     #[test]
     fn test_user_pseudonymized_response_uses_real_name_as_display_name() {
-        let user = build_test_user(false);
+        let user = build_test_user(false, UserPrincipalType::Human);
 
         let response = UserPseudonymizedResponse::from(&user);
 
@@ -1625,7 +1647,7 @@ mod tests {
 
     #[test]
     fn test_user_pseudonymized_response_uses_pseudonym_as_display_name() {
-        let user = build_test_user(true);
+        let user = build_test_user(true, UserPrincipalType::Human);
 
         let response = UserPseudonymizedResponse::from(&user);
 
@@ -1634,7 +1656,7 @@ mod tests {
 
     #[test]
     fn test_user_pseudonymized_authenticated_response_uses_real_name_as_display_name() {
-        let user = build_test_user(false);
+        let user = build_test_user(false, UserPrincipalType::Human);
 
         let response = UserPseudonymizedAuthentifiedResponse::from(&user);
 
@@ -1643,11 +1665,38 @@ mod tests {
 
     #[test]
     fn test_user_pseudonymized_authenticated_response_uses_pseudonym_as_display_name() {
-        let user = build_test_user(true);
+        let user = build_test_user(true, UserPrincipalType::Human);
 
         let response = UserPseudonymizedAuthentifiedResponse::from(&user);
 
         assert_eq!(response.display_name, "Analytical Poet");
+    }
+
+    #[test]
+    fn test_user_pseudonymized_response_hides_human_biography_for_other_users() {
+        let user = build_test_user(false, UserPrincipalType::Human);
+
+        let response = UserPseudonymizedResponse::from(&user);
+
+        assert_eq!(response.biography, None);
+    }
+
+    #[test]
+    fn test_user_pseudonymized_authenticated_response_shows_human_biography_for_self() {
+        let user = build_test_user(false, UserPrincipalType::Human);
+
+        let response = UserPseudonymizedAuthentifiedResponse::from_viewer(&user, Some(user.id));
+
+        assert_eq!(response.biography, Some("Biography".to_string()));
+    }
+
+    #[test]
+    fn test_user_pseudonymized_response_shows_service_biography() {
+        let user = build_test_user(false, UserPrincipalType::Service);
+
+        let response = UserPseudonymizedResponse::from(&user);
+
+        assert_eq!(response.biography, Some("Biography".to_string()));
     }
 
     #[test]
