@@ -1,5 +1,5 @@
 use crate::entities_v2::error::PpdcError;
-use crate::openai_handler::gpt_responses_handler::make_gpt_request;
+use crate::openai_handler::gpt_responses_handler::{make_gpt_request, DEFAULT_OPENAI_MODEL};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +45,9 @@ Contenu : {}\n\n",
     });
 
     let result = make_gpt_request(
+        DEFAULT_OPENAI_MODEL.to_string(),
+        None,
+        None,
         system_prompt.to_string(),
         user_prompt,
         Some(schema),

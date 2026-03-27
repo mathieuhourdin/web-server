@@ -2,7 +2,7 @@ use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::message::Message;
 use crate::entities_v2::user::User;
-use crate::openai_handler::GptRequestConfig;
+use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::analysis_context::AnalysisContext;
 use serde::{Deserialize, Serialize};
 
@@ -46,12 +46,14 @@ pub async fn send(
     })?;
 
     let feedback = GptRequestConfig::new(
-        "gpt-4.1-mini".to_string(),
+        "gpt-5.1".to_string(),
         system_prompt,
         user_prompt,
         Some(schema),
         Some(context.analysis_id),
     )
+    .with_reasoning_effort(GptReasoningEffort::Low)
+    .with_verbosity(GptVerbosity::Low)
     .with_display_name("Mentor Feedback / Day Feedback")
     .execute::<MentorFeedbackDraft>()
     .await?;

@@ -8,7 +8,7 @@ use crate::entities_v2::message::{
 };
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::User;
-use crate::openai_handler::GptRequestConfig;
+use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 
 use super::context::build as build_context;
 
@@ -117,12 +117,14 @@ async fn run_standard_reply_pipeline(
     let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
-        "gpt-4.1-mini".to_string(),
+        "gpt-5.1".to_string(),
         system_prompt,
         user_prompt,
         Some(schema),
         None,
     )
+    .with_reasoning_effort(GptReasoningEffort::Low)
+    .with_verbosity(GptVerbosity::Low)
     .with_display_name("Message Processing / Mentor Reply")
     .execute::<TraceReplyDraft>()
     .await?;
@@ -178,12 +180,14 @@ async fn run_tarot_reply_pipeline(
     let schema: serde_json::Value = serde_json::from_str(include_str!("tarot_schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
-        "gpt-4.1-mini".to_string(),
+        "gpt-5.1".to_string(),
         system_prompt,
         user_prompt,
         Some(schema),
         None,
     )
+    .with_reasoning_effort(GptReasoningEffort::Low)
+    .with_verbosity(GptVerbosity::Low)
     .with_display_name("Message Processing / Tarot Reading Reply")
     .execute::<TarotReplyDraft>()
     .await?;

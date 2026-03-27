@@ -5,3 +5,4 @@ pub mod whisper_handler;
 pub mod gpt_request;
 
 pub use gpt_request::GptRequestConfig;
+pub use gpt_responses_handler::{GptReasoningEffort, GptVerbosity};

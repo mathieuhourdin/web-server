@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-use web_server::openai_handler::gpt_responses_handler::make_gpt_request; // ou le bon module
+use web_server::openai_handler::gpt_responses_handler::{
+    make_gpt_request, DEFAULT_OPENAI_MODEL,
+}; // ou le bon module
                                                                          // use your_crate_name::environment; // si besoin pour la clé, etc.
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 3) Appeler ton helper générique
     let result: ExtractedElement = make_gpt_request::<ExtractedElement>(
+        DEFAULT_OPENAI_MODEL.to_string(),
+        None,
+        None,
         system_prompt,
         user_prompt,
         Some(schema_json),

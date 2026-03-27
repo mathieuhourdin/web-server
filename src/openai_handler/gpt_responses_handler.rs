@@ -8,13 +8,74 @@ use serde_json::Value;
 use tracing::info;
 use uuid::Uuid;
 
+pub const DEFAULT_OPENAI_MODEL: &str = "gpt-4.1-mini-2025-04-14";
+
+#[derive(Clone)]
+pub enum GptReasoningEffort {
+    Low,
+    Medium,
+    High,
+}
+
+impl GptReasoningEffort {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum GptVerbosity {
+    Low,
+    Medium,
+    High,
+}
+
+impl GptVerbosity {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct GPTReasoning {
+    effort: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GPTTextFormat {
+    #[serde(rename = "type")]
+    kind: String,
+    name: String,
+    schema: serde_json::Value,
+    strict: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct GPTText {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<GPTTextFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verbosity: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 struct GPTRequest {
     model: String,
     input: Vec<GPTMessage>,
     max_output_tokens: u32,
-    text: serde_json::Value,
-    temperature: f32,
+    text: GPTText,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<GPTReasoning>,
 }
 
 #[derive(Debug, Serialize)]
@@ -119,6 +180,9 @@ fn sanitize_json_value_nuls(value: &mut Value) -> usize {
 }
 
 pub async fn make_gpt_request<T>(
+    model: String,
+    reasoning_effort: Option<GptReasoningEffort>,
+    verbosity: Option<GptVerbosity>,
     system_prompt: String,
     user_prompt: String,
     schema: Option<serde_json::Value>,
@@ -133,8 +197,11 @@ where
     let request_url = build_responses_url(&base_url);
     let client = Client::new();
 
+    let reasoning = reasoning_effort.map(|effort| GPTReasoning {
+        effort: effort.as_str().to_string(),
+    });
     let gpt_request = GPTRequest {
-        model: "gpt-4.1-mini-2025-04-14".to_string(),
+        model: model.clone(),
         input: vec![
             GPTMessage {
                 role: "system".to_string(),
@@ -146,20 +213,17 @@ where
             },
         ],
         max_output_tokens: 22500,
-        temperature: 0.1,
-        text: schema
-            .clone()
-            .map(|schema| {
-                serde_json::json!({
-                    "format": {
-                        "type": "json_schema",
-                        "name": "reference_schema",
-                        "schema": schema.clone(),
-                        "strict": true
-                    }
-                })
-            })
-            .unwrap_or_default(),
+        temperature: if reasoning.is_some() { None } else { Some(0.1) },
+        reasoning,
+        text: GPTText {
+            format: schema.clone().map(|schema| GPTTextFormat {
+                kind: "json_schema".to_string(),
+                name: "reference_schema".to_string(),
+                schema,
+                strict: true,
+            }),
+            verbosity: verbosity.map(|verbosity| verbosity.as_str().to_string()),
+        },
     };
 
     // Serialize request to JSON string for persistence
@@ -219,7 +283,7 @@ where
         let pool = db::get_global_pool();
         let new_call = NewLlmCall::new(
             call_status.clone(),
-            "gpt-4.1-mini-2025-04-14".to_string(),
+            model,
             full_prompt,
             display_name.unwrap_or("").to_string(),
             schema_json,

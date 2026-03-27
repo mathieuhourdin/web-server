@@ -1,7 +1,7 @@
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
-use crate::openai_handler::gpt_responses_handler::make_gpt_request;
+use crate::openai_handler::gpt_responses_handler::{make_gpt_request, DEFAULT_OPENAI_MODEL};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -87,6 +87,9 @@ pub async fn get_high_level_analysis_from_gpt(
     });
 
     let high_level_analysis: String = make_gpt_request(
+        DEFAULT_OPENAI_MODEL.to_string(),
+        None,
+        None,
         system_prompt,
         user_prompt,
         None,
