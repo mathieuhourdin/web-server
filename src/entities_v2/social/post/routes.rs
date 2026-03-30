@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
-    error::PpdcError, post_grant::PostGrant, session::Session, shared::MaturingState,
+    error::PpdcError, journal::Journal, journal_grant::JournalGrant, post_grant::PostGrant,
+    session::Session, shared::MaturingState,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use serde::Deserialize;
@@ -24,6 +25,12 @@ pub struct PostFiltersQuery {
 
 #[derive(Deserialize)]
 pub struct UserPostsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+#[derive(Deserialize)]
+pub struct JournalPostsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -93,6 +100,24 @@ pub async fn get_user_posts_route(
         pagination.limit,
         &pool,
     )?;
+    Ok(Json(PaginatedResponse::new(posts, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn get_journal_posts_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Query(params): Query<JournalPostsQuery>,
+) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if !JournalGrant::user_can_read_journal(&journal, viewer_user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
+    let pagination = params.pagination.validate()?;
+    let (posts, total) =
+        Post::find_for_journal_paginated(viewer_user_id, journal_id, pagination.offset, pagination.limit, &pool)?;
     Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 

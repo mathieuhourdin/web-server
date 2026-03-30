@@ -111,6 +111,7 @@ pub fn create_router() -> Router {
             get(journal_grant::get_journal_grants_route)
                 .post(journal_grant::post_journal_grant_route),
         )
+        .route("/:id/posts", get(post::get_journal_posts_route))
         .route(
             "/:journal_id/grants/:grant_id",
             delete(journal_grant::delete_journal_grant_route),

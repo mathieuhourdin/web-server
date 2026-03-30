@@ -429,11 +429,7 @@ pub async fn get_trace_route(
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != session_user_id {
-        let journal_id = trace.journal_id.ok_or_else(PpdcError::unauthorized)?;
-        let journal = Journal::find_full(journal_id, &pool)?;
-        if !JournalGrant::user_can_read_journal(&journal, session_user_id, &pool)? {
-            return Err(PpdcError::unauthorized());
-        }
+        return Err(PpdcError::unauthorized());
     }
     Ok(Json(trace))
 }
@@ -487,11 +483,7 @@ pub async fn get_trace_messages_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     if trace.user_id != user_id {
-        let journal_id = trace.journal_id.ok_or_else(PpdcError::unauthorized)?;
-        let journal = Journal::find_full(journal_id, &pool)?;
-        if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
-            return Err(PpdcError::unauthorized());
-        }
+        return Err(PpdcError::unauthorized());
     }
 
     let pagination = params.pagination.validate()?;
@@ -515,6 +507,9 @@ pub async fn post_trace_message_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     let sender_is_owner = trace.user_id == user_id;
+    if !sender_is_owner {
+        return Err(PpdcError::unauthorized());
+    }
     let owner = if sender_is_owner {
         Some(User::find(&user_id, &pool)?)
     } else {
@@ -684,7 +679,7 @@ pub async fn get_traces_for_journal_route(
 ) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
-    if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
+    if journal.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.validate()?;

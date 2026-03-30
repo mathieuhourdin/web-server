@@ -6,7 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::shared::MaturingState;
-use crate::schema::posts;
+use crate::schema::{posts, traces};
 
 use super::model::{Post, PostInteractionType, PostType};
 
@@ -115,6 +115,61 @@ impl Post {
 
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
         Post::find(id, pool)
+    }
+
+    pub fn find_for_journal_paginated(
+        viewer_user_id: Uuid,
+        journal_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
+
+        let mut count_query = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .into_boxed();
+
+        if visible_post_ids.is_empty() {
+            count_query = count_query.filter(posts::user_id.eq(viewer_user_id));
+        } else {
+            count_query = count_query.filter(
+                posts::user_id
+                    .eq(viewer_user_id)
+                    .or(posts::id.eq_any(visible_post_ids.clone())),
+            );
+        }
+
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
+        let mut query = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .into_boxed();
+
+        if visible_post_ids.is_empty() {
+            query = query.filter(posts::user_id.eq(viewer_user_id));
+        } else {
+            query = query.filter(
+                posts::user_id
+                    .eq(viewer_user_id)
+                    .or(posts::id.eq_any(visible_post_ids)),
+            );
+        }
+
+        let rows = query
+            .select(select_post_columns())
+            .order(posts::publishing_date.desc().nulls_last())
+            .then_order_by(posts::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<PostTuple>(&mut conn)?;
+
+        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
 
     pub fn find_for_user(
