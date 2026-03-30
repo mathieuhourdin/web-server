@@ -261,6 +261,74 @@ impl FromSql<SmallInt, Pg> for WeekAnalysisWeekday {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+pub enum HomeFocusView {
+    Projects,
+    Follows,
+    Drafts,
+}
+
+impl HomeFocusView {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            HomeFocusView::Projects => "projects",
+            HomeFocusView::Follows => "follows",
+            HomeFocusView::Drafts => "drafts",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "projects" | "PROJECTS" | "Projects" => Ok(HomeFocusView::Projects),
+            "follows" | "FOLLOWS" | "Follows" => Ok(HomeFocusView::Follows),
+            "drafts" | "DRAFTS" | "Drafts" => Ok(HomeFocusView::Drafts),
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid home_focus_view: {}", code),
+            )),
+        }
+    }
+
+    pub fn to_api_value(self) -> &'static str {
+        self.to_code()
+    }
+}
+
+impl Serialize for HomeFocusView {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_api_value())
+    }
+}
+
+impl<'de> Deserialize<'de> for HomeFocusView {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        HomeFocusView::from_code(&value).map_err(|_| de::Error::custom("unknown home_focus_view"))
+    }
+}
+
+impl ToSql<Text, Pg> for HomeFocusView {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
+    }
+}
+
+impl FromSql<Text, Pg> for HomeFocusView {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        HomeFocusView::from_code(value.as_str())
+            .map_err(|_| "invalid home_focus_view value in database".into())
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UserRole {
@@ -396,6 +464,7 @@ pub struct User {
     pub timezone: String,
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
+    pub home_focus_view: HomeFocusView,
 }
 
 pub enum UserResponse {
@@ -446,6 +515,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub timezone: String,
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
+    pub home_focus_view: HomeFocusView,
     pub display_name: String,
 }
 
@@ -478,6 +548,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             timezone: user.timezone.clone(),
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
+            home_focus_view: user.home_focus_view,
             display_name: user.display_name(),
         }
     }
@@ -502,6 +573,7 @@ pub struct UserPseudonymizedResponse {
     pub timezone: String,
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
+    pub home_focus_view: HomeFocusView,
     pub display_name: String,
 }
 
@@ -531,6 +603,7 @@ impl UserPseudonymizedResponse {
             timezone: user.timezone.clone(),
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
+            home_focus_view: user.home_focus_view,
             display_name: user.display_name(),
         }
     }
@@ -642,6 +715,7 @@ pub struct NewUser {
     pub timezone: Option<String>,
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
+    pub home_focus_view: Option<HomeFocusView>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -693,6 +767,7 @@ impl NewServiceUserDto {
             timezone: Some("UTC".to_string()),
             context_anchor_at: None,
             welcome_message: self.welcome_message,
+            home_focus_view: None,
         }
     }
 
@@ -720,6 +795,7 @@ impl NewServiceUserDto {
             timezone: Some(existing_user.timezone.clone()),
             context_anchor_at: existing_user.context_anchor_at,
             welcome_message: self.welcome_message,
+            home_focus_view: Some(existing_user.home_focus_view),
         }
     }
 }
@@ -736,6 +812,9 @@ impl NewUser {
         }
         if payload.journal_theme.is_none() {
             payload.journal_theme = Some(JournalTheme::White);
+        }
+        if payload.home_focus_view.is_none() {
+            payload.home_focus_view = Some(HomeFocusView::Follows);
         }
         let email = payload.email.clone();
 
@@ -1655,6 +1734,7 @@ mod tests {
             timezone: "Europe/Monaco".to_string(),
             context_anchor_at: None,
             welcome_message: None,
+            home_focus_view: HomeFocusView::Follows,
         }
     }
 
@@ -1680,6 +1760,7 @@ mod tests {
             timezone: None,
             context_anchor_at: None,
             welcome_message: None,
+            home_focus_view: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

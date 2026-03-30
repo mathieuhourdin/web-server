@@ -11,15 +11,18 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
-    journal_grant::JournalGrant,
+    journal_grant::{JournalGrant, JournalGrantScope, JournalGrantStatus},
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
         routes::enqueue_received_message_notification_email, Message, MessageAttachment,
         MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
     },
+    post::{NewPost, Post, PostInteractionType, PostType},
+    post_grant::{NewPostGrantDto, PostGrantScope},
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
+    shared::MaturingState,
     user::{User, UserPrincipalType},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -136,6 +139,68 @@ fn enqueue_shared_trace_finalized_notification_emails(
     }
 
     Ok(email_ids)
+}
+
+fn ensure_default_draft_post_for_shared_trace(
+    trace: &Trace,
+    pool: &DbPool,
+) -> Result<Option<Uuid>, PpdcError> {
+    let Some(journal_id) = trace.journal_id else {
+        return Ok(None);
+    };
+
+    let journal = Journal::find_full(journal_id, pool)?;
+    if journal.is_encrypted || journal.status == JournalStatus::Archived {
+        return Ok(None);
+    }
+    if !JournalGrant::has_active_grants_for_journal(journal.id, pool)? {
+        return Ok(None);
+    }
+
+    let existing_posts = Post::find_for_trace_paginated(trace.id, 0, 1, pool)?.0;
+    if let Some(existing_post) = existing_posts.into_iter().next() {
+        return Ok(Some(existing_post.id));
+    }
+
+    let post = NewPost {
+        source_trace_id: Some(trace.id),
+        title: trace.title.clone(),
+        subtitle: trace.subtitle.clone(),
+        content: trace.content.clone(),
+        image_url: None,
+        post_type: PostType::Idea,
+        interaction_type: PostInteractionType::Output,
+        user_id: trace.user_id,
+        publishing_date: None,
+        publishing_state: "pbsh".to_string(),
+        maturing_state: MaturingState::Draft,
+    }
+    .create(pool)?;
+
+    let journal_grants = JournalGrant::find_for_journal(journal.id, pool)?;
+    for grant in journal_grants
+        .into_iter()
+        .filter(|grant| grant.status == JournalGrantStatus::Active)
+    {
+        let payload = NewPostGrantDto {
+            grantee_user_id: grant.grantee_user_id,
+            grantee_scope: match grant.grantee_scope {
+                Some(JournalGrantScope::AllAcceptedFollowers) => {
+                    Some(PostGrantScope::AllAcceptedFollowers)
+                }
+                None => None,
+            },
+            access_level: None,
+        };
+        let _ = crate::entities_v2::post_grant::PostGrant::create_or_update(
+            &post,
+            trace.user_id,
+            payload,
+            pool,
+        )?;
+    }
+
+    Ok(Some(post.id))
 }
 
 fn create_or_get_journal_draft(
@@ -347,6 +412,16 @@ pub async fn put_trace_route(
         && !trace.is_encrypted
     {
         spawn_autoplay_lens_runs_for_trace(user_id, trace.id, &pool)?;
+        if trace.trace_type == super::enums::TraceType::UserTrace {
+            if let Err(err) = ensure_default_draft_post_for_shared_trace(&trace, &pool) {
+                tracing::warn!(
+                    target: "post",
+                    "shared_trace_default_post_create_failed trace_id={} message={}",
+                    trace.id,
+                    err.message
+                );
+            }
+        }
         if trace.trace_type == super::enums::TraceType::UserTrace {
             let owner = User::find(&user_id, &pool)?;
             match enqueue_shared_trace_finalized_notification_emails(&trace, &owner, &pool) {

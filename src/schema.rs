@@ -508,6 +508,7 @@ diesel::table! {
         principal_type -> Text,
         mentor_id -> Nullable<Uuid>,
         welcome_message -> Nullable<Text>,
+        home_focus_view -> Text,
     }
 }
 
