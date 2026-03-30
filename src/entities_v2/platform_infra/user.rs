@@ -977,6 +977,7 @@ pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(),
     .get_result::<bool>(&mut conn)?;
 
     if has_autoplay_lens {
+        ensure_user_has_current_lens(user_id, pool)?;
         return Ok(());
     }
 
@@ -988,7 +989,16 @@ pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(),
         autoplay: true,
         user_id,
     };
-    autoplay_lens.create(pool)?;
+    let lens = autoplay_lens.create(pool)?;
+
+    diesel::update(
+        users::table
+            .filter(users::id.eq(user_id))
+            .filter(users::current_lens_id.is_null()),
+    )
+    .set(users::current_lens_id.eq(Some(lens.id)))
+    .execute(&mut conn)?;
+
     Ok(())
 }
 
@@ -1009,6 +1019,45 @@ fn find_latest_meta_journal_id_for_user(
         .optional()?;
 
     Ok(journal_id)
+}
+
+fn find_latest_lens_id_for_user(user_id: Uuid, pool: &DbPool) -> Result<Option<Uuid>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let lens_id = lenses::table
+        .filter(lenses::user_id.eq(user_id))
+        .order(lenses::created_at.desc())
+        .select(lenses::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+
+    Ok(lens_id)
+}
+
+fn ensure_user_has_current_lens(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    let user = User::find(&user_id, pool)?;
+    if user.current_lens_id.is_some() {
+        return Ok(());
+    }
+
+    let Some(latest_lens_id) = find_latest_lens_id_for_user(user_id, pool)? else {
+        return Ok(());
+    };
+
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+    diesel::update(
+        users::table
+            .filter(users::id.eq(user_id))
+            .filter(users::current_lens_id.is_null()),
+    )
+    .set(users::current_lens_id.eq(Some(latest_lens_id)))
+    .execute(&mut conn)?;
+
+    Ok(())
 }
 
 fn create_bio_trace_for_user(
