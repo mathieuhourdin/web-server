@@ -421,6 +421,23 @@ pub async fn get_all_traces_for_user_route(
 }
 
 #[debug_handler]
+pub async fn get_drafts_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.validate()?;
+    let (drafts, total) = Trace::get_non_empty_drafts_for_user_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(drafts, pagination, total)))
+}
+
+#[debug_handler]
 pub async fn get_trace_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,

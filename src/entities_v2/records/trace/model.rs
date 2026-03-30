@@ -422,6 +422,47 @@ impl Trace {
 
         Ok((rows.into_iter().map(Trace::from).collect(), total))
     }
+
+    pub fn get_non_empty_drafts_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Trace>, i64), PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let total = diesel::sql_query(
+            "SELECT COUNT(*)::bigint AS count
+             FROM traces
+             WHERE user_id = $1
+               AND trace_type = 'USER_TRACE'
+               AND status = 'DRAFT'
+               AND NULLIF(BTRIM(content), '') IS NOT NULL",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .count;
+
+        let rows = diesel::sql_query(
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+             FROM traces
+             WHERE user_id = $1
+               AND trace_type = 'USER_TRACE'
+               AND status = 'DRAFT'
+               AND NULLIF(BTRIM(content), '') IS NOT NULL
+             ORDER BY updated_at DESC, created_at DESC
+             OFFSET $2
+             LIMIT $3",
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<diesel::sql_types::BigInt, _>(offset)
+        .bind::<diesel::sql_types::BigInt, _>(limit)
+        .load::<TraceRow>(&mut conn)?;
+
+        Ok((rows.into_iter().map(Trace::from).collect(), total))
+    }
 }
 
 #[derive(QueryableByName)]
