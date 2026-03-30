@@ -272,6 +272,7 @@ diesel::table! {
         recipient_user_id -> Uuid,
         landscape_analysis_id -> Nullable<Uuid>,
         trace_id -> Nullable<Uuid>,
+        post_id -> Nullable<Uuid>,
         message_type -> Text,
         title -> Text,
         content -> Text,

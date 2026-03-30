@@ -20,6 +20,7 @@ pub fn create_mentor_feedback(
             recipient_user_id: analysis.user_id,
             landscape_analysis_id: Some(analysis_id),
             trace_id: None,
+            post_id: None,
             message_type: Some(MessageType::MentorFeedback),
             title: Some(title),
             content,

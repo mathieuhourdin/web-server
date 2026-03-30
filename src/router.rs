@@ -88,6 +88,10 @@ pub fn create_router() -> Router {
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
         .route(
+            "/:id/messages",
+            get(message::get_post_messages_route).post(message::post_post_message_route),
+        )
+        .route(
             "/:id/grants",
             get(post_grant::get_post_grants_route).post(post_grant::post_post_grant_route),
         )

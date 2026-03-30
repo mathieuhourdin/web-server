@@ -60,21 +60,23 @@ impl Message {
             SET recipient_user_id = $1,
                 landscape_analysis_id = $2,
                 trace_id = $3,
-                reply_to_message_id = $4,
-                message_type = $5,
-                processing_state = $6,
-                title = $7,
-                content = $8,
-                attachment_type = $9,
-                attachment = CAST($10 AS jsonb),
-                seen_at = $11,
+                post_id = $4,
+                reply_to_message_id = $5,
+                message_type = $6,
+                processing_state = $7,
+                title = $8,
+                content = $9,
+                attachment_type = $10,
+                attachment = CAST($11 AS jsonb),
+                seen_at = $12,
                 updated_at = NOW()
-            WHERE id = $12
+            WHERE id = $13
             "#,
         )
         .bind::<SqlUuid, _>(self.recipient_user_id)
         .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
         .bind::<Nullable<SqlUuid>, _>(self.trace_id)
+        .bind::<Nullable<SqlUuid>, _>(self.post_id)
         .bind::<Nullable<SqlUuid>, _>(self.reply_to_message_id)
         .bind::<Text, _>(self.message_type.to_db())
         .bind::<Text, _>(self.processing_state.to_db())
@@ -128,6 +130,7 @@ impl NewMessage {
                 recipient_user_id,
                 landscape_analysis_id,
                 trace_id,
+                post_id,
                 reply_to_message_id,
                 message_type,
                 processing_state,
@@ -138,7 +141,7 @@ impl NewMessage {
                 seen_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CAST($11 AS jsonb), NULL
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CAST($12 AS jsonb), NULL
             )
             RETURNING id
             "#,
@@ -147,6 +150,7 @@ impl NewMessage {
         .bind::<SqlUuid, _>(self.recipient_user_id)
         .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
         .bind::<Nullable<SqlUuid>, _>(self.trace_id)
+        .bind::<Nullable<SqlUuid>, _>(self.post_id)
         .bind::<Nullable<SqlUuid>, _>(self.reply_to_message_id)
         .bind::<Text, _>(self.message_type.to_db())
         .bind::<Text, _>(self.processing_state.to_db())
