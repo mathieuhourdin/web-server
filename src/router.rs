@@ -73,6 +73,7 @@ pub fn create_router() -> Router {
                 .put(trace::put_trace_route)
                 .patch(trace::patch_trace_route),
         )
+        .route("/:id/posts", get(post::get_trace_posts_route))
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
         .route(
             "/:id/messages",

@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::PpdcError, journal::Journal, journal_grant::JournalGrant, post_grant::PostGrant,
-    session::Session, shared::MaturingState,
+    session::Session, shared::MaturingState, trace::Trace,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use serde::Deserialize;
@@ -31,6 +31,12 @@ pub struct UserPostsQuery {
 
 #[derive(Deserialize)]
 pub struct JournalPostsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+#[derive(Deserialize)]
+pub struct TracePostsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -118,6 +124,25 @@ pub async fn get_journal_posts_route(
     let pagination = params.pagination.validate()?;
     let (posts, total) =
         Post::find_for_journal_paginated(viewer_user_id, journal_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(posts, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn get_trace_posts_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+    Query(params): Query<TracePostsQuery>,
+) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let pagination = params.pagination.validate()?;
+    let (posts, total) =
+        Post::find_for_trace_paginated(trace_id, pagination.offset, pagination.limit, &pool)?;
     Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 

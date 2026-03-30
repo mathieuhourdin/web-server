@@ -81,10 +81,19 @@ pub(crate) fn enqueue_received_message_notification_email(
         &sender.display_name(),
         &message.title,
         &message.content,
-        if message.post_id.is_some() {
-            None
-        } else {
-            message.trace_id.as_ref().map(|trace_id| {
+        message
+            .post_id
+            .as_ref()
+            .map(|post_id| {
+                format!(
+                    "{}/me/journal-pad?post_id={}&recipient_user_id={}",
+                    environment::get_app_base_url().trim_end_matches('/'),
+                    post_id,
+                    sender.id
+                )
+            })
+            .or_else(|| {
+                message.trace_id.as_ref().map(|trace_id| {
                 format!(
                     "{}/me/journal-pad?trace_id={}&recipient_user_id={}",
                     environment::get_app_base_url().trim_end_matches('/'),
@@ -92,8 +101,8 @@ pub(crate) fn enqueue_received_message_notification_email(
                     sender.id
                 )
             })
-        }
-        .as_deref(),
+            })
+            .as_deref(),
     );
     let email = NewOutboundEmail::new(
         Some(recipient.id),
