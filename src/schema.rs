@@ -333,6 +333,7 @@ diesel::table! {
         interaction_type -> Text,
         post_type -> Text,
         publishing_date -> Nullable<Timestamp>,
+        status -> Text,
         publishing_state -> Text,
         maturing_state -> Text,
         created_at -> Timestamp,

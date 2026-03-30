@@ -2,6 +2,66 @@ use serde::de::Deserializer;
 use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostStatus {
+    Draft,
+    Published,
+    Archived,
+}
+
+impl PostStatus {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            PostStatus::Draft => "draft",
+            PostStatus::Published => "published",
+            PostStatus::Archived => "archived",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "published" | "PUBLISHED" | "Published" => PostStatus::Published,
+            "archived" | "ARCHIVED" | "Archived" => PostStatus::Archived,
+            _ => PostStatus::Draft,
+        }
+    }
+
+    pub fn to_db(self) -> &'static str {
+        match self {
+            PostStatus::Draft => "DRAFT",
+            PostStatus::Published => "PUBLISHED",
+            PostStatus::Archived => "ARCHIVED",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "PUBLISHED" | "published" => PostStatus::Published,
+            "ARCHIVED" | "archived" => PostStatus::Archived,
+            _ => PostStatus::Draft,
+        }
+    }
+}
+
+impl Serialize for PostStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_code())
+    }
+}
+
+impl<'de> Deserialize<'de> for PostStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(PostStatus::from_code(&value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostInteractionType {
     Output,
     Input,

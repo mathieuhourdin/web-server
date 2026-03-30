@@ -180,6 +180,9 @@ pub async fn put_post_route(
     if let Some(post_type) = payload.post_type {
         post.post_type = post_type;
     }
+    if let Some(status) = payload.status {
+        post.status = status;
+    }
     if let Some(publishing_state) = payload.publishing_state {
         post.publishing_state = publishing_state;
     }

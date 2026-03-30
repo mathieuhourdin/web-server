@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::entities_v2::shared::MaturingState;
 
-pub use super::enums::{PostInteractionType, PostType};
+pub use super::enums::{PostInteractionType, PostStatus, PostType};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Post {
@@ -20,6 +20,7 @@ pub struct Post {
     pub post_type: PostType,
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
+    pub status: PostStatus,
     pub publishing_state: String,
     pub maturing_state: MaturingState,
     pub created_at: NaiveDateTime,
@@ -37,6 +38,7 @@ pub struct NewPostDto {
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
+    pub status: Option<PostStatus>,
     pub publishing_state: Option<String>,
     pub maturing_state: Option<MaturingState>,
 }
@@ -52,6 +54,7 @@ pub struct NewPost {
     pub interaction_type: PostInteractionType,
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
+    pub status: PostStatus,
     pub publishing_state: String,
     pub maturing_state: MaturingState,
 }
@@ -70,6 +73,7 @@ impl NewPost {
                 .unwrap_or(PostInteractionType::Output),
             user_id,
             publishing_date: payload.publishing_date,
+            status: payload.status.unwrap_or(PostStatus::Draft),
             publishing_state: payload
                 .publishing_state
                 .unwrap_or_else(|| "pbsh".to_string()),

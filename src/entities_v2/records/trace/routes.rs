@@ -172,6 +172,7 @@ fn ensure_default_draft_post_for_shared_trace(
         interaction_type: PostInteractionType::Output,
         user_id: trace.user_id,
         publishing_date: None,
+        status: crate::entities_v2::post::PostStatus::Draft,
         publishing_state: "pbsh".to_string(),
         maturing_state: MaturingState::Draft,
     }

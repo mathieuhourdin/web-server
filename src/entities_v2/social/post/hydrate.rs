@@ -8,7 +8,7 @@ use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::shared::MaturingState;
 use crate::schema::{posts, traces};
 
-use super::model::{Post, PostInteractionType, PostType};
+use super::model::{Post, PostInteractionType, PostStatus, PostType};
 
 type PostTuple = (
     Uuid,
@@ -21,6 +21,7 @@ type PostTuple = (
     String,
     String,
     Option<NaiveDateTime>,
+    String,
     String,
     String,
     NaiveDateTime,
@@ -39,6 +40,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         interaction_type_raw,
         post_type_raw,
         publishing_date,
+        status_raw,
         publishing_state,
         maturing_state_raw,
         created_at,
@@ -57,6 +59,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         post_type: PostType::from_db(&post_type_raw),
         user_id,
         publishing_date,
+        status: PostStatus::from_db(&status_raw),
         publishing_state,
         maturing_state: MaturingState::from_code(&maturing_state_raw)
             .unwrap_or(MaturingState::Draft),
@@ -76,6 +79,7 @@ fn select_post_columns() -> (
     posts::interaction_type,
     posts::post_type,
     posts::publishing_date,
+    posts::status,
     posts::publishing_state,
     posts::maturing_state,
     posts::created_at,
@@ -92,6 +96,7 @@ fn select_post_columns() -> (
         posts::interaction_type,
         posts::post_type,
         posts::publishing_date,
+        posts::status,
         posts::publishing_state,
         posts::maturing_state,
         posts::created_at,
