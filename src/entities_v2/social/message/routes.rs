@@ -76,33 +76,41 @@ pub(crate) fn enqueue_received_message_notification_email(
         return Ok(None);
     }
 
+    let conversation_url = if let Some(post_id) = message.post_id {
+        let post = Post::find_full(post_id, pool)?;
+        post.source_trace_id
+            .map(|trace_id| Trace::find_full_trace(trace_id, pool))
+            .transpose()?
+            .and_then(|trace| trace.journal_id)
+            .map(|journal_id| {
+                format!(
+                    "{}/me/journals/{}?post_id={}&recipient_user_id={}",
+                    environment::get_app_base_url().trim_end_matches('/'),
+                    journal_id,
+                    post_id,
+                    sender.id
+                )
+            })
+    } else {
+        None
+    }
+    .or_else(|| {
+        message.trace_id.as_ref().map(|trace_id| {
+            format!(
+                "{}/me/journal-pad?trace_id={}&recipient_user_id={}",
+                environment::get_app_base_url().trim_end_matches('/'),
+                trace_id,
+                sender.id
+            )
+        })
+    });
+
     let template = mailer::message_received_email(
         &recipient.display_name(),
         &sender.display_name(),
         &message.title,
         &message.content,
-        message
-            .post_id
-            .as_ref()
-            .map(|post_id| {
-                format!(
-                    "{}/me/journal-pad?post_id={}&recipient_user_id={}",
-                    environment::get_app_base_url().trim_end_matches('/'),
-                    post_id,
-                    sender.id
-                )
-            })
-            .or_else(|| {
-                message.trace_id.as_ref().map(|trace_id| {
-                format!(
-                    "{}/me/journal-pad?trace_id={}&recipient_user_id={}",
-                    environment::get_app_base_url().trim_end_matches('/'),
-                    trace_id,
-                    sender.id
-                )
-            })
-            })
-            .as_deref(),
+        conversation_url.as_deref(),
     );
     let email = NewOutboundEmail::new(
         Some(recipient.id),
