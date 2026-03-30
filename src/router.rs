@@ -13,8 +13,9 @@ use tower_http::{
 use crate::entities_v2::{
     analysis_summary, element,
     error::{ErrorType, PpdcError},
-    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post, reference,
-    relationship, trace, trace_mirror, transcription, user, user_secure_action,
+    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post,
+    post_grant, reference, relationship, trace, trace_mirror, transcription, user,
+    user_secure_action,
 };
 use crate::sessions_service;
 
@@ -82,6 +83,14 @@ pub fn create_router() -> Router {
     let posts_router = Router::new()
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
+        .route(
+            "/:id/grants",
+            get(post_grant::get_post_grants_route).post(post_grant::post_post_grant_route),
+        )
+        .route(
+            "/:post_id/grants/:grant_id",
+            delete(post_grant::delete_post_grant_route),
+        )
         .route("/users/:id", get(post::get_user_posts_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 

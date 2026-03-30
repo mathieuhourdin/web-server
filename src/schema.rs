@@ -89,6 +89,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    post_grants (id) {
+        id -> Uuid,
+        post_id -> Uuid,
+        owner_user_id -> Uuid,
+        grantee_user_id -> Nullable<Uuid>,
+        grantee_scope -> Nullable<Text>,
+        access_level -> Text,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     journals (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -310,6 +324,7 @@ diesel::table! {
     posts (id) {
         id -> Uuid,
         user_id -> Uuid,
+        source_trace_id -> Nullable<Uuid>,
         title -> Text,
         subtitle -> Text,
         content -> Text,
@@ -506,6 +521,7 @@ diesel::joinable!(elements -> users (user_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(journal_grants -> journals (journal_id));
+diesel::joinable!(post_grants -> posts (post_id));
 diesel::joinable!(journals -> users (user_id));
 diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
 diesel::joinable!(landmarks -> users (user_id));
@@ -529,6 +545,7 @@ diesel::joinable!(messages -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(messages -> traces (trace_id));
 diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(posts -> users (user_id));
+diesel::joinable!(posts -> traces (source_trace_id));
 diesel::joinable!(references -> landmarks (landmark_id));
 diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(references -> trace_mirrors (trace_mirror_id));
@@ -563,6 +580,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     llm_calls,
     messages,
     outbound_emails,
+    post_grants,
     post_relations,
     posts,
     references,

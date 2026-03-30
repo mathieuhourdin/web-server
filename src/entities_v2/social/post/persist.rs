@@ -14,6 +14,7 @@ impl Post {
             .expect("Failed to get a connection from the pool");
         diesel::update(posts::table.filter(posts::id.eq(self.id)))
             .set((
+                posts::source_trace_id.eq(self.source_trace_id),
                 posts::title.eq(self.title),
                 posts::subtitle.eq(self.subtitle),
                 posts::content.eq(self.content),
@@ -37,6 +38,7 @@ impl NewPost {
             .expect("Failed to get a connection from the pool");
         let id: Uuid = diesel::insert_into(posts::table)
             .values((
+                posts::source_trace_id.eq(self.source_trace_id),
                 posts::title.eq(self.title),
                 posts::subtitle.eq(self.subtitle),
                 posts::content.eq(self.content),

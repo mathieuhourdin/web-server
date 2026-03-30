@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::shared::MaturingState;
 use crate::schema::posts;
 
@@ -12,6 +13,7 @@ use super::model::{Post, PostInteractionType, PostType};
 type PostTuple = (
     Uuid,
     Uuid,
+    Option<Uuid>,
     String,
     String,
     String,
@@ -29,6 +31,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
     let (
         id,
         user_id,
+        source_trace_id,
         title,
         subtitle,
         content,
@@ -45,6 +48,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
     Post {
         id,
         resource_id: id,
+        source_trace_id,
         title,
         subtitle,
         content,
@@ -64,6 +68,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
 fn select_post_columns() -> (
     posts::id,
     posts::user_id,
+    posts::source_trace_id,
     posts::title,
     posts::subtitle,
     posts::content,
@@ -79,6 +84,7 @@ fn select_post_columns() -> (
     (
         posts::id,
         posts::user_id,
+        posts::source_trace_id,
         posts::title,
         posts::subtitle,
         posts::content,
@@ -112,17 +118,27 @@ impl Post {
     }
 
     pub fn find_for_user(
+        viewer_user_id: Uuid,
         user_id: Uuid,
         offset: i64,
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
         let (items, _) =
-            Self::find_for_user_filtered_paginated(user_id, vec![], vec![], offset, limit, pool)?;
+            Self::find_for_user_filtered_paginated(
+                viewer_user_id,
+                user_id,
+                vec![],
+                vec![],
+                offset,
+                limit,
+                pool,
+            )?;
         Ok(items)
     }
 
     pub fn find_for_user_filtered(
+        viewer_user_id: Uuid,
         user_id: Uuid,
         interaction_types: Vec<PostInteractionType>,
         post_types: Vec<PostType>,
@@ -131,6 +147,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
         let (items, _) = Self::find_for_user_filtered_paginated(
+            viewer_user_id,
             user_id,
             interaction_types,
             post_types,
@@ -142,6 +159,7 @@ impl Post {
     }
 
     pub fn find_for_user_filtered_paginated(
+        viewer_user_id: Uuid,
         user_id: Uuid,
         interaction_types: Vec<PostInteractionType>,
         post_types: Vec<PostType>,
@@ -152,6 +170,11 @@ impl Post {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let visible_post_ids = if viewer_user_id == user_id {
+            vec![]
+        } else {
+            PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?
+        };
         let mut count_query = posts::table.filter(posts::user_id.eq(user_id)).into_boxed();
         let interaction_type_values = interaction_types
             .iter()
@@ -169,6 +192,12 @@ impl Post {
         if !post_type_values.is_empty() {
             count_query = count_query.filter(posts::post_type.eq_any(post_type_values.clone()));
         }
+        if viewer_user_id != user_id {
+            if visible_post_ids.is_empty() {
+                return Ok((vec![], 0));
+            }
+            count_query = count_query.filter(posts::id.eq_any(visible_post_ids.clone()));
+        }
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
@@ -179,6 +208,9 @@ impl Post {
         }
         if !post_type_values.is_empty() {
             query = query.filter(posts::post_type.eq_any(post_type_values));
+        }
+        if viewer_user_id != user_id {
+            query = query.filter(posts::id.eq_any(visible_post_ids));
         }
 
         let rows = query
@@ -192,6 +224,7 @@ impl Post {
     }
 
     pub fn find_filtered(
+        viewer_user_id: Uuid,
         interaction_types: Vec<PostInteractionType>,
         post_types: Vec<PostType>,
         legacy_resource_type: Option<String>,
@@ -202,6 +235,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
         let (items, _) = Self::find_filtered_paginated(
+            viewer_user_id,
             interaction_types,
             post_types,
             legacy_resource_type,
@@ -217,6 +251,7 @@ impl Post {
 
     #[allow(clippy::too_many_arguments)]
     pub fn find_filtered_paginated(
+        viewer_user_id: Uuid,
         interaction_types: Vec<PostInteractionType>,
         post_types: Vec<PostType>,
         legacy_resource_type: Option<String>,
@@ -238,6 +273,7 @@ impl Post {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut count_query = posts::table.into_boxed();
         let effective_post_types = if post_types.is_empty() {
@@ -267,6 +303,15 @@ impl Post {
             let maturing_state_code = maturing_state.to_code().to_string();
             count_query = count_query.filter(posts::maturing_state.eq(maturing_state_code));
         }
+        if visible_post_ids.is_empty() {
+            count_query = count_query.filter(posts::user_id.eq(viewer_user_id));
+        } else {
+            count_query = count_query.filter(
+                posts::user_id
+                    .eq(viewer_user_id)
+                    .or(posts::id.eq_any(visible_post_ids.clone())),
+            );
+        }
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
@@ -283,6 +328,15 @@ impl Post {
         if let Some(maturing_state) = maturing_state {
             let maturing_state_code = maturing_state.to_code().to_string();
             query = query.filter(posts::maturing_state.eq(maturing_state_code));
+        }
+        if visible_post_ids.is_empty() {
+            query = query.filter(posts::user_id.eq(viewer_user_id));
+        } else {
+            query = query.filter(
+                posts::user_id
+                    .eq(viewer_user_id)
+                    .or(posts::id.eq_any(visible_post_ids)),
+            );
         }
 
         let rows = query

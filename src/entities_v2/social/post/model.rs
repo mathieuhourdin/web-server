@@ -11,6 +11,7 @@ pub struct Post {
     pub id: Uuid,
     #[serde(skip_serializing, skip_deserializing)]
     pub resource_id: Uuid,
+    pub source_trace_id: Option<Uuid>,
     pub title: String,
     pub subtitle: String,
     pub content: String,
@@ -27,6 +28,8 @@ pub struct Post {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewPostDto {
+    #[serde(default)]
+    pub source_trace_id: Option<Uuid>,
     pub title: String,
     pub subtitle: Option<String>,
     pub content: String,
@@ -40,6 +43,7 @@ pub struct NewPostDto {
 
 #[derive(Debug, Clone)]
 pub struct NewPost {
+    pub source_trace_id: Option<Uuid>,
     pub title: String,
     pub subtitle: String,
     pub content: String,
@@ -55,6 +59,7 @@ pub struct NewPost {
 impl NewPost {
     pub fn new(payload: NewPostDto, user_id: Uuid) -> Self {
         Self {
+            source_trace_id: payload.source_trace_id,
             title: payload.title,
             subtitle: payload.subtitle.unwrap_or_default(),
             content: payload.content,

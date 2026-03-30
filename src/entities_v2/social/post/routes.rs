@@ -5,7 +5,9 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::{error::PpdcError, session::Session, shared::MaturingState};
+use crate::entities_v2::{
+    error::PpdcError, post_grant::PostGrant, session::Session, shared::MaturingState,
+};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use serde::Deserialize;
 
@@ -29,15 +31,18 @@ pub struct UserPostsQuery {
 #[debug_handler]
 pub async fn get_posts_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     RawQuery(raw_query): RawQuery,
     Query(filters): Query<PostFiltersQuery>,
 ) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = PaginationParams::from_parts(Some(0), filters.limit).validate()?;
     let interaction_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "interaction_type")?;
     let post_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
     let (posts, total) = Post::find_filtered_paginated(
+        viewer_user_id,
         interaction_type,
         post_type,
         filters.resource_type,
@@ -54,25 +59,33 @@ pub async fn get_posts_route(
 #[debug_handler]
 pub async fn get_post_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Post>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let post = Post::find_full(id, &pool)?;
+    if !PostGrant::user_can_read_post(&post, viewer_user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
     Ok(Json(post))
 }
 
 #[debug_handler]
 pub async fn get_user_posts_route(
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
     RawQuery(raw_query): RawQuery,
     Query(params): Query<UserPostsQuery>,
 ) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.pagination.validate()?;
     let interaction_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "interaction_type")?;
     let post_type =
         crate::pagination::parse_repeated_query_param(raw_query.as_deref(), "post_type")?;
     let (posts, total) = Post::find_for_user_filtered_paginated(
+        viewer_user_id,
         user_id,
         interaction_type,
         post_type,
@@ -107,6 +120,7 @@ pub async fn put_post_route(
     }
 
     post.title = payload.title;
+    post.source_trace_id = payload.source_trace_id;
     post.subtitle = payload.subtitle.unwrap_or_default();
     post.content = payload.content;
     post.image_url = payload.image_url;
