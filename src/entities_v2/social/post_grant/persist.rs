@@ -5,7 +5,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
-use crate::schema::post_grants;
+use crate::schema::{post_grants, posts};
 
 use super::enums::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};
 use super::model::{NewPostGrantDto, PostGrant};
@@ -208,16 +208,25 @@ impl PostGrant {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Uuid>, PpdcError> {
-        use std::collections::HashSet;
+        use chrono::NaiveDateTime;
+        use std::collections::{HashMap, HashSet};
 
-        let mut ids = HashSet::new();
+        #[derive(Clone, Copy)]
+        struct VisiblePostCandidate {
+            post_id: Uuid,
+            specificity: i32,
+            published_or_created_at: NaiveDateTime,
+            created_at: NaiveDateTime,
+        }
+
         let mut conn = pool.get().expect("Failed to get a connection from the pool");
         let direct_ids = post_grants::table
             .filter(post_grants::grantee_user_id.eq(Some(user_id)))
             .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
             .select(post_grants::post_id)
             .load::<Uuid>(&mut conn)?;
-        ids.extend(direct_ids);
+        let direct_ids_set = direct_ids.iter().copied().collect::<HashSet<_>>();
+        let mut candidate_ids = direct_ids_set.clone();
 
         let follower_scope_grants = post_grants::table
             .filter(
@@ -229,11 +238,59 @@ impl PostGrant {
 
         for (post_id, owner_user_id) in follower_scope_grants {
             if Relationship::is_follow_accepted(user_id, owner_user_id, pool)? {
-                ids.insert(post_id);
+                candidate_ids.insert(post_id);
             }
         }
 
-        Ok(ids.into_iter().collect())
+        if candidate_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let candidate_rows = posts::table
+            .filter(posts::id.eq_any(candidate_ids.iter().copied().collect::<Vec<_>>()))
+            .select((
+                posts::id,
+                posts::source_trace_id,
+                posts::publishing_date,
+                posts::created_at,
+            ))
+            .load::<(Uuid, Option<Uuid>, Option<NaiveDateTime>, NaiveDateTime)>(&mut conn)?;
+
+        let mut selected_ids = HashSet::new();
+        let mut best_by_trace_id = HashMap::<Uuid, VisiblePostCandidate>::new();
+
+        for (post_id, source_trace_id, publishing_date, created_at) in candidate_rows {
+            let candidate = VisiblePostCandidate {
+                post_id,
+                specificity: if direct_ids_set.contains(&post_id) { 2 } else { 1 },
+                published_or_created_at: publishing_date.unwrap_or(created_at),
+                created_at,
+            };
+
+            if let Some(source_trace_id) = source_trace_id {
+                let should_replace = best_by_trace_id
+                    .get(&source_trace_id)
+                    .map(|current| {
+                        candidate.specificity > current.specificity
+                            || (candidate.specificity == current.specificity
+                                && (candidate.published_or_created_at
+                                    > current.published_or_created_at
+                                    || (candidate.published_or_created_at
+                                        == current.published_or_created_at
+                                        && candidate.created_at > current.created_at)))
+                    })
+                    .unwrap_or(true);
+
+                if should_replace {
+                    best_by_trace_id.insert(source_trace_id, candidate);
+                }
+            } else {
+                selected_ids.insert(post_id);
+            }
+        }
+
+        selected_ids.extend(best_by_trace_id.into_values().map(|candidate| candidate.post_id));
+        Ok(selected_ids.into_iter().collect())
     }
 
     pub fn find_active_recipient_user_ids_for_post(

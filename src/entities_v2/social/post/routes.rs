@@ -48,6 +48,18 @@ pub struct TracePostsQuery {
     pub pagination: PaginationParams,
 }
 
+#[derive(Deserialize)]
+pub struct NewTracePostDto {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub content: Option<String>,
+    pub image_url: Option<String>,
+    pub post_type: Option<super::model::PostType>,
+    pub interaction_type: Option<super::model::PostInteractionType>,
+    pub publishing_date: Option<chrono::NaiveDateTime>,
+    pub status: Option<PostStatus>,
+}
+
 fn enqueue_post_published_notification_emails(
     post: &Post,
     pool: &DbPool,
@@ -218,6 +230,55 @@ pub async fn get_trace_posts_route(
     let (posts, total) =
         Post::find_for_trace_paginated(trace_id, pagination.offset, pagination.limit, &pool)?;
     Ok(Json(PaginatedResponse::new(posts, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn post_trace_post_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+    Json(payload): Json<NewTracePostDto>,
+) -> Result<Json<Post>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let payload = NewPostDto {
+        source_trace_id: Some(trace_id),
+        title: payload.title.unwrap_or_else(|| trace.title.clone()),
+        subtitle: payload.subtitle.or_else(|| Some(trace.subtitle.clone())),
+        content: payload.content.unwrap_or_else(|| trace.content.clone()),
+        image_url: payload.image_url,
+        post_type: payload.post_type,
+        interaction_type: payload.interaction_type,
+        publishing_date: payload.publishing_date,
+        status: payload.status,
+    };
+
+    let new_post = NewPost::new(payload, user_id);
+    let post = new_post.create(&pool)?;
+    if post.status == PostStatus::Published {
+        match enqueue_post_published_notification_emails(&post, &pool) {
+            Ok(email_ids) if !email_ids.is_empty() => {
+                let pool_for_task = pool.clone();
+                tokio::spawn(async move {
+                    let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
+                });
+            }
+            Ok(_) => {}
+            Err(err) => {
+                tracing::warn!(
+                    target: "mailer",
+                    "post_publish_email_enqueue_failed post_id={} message={}",
+                    post.id,
+                    err.message
+                );
+            }
+        }
+    }
+    Ok(Json(post))
 }
 
 #[debug_handler]
