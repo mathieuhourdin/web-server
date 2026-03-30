@@ -235,4 +235,32 @@ impl PostGrant {
 
         Ok(ids.into_iter().collect())
     }
+
+    pub fn find_active_recipient_user_ids_for_post(
+        post: &Post,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        use std::collections::HashSet;
+
+        let mut ids = HashSet::new();
+        let grants = PostGrant::find_for_post_paginated(post.id, 0, i64::MAX / 4, pool)?.0;
+
+        for grant in grants
+            .into_iter()
+            .filter(|grant| grant.status == PostGrantStatus::Active)
+        {
+            if let Some(grantee_user_id) = grant.grantee_user_id {
+                ids.insert(grantee_user_id);
+            }
+
+            if grant.grantee_scope == Some(PostGrantScope::AllAcceptedFollowers) {
+                for relationship in Relationship::find_followers_for_user(post.user_id, pool)? {
+                    ids.insert(relationship.requester_user_id);
+                }
+            }
+        }
+
+        ids.remove(&post.user_id);
+        Ok(ids.into_iter().collect())
+    }
 }

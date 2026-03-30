@@ -20,10 +20,10 @@ use crate::entities_v2::{
     },
     post::{NewPost, Post, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
-    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
+    platform_infra::mailer,
     session::Session,
     shared::MaturingState,
-    user::{User, UserPrincipalType},
+    user::User,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -83,62 +83,6 @@ fn spawn_autoplay_lens_runs_for_trace(
         tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
     }
     Ok(())
-}
-
-fn enqueue_shared_trace_finalized_notification_emails(
-    trace: &Trace,
-    owner: &User,
-    pool: &DbPool,
-) -> Result<Vec<Uuid>, PpdcError> {
-    let Some(journal_id) = trace.journal_id else {
-        return Ok(vec![]);
-    };
-
-    let journal = Journal::find_full(journal_id, pool)?;
-    if journal.is_encrypted || journal.status == JournalStatus::Archived {
-        return Ok(vec![]);
-    }
-
-    let recipient_ids = JournalGrant::find_active_recipient_user_ids_for_journal(&journal, pool)?;
-    let recipients = User::find_many(&recipient_ids, pool)?;
-    let scheduled_at = Some(Utc::now().naive_utc());
-    let owner_display_name = owner.display_name();
-    let journal_url = format!(
-        "https://matieregrise.ppdcoeur.fr/me/journals/{}",
-        journal.id
-    );
-    let mut email_ids = Vec::new();
-    for recipient in recipients.into_iter().filter(|recipient| {
-        recipient.id != owner.id
-            && recipient.principal_type == UserPrincipalType::Human
-            && !recipient.email.trim().is_empty()
-    }) {
-        let template = mailer::shared_trace_finalized_email(
-            &recipient.display_name(),
-            &owner_display_name,
-            &journal.title,
-            &journal_url,
-            trace.interaction_date,
-            &trace.content,
-        );
-        let email = NewOutboundEmail::new(
-            Some(recipient.id),
-            "SHARED_TRACE_FINALIZED".to_string(),
-            Some("TRACE".to_string()),
-            Some(trace.id),
-            recipient.email,
-            "Matière Grise <noreply@ppdcoeur.fr>".to_string(),
-            template.subject.clone(),
-            template.text_body.clone(),
-            template.html_body.clone(),
-            OutboundEmailProvider::Resend,
-            scheduled_at,
-        )
-        .create(pool)?;
-        email_ids.push(email.id);
-    }
-
-    Ok(email_ids)
 }
 
 fn ensure_default_draft_post_for_shared_trace(
@@ -421,26 +365,6 @@ pub async fn put_trace_route(
                     trace.id,
                     err.message
                 );
-            }
-        }
-        if trace.trace_type == super::enums::TraceType::UserTrace {
-            let owner = User::find(&user_id, &pool)?;
-            match enqueue_shared_trace_finalized_notification_emails(&trace, &owner, &pool) {
-                Ok(email_ids) if !email_ids.is_empty() => {
-                    let pool_for_task = pool.clone();
-                    tokio::spawn(async move {
-                        let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
-                    });
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    tracing::warn!(
-                        target: "mailer",
-                        "shared_trace_email_enqueue_failed trace_id={} message={}",
-                        trace.id,
-                        err.message
-                    );
-                }
             }
         }
     }

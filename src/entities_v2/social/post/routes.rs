@@ -6,13 +6,21 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
-    error::PpdcError, journal::Journal, journal_grant::JournalGrant, post_grant::PostGrant,
-    session::Session, shared::MaturingState, trace::Trace,
+    error::PpdcError,
+    journal::Journal,
+    journal_grant::JournalGrant,
+    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
+    post_grant::PostGrant,
+    session::Session,
+    shared::MaturingState,
+    trace::Trace,
+    user::{User, UserPrincipalType},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
+use chrono::Utc;
 use serde::Deserialize;
 
-use super::model::{NewPost, NewPostDto, Post};
+use super::model::{NewPost, NewPostDto, Post, PostStatus};
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
@@ -39,6 +47,70 @@ pub struct JournalPostsQuery {
 pub struct TracePostsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+}
+
+fn enqueue_post_published_notification_emails(
+    post: &Post,
+    pool: &DbPool,
+) -> Result<Vec<Uuid>, PpdcError> {
+    let Some(trace_id) = post.source_trace_id else {
+        return Ok(vec![]);
+    };
+
+    let trace = Trace::find_full_trace(trace_id, pool)?;
+    let Some(journal_id) = trace.journal_id else {
+        return Ok(vec![]);
+    };
+
+    let journal = Journal::find_full(journal_id, pool)?;
+    if journal.is_encrypted {
+        return Ok(vec![]);
+    }
+
+    let owner = User::find(&post.user_id, pool)?;
+    let recipient_ids = PostGrant::find_active_recipient_user_ids_for_post(post, pool)?;
+    let recipients = User::find_many(&recipient_ids, pool)?;
+    let journal_url = format!(
+        "{}/me/journals/{}?post_id={}",
+        crate::environment::get_app_base_url().trim_end_matches('/'),
+        journal.id,
+        post.id
+    );
+    let owner_display_name = owner.display_name();
+    let scheduled_at = Some(Utc::now().naive_utc());
+    let mut email_ids = Vec::new();
+
+    for recipient in recipients.into_iter().filter(|recipient| {
+        recipient.id != owner.id
+            && recipient.principal_type == UserPrincipalType::Human
+            && !recipient.email.trim().is_empty()
+    }) {
+        let template = mailer::shared_trace_finalized_email(
+            &recipient.display_name(),
+            &owner_display_name,
+            &journal.title,
+            &journal_url,
+            trace.interaction_date,
+            &post.content,
+        );
+        let email = NewOutboundEmail::new(
+            Some(recipient.id),
+            "POST_PUBLISHED".to_string(),
+            Some("POST".to_string()),
+            Some(post.id),
+            recipient.email,
+            "Matière Grise <noreply@ppdcoeur.fr>".to_string(),
+            template.subject,
+            template.text_body,
+            template.html_body,
+            OutboundEmailProvider::Resend,
+            scheduled_at,
+        )
+        .create(pool)?;
+        email_ids.push(email.id);
+    }
+
+    Ok(email_ids)
 }
 
 #[debug_handler]
@@ -154,6 +226,25 @@ pub async fn post_post_route(
 ) -> Result<Json<Post>, PpdcError> {
     let new_post = NewPost::new(payload, session.user_id.unwrap());
     let post = new_post.create(&pool)?;
+    if post.status == PostStatus::Published {
+        match enqueue_post_published_notification_emails(&post, &pool) {
+            Ok(email_ids) if !email_ids.is_empty() => {
+                let pool_for_task = pool.clone();
+                tokio::spawn(async move {
+                    let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
+                });
+            }
+            Ok(_) => {}
+            Err(err) => {
+                tracing::warn!(
+                    target: "mailer",
+                    "post_publish_email_enqueue_failed post_id={} message={}",
+                    post.id,
+                    err.message
+                );
+            }
+        }
+    }
     Ok(Json(post))
 }
 
@@ -168,6 +259,7 @@ pub async fn put_post_route(
     if post.user_id != session.user_id.unwrap() {
         return Err(PpdcError::unauthorized());
     }
+    let previous_status = post.status;
 
     post.title = payload.title;
     post.source_trace_id = payload.source_trace_id;
@@ -190,5 +282,26 @@ pub async fn put_post_route(
         post.maturing_state = maturing_state;
     }
     let post = post.update(&pool)?;
+
+    if previous_status != PostStatus::Published && post.status == PostStatus::Published {
+        match enqueue_post_published_notification_emails(&post, &pool) {
+            Ok(email_ids) if !email_ids.is_empty() => {
+                let pool_for_task = pool.clone();
+                tokio::spawn(async move {
+                    let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
+                });
+            }
+            Ok(_) => {}
+            Err(err) => {
+                tracing::warn!(
+                    target: "mailer",
+                    "post_publish_email_enqueue_failed post_id={} message={}",
+                    post.id,
+                    err.message
+                );
+            }
+        }
+    }
+
     Ok(Json(post))
 }
