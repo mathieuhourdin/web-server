@@ -21,7 +21,9 @@ pub struct Post {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
+    #[serde(skip_serializing, default = "default_post_publishing_state")]
     pub publishing_state: String,
+    #[serde(skip_serializing, default = "default_post_maturing_state")]
     pub maturing_state: MaturingState,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -39,8 +41,6 @@ pub struct NewPostDto {
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: Option<PostStatus>,
-    pub publishing_state: Option<String>,
-    pub maturing_state: Option<MaturingState>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,8 +59,26 @@ pub struct NewPost {
     pub maturing_state: MaturingState,
 }
 
+fn default_post_publishing_state() -> String {
+    "pbsh".to_string()
+}
+
+fn default_post_maturing_state() -> MaturingState {
+    MaturingState::Draft
+}
+
+pub fn legacy_lifecycle_for_status(status: PostStatus) -> (String, MaturingState) {
+    match status {
+        PostStatus::Draft => ("pbsh".to_string(), MaturingState::Draft),
+        PostStatus::Published => ("pbsh".to_string(), MaturingState::Finished),
+        PostStatus::Archived => ("pbsh".to_string(), MaturingState::Trashed),
+    }
+}
+
 impl NewPost {
     pub fn new(payload: NewPostDto, user_id: Uuid) -> Self {
+        let status = payload.status.unwrap_or(PostStatus::Draft);
+        let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
         Self {
             source_trace_id: payload.source_trace_id,
             title: payload.title,
@@ -73,11 +91,9 @@ impl NewPost {
                 .unwrap_or(PostInteractionType::Output),
             user_id,
             publishing_date: payload.publishing_date,
-            status: payload.status.unwrap_or(PostStatus::Draft),
-            publishing_state: payload
-                .publishing_state
-                .unwrap_or_else(|| "pbsh".to_string()),
-            maturing_state: payload.maturing_state.unwrap_or(MaturingState::Draft),
+            status,
+            publishing_state,
+            maturing_state,
         }
     }
 }

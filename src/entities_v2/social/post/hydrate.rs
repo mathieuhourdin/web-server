@@ -137,6 +137,7 @@ impl Post {
         let mut count_query = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
             .into_boxed();
 
         if visible_post_ids.is_empty() {
@@ -154,6 +155,7 @@ impl Post {
         let mut query = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
             .into_boxed();
 
         if visible_post_ids.is_empty() {
@@ -279,6 +281,7 @@ impl Post {
         if !post_type_values.is_empty() {
             count_query = count_query.filter(posts::post_type.eq_any(post_type_values.clone()));
         }
+        count_query = count_query.filter(posts::status.eq(PostStatus::Published.to_db()));
         if viewer_user_id != user_id {
             if visible_post_ids.is_empty() {
                 return Ok((vec![], 0));
@@ -296,6 +299,7 @@ impl Post {
         if !post_type_values.is_empty() {
             query = query.filter(posts::post_type.eq_any(post_type_values));
         }
+        query = query.filter(posts::status.eq(PostStatus::Published.to_db()));
         if viewer_user_id != user_id {
             query = query.filter(posts::id.eq_any(visible_post_ids));
         }
@@ -317,7 +321,7 @@ impl Post {
         legacy_resource_type: Option<String>,
         _is_external: Option<bool>,
         user_id: Option<Uuid>,
-        maturing_state: Option<MaturingState>,
+        status: Option<PostStatus>,
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
@@ -328,7 +332,7 @@ impl Post {
             legacy_resource_type,
             _is_external,
             user_id,
-            maturing_state,
+            status,
             0,
             limit,
             pool,
@@ -344,7 +348,7 @@ impl Post {
         legacy_resource_type: Option<String>,
         _is_external: Option<bool>,
         user_id: Option<Uuid>,
-        maturing_state: Option<MaturingState>,
+        status: Option<PostStatus>,
         offset: i64,
         limit: i64,
         pool: &DbPool,
@@ -386,9 +390,8 @@ impl Post {
         if let Some(user_id) = user_id {
             count_query = count_query.filter(posts::user_id.eq(user_id));
         }
-        if let Some(maturing_state) = maturing_state {
-            let maturing_state_code = maturing_state.to_code().to_string();
-            count_query = count_query.filter(posts::maturing_state.eq(maturing_state_code));
+        if let Some(status) = status {
+            count_query = count_query.filter(posts::status.eq(status.to_db()));
         }
         if visible_post_ids.is_empty() {
             count_query = count_query.filter(posts::user_id.eq(viewer_user_id));
@@ -412,9 +415,8 @@ impl Post {
         if let Some(user_id) = user_id {
             query = query.filter(posts::user_id.eq(user_id));
         }
-        if let Some(maturing_state) = maturing_state {
-            let maturing_state_code = maturing_state.to_code().to_string();
-            query = query.filter(posts::maturing_state.eq(maturing_state_code));
+        if let Some(status) = status {
+            query = query.filter(posts::status.eq(status.to_db()));
         }
         if visible_post_ids.is_empty() {
             query = query.filter(posts::user_id.eq(viewer_user_id));

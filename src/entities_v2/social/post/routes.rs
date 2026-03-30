@@ -12,7 +12,6 @@ use crate::entities_v2::{
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     post_grant::PostGrant,
     session::Session,
-    shared::MaturingState,
     trace::Trace,
     user::{User, UserPrincipalType},
 };
@@ -20,14 +19,14 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use chrono::Utc;
 use serde::Deserialize;
 
-use super::model::{NewPost, NewPostDto, Post, PostStatus};
+use super::model::{legacy_lifecycle_for_status, NewPost, NewPostDto, Post, PostStatus};
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
     pub is_external: Option<bool>,
     pub resource_type: Option<String>, // Legacy fallback mapped to post_type
     pub user_id: Option<Uuid>,
-    pub maturing_state: Option<MaturingState>,
+    pub status: Option<PostStatus>,
     pub limit: Option<i64>,
 }
 
@@ -133,7 +132,7 @@ pub async fn get_posts_route(
         filters.resource_type,
         filters.is_external,
         filters.user_id,
-        filters.maturing_state,
+        filters.status.or(Some(PostStatus::Published)),
         pagination.offset,
         pagination.limit,
         &pool,
@@ -149,6 +148,9 @@ pub async fn get_post_route(
 ) -> Result<Json<Post>, PpdcError> {
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let post = Post::find_full(id, &pool)?;
+    if post.user_id != viewer_user_id && post.status != PostStatus::Published {
+        return Err(PpdcError::unauthorized());
+    }
     if !PostGrant::user_can_read_post(&post, viewer_user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
@@ -274,11 +276,8 @@ pub async fn put_post_route(
     }
     if let Some(status) = payload.status {
         post.status = status;
-    }
-    if let Some(publishing_state) = payload.publishing_state {
+        let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
         post.publishing_state = publishing_state;
-    }
-    if let Some(maturing_state) = payload.maturing_state {
         post.maturing_state = maturing_state;
     }
     let post = post.update(&pool)?;
