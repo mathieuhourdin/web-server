@@ -96,6 +96,7 @@ pub fn create_router() -> Router {
 
     let journals_router = Router::new()
         .route("/", post(journal::post_journal_route))
+        .route("/shared/recent", get(journal::get_recent_shared_journals_route))
         .route("/shared", get(journal::get_shared_journals_route))
         .route(
             "/:id/draft",
