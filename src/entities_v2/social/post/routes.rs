@@ -334,6 +334,7 @@ pub async fn put_post_route(
     post.subtitle = payload.subtitle.unwrap_or_default();
     post.content = payload.content;
     post.image_url = payload.image_url;
+    post.publishing_date = payload.publishing_date;
     if let Some(interaction_type) = payload.interaction_type {
         post.interaction_type = interaction_type;
     }
@@ -348,6 +349,12 @@ pub async fn put_post_route(
     }
     if let Some(audience_role) = payload.audience_role {
         post.audience_role = audience_role;
+    }
+    if previous_status != PostStatus::Published
+        && post.status == PostStatus::Published
+        && post.publishing_date.is_none()
+    {
+        post.publishing_date = Some(Utc::now().naive_utc());
     }
     let post = post.update(&pool)?;
 
