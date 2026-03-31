@@ -17,6 +17,8 @@ const PASSWORD_RESET_TEXT: &str = include_str!("templates/password_reset.txt");
 const PASSWORD_RESET_HTML: &str = include_str!("templates/password_reset.html");
 const NEW_USER_SIGNUP_TEXT: &str = include_str!("templates/new_user_signup.txt");
 const NEW_USER_SIGNUP_HTML: &str = include_str!("templates/new_user_signup.html");
+const JOURNAL_ACCESS_GRANTED_TEXT: &str = include_str!("templates/journal_access_granted.txt");
+const JOURNAL_ACCESS_GRANTED_HTML: &str = include_str!("templates/journal_access_granted.html");
 
 fn build_trace_excerpt(content: &str, max_chars: usize) -> String {
     let excerpt = content.trim().chars().take(max_chars).collect::<String>();
@@ -235,6 +237,39 @@ pub fn new_user_signup_email(first_name: &str, last_name: &str, users_url: &str)
             ("first_name", escape_html(first_name)),
             ("last_name", escape_html(last_name)),
             ("users_url", escape_html(users_url)),
+        ],
+    );
+
+    EmailTemplate {
+        subject,
+        text_body: Some(text_body),
+        html_body: Some(html_body),
+    }
+}
+
+pub fn journal_access_granted_email(
+    recipient_display_name: &str,
+    owner_display_name: &str,
+    journal_title: &str,
+    journal_url: &str,
+) -> EmailTemplate {
+    let subject = format!("{} vous a donne acces a son journal", owner_display_name);
+    let text_body = render_template(
+        JOURNAL_ACCESS_GRANTED_TEXT,
+        &[
+            ("recipient_display_name", recipient_display_name.to_string()),
+            ("owner_display_name", owner_display_name.to_string()),
+            ("journal_title", journal_title.to_string()),
+            ("journal_url", journal_url.to_string()),
+        ],
+    );
+    let html_body = render_template(
+        JOURNAL_ACCESS_GRANTED_HTML,
+        &[
+            ("recipient_display_name", escape_html(recipient_display_name)),
+            ("owner_display_name", escape_html(owner_display_name)),
+            ("journal_title", escape_html(journal_title)),
+            ("journal_url", escape_html(journal_url)),
         ],
     );
 

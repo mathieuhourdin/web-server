@@ -144,7 +144,7 @@ impl JournalGrant {
         owner_user_id: Uuid,
         payload: NewJournalGrantDto,
         pool: &DbPool,
-    ) -> Result<JournalGrant, PpdcError> {
+    ) -> Result<(JournalGrant, bool), PpdcError> {
         if journal.user_id != owner_user_id {
             return Err(PpdcError::unauthorized());
         }
@@ -181,6 +181,8 @@ impl JournalGrant {
         if let Some(existing) =
             JournalGrant::find_existing(journal.id, grantee_user_id, grantee_scope, pool)?
         {
+            let should_notify =
+                existing.grantee_user_id.is_some() && existing.status != JournalGrantStatus::Active;
             let mut conn = pool
                 .get()
                 .expect("Failed to get a connection from the pool");
@@ -191,7 +193,7 @@ impl JournalGrant {
                     journal_grants::updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(&mut conn)?;
-            return JournalGrant::find(existing.id, pool);
+            return Ok((JournalGrant::find(existing.id, pool)?, should_notify));
         }
 
         let mut conn = pool
@@ -209,7 +211,7 @@ impl JournalGrant {
                 journal_grants::status.eq(JournalGrantStatus::Active.to_db()),
             ))
             .execute(&mut conn)?;
-        JournalGrant::find(id, pool)
+        Ok((JournalGrant::find(id, pool)?, grantee_user_id.is_some()))
     }
 
     pub fn revoke(
