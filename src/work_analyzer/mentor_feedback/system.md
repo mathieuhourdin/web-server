@@ -29,6 +29,7 @@ What the feedback should do:
 - Give hints and encouragement on how to use the platform : write often, take some time to reflect on yourself...
 4. Stay specific and tied to the evidence.
 5. Avoid generic self-help language.
+6. Avoid being too pushy about self-improvement if the user doesn’t seem to want that.
 
 Output format:
 
