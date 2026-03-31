@@ -18,7 +18,7 @@ use crate::entities_v2::{
         routes::enqueue_received_message_notification_email, Message, MessageAttachment,
         MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
     },
-    post::{NewPost, Post, PostInteractionType, PostType},
+    post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
     platform_infra::mailer,
     session::Session,
@@ -85,6 +85,20 @@ fn spawn_autoplay_lens_runs_for_trace(
     Ok(())
 }
 
+fn enqueue_autoplay_lens_runs_for_trace(user_id: Uuid, trace_id: Uuid, pool: DbPool) {
+    tokio::spawn(async move {
+        if let Err(err) = spawn_autoplay_lens_runs_for_trace(user_id, trace_id, &pool) {
+            tracing::warn!(
+                target: "analysis",
+                "autoplay_lens_enqueue_failed trace_id={} user_id={} message={}",
+                trace_id,
+                user_id,
+                err.message
+            );
+        }
+    });
+}
+
 fn ensure_default_draft_post_for_shared_trace(
     trace: &Trace,
     pool: &DbPool,
@@ -117,6 +131,7 @@ fn ensure_default_draft_post_for_shared_trace(
         user_id: trace.user_id,
         publishing_date: None,
         status: crate::entities_v2::post::PostStatus::Draft,
+        audience_role: PostAudienceRole::Default,
         publishing_state: "pbsh".to_string(),
         maturing_state: MaturingState::Draft,
     }
@@ -356,7 +371,7 @@ pub async fn put_trace_route(
         && trace.status == super::enums::TraceStatus::Finalized
         && !trace.is_encrypted
     {
-        spawn_autoplay_lens_runs_for_trace(user_id, trace.id, &pool)?;
+        enqueue_autoplay_lens_runs_for_trace(user_id, trace.id, pool.clone());
         if trace.trace_type == super::enums::TraceType::UserTrace {
             if let Err(err) = ensure_default_draft_post_for_shared_trace(&trace, &pool) {
                 tracing::warn!(

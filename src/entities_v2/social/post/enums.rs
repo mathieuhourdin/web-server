@@ -2,6 +2,61 @@ use serde::de::Deserializer;
 use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostAudienceRole {
+    Default,
+    Restricted,
+}
+
+impl PostAudienceRole {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            PostAudienceRole::Default => "default",
+            PostAudienceRole::Restricted => "restricted",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "restricted" | "RESTRICTED" | "Restricted" => PostAudienceRole::Restricted,
+            _ => PostAudienceRole::Default,
+        }
+    }
+
+    pub fn to_db(self) -> &'static str {
+        match self {
+            PostAudienceRole::Default => "DEFAULT",
+            PostAudienceRole::Restricted => "RESTRICTED",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "RESTRICTED" | "restricted" => PostAudienceRole::Restricted,
+            _ => PostAudienceRole::Default,
+        }
+    }
+}
+
+impl Serialize for PostAudienceRole {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_code())
+    }
+}
+
+impl<'de> Deserialize<'de> for PostAudienceRole {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(PostAudienceRole::from_code(&value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostStatus {
     Draft,
     Published,

@@ -19,7 +19,10 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use chrono::Utc;
 use serde::Deserialize;
 
-use super::model::{legacy_lifecycle_for_status, NewPost, NewPostDto, Post, PostStatus};
+use super::model::{
+    legacy_lifecycle_for_status, NewPost, NewPostDto, Post, PostAudienceRole,
+    PostInteractionType, PostStatus, PostType,
+};
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
@@ -54,10 +57,11 @@ pub struct NewTracePostDto {
     pub subtitle: Option<String>,
     pub content: Option<String>,
     pub image_url: Option<String>,
-    pub post_type: Option<super::model::PostType>,
-    pub interaction_type: Option<super::model::PostInteractionType>,
+    pub post_type: Option<PostType>,
+    pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<chrono::NaiveDateTime>,
     pub status: Option<PostStatus>,
+    pub audience_role: Option<PostAudienceRole>,
 }
 
 fn enqueue_post_published_notification_emails(
@@ -255,6 +259,7 @@ pub async fn post_trace_post_route(
         interaction_type: payload.interaction_type,
         publishing_date: payload.publishing_date,
         status: payload.status,
+        audience_role: payload.audience_role,
     };
 
     let new_post = NewPost::new(payload, user_id);
@@ -340,6 +345,9 @@ pub async fn put_post_route(
         let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
         post.publishing_state = publishing_state;
         post.maturing_state = maturing_state;
+    }
+    if let Some(audience_role) = payload.audience_role {
+        post.audience_role = audience_role;
     }
     let post = post.update(&pool)?;
 

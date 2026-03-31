@@ -23,6 +23,7 @@ impl Post {
                 posts::post_type.eq(self.post_type.to_db()),
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
+                posts::audience_role.eq(self.audience_role.to_db()),
                 posts::publishing_state.eq(self.publishing_state),
                 posts::maturing_state.eq(self.maturing_state.to_code()),
                 posts::user_id.eq(self.user_id),
@@ -49,6 +50,7 @@ impl NewPost {
                 posts::user_id.eq(self.user_id),
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
+                posts::audience_role.eq(self.audience_role.to_db()),
                 posts::publishing_state.eq(self.publishing_state),
                 posts::maturing_state.eq(self.maturing_state.to_code()),
             ))

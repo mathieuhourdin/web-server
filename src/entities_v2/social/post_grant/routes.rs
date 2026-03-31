@@ -5,10 +5,25 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::{error::PpdcError, post::Post, session::Session};
+use crate::entities_v2::{
+    error::{ErrorType, PpdcError},
+    post::{Post, PostAudienceRole},
+    session::Session,
+};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{NewPostGrantDto, PostGrant};
+
+fn ensure_manual_post_grant_edit_allowed(post: &Post) -> Result<(), PpdcError> {
+    if post.audience_role == PostAudienceRole::Default {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Manual grants are not allowed on default audience posts".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 #[debug_handler]
 pub async fn get_post_grants_route(
@@ -37,6 +52,7 @@ pub async fn post_post_grant_route(
 ) -> Result<Json<PostGrant>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let post = Post::find_full(post_id, &pool)?;
+    ensure_manual_post_grant_edit_allowed(&post)?;
     let grant = PostGrant::create_or_update(&post, user_id, payload, &pool)?;
     Ok(Json(grant))
 }
@@ -48,6 +64,8 @@ pub async fn delete_post_grant_route(
     Path((post_id, grant_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PostGrant>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let post = Post::find_full(post_id, &pool)?;
+    ensure_manual_post_grant_edit_allowed(&post)?;
     let grant = PostGrant::revoke(post_id, grant_id, user_id, &pool)?;
     Ok(Json(grant))
 }

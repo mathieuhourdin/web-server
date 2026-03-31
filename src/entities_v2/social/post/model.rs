@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::entities_v2::shared::MaturingState;
 
-pub use super::enums::{PostInteractionType, PostStatus, PostType};
+pub use super::enums::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Post {
@@ -21,6 +21,7 @@ pub struct Post {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
+    pub audience_role: PostAudienceRole,
     #[serde(skip_serializing, default = "default_post_publishing_state")]
     pub publishing_state: String,
     #[serde(skip_serializing, default = "default_post_maturing_state")]
@@ -41,6 +42,7 @@ pub struct NewPostDto {
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: Option<PostStatus>,
+    pub audience_role: Option<PostAudienceRole>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +57,7 @@ pub struct NewPost {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
+    pub audience_role: PostAudienceRole,
     pub publishing_state: String,
     pub maturing_state: MaturingState,
 }
@@ -65,6 +68,10 @@ fn default_post_publishing_state() -> String {
 
 fn default_post_maturing_state() -> MaturingState {
     MaturingState::Draft
+}
+
+fn default_post_audience_role() -> PostAudienceRole {
+    PostAudienceRole::Default
 }
 
 pub fn legacy_lifecycle_for_status(status: PostStatus) -> (String, MaturingState) {
@@ -92,6 +99,7 @@ impl NewPost {
             user_id,
             publishing_date: payload.publishing_date,
             status,
+            audience_role: payload.audience_role.unwrap_or_else(default_post_audience_role),
             publishing_state,
             maturing_state,
         }
