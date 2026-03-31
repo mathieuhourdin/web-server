@@ -5,12 +5,47 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus};
 use crate::entities_v2::relationship::{Relationship, RelationshipStatus};
-use crate::schema::journal_grants;
+use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
+use crate::schema::{journal_grants, users};
 
 use super::enums::{JournalGrantAccessLevel, JournalGrantScope, JournalGrantStatus};
 use super::model::{JournalGrant, NewJournalGrantDto};
 
 impl JournalGrant {
+    fn owner_can_use_scope(
+        owner_user_id: Uuid,
+        grantee_scope: Option<JournalGrantScope>,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        if grantee_scope != Some(JournalGrantScope::AllPlatformUsers) {
+            return Ok(());
+        }
+
+        let owner = User::find(&owner_user_id, pool)?;
+        if !owner.has_role(UserRole::Admin, pool)? {
+            return Err(PpdcError::new(
+                403,
+                ErrorType::ApiError,
+                "ALL_PLATFORM_USERS journal grants are restricted to admins".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn list_platform_human_user_ids(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let ids = users::table
+            .filter(users::is_platform_user.eq(true))
+            .filter(users::principal_type.eq(UserPrincipalType::Human))
+            .select(users::id)
+            .load::<Uuid>(&mut conn)?;
+        Ok(ids)
+    }
+
     fn validate_target_fields(
         payload: &NewJournalGrantDto,
     ) -> Result<
@@ -123,6 +158,7 @@ impl JournalGrant {
 
         let (grantee_user_id, grantee_scope, access_level) =
             JournalGrant::validate_target_fields(&payload)?;
+        JournalGrant::owner_can_use_scope(owner_user_id, grantee_scope, pool)?;
 
         if let Some(grantee_user_id) = grantee_user_id {
             if grantee_user_id == owner_user_id {
@@ -247,6 +283,14 @@ impl JournalGrant {
             {
                 return Ok(true);
             }
+
+            if grant.grantee_scope == Some(JournalGrantScope::AllPlatformUsers)
+            {
+                let user = User::find(&user_id, pool)?;
+                if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
+                    return Ok(true);
+                }
+            }
         }
 
         Ok(false)
@@ -284,6 +328,19 @@ impl JournalGrant {
             }
         }
 
+        let platform_scope_journal_ids = journal_grants::table
+            .filter(
+                journal_grants::grantee_scope.eq(Some(JournalGrantScope::AllPlatformUsers.to_db())),
+            )
+            .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
+            .select(journal_grants::journal_id)
+            .load::<Uuid>(&mut conn)?;
+
+        let user = User::find(&user_id, pool)?;
+        if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
+            ids.extend(platform_scope_journal_ids);
+        }
+
         Ok(ids.into_iter().collect())
     }
 
@@ -308,6 +365,10 @@ impl JournalGrant {
                 for relationship in Relationship::find_followers_for_user(journal.user_id, pool)? {
                     ids.insert(relationship.requester_user_id);
                 }
+            }
+
+            if grant.grantee_scope == Some(JournalGrantScope::AllPlatformUsers) {
+                ids.extend(Self::list_platform_human_user_ids(pool)?);
             }
         }
 

@@ -1,21 +1,24 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "snake_case")]
 pub enum PostGrantScope {
     AllAcceptedFollowers,
+    AllPlatformUsers,
 }
 
 impl PostGrantScope {
     pub fn to_db(self) -> &'static str {
         match self {
             PostGrantScope::AllAcceptedFollowers => "ALL_ACCEPTED_FOLLOWERS",
+            PostGrantScope::AllPlatformUsers => "ALL_PLATFORM_USERS",
         }
     }
 
     pub fn from_db(value: &str) -> Option<Self> {
         match value {
             "ALL_ACCEPTED_FOLLOWERS" => Some(PostGrantScope::AllAcceptedFollowers),
+            "ALL_PLATFORM_USERS" => Some(PostGrantScope::AllPlatformUsers),
             _ => None,
         }
     }

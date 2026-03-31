@@ -5,12 +5,45 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
-use crate::schema::{post_grants, posts};
+use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
+use crate::schema::{post_grants, posts, users};
 
 use super::enums::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};
 use super::model::{NewPostGrantDto, PostGrant};
 
 impl PostGrant {
+    fn owner_can_use_scope(
+        owner_user_id: Uuid,
+        grantee_scope: Option<PostGrantScope>,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        if grantee_scope != Some(PostGrantScope::AllPlatformUsers) {
+            return Ok(());
+        }
+
+        let owner = User::find(&owner_user_id, pool)?;
+        if !owner.has_role(UserRole::Admin, pool)? {
+            return Err(PpdcError::new(
+                403,
+                ErrorType::ApiError,
+                "ALL_PLATFORM_USERS post grants are restricted to admins".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn list_platform_human_user_ids(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
+        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+
+        let ids = users::table
+            .filter(users::is_platform_user.eq(true))
+            .filter(users::principal_type.eq(UserPrincipalType::Human))
+            .select(users::id)
+            .load::<Uuid>(&mut conn)?;
+        Ok(ids)
+    }
+
     fn validate_target_fields(
         payload: &NewPostGrantDto,
     ) -> Result<(Option<Uuid>, Option<PostGrantScope>, PostGrantAccessLevel), PpdcError> {
@@ -103,6 +136,7 @@ impl PostGrant {
 
         let (grantee_user_id, grantee_scope, access_level) =
             Self::validate_target_fields(&payload)?;
+        Self::owner_can_use_scope(owner_user_id, grantee_scope, pool)?;
 
         if let Some(grantee_user_id) = grantee_user_id {
             if grantee_user_id == owner_user_id {
@@ -199,6 +233,13 @@ impl PostGrant {
             {
                 return Ok(true);
             }
+
+            if grant.grantee_scope == Some(PostGrantScope::AllPlatformUsers) {
+                let user = User::find(&user_id, pool)?;
+                if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
+                    return Ok(true);
+                }
+            }
         }
 
         Ok(false)
@@ -240,6 +281,17 @@ impl PostGrant {
             if Relationship::is_follow_accepted(user_id, owner_user_id, pool)? {
                 candidate_ids.insert(post_id);
             }
+        }
+
+        let platform_scope_post_ids = post_grants::table
+            .filter(post_grants::grantee_scope.eq(Some(PostGrantScope::AllPlatformUsers.to_db())))
+            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
+            .select(post_grants::post_id)
+            .load::<Uuid>(&mut conn)?;
+
+        let user = User::find(&user_id, pool)?;
+        if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
+            candidate_ids.extend(platform_scope_post_ids);
         }
 
         if candidate_ids.is_empty() {
@@ -314,6 +366,10 @@ impl PostGrant {
                 for relationship in Relationship::find_followers_for_user(post.user_id, pool)? {
                     ids.insert(relationship.requester_user_id);
                 }
+            }
+
+            if grant.grantee_scope == Some(PostGrantScope::AllPlatformUsers) {
+                ids.extend(Self::list_platform_human_user_ids(pool)?);
             }
         }
 

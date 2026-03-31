@@ -516,6 +516,8 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
     pub home_focus_view: HomeFocusView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<UserRole>>,
     pub display_name: String,
 }
 
@@ -549,6 +551,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
             home_focus_view: user.home_focus_view,
+            roles: None,
             display_name: user.display_name(),
         }
     }
@@ -1696,8 +1699,11 @@ pub async fn get_user_route(
     let user = User::find(&id, &pool)?;
     let viewer_user_id = session.user_id;
     if !user.is_platform_user || session.user_id.unwrap() == id {
-        let user_response =
+        let mut user_response =
             UserPseudonymizedAuthentifiedResponse::from_viewer(&user, viewer_user_id);
+        if session.user_id == Some(id) {
+            user_response.roles = Some(user.list_roles(&pool)?);
+        }
         Ok(UserResponse::PseudonymizedAuthentified(user_response))
     } else {
         let user_response = UserPseudonymizedResponse::from_viewer(&user, viewer_user_id);

@@ -148,6 +148,9 @@ fn ensure_default_draft_post_for_shared_trace(
                 Some(JournalGrantScope::AllAcceptedFollowers) => {
                     Some(PostGrantScope::AllAcceptedFollowers)
                 }
+                Some(JournalGrantScope::AllPlatformUsers) => {
+                    Some(PostGrantScope::AllPlatformUsers)
+                }
                 None => None,
             },
             access_level: None,
