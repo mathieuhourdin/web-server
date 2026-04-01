@@ -56,6 +56,8 @@ pub struct AdminUserDailyActivity {
 #[derive(Serialize)]
 pub struct AdminUserRecentActivity {
     pub id: Uuid,
+    pub display_name: String,
+    pub draft_posts_count: i64,
     pub hlp_landmarks_count: i64,
     pub heatmap: Vec<AdminUserDailyActivity>,
 }
@@ -101,6 +103,20 @@ pub async fn get_admin_recent_user_activity_route(
     let mut payload = Vec::with_capacity(user_rows.len());
 
     for row in user_rows {
+        let user = User::find(&row.user_id, &pool)?;
+        let draft_posts_count = sql_query(
+            r#"
+            SELECT COUNT(*)::bigint AS value
+            FROM posts
+            WHERE user_id = $1
+              AND status = 'DRAFT'
+              AND source_trace_id IS NOT NULL
+            "#,
+        )
+        .bind::<SqlUuid, _>(row.user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .value;
+
         let hlp_landmarks_count = sql_query(
             r#"
             SELECT COUNT(*)::bigint AS value
@@ -159,6 +175,8 @@ pub async fn get_admin_recent_user_activity_route(
 
         payload.push(AdminUserRecentActivity {
             id: row.user_id,
+            display_name: user.display_name(),
+            draft_posts_count,
             hlp_landmarks_count,
             heatmap,
         });
