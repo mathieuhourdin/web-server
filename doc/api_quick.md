@@ -1,23 +1,54 @@
-# Quick API Documentation (Current Router)
+# Quick API Documentation
 
-Source of truth: `src/router.rs` and current handler signatures.
+Source of truth:
+- `src/router.rs`
+- current DTOs and route handlers under `src/entities_v2/**`
 
-## Conventions
+This file is a practical quick reference for the current server contract.
 
-- Base URL: server root (examples assume `/` prefix).
-- Auth:
-  - `Required`: route is behind `auth_middleware_custom` (session user required).
-  - `Public`: no auth middleware on the route.
-  - Current session token format: `Authorization: Bearer <session_id>.<secret>`.
-- Common query pagination: `offset` (optional, default `0`), `limit` (optional, default `20`).
-- UUID path params are shown as `:id`, `:user_id`, etc.
+**Conventions**
+- Base URL: server root, examples assume `/`
+- Auth token: `Authorization: Bearer <session_id>.<secret>`
+- UUID path params are written as `:id`, `:user_id`, etc.
+- Repeated query params on the same field use OR semantics
+  - example: `?interaction_type=inpt&interaction_type=outp`
+- Different query fields combine with AND semantics
 
-## Main Payload Shapes
+**Pagination**
+- Standard query params:
+  - `limit`
+  - `offset`
+- Defaults:
+  - `limit = 20`
+  - `offset = 0`
+- Max `limit = 100`
+- Standard paginated response:
 
-### `NewUser` (POST/PUT user)
+```json
+{
+  "items": [],
+  "limit": 20,
+  "offset": 0,
+  "total": 0
+}
+```
+
+## Main Payloads
+
+### Session Login
+```json
+{
+  "username": "string",
+  "password": "string"
+}
+```
+
+### New User
 ```json
 {
   "email": "string",
+  "principal_type": "human|service|null",
+  "mentor_id": "uuid|null",
   "first_name": "string",
   "last_name": "string",
   "handle": "string",
@@ -28,96 +59,110 @@ Source of truth: `src/router.rs` and current handler signatures.
   "pseudonym": "string|null",
   "pseudonymized": "bool|null",
   "high_level_projects_definition": "string|null",
-  "journal_theme": "Classic|White|Flowers|Dark|null",
-  "current_lens_id": "uuid|null"
+  "journal_theme": "classic|white|flowers|dark|null",
+  "current_lens_id": "uuid|null",
+  "week_analysis_weekday": "monday|...|sunday|null",
+  "timezone": "string|null",
+  "context_anchor_at": "datetime|null",
+  "welcome_message": "string|null",
+  "home_focus_view": "projects|follows|drafts|null"
 }
 ```
 
-### `NewResource`
+### New Trace
 ```json
 {
-  "title": "string",
-  "subtitle": "string",
-  "content": "string|null",
-  "external_content_url": "string|null",
-  "comment": "string|null",
-  "image_url": "string|null",
-  "resource_type": "4-char code|null",
-  "maturing_state": "4-char code|null",
-  "publishing_state": "4-char code|null",
-  "is_external": "bool|null",
-  "entity_type": "4-char code|null",
-  "resource_subtype": "string|null"
-}
-```
-
-### `NewInteraction`
-```json
-{
-  "interaction_user_id": "uuid|null",
-  "interaction_progress": "int",
-  "interaction_comment": "string|null",
+  "journal_id": "uuid",
+  "content": "string",
   "interaction_date": "datetime|null",
-  "interaction_type": "4-char code|null",
-  "interaction_is_public": "bool|null",
-  "resource_id": "uuid|null"
+  "is_encrypted": "bool|null",
+  "encryption_metadata": "json|null"
 }
 ```
 
-### `NewTraceDto`
+### Update Trace
 ```json
 {
-  "content": "string",
-  "journal_id": "uuid"
+  "content": "string|null",
+  "interaction_date": "datetime|null",
+  "status": "draft|finalized|archived|null"
 }
 ```
 
-### `NewPostDto`
+### Patch Trace
 ```json
 {
+  "content": "string|null",
+  "interaction_date": "datetime|null"
+}
+```
+
+### New Post
+```json
+{
+  "source_trace_id": "uuid|null",
   "title": "string",
   "subtitle": "string|null",
   "content": "string",
   "image_url": "string|null",
-  "post_type": "outp|inpt|pblm|wish|null",
+  "post_type": "idea|ratc|book|curs|quest|oatc|pblm|pcst|natc|rdnt|list|null",
+  "interaction_type": "outp|inpt|pblm|wish|null",
   "publishing_date": "datetime|null",
-  "publishing_state": "string|null",
-  "maturing_state": "4-char code|null"
+  "status": "draft|published|archived|null",
+  "audience_role": "default|restricted|null"
 }
 ```
 
-### `NewJournalDto`
+### New Trace Post
+`POST /traces/:id/posts` accepts the same post fields except `source_trace_id` is forced from the path, and these fields are optional:
+- `title`
+- `subtitle`
+- `content`
+
+When omitted, they default from the source trace.
+
+### New Journal
 ```json
 {
   "title": "string",
   "subtitle": "string|null",
   "content": "string|null",
-  "journal_type": "MetaJournal|WorkLogJournal|ReadingNoteJournal|null"
+  "is_encrypted": "bool|null",
+  "journal_type": "meta_journal|work_log_journal|reading_note_journal|null"
 }
 ```
 
-### `UpdateJournalDto`
+### Update Journal
 ```json
 {
   "title": "string|null",
   "subtitle": "string|null",
   "content": "string|null",
-  "journal_type": "MetaJournal|WorkLogJournal|ReadingNoteJournal|null",
-  "status": "Draft|Published|Archived|null"
+  "is_encrypted": "bool|null",
+  "journal_type": "meta_journal|work_log_journal|reading_note_journal|null",
+  "status": "draft|published|archived|null"
 }
 ```
 
-### `NewLensDto`
+### Journal Export
 ```json
 {
-  "processing_state": "OutOfSync|InSync|null",
+  "format": "md|txt|json",
+  "include_messages": true
+}
+```
+
+### New Lens
+```json
+{
+  "processing_state": "out_of_sync|in_sync|null",
   "fork_landscape_id": "uuid|null",
   "target_trace_id": "uuid|null",
   "autoplay": "bool|null"
 }
 ```
 
-### `NewAnalysisDto`
+### New Analysis
 ```json
 {
   "date": "YYYY-MM-DD|null",
@@ -125,179 +170,351 @@ Source of truth: `src/router.rs` and current handler signatures.
 }
 ```
 
-### `NewResourceRelation` (POST `/thought_input_usages`)
+### New Message
 ```json
 {
-  "origin_resource_id": "uuid",
-  "target_resource_id": "uuid",
-  "relation_comment": "string",
-  "user_id": "uuid|null",
-  "relation_type": "string|null",
-  "relation_entity_pair": "SCREAMING_SNAKE_CASE|null",
-  "relation_meaning": "SCREAMING_SNAKE_CASE|null"
+  "recipient_user_id": "uuid",
+  "landscape_analysis_id": "uuid|null",
+  "trace_id": "uuid|null",
+  "post_id": "uuid|null",
+  "message_type": "general|question|mentor_reply|mentor_feedback|tarot_reading_request|null",
+  "title": "string|null",
+  "content": "string",
+  "attachment_type": "string|null",
+  "attachment": "json|null"
 }
 ```
 
-### Session login payload
+### New Post Message
 ```json
 {
-  "username": "string",
-  "password": "string"
+  "recipient_user_id": "uuid|null",
+  "title": "string|null",
+  "content": "string",
+  "attachment_type": "string|null",
+  "attachment": "json|null"
 }
 ```
 
-### Link preview payload
+### New Journal Grant
 ```json
 {
-  "external_content_url": "string"
+  "grantee_user_id": "uuid|null",
+  "grantee_scope": "all_accepted_followers|all_platform_users|null",
+  "access_level": "READ|null"
 }
 ```
 
-## Routes
+### New Post Grant
+```json
+{
+  "grantee_user_id": "uuid|null",
+  "grantee_scope": "all_accepted_followers|all_platform_users|null",
+  "access_level": "READ|null"
+}
+```
 
-### Public Routes
+### User Secure Action Create
+```json
+{
+  "action_type": "password_reset",
+  "email": "string|null"
+}
+```
+
+### User Secure Action Consume
+```json
+{
+  "action_type": "password_reset",
+  "token": "string",
+  "new_password": "string|null"
+}
+```
+
+## Public Routes
 
 | Method | Path | Request | Response |
 |---|---|---|---|
 | GET | `/` | none | `"Ok"` |
 | POST | `/users` | `NewUser` | `User` |
 | GET | `/sessions` | none | `Session` |
-| POST | `/sessions` | `{ username, password }` | `Session` (`token` contains bearer token) |
-| DELETE | `/sessions` | none (uses current bearer token) | `Session` (revoked) |
-| POST | `/link_preview` | `NewLinkPreview` | `LinkPreview` |
+| POST | `/sessions` | login payload | `Session` |
+| DELETE | `/sessions` | none | revoked `Session` |
+| POST | `/user_secure_actions` | create secure action | `{ "message": "..." }` |
+| POST | `/user_secure_actions/consume` | consume secure action | `{ "session": Session }` |
 
-### Users (`/users`) - Auth Required
+## Authenticated Routes
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/users` | query: `offset`, `limit` | `UserPseudonymizedResponse[]` |
-| GET | `/users/:id` | path: `id` | `UserPseudonymizedResponse` or `UserPseudonymizedAuthentifiedResponse` |
-| PUT | `/users/:id` | path: `id`, body: `NewUser` | `User` |
-| GET | `/users/:id/posts` | path: `id`, query: `offset`, `limit` | `Post[]` |
-| POST | `/users/:id/analysis` | path: `id`, body: `NewAnalysisDto` | `Resource` (analysis resource) |
-| GET | `/users/:id/analysis` | path: `id` | `InteractionWithResource` (last analysis) |
-| GET | `/users/:id/lens` | path: `id` | `Lens[]` |
-| GET | `/users/:id/traces` | path: `id` | `Trace[]` |
-| GET | `/users/:id/journals` | path: `id` | `Journal[]` |
-| GET | `/users/:id/heatmaps` | path: `id`, query: `from`, `to` (YYYY-MM-DD) | `HeatmapRow[]` |
+### Users
 
-### Resources (`/resources`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/users` | Paginated user list |
+| GET | `/users/search?q=...` | User search |
+| GET | `/users/:id` | Self response includes `roles` |
+| PUT | `/users/:id` | Update current user |
+| GET | `/users/:id/posts` | Published posts visible to viewer |
+| POST | `/users/:id/analysis` | Create analysis |
+| GET | `/users/:id/analysis` | Last analysis |
+| GET | `/users/:id/lens` | User lenses |
+| GET | `/users/:id/traces` | User traces |
+| GET | `/users/:id/journals` | User journals |
+| GET | `/users/:id/heatmaps` | User heatmap |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/resources` | query: `is_external`, `resource_type`, `offset`, `limit` | `Resource[]` |
-| POST | `/resources` | body: `NewResource` | `Resource` |
-| GET | `/resources/:id` | path: `id` | `Resource` |
-| PUT | `/resources/:id` | path: `id`, body: `NewResource` | `Resource` |
-| GET | `/resources/:id/author_interaction` | path: `id` | `Interaction` |
-| GET | `/resources/:id/interactions` | path: `id`, query: `offset`, `limit` | `InteractionWithResource[]` |
-| POST | `/resources/:id/interactions` | path: `id`, body: `NewInteraction` | `Interaction` |
-| GET | `/resources/:id/bibliography` | path: `id` | `ResourceRelationWithOriginResource[]` |
-| GET | `/resources/:id/usages` | path: `id` | `ResourceRelationWithTargetResource[]` |
+### Mentors
 
-### Traces (`/traces`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/mentors` | Mentor users |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/traces` | body: `NewTraceDto` | `Resource` |
-| GET | `/traces/:id` | path: `id` | `Trace` |
-| GET | `/traces/:id/analysis` | path: `id` | `LandscapeAnalysis` (filtered by current lens scope) |
+### Admin
 
-### Posts (`/posts`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/admin/recent_activity` | Admin only |
+| GET | `/admin/service_users` | Admin only |
+| POST | `/admin/service_users` | Admin only |
+| GET | `/admin/service_users/:id` | Admin only |
+| PUT | `/admin/service_users/:id` | Admin only |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/posts` | query: `post_type`, `resource_type`, `is_external`, `user_id`, `maturing_state`, `limit` | `Post[]` |
-| POST | `/posts` | body: `NewPostDto` | `Post` |
-| GET | `/posts/:id` | path: `id` (`interaction.id`) | `Post` |
-| PUT | `/posts/:id` | path: `id`, body: `NewPostDto` | `Post` |
-| GET | `/posts/:id/bibliography` | path: `id` | `ResourceRelationWithOriginResource[]` |
-| GET | `/posts/:id/usages` | path: `id` | `ResourceRelationWithTargetResource[]` |
-| GET | `/posts/users/:id` | path: `id`, query: `offset`, `limit` | `Post[]` |
+### Drafts
 
-### Journals (`/journals`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/drafts` | Current user non-empty draft `USER_TRACE`s, ordered by `updated_at desc` |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/journals` | body: `NewJournalDto` (`title` required) | `Journal` |
-| PUT | `/journals/:id` | path: `id`, body: `UpdateJournalDto` | `Journal` |
-| GET | `/journals/:id/traces` | path: `id` | `Trace[]` |
-| POST | `/journals/:id/import_text` | path: `id`, multipart file (`file` preferred) | `ImportJournalResult` |
+### Traces
 
-### Interactions (`/interactions`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/traces/:id` | Owner-only |
+| PUT | `/traces/:id` | Full update |
+| PATCH | `/traces/:id` | Partial update |
+| GET | `/traces/:id/posts` | Owner-only, paginated related posts |
+| POST | `/traces/:id/posts` | Owner-only create related post |
+| GET | `/traces/:id/analysis` | Returns analysis or `null` with `200` |
+| GET | `/traces/:id/messages` | Owner-only trace conversation |
+| POST | `/traces/:id/messages` | Owner-only trace conversation |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/interactions` | query: `interaction_type`, `maturing_state`, `interaction_user_id`, `resource_type`, `offset`, `limit` | `InteractionWithResource[]` |
-| PUT | `/interactions/:id` | path: `id`, body: `NewInteraction` | `Interaction` |
+### Posts
 
-### Resource Relations - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/posts` | Paginated shared feed |
+| POST | `/posts` | Create post |
+| GET | `/posts/:id` | Owner can see any status, others only published + granted |
+| PUT | `/posts/:id` | Update post |
+| GET | `/posts/:id/messages` | Post conversation |
+| POST | `/posts/:id/messages` | Post conversation |
+| GET | `/posts/:id/grants` | Owner-only |
+| POST | `/posts/:id/grants` | Owner-only |
+| DELETE | `/posts/:post_id/grants/:grant_id` | Owner-only revoke |
+| GET | `/posts/users/:id` | Same as `/users/:id/posts` |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/thought_input_usages` | body: `NewResourceRelation` | `ResourceRelation` |
+**Posts filters**
+- `interaction_type` repeated
+- `post_type` repeated
+- `resource_type`
+- `is_external`
+- `user_id`
+- `status`
+- `limit`
 
-### Transcriptions (`/transcriptions`) - Auth Required
+Examples:
+```http
+GET /posts?interaction_type=inpt&interaction_type=outp
+GET /posts?post_type=idea&post_type=book
+GET /posts?status=published
+```
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/transcriptions` | multipart audio file | `{ "content": "..." }` |
+Notes:
+- `GET /posts` defaults to `status=published`
+- post visibility uses post grants
+- if a viewer can see both a broad and a specific post for the same `source_trace_id`, the more specific one wins
 
-### Analysis (`/analysis`) - Auth Required
+### Journals
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/analysis` | body: `NewAnalysisDto` | `Resource` |
-| GET | `/analysis/:id` | path: `id` | `LandscapeAnalysis` |
-| DELETE | `/analysis/:id` | path: `id` | `LandscapeAnalysis` |
-| GET | `/analysis/:id/landmarks` | path: `id`, query: `kind=all|mentioned|context` | `Landmark[]` |
-| GET | `/analysis/:id/elements` | path: `id` | `Element[]` |
-| GET | `/analysis/:id/parents` | path: `id` | `LandscapeAnalysis[]` |
-| GET | `/analysis/:id/llm_calls` | path: `id` | `LlmCall[]` |
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/journals` | Create journal |
+| GET | `/journals/shared` | Journals readable through grants |
+| GET | `/journals/shared/recent` | Ordered by latest visible shared post for current user |
+| GET | `/journals/:id/draft` | Current draft trace for journal |
+| POST | `/journals/:id/draft` | Create or get draft trace |
+| GET | `/journals/:id` | Read journal |
+| PUT | `/journals/:id` | Update journal |
+| POST | `/journals/:id/exports` | Export journal |
+| GET | `/journals/:id/grants` | List grants |
+| POST | `/journals/:id/grants` | Create/reactivate grant |
+| DELETE | `/journals/:journal_id/grants/:grant_id` | Revoke grant |
+| GET | `/journals/:id/posts` | Posts related to the journal and visible to viewer |
+| GET | `/journals/:id/traces` | Journal traces |
+| POST | `/journals/:id/imports` | Import content into journal |
 
-### Landmarks (`/landmarks`) - Auth Required
+**Journal grant rules**
+- Exactly one of `grantee_user_id` or `grantee_scope` must be set
+- Direct user grants are limited to accepted followers
+- `all_platform_users` is admin-only
+- Creating/reactivating a direct user journal grant sends one journal-level email
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/landmarks/:id` | path: `id` | `LandmarkWithParentsAndElements` |
+### Relationships
 
-### Elements (`/elements`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/relationships/followers` | Paginated followers |
+| GET | `/relationships/following` | Paginated following |
+| GET | `/relationships/requests/incoming` | Paginated incoming requests |
+| GET | `/relationships/requests/outgoing` | Paginated outgoing requests |
+| GET | `/relationships` | Relationship list |
+| POST | `/relationships` | Create relationship/request |
+| PUT | `/relationships/:id` | Update relationship |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/elements/:id/landmarks` | path: `id` | `Landmark[]` |
-| GET | `/elements/:id/relations` | path: `id` | `ElementRelationWithRelatedElement[]` |
+### Transcriptions
 
-### Lens (`/lens`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/transcriptions` | Multipart audio upload |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| POST | `/lens` | body: `NewLensDto` | `Lens` |
-| GET | `/lens/:id/analysis` | path: `id` | `LandscapeAnalysis[]` |
-| PUT | `/lens/:id` | path: `id`, body: `NewLensDto` | `Lens` |
-| DELETE | `/lens/:id` | path: `id` | `Lens` |
+### Analysis
 
-### LLM Calls (`/llm_calls`) - Auth Required
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/analysis` | Create analysis |
+| GET | `/analysis/:id` | Get analysis |
+| DELETE | `/analysis/:id` | Delete analysis |
+| GET | `/analysis/:id/summaries` | Analysis summaries |
+| POST | `/analysis/:id/summaries` | Create summary |
+| GET | `/analysis/:id/landmarks` | Landmarks with sort options |
+| GET | `/analysis/:id/elements` | Analysis elements |
+| GET | `/analysis/:id/traces` | Analysis traces |
+| GET | `/analysis/:id/trace_mirrors` | Analysis trace mirrors |
+| GET | `/analysis/:id/parents` | Parent analyses |
+| GET | `/analysis/:id/messages` | Analysis messages |
+| GET | `/analysis/:id/feedback` | Latest mentor feedback or `null` |
+| GET | `/analysis/:id/llm_calls` | Paginated analysis LLM calls |
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/llm_calls` | query: `offset`, `limit` | `LlmCall[]` |
-| GET | `/llm_calls/:id` | path: `id` | `LlmCall` |
+**Analysis landmarks query params**
+- `kind=all|mentioned|context`
+- `order_by=related_elements_count|last_related_element_at|created_at`
+- `order=asc|desc`
 
-### Trace Mirrors (`/trace_mirrors`) - Auth Required
+Default sort:
+- `order_by=related_elements_count`
+- `order=desc`
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/trace_mirrors` | none | `TraceMirror[]` |
-| GET | `/trace_mirrors/:id` | path: `id` | `TraceMirror` |
-| GET | `/trace_mirrors/:id/references` | path: `id` | `Reference[]` |
-| GET | `/trace_mirrors/landscape/:landscape_id` | path: `landscape_id` | `TraceMirror[]` |
-| GET | `/trace_mirrors/trace/:trace_id` | path: `trace_id` | `TraceMirror[]` |
+### Analysis Summaries
 
----
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/analysis_summaries/:id` | Read summary |
+| PUT | `/analysis_summaries/:id` | Update summary |
 
-## Notes
+### Elements
 
-- This document is generated manually from code (no OpenAPI tooling).
-- Some response unions are runtime-dependent (`/users/:id`).
-- Legacy naming remains in one route: `POST /thought_input_usages` (resource relations create).
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/elements` | Paginated filtered elements |
+| GET | `/elements/:id/landmarks` | Element landmarks |
+| GET | `/elements/:id/relations` | Element relations |
+
+**Elements filters**
+- `element_type` repeated
+- `element_subtype` repeated
+- `status` repeated
+- `interaction_date_from`
+- `interaction_date_to`
+- `created_at_from`
+- `created_at_to`
+
+Example:
+```http
+GET /elements?element_type=transaction&status=intended
+GET /elements?status=in_progress&status=intended
+```
+
+### Landmarks
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/landmarks/:id` | Landmark detail |
+
+### Lens
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/lens` | Create lens |
+| GET | `/lens/:id/analysis` | Lens analyses |
+| GET | `/lens/:id/aggregates/week_events` | Weekly aggregates |
+| POST | `/lens/:id/retry` | Retry lens processing |
+| PUT | `/lens/:id` | Update lens |
+| DELETE | `/lens/:id` | Delete lens |
+
+**Lens analysis filters**
+- `landscape_analysis_type` repeated
+
+Example:
+```http
+GET /lens/:id/analysis?landscape_analysis_type=daily_recap&landscape_analysis_type=weekly_recap
+```
+
+### LLM Calls
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/llm_calls` | Paginated current-user LLM calls |
+| GET | `/llm_calls/:id` | Single LLM call |
+
+**LLM call filters**
+- `created_at_from`
+- `created_at_to`
+
+### Messages
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/messages` | Paginated current-user messages |
+| POST | `/messages` | Create message |
+| GET | `/messages/:id` | Read one message |
+| PUT | `/messages/:id` | Update message |
+| PATCH | `/messages/:id/seen` | Mark as seen |
+
+**Message query params**
+- `landscape_analysis_id`
+- `received_only`
+- `unread_only`
+- pagination
+
+### Trace Mirrors
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/trace_mirrors` | Current user trace mirrors |
+| GET | `/trace_mirrors/:id` | Trace mirror detail |
+| GET | `/trace_mirrors/:id/references` | Trace mirror references |
+| GET | `/trace_mirrors/landscape/:landscape_id` | By landscape |
+| GET | `/trace_mirrors/trace/:trace_id` | By trace |
+
+## Current Sharing / Publication Semantics
+
+- Finalizing a trace in a shared journal creates one default draft post server-side when needed
+- Posts are the sharing objects; shared readers should consume posts, not raw traces
+- `audience_role`:
+  - `default`
+  - `restricted`
+- Default posts inherit journal grants when created
+- Manual post-grant editing is blocked on `default` posts
+- Post publication notifications are sent on post publication, not trace finalization
+
+## Enum Style Notes
+
+- `grantee_scope` is lowercase in API payloads:
+  - `all_accepted_followers`
+  - `all_platform_users`
+- grant `access_level` and `status` remain uppercase in API payloads:
+  - `READ`
+  - `ACTIVE`
+  - `REVOKED`
+
+## Removed / Legacy Notes
+
+This quick doc no longer documents the old `/resources`, `/interactions`, `/thought_input_usages`, or `/link_preview` API shapes because they are not part of the current router contract reflected here.
