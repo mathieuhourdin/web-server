@@ -17,6 +17,7 @@ pub use persist::{
 };
 pub use routes::{
     delete_analysis_route, get_analysis_parents_route, get_analysis_route,
-    get_analysis_trace_mirrors_route, get_analysis_traces_route, get_elements_route,
-    get_landmarks_route, get_last_analysis_route, post_analysis_route, NewAnalysisDto,
+    get_analysis_trace_mirrors_route, get_analysis_traces_route,
+    get_current_lens_analysis_route, get_elements_route, get_landmarks_route,
+    get_last_analysis_route, post_analysis_route, NewAnalysisDto,
 };

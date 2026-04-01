@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::{Extension, Json, Path, Query, RawQuery},
 };
 use chrono::{Duration, NaiveDate, Utc};
 use serde::Deserialize;
@@ -20,7 +20,9 @@ use crate::entities_v2::{
     user::User,
 };
 
-use super::model::{LandscapeAnalysis, NewLandscapeAnalysis};
+use super::model::{
+    LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState, NewLandscapeAnalysis,
+};
 use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
 
 #[derive(Deserialize)]
@@ -124,6 +126,31 @@ fn sort_landmarks(landmarks: &mut [Landmark], order_by: LandmarkOrderBy, order: 
     }
 }
 
+fn filtered_completed_analyses_for_lens(
+    lens: Lens,
+    raw_query: Option<&str>,
+    pool: &DbPool,
+) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
+    let landscape_analysis_type =
+        crate::pagination::parse_repeated_query_param::<LandscapeAnalysisType>(
+            raw_query,
+            "landscape_analysis_type",
+        )?;
+
+    let mut analyses = lens
+        .get_analysis_scope(pool)?
+        .into_iter()
+        .filter(|analysis| {
+            analysis.processing_state == LandscapeProcessingState::Completed
+                && (landscape_analysis_type.is_empty()
+                    || landscape_analysis_type.contains(&analysis.landscape_analysis_type))
+        })
+        .collect::<Vec<_>>();
+    analyses
+        .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
+    Ok(analyses)
+}
+
 #[debug_handler]
 pub async fn post_analysis_route(
     Extension(pool): Extension<DbPool>,
@@ -180,6 +207,30 @@ pub async fn post_analysis_route(
     .create(&pool)?;
 
     Ok(Json(analysis))
+}
+
+#[debug_handler]
+pub async fn get_current_lens_analysis_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Json<Vec<LandscapeAnalysis>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let user = User::find(&user_id, &pool)?;
+    let current_lens_id = user.current_lens_id.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "current_lens_id is not set for user".to_string(),
+        )
+    })?;
+    let lens = Lens::find_full_lens(current_lens_id, &pool)?;
+    if lens.user_id != Some(user_id) {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let analyses = filtered_completed_analyses_for_lens(lens, raw_query.as_deref(), &pool)?;
+    Ok(Json(analyses))
 }
 
 #[debug_handler]
