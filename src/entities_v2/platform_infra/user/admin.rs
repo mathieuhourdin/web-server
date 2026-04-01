@@ -1,0 +1,259 @@
+use crate::db::DbPool;
+use crate::entities_v2::{
+    error::{ErrorType, PpdcError},
+    session::Session,
+};
+use crate::pagination::PaginationParams;
+use crate::schema::users;
+use axum::{
+    debug_handler,
+    extract::{Extension, Json, Path, Query},
+};
+use chrono::{Duration, NaiveDate, Utc};
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{BigInt, Date, Uuid as SqlUuid};
+use serde::Serialize;
+use uuid::Uuid;
+
+use super::enums::{UserPrincipalType, UserRole};
+use super::model::{
+    ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, NewServiceUserDto, User,
+};
+
+#[derive(QueryableByName)]
+struct UserIdRow {
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    value: i64,
+}
+
+#[derive(QueryableByName)]
+struct UserDailyActivityRow {
+    #[diesel(sql_type = Date)]
+    day: NaiveDate,
+    #[diesel(sql_type = BigInt)]
+    trace_count: i64,
+    #[diesel(sql_type = BigInt)]
+    element_count: i64,
+    #[diesel(sql_type = BigInt)]
+    landmark_count: i64,
+}
+
+#[derive(Serialize)]
+pub struct AdminUserDailyActivity {
+    pub day: NaiveDate,
+    pub written_traces: i64,
+    pub created_elements: i64,
+    pub created_landmarks: i64,
+}
+
+#[derive(Serialize)]
+pub struct AdminUserRecentActivity {
+    pub id: Uuid,
+    pub hlp_landmarks_count: i64,
+    pub heatmap: Vec<AdminUserDailyActivity>,
+}
+
+fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let session_user = User::find(&session_user_id, pool)?;
+    if !session_user.has_role(UserRole::Admin, pool)? {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "Admin role required".to_string(),
+        ));
+    }
+    Ok(session_user)
+}
+
+#[debug_handler]
+pub async fn get_admin_recent_user_activity_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<AdminUserRecentActivity>>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let user_rows = sql_query(
+        r#"
+        SELECT user_id
+        FROM traces
+        GROUP BY user_id
+        ORDER BY MAX(COALESCE(interaction_date, created_at)) DESC
+        LIMIT 10
+        "#,
+    )
+    .load::<UserIdRow>(&mut conn)?;
+
+    let to = Utc::now().date_naive();
+    let from = to - Duration::days(29);
+
+    let mut payload = Vec::with_capacity(user_rows.len());
+
+    for row in user_rows {
+        let hlp_landmarks_count = sql_query(
+            r#"
+            SELECT COUNT(*)::bigint AS value
+            FROM landmarks
+            WHERE user_id = $1
+              AND landmark_type = 'HIGH_LEVEL_PROJECT'
+            "#,
+        )
+        .bind::<SqlUuid, _>(row.user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .value;
+
+        let heatmap_rows = sql_query(
+            r#"
+            WITH days AS (
+                SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
+            )
+            SELECT
+                d.day AS day,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM traces t
+                    WHERE t.user_id = $1
+                      AND COALESCE(t.interaction_date, t.created_at)::date = d.day
+                ), 0)::bigint AS trace_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM elements e
+                    WHERE e.user_id = $1
+                      AND e.created_at::date = d.day
+                ), 0)::bigint AS element_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM landmarks l
+                    WHERE l.user_id = $1
+                      AND l.created_at::date = d.day
+                ), 0)::bigint AS landmark_count
+            FROM days d
+            ORDER BY d.day
+            "#,
+        )
+        .bind::<SqlUuid, _>(row.user_id)
+        .bind::<Date, _>(from)
+        .bind::<Date, _>(to)
+        .load::<UserDailyActivityRow>(&mut conn)?;
+
+        let heatmap = heatmap_rows
+            .into_iter()
+            .map(|r| AdminUserDailyActivity {
+                day: r.day,
+                written_traces: r.trace_count,
+                created_elements: r.element_count,
+                created_landmarks: r.landmark_count,
+            })
+            .collect::<Vec<_>>();
+
+        payload.push(AdminUserRecentActivity {
+            id: row.user_id,
+            hlp_landmarks_count,
+            heatmap,
+        });
+    }
+
+    Ok(Json(payload))
+}
+
+#[debug_handler]
+pub async fn get_admin_service_users_route(
+    Query(params): Query<PaginationParams>,
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<User>>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let users = users::table
+        .filter(users::principal_type.eq(UserPrincipalType::Service))
+        .offset(params.offset())
+        .limit(params.limit())
+        .order(users::created_at.desc())
+        .select(User::as_select())
+        .load::<User>(&mut conn)?;
+
+    Ok(Json(users))
+}
+
+#[debug_handler]
+pub async fn post_admin_service_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Json(payload): Json<NewServiceUserDto>,
+) -> Result<Json<User>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let mut payload = payload.to_new_user();
+    payload.hash_password()?;
+
+    let created_user = payload.create(&pool)?;
+    if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
+                .execute(&mut conn);
+        }
+        return Err(err);
+    }
+    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
+                .execute(&mut conn);
+        }
+        return Err(err);
+    }
+
+    Ok(Json(created_user))
+}
+
+#[debug_handler]
+pub async fn get_admin_service_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<User>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let user = User::find(&id, &pool)?;
+    if user.principal_type != UserPrincipalType::Service {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Service user not found".to_string(),
+        ));
+    }
+    Ok(Json(user))
+}
+
+#[debug_handler]
+pub async fn put_admin_service_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<NewServiceUserDto>,
+) -> Result<Json<User>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let existing_user = User::find(&id, &pool)?;
+    if existing_user.principal_type != UserPrincipalType::Service {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Service user not found".to_string(),
+        ));
+    }
+
+    let payload = payload.to_service_user_update(&existing_user);
+    let updated_user = payload.update(&id, &pool)?;
+    Ok(Json(updated_user))
+}

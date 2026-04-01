@@ -3,430 +3,28 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalType, NewJournalDto},
     lens::{LensProcessingState, NewLens},
-    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
-    session::Session,
     trace::{NewTrace, TraceType},
 };
-use crate::environment;
 use crate::pagination::PaginationParams;
 use crate::schema::{journals, lenses, user_roles, users};
 use argon2::Config;
 use axum::{
-    debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::Json,
     http::StatusCode as AxumStatusCode,
     response::IntoResponse,
 };
-use chrono::{Duration, NaiveDate, NaiveDateTime, Utc, Weekday};
-use diesel::deserialize::{self, FromSql};
-use diesel::pg::{Pg, PgValue};
+use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
-use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Date, Float, Nullable, SmallInt, Text, Uuid as SqlUuid};
-use diesel::{AsExpression, FromSqlRow};
+use diesel::sql_types::{Float, Nullable, Text, Uuid as SqlUuid};
 use rand::Rng;
-use serde::de::{self, Deserializer};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-fn enqueue_new_user_signup_notification_email(
-    user: &User,
-    pool: &DbPool,
-) -> Result<Uuid, PpdcError> {
-    let users_url = format!(
-        "{}/social/users",
-        environment::get_app_base_url().trim_end_matches('/')
-    );
-    let template = mailer::new_user_signup_email(&user.first_name, &user.last_name, &users_url);
-    let email = NewOutboundEmail::new(
-        None,
-        "NEW_USER_SIGNUP".to_string(),
-        Some("USER".to_string()),
-        Some(user.id),
-        "mathieu.hourdin@gmail.com".to_string(),
-        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
-        template.subject,
-        template.text_body,
-        template.html_body,
-        OutboundEmailProvider::Resend,
-        Some(Utc::now().naive_utc()),
-    )
-    .create(pool)?;
-    Ok(email.id)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
-#[diesel(sql_type = diesel::sql_types::Text)]
-pub enum JournalTheme {
-    Classic,
-    White,
-    Flowers,
-    Dark,
-}
-
-impl JournalTheme {
-    pub fn to_code(self) -> &'static str {
-        match self {
-            JournalTheme::Classic => "classic",
-            JournalTheme::White => "white",
-            JournalTheme::Flowers => "flowers",
-            JournalTheme::Dark => "dark",
-        }
-    }
-
-    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
-        match code {
-            "classic" | "Classic" => Ok(JournalTheme::Classic),
-            // Backward compatibility with previous default naming.
-            "default" | "Default" => Ok(JournalTheme::Classic),
-            "white" | "White" => Ok(JournalTheme::White),
-            "flowers" | "Flowers" => Ok(JournalTheme::Flowers),
-            "dark" | "Dark" => Ok(JournalTheme::Dark),
-            _ => Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                format!("Invalid journal_theme: {}", code),
-            )),
-        }
-    }
-
-    pub fn to_api_value(self) -> &'static str {
-        match self {
-            JournalTheme::Classic => "classic",
-            JournalTheme::White => "white",
-            JournalTheme::Flowers => "flowers",
-            JournalTheme::Dark => "dark",
-        }
-    }
-}
-
-impl Serialize for JournalTheme {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.to_api_value())
-    }
-}
-
-impl<'de> Deserialize<'de> for JournalTheme {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        JournalTheme::from_code(&value).map_err(|_| de::Error::custom("unknown journal_theme"))
-    }
-}
-
-impl ToSql<Text, Pg> for JournalTheme {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
-    }
-}
-
-impl FromSql<Text, Pg> for JournalTheme {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
-        JournalTheme::from_code(value.as_str())
-            .map_err(|_| "invalid journal_theme value in database".into())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
-#[diesel(sql_type = diesel::sql_types::SmallInt)]
-pub enum WeekAnalysisWeekday {
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
-}
-
-impl WeekAnalysisWeekday {
-    pub fn to_db_value(self) -> i16 {
-        match self {
-            WeekAnalysisWeekday::Monday => 1,
-            WeekAnalysisWeekday::Tuesday => 2,
-            WeekAnalysisWeekday::Wednesday => 3,
-            WeekAnalysisWeekday::Thursday => 4,
-            WeekAnalysisWeekday::Friday => 5,
-            WeekAnalysisWeekday::Saturday => 6,
-            WeekAnalysisWeekday::Sunday => 7,
-        }
-    }
-
-    pub fn from_db_value(value: i16) -> Result<Self, PpdcError> {
-        match value {
-            1 => Ok(WeekAnalysisWeekday::Monday),
-            2 => Ok(WeekAnalysisWeekday::Tuesday),
-            3 => Ok(WeekAnalysisWeekday::Wednesday),
-            4 => Ok(WeekAnalysisWeekday::Thursday),
-            5 => Ok(WeekAnalysisWeekday::Friday),
-            6 => Ok(WeekAnalysisWeekday::Saturday),
-            7 => Ok(WeekAnalysisWeekday::Sunday),
-            _ => Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                format!("Invalid week_analysis_weekday: {}", value),
-            )),
-        }
-    }
-
-    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
-        match code {
-            "1" => Ok(WeekAnalysisWeekday::Monday),
-            "2" => Ok(WeekAnalysisWeekday::Tuesday),
-            "3" => Ok(WeekAnalysisWeekday::Wednesday),
-            "4" => Ok(WeekAnalysisWeekday::Thursday),
-            "5" => Ok(WeekAnalysisWeekday::Friday),
-            "6" => Ok(WeekAnalysisWeekday::Saturday),
-            "7" => Ok(WeekAnalysisWeekday::Sunday),
-            "MONDAY" | "Monday" | "monday" => Ok(WeekAnalysisWeekday::Monday),
-            "TUESDAY" | "Tuesday" | "tuesday" => Ok(WeekAnalysisWeekday::Tuesday),
-            "WEDNESDAY" | "Wednesday" | "wednesday" => Ok(WeekAnalysisWeekday::Wednesday),
-            "THURSDAY" | "Thursday" | "thursday" => Ok(WeekAnalysisWeekday::Thursday),
-            "FRIDAY" | "Friday" | "friday" => Ok(WeekAnalysisWeekday::Friday),
-            "SATURDAY" | "Saturday" | "saturday" => Ok(WeekAnalysisWeekday::Saturday),
-            "SUNDAY" | "Sunday" | "sunday" => Ok(WeekAnalysisWeekday::Sunday),
-            _ => Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                format!("Invalid week_analysis_weekday: {}", code),
-            )),
-        }
-    }
-
-    pub fn to_api_value(self) -> &'static str {
-        match self {
-            WeekAnalysisWeekday::Monday => "monday",
-            WeekAnalysisWeekday::Tuesday => "tuesday",
-            WeekAnalysisWeekday::Wednesday => "wednesday",
-            WeekAnalysisWeekday::Thursday => "thursday",
-            WeekAnalysisWeekday::Friday => "friday",
-            WeekAnalysisWeekday::Saturday => "saturday",
-            WeekAnalysisWeekday::Sunday => "sunday",
-        }
-    }
-
-    pub fn to_chrono_weekday(self) -> Weekday {
-        match self {
-            WeekAnalysisWeekday::Monday => Weekday::Mon,
-            WeekAnalysisWeekday::Tuesday => Weekday::Tue,
-            WeekAnalysisWeekday::Wednesday => Weekday::Wed,
-            WeekAnalysisWeekday::Thursday => Weekday::Thu,
-            WeekAnalysisWeekday::Friday => Weekday::Fri,
-            WeekAnalysisWeekday::Saturday => Weekday::Sat,
-            WeekAnalysisWeekday::Sunday => Weekday::Sun,
-        }
-    }
-}
-
-impl Serialize for WeekAnalysisWeekday {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.to_api_value())
-    }
-}
-
-impl<'de> Deserialize<'de> for WeekAnalysisWeekday {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        WeekAnalysisWeekday::from_code(&value)
-            .map_err(|_| de::Error::custom("unknown week_analysis_weekday"))
-    }
-}
-
-impl ToSql<SmallInt, Pg> for WeekAnalysisWeekday {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        let value = self.to_db_value();
-        <i16 as ToSql<SmallInt, Pg>>::to_sql(&value, &mut out.reborrow())
-    }
-}
-
-impl FromSql<SmallInt, Pg> for WeekAnalysisWeekday {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        let value = <i16 as FromSql<SmallInt, Pg>>::from_sql(bytes)?;
-        WeekAnalysisWeekday::from_db_value(value)
-            .map_err(|_| "invalid week_analysis_weekday value in database".into())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
-#[diesel(sql_type = diesel::sql_types::Text)]
-pub enum HomeFocusView {
-    Projects,
-    Follows,
-    Drafts,
-}
-
-impl HomeFocusView {
-    pub fn to_code(self) -> &'static str {
-        match self {
-            HomeFocusView::Projects => "projects",
-            HomeFocusView::Follows => "follows",
-            HomeFocusView::Drafts => "drafts",
-        }
-    }
-
-    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
-        match code {
-            "projects" | "PROJECTS" | "Projects" => Ok(HomeFocusView::Projects),
-            "follows" | "FOLLOWS" | "Follows" => Ok(HomeFocusView::Follows),
-            "drafts" | "DRAFTS" | "Drafts" => Ok(HomeFocusView::Drafts),
-            _ => Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                format!("Invalid home_focus_view: {}", code),
-            )),
-        }
-    }
-
-    pub fn to_api_value(self) -> &'static str {
-        self.to_code()
-    }
-}
-
-impl Serialize for HomeFocusView {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.to_api_value())
-    }
-}
-
-impl<'de> Deserialize<'de> for HomeFocusView {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        HomeFocusView::from_code(&value).map_err(|_| de::Error::custom("unknown home_focus_view"))
-    }
-}
-
-impl ToSql<Text, Pg> for HomeFocusView {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
-    }
-}
-
-impl FromSql<Text, Pg> for HomeFocusView {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
-        HomeFocusView::from_code(value.as_str())
-            .map_err(|_| "invalid home_focus_view value in database".into())
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum UserRole {
-    Member,
-    Admin,
-    Mentor,
-}
-
-impl UserRole {
-    pub fn to_db(self) -> &'static str {
-        match self {
-            UserRole::Member => "MEMBER",
-            UserRole::Admin => "ADMIN",
-            UserRole::Mentor => "MENTOR",
-        }
-    }
-
-    pub fn from_db(value: &str) -> Result<Self, PpdcError> {
-        match value {
-            "MEMBER" | "member" => Ok(UserRole::Member),
-            "ADMIN" | "admin" => Ok(UserRole::Admin),
-            "MENTOR" | "mentor" => Ok(UserRole::Mentor),
-            _ => Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                format!("Invalid user role: {}", value),
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
-#[diesel(sql_type = diesel::sql_types::Text)]
-pub enum UserPrincipalType {
-    Human,
-    Service,
-}
-
-impl UserPrincipalType {
-    pub fn to_db(self) -> &'static str {
-        match self {
-            UserPrincipalType::Human => "HUMAN",
-            UserPrincipalType::Service => "SERVICE",
-        }
-    }
-
-    pub fn from_db(value: &str) -> Result<Self, PpdcError> {
-        match value {
-            "HUMAN" | "human" => Ok(UserPrincipalType::Human),
-            "SERVICE" | "service" => Ok(UserPrincipalType::Service),
-            _ => Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                format!("Invalid user principal_type: {}", value),
-            )),
-        }
-    }
-
-    pub fn to_api_value(self) -> &'static str {
-        match self {
-            UserPrincipalType::Human => "human",
-            UserPrincipalType::Service => "service",
-        }
-    }
-}
-
-impl Serialize for UserPrincipalType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.to_api_value())
-    }
-}
-
-impl<'de> Deserialize<'de> for UserPrincipalType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        UserPrincipalType::from_db(&value).map_err(|_| de::Error::custom("unknown principal_type"))
-    }
-}
-
-impl ToSql<Text, Pg> for UserPrincipalType {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <str as ToSql<Text, Pg>>::to_sql(self.to_db(), out)
-    }
-}
-
-impl FromSql<Text, Pg> for UserPrincipalType {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
-        UserPrincipalType::from_db(value.as_str())
-            .map_err(|_| "invalid principal_type value in database".into())
-    }
-}
+use super::enums::{
+    HomeFocusView, JournalTheme, UserPrincipalType, UserRole, WeekAnalysisWeekday,
+};
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = crate::schema::user_roles)]
@@ -528,22 +126,22 @@ impl From<&User> for UserPseudonymizedAuthentifiedResponse {
 }
 
 impl UserPseudonymizedAuthentifiedResponse {
-    fn from_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Self {
+    pub(crate) fn from_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Self {
         UserPseudonymizedAuthentifiedResponse {
-            id: user.id.clone(),
+            id: user.id,
             email: user.email.clone(),
             principal_type: user.principal_type,
             mentor_id: user.mentor_id,
             first_name: user.first_name.clone(),
             last_name: user.last_name.clone(),
             handle: user.handle.clone(),
-            created_at: user.created_at.clone(),
-            updated_at: user.updated_at.clone(),
+            created_at: user.created_at,
+            updated_at: user.updated_at,
             profile_picture_url: user.profile_picture_url.clone(),
-            is_platform_user: user.is_platform_user.clone(),
+            is_platform_user: user.is_platform_user,
             biography: visible_biography_for_viewer(user, viewer_user_id),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
-            pseudonymized: user.pseudonymized.clone(),
+            pseudonymized: user.pseudonymized,
             journal_theme: user.journal_theme,
             current_lens_id: user.current_lens_id,
             week_analysis_weekday: user.week_analysis_weekday,
@@ -587,19 +185,19 @@ impl From<&User> for UserPseudonymizedResponse {
 }
 
 impl UserPseudonymizedResponse {
-    fn from_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Self {
+    pub(crate) fn from_viewer(user: &User, viewer_user_id: Option<Uuid>) -> Self {
         UserPseudonymizedResponse {
-            id: user.id.clone(),
+            id: user.id,
             principal_type: user.principal_type,
             mentor_id: user.mentor_id,
             handle: user.handle.clone(),
-            created_at: user.created_at.clone(),
-            updated_at: user.updated_at.clone(),
+            created_at: user.created_at,
+            updated_at: user.updated_at,
             profile_picture_url: user.profile_picture_url.clone(),
-            is_platform_user: user.is_platform_user.clone(),
+            is_platform_user: user.is_platform_user,
             biography: visible_biography_for_viewer(user, viewer_user_id),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
-            pseudonymized: user.pseudonymized.clone(),
+            pseudonymized: user.pseudonymized,
             journal_theme: user.journal_theme,
             current_lens_id: user.current_lens_id,
             week_analysis_weekday: user.week_analysis_weekday,
@@ -627,23 +225,23 @@ pub struct UserListParams {
 }
 
 #[derive(QueryableByName)]
-struct UserSearchRow {
+pub(crate) struct UserSearchRow {
     #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
+    pub(crate) id: Uuid,
     #[diesel(sql_type = Text)]
-    handle: String,
+    pub(crate) handle: String,
     #[diesel(sql_type = Nullable<Text>)]
-    first_name: Option<String>,
+    pub(crate) first_name: Option<String>,
     #[diesel(sql_type = Nullable<Text>)]
-    last_name: Option<String>,
+    pub(crate) last_name: Option<String>,
     #[diesel(sql_type = Nullable<Text>)]
-    profile_picture_url: Option<String>,
+    pub(crate) profile_picture_url: Option<String>,
     #[diesel(sql_type = Text)]
-    principal_type: String,
+    pub(crate) principal_type: String,
     #[diesel(sql_type = diesel::sql_types::Bool)]
-    pseudonymized: bool,
+    pub(crate) pseudonymized: bool,
     #[diesel(sql_type = Text)]
-    pseudonym: String,
+    pub(crate) pseudonym: String,
 }
 
 #[derive(Serialize)]
@@ -731,7 +329,7 @@ pub struct NewServiceUserDto {
 }
 
 impl NewServiceUserDto {
-    fn to_new_user(self) -> NewUser {
+    pub(crate) fn to_new_user(self) -> NewUser {
         let generated_handle = format!("@{}-{}", self.first_name.trim(), self.last_name.trim());
         let normalized_handle = generated_handle.trim().to_string();
         let slug = normalized_handle
@@ -774,7 +372,7 @@ impl NewServiceUserDto {
         }
     }
 
-    fn to_service_user_update(self, existing_user: &User) -> NewUser {
+    pub(crate) fn to_service_user_update(self, existing_user: &User) -> NewUser {
         let generated_handle = format!("@{}-{}", self.first_name.trim(), self.last_name.trim());
         let normalized_handle = generated_handle.trim().to_string();
 
@@ -883,17 +481,15 @@ impl NewUser {
         if let Some(password) = &self.password {
             self.password = Some(User::hash_password_value(password)?);
             Ok(())
+        } else if self.is_platform_user.is_none() || !self.is_platform_user.unwrap() {
+            self.password = Some(String::new());
+            Ok(())
         } else {
-            if self.is_platform_user.is_none() || self.is_platform_user.unwrap() == false {
-                self.password = Some(String::new());
-                Ok(())
-            } else {
-                Err(PpdcError::new(
-                    500,
-                    ErrorType::InternalError,
-                    format!("No password to encode"),
-                ))
-            }
+            Err(PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "No password to encode".to_string(),
+            ))
         }
     }
 }
@@ -1142,7 +738,7 @@ fn ensure_user_has_current_lens(user_id: Uuid, pool: &DbPool) -> Result<(), Ppdc
     Ok(())
 }
 
-fn create_bio_trace_for_user(
+pub(crate) fn create_bio_trace_for_user(
     user_id: Uuid,
     biography: String,
     pool: &DbPool,
@@ -1169,7 +765,7 @@ fn create_bio_trace_for_user(
     Ok(())
 }
 
-fn create_high_level_projects_definition_trace_for_user(
+pub(crate) fn create_high_level_projects_definition_trace_for_user(
     user_id: Uuid,
     high_level_projects_definition: String,
     pool: &DbPool,
@@ -1206,30 +802,6 @@ struct Row {
     last_name: String,
     #[diesel(sql_type = Float)]
     score: f32,
-}
-
-#[derive(QueryableByName)]
-struct UserIdRow {
-    #[diesel(sql_type = SqlUuid)]
-    user_id: Uuid,
-}
-
-#[derive(QueryableByName)]
-struct CountRow {
-    #[diesel(sql_type = BigInt)]
-    value: i64,
-}
-
-#[derive(QueryableByName)]
-struct UserDailyActivityRow {
-    #[diesel(sql_type = Date)]
-    day: NaiveDate,
-    #[diesel(sql_type = BigInt)]
-    trace_count: i64,
-    #[diesel(sql_type = BigInt)]
-    element_count: i64,
-    #[diesel(sql_type = BigInt)]
-    landmark_count: i64,
 }
 
 #[derive(Debug)]
@@ -1281,434 +853,6 @@ pub fn find_similar_users(
             score: r.score,
         })
         .collect())
-}
-
-#[derive(Serialize)]
-pub struct AdminUserDailyActivity {
-    pub day: NaiveDate,
-    pub written_traces: i64,
-    pub created_elements: i64,
-    pub created_landmarks: i64,
-}
-
-#[derive(Serialize)]
-pub struct AdminUserRecentActivity {
-    pub id: Uuid,
-    pub hlp_landmarks_count: i64,
-    pub heatmap: Vec<AdminUserDailyActivity>,
-}
-
-fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
-    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let session_user = User::find(&session_user_id, pool)?;
-    if !session_user.has_role(UserRole::Admin, pool)? {
-        return Err(PpdcError::new(
-            403,
-            ErrorType::ApiError,
-            "Admin role required".to_string(),
-        ));
-    }
-    Ok(session_user)
-}
-
-#[debug_handler]
-pub async fn get_admin_recent_user_activity_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-) -> Result<Json<Vec<AdminUserRecentActivity>>, PpdcError> {
-    let _admin_user = ensure_admin_session_user(&session, &pool)?;
-
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let user_rows = sql_query(
-        r#"
-        SELECT user_id
-        FROM traces
-        GROUP BY user_id
-        ORDER BY MAX(COALESCE(interaction_date, created_at)) DESC
-        LIMIT 10
-        "#,
-    )
-    .load::<UserIdRow>(&mut conn)?;
-
-    let to = Utc::now().date_naive();
-    let from = to - Duration::days(29);
-
-    let mut payload = Vec::with_capacity(user_rows.len());
-
-    for row in user_rows {
-        let hlp_landmarks_count = sql_query(
-            r#"
-            SELECT COUNT(*)::bigint AS value
-            FROM landmarks
-            WHERE user_id = $1
-              AND landmark_type = 'HIGH_LEVEL_PROJECT'
-            "#,
-        )
-        .bind::<SqlUuid, _>(row.user_id)
-        .get_result::<CountRow>(&mut conn)?
-        .value;
-
-        let heatmap_rows = sql_query(
-            r#"
-            WITH days AS (
-                SELECT generate_series($2::date, $3::date, interval '1 day')::date AS day
-            )
-            SELECT
-                d.day AS day,
-                COALESCE((
-                    SELECT COUNT(*)::bigint
-                    FROM traces t
-                    WHERE t.user_id = $1
-                      AND COALESCE(t.interaction_date, t.created_at)::date = d.day
-                ), 0)::bigint AS trace_count,
-                COALESCE((
-                    SELECT COUNT(*)::bigint
-                    FROM elements e
-                    WHERE e.user_id = $1
-                      AND e.created_at::date = d.day
-                ), 0)::bigint AS element_count,
-                COALESCE((
-                    SELECT COUNT(*)::bigint
-                    FROM landmarks l
-                    WHERE l.user_id = $1
-                      AND l.created_at::date = d.day
-                ), 0)::bigint AS landmark_count
-            FROM days d
-            ORDER BY d.day
-            "#,
-        )
-        .bind::<SqlUuid, _>(row.user_id)
-        .bind::<Date, _>(from)
-        .bind::<Date, _>(to)
-        .load::<UserDailyActivityRow>(&mut conn)?;
-
-        let heatmap = heatmap_rows
-            .into_iter()
-            .map(|r| AdminUserDailyActivity {
-                day: r.day,
-                written_traces: r.trace_count,
-                created_elements: r.element_count,
-                created_landmarks: r.landmark_count,
-            })
-            .collect::<Vec<_>>();
-
-        payload.push(AdminUserRecentActivity {
-            id: row.user_id,
-            hlp_landmarks_count,
-            heatmap,
-        });
-    }
-
-    Ok(Json(payload))
-}
-
-#[debug_handler]
-pub async fn get_admin_service_users_route(
-    Query(params): Query<PaginationParams>,
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-) -> Result<Json<Vec<User>>, PpdcError> {
-    let _admin_user = ensure_admin_session_user(&session, &pool)?;
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let users = users::table
-        .filter(users::principal_type.eq(UserPrincipalType::Service))
-        .offset(params.offset())
-        .limit(params.limit())
-        .order(users::created_at.desc())
-        .select(User::as_select())
-        .load::<User>(&mut conn)?;
-
-    Ok(Json(users))
-}
-
-#[debug_handler]
-pub async fn post_admin_service_user_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Json(payload): Json<NewServiceUserDto>,
-) -> Result<Json<User>, PpdcError> {
-    let _admin_user = ensure_admin_session_user(&session, &pool)?;
-    let mut payload = payload.to_new_user();
-    payload.hash_password()?;
-
-    let created_user = payload.create(&pool)?;
-    if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
-                .execute(&mut conn);
-        }
-        return Err(err);
-    }
-    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
-                .execute(&mut conn);
-        }
-        return Err(err);
-    }
-
-    Ok(Json(created_user))
-}
-
-#[debug_handler]
-pub async fn get_admin_service_user_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<User>, PpdcError> {
-    let _admin_user = ensure_admin_session_user(&session, &pool)?;
-    let user = User::find(&id, &pool)?;
-    if user.principal_type != UserPrincipalType::Service {
-        return Err(PpdcError::new(
-            404,
-            ErrorType::ApiError,
-            "Service user not found".to_string(),
-        ));
-    }
-    Ok(Json(user))
-}
-
-#[debug_handler]
-pub async fn put_admin_service_user_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<NewServiceUserDto>,
-) -> Result<Json<User>, PpdcError> {
-    let _admin_user = ensure_admin_session_user(&session, &pool)?;
-    let existing_user = User::find(&id, &pool)?;
-    if existing_user.principal_type != UserPrincipalType::Service {
-        return Err(PpdcError::new(
-            404,
-            ErrorType::ApiError,
-            "Service user not found".to_string(),
-        ));
-    }
-
-    let payload = payload.to_service_user_update(&existing_user);
-    let updated_user = payload.update(&id, &pool)?;
-    Ok(Json(updated_user))
-}
-
-#[debug_handler]
-pub async fn get_users(
-    Query(params): Query<UserListParams>,
-    Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let mut query = users::table.into_boxed();
-    if let Some(principal_type) = params.principal_type {
-        query = query.filter(users::principal_type.eq(principal_type));
-    }
-    if let Some(is_platform_user) = params.is_platform_user {
-        query = query.filter(users::is_platform_user.eq(is_platform_user));
-    }
-
-    let results: Vec<UserPseudonymizedResponse> = query
-        .offset(params.pagination.offset())
-        .limit(params.pagination.limit())
-        .select(User::as_select())
-        .load::<User>(&mut conn)?
-        .iter()
-        .map(UserPseudonymizedResponse::from)
-        .collect();
-    Ok(Json(results))
-}
-
-#[debug_handler]
-pub async fn get_user_search_route(
-    Query(params): Query<UserSearchParams>,
-    Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserSearchResult>>, PpdcError> {
-    let query = params.q.trim();
-    if query.is_empty() {
-        return Ok(Json(vec![]));
-    }
-
-    let limit = params.limit.unwrap_or(20).clamp(1, 50);
-    let contains_query = format!("%{}%", query);
-    let prefix_query = format!("{}%", query);
-
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let rows = sql_query(
-        r#"
-        SELECT
-            id,
-            handle,
-            NULLIF(first_name, '') AS first_name,
-            NULLIF(last_name, '') AS last_name,
-            profile_picture_url,
-            principal_type,
-            pseudonymized,
-            pseudonym
-        FROM users
-        WHERE principal_type = 'HUMAN'
-          AND (
-            handle ILIKE $1
-            OR first_name ILIKE $1
-            OR last_name ILIKE $1
-            OR CONCAT_WS(' ', first_name, last_name) ILIKE $1
-          )
-        ORDER BY
-          CASE
-            WHEN LOWER(handle) = LOWER($2) THEN 0
-            WHEN handle ILIKE $3 THEN 1
-            WHEN first_name ILIKE $3 OR last_name ILIKE $3 THEN 2
-            WHEN CONCAT_WS(' ', first_name, last_name) ILIKE $3 THEN 3
-            ELSE 4
-          END,
-          updated_at DESC NULLS LAST,
-          created_at DESC
-        LIMIT $4
-        "#,
-    )
-    .bind::<Text, _>(contains_query)
-    .bind::<Text, _>(query.to_string())
-    .bind::<Text, _>(prefix_query)
-    .bind::<BigInt, _>(limit)
-    .load::<UserSearchRow>(&mut conn)?;
-
-    Ok(Json(rows.into_iter().map(UserSearchResult::from).collect()))
-}
-
-#[debug_handler]
-pub async fn get_mentors_route(
-    Query(params): Query<PaginationParams>,
-    Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
-    let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
-
-    let results: Vec<UserPseudonymizedResponse> = users::table
-        .filter(users::principal_type.eq(UserPrincipalType::Service))
-        .offset(params.offset())
-        .limit(params.limit())
-        .order(users::created_at.desc())
-        .select(User::as_select())
-        .load::<User>(&mut conn)?
-        .iter()
-        .map(UserPseudonymizedResponse::from)
-        .collect();
-    Ok(Json(results))
-}
-
-#[debug_handler]
-pub async fn post_user(
-    Extension(pool): Extension<DbPool>,
-    Json(mut payload): Json<NewUser>,
-) -> Result<Json<User>, PpdcError> {
-    payload.hash_password().unwrap();
-    let created_user = payload.create(&pool)?;
-    if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
-                .execute(&mut conn);
-        }
-        return Err(err);
-    }
-    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
-                .execute(&mut conn);
-        }
-        return Err(err);
-    }
-    if created_user.principal_type == UserPrincipalType::Human {
-        match enqueue_new_user_signup_notification_email(&created_user, &pool) {
-            Ok(email_id) => {
-                let pool_for_task = pool.clone();
-                tokio::spawn(async move {
-                    let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
-                });
-            }
-            Err(err) => {
-                tracing::error!(
-                    target: "mailer",
-                    "new_user_signup_notification_failed user_id={} message={}",
-                    created_user.id,
-                    err.message
-                );
-            }
-        }
-    }
-    Ok(Json(created_user))
-}
-
-#[debug_handler]
-pub async fn put_user_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<NewUser>,
-) -> Result<Json<User>, PpdcError> {
-    let session_user_id = session.user_id.unwrap();
-    let existing_user = User::find(&id, &pool)?;
-    let new_biography = payload.biography.clone();
-    let biography_changed = new_biography
-        .as_ref()
-        .map(|bio| existing_user.biography.as_ref() != Some(bio))
-        .unwrap_or(false);
-    let new_hlp_definition = payload.high_level_projects_definition.clone();
-    let hlp_definition_changed = new_hlp_definition
-        .as_ref()
-        .map(|definition| existing_user.high_level_projects_definition.as_ref() != Some(definition))
-        .unwrap_or(false);
-
-    if &session_user_id != &id && existing_user.is_platform_user {
-        return Err(PpdcError::unauthorized());
-    }
-    let updated_user = payload.update(&id, &pool)?;
-
-    if biography_changed {
-        if let Some(biography) = new_biography {
-            create_bio_trace_for_user(id, biography, &pool)?;
-        }
-    }
-    if hlp_definition_changed {
-        if let Some(high_level_projects_definition) = new_hlp_definition {
-            create_high_level_projects_definition_trace_for_user(
-                id,
-                high_level_projects_definition,
-                &pool,
-            )?;
-        }
-    }
-
-    Ok(Json(updated_user))
-}
-
-#[debug_handler]
-pub async fn get_user_route(
-    Extension(pool): Extension<DbPool>,
-    Extension(session): Extension<Session>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, PpdcError> {
-    let user = User::find(&id, &pool)?;
-    let viewer_user_id = session.user_id;
-    if !user.is_platform_user || session.user_id.unwrap() == id {
-        let mut user_response =
-            UserPseudonymizedAuthentifiedResponse::from_viewer(&user, viewer_user_id);
-        if session.user_id == Some(id) {
-            user_response.roles = Some(user.list_roles(&pool)?);
-        }
-        Ok(UserResponse::PseudonymizedAuthentified(user_response))
-    } else {
-        let user_response = UserPseudonymizedResponse::from_viewer(&user, viewer_user_id);
-        Ok(UserResponse::Pseudonymized(user_response))
-    }
 }
 
 #[cfg(test)]
@@ -1775,63 +919,49 @@ mod tests {
     #[test]
     fn test_user_pseudonymized_response_uses_real_name_as_display_name() {
         let user = build_test_user(false, UserPrincipalType::Human);
-
         let response = UserPseudonymizedResponse::from(&user);
-
         assert_eq!(response.display_name, "Ada Lovelace");
     }
 
     #[test]
     fn test_user_pseudonymized_response_uses_pseudonym_as_display_name() {
         let user = build_test_user(true, UserPrincipalType::Human);
-
         let response = UserPseudonymizedResponse::from(&user);
-
         assert_eq!(response.display_name, "Analytical Poet");
     }
 
     #[test]
     fn test_user_pseudonymized_authenticated_response_uses_real_name_as_display_name() {
         let user = build_test_user(false, UserPrincipalType::Human);
-
         let response = UserPseudonymizedAuthentifiedResponse::from(&user);
-
         assert_eq!(response.display_name, "Ada Lovelace");
     }
 
     #[test]
     fn test_user_pseudonymized_authenticated_response_uses_pseudonym_as_display_name() {
         let user = build_test_user(true, UserPrincipalType::Human);
-
         let response = UserPseudonymizedAuthentifiedResponse::from(&user);
-
         assert_eq!(response.display_name, "Analytical Poet");
     }
 
     #[test]
     fn test_user_pseudonymized_response_hides_human_biography_for_other_users() {
         let user = build_test_user(false, UserPrincipalType::Human);
-
         let response = UserPseudonymizedResponse::from(&user);
-
         assert_eq!(response.biography, None);
     }
 
     #[test]
     fn test_user_pseudonymized_authenticated_response_shows_human_biography_for_self() {
         let user = build_test_user(false, UserPrincipalType::Human);
-
         let response = UserPseudonymizedAuthentifiedResponse::from_viewer(&user, Some(user.id));
-
         assert_eq!(response.biography, Some("Biography".to_string()));
     }
 
     #[test]
     fn test_user_pseudonymized_response_shows_service_biography() {
         let user = build_test_user(false, UserPrincipalType::Service);
-
         let response = UserPseudonymizedResponse::from(&user);
-
         assert_eq!(response.biography, Some("Biography".to_string()));
     }
 
