@@ -487,6 +487,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    usage_events (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        session_id -> Nullable<Uuid>,
+        event_type -> Text,
+        resource_id -> Nullable<Uuid>,
+        context_json -> Nullable<Jsonb>,
+        occurred_at -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -564,6 +577,8 @@ diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
+diesel::joinable!(usage_events -> sessions (session_id));
+diesel::joinable!(usage_events -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     analysis_summaries,
@@ -597,5 +612,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     traces,
     user_roles,
     user_secure_actions,
+    usage_events,
     users,
 );

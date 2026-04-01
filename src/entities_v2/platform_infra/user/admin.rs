@@ -43,6 +43,20 @@ struct UserDailyActivityRow {
     element_count: i64,
     #[diesel(sql_type = BigInt)]
     landmark_count: i64,
+    #[diesel(sql_type = BigInt)]
+    home_visited_count: i64,
+    #[diesel(sql_type = BigInt)]
+    history_visited_count: i64,
+    #[diesel(sql_type = BigInt)]
+    journal_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
+    followed_journal_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
+    post_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
+    feedback_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
+    summary_opened_count: i64,
 }
 
 #[derive(Serialize)]
@@ -51,6 +65,13 @@ pub struct AdminUserDailyActivity {
     pub written_traces: i64,
     pub created_elements: i64,
     pub created_landmarks: i64,
+    pub home_visited_count: i64,
+    pub history_visited_count: i64,
+    pub journal_opened_count: i64,
+    pub followed_journal_opened_count: i64,
+    pub post_opened_count: i64,
+    pub feedback_opened_count: i64,
+    pub summary_opened_count: i64,
 }
 
 #[derive(Serialize)]
@@ -153,7 +174,56 @@ pub async fn get_admin_recent_user_activity_route(
                     FROM landmarks l
                     WHERE l.user_id = $1
                       AND l.created_at::date = d.day
-                ), 0)::bigint AS landmark_count
+                ), 0)::bigint AS landmark_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'HOME_VISITED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS home_visited_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'HISTORY_VISITED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS history_visited_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'JOURNAL_OPENED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS journal_opened_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS followed_journal_opened_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'POST_OPENED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS post_opened_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'FEEDBACK_OPENED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS feedback_opened_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = $1
+                      AND ue.event_type = 'SUMMARY_OPENED'
+                      AND ue.occurred_at::date = d.day
+                ), 0)::bigint AS summary_opened_count
             FROM days d
             ORDER BY d.day
             "#,
@@ -170,6 +240,13 @@ pub async fn get_admin_recent_user_activity_route(
                 written_traces: r.trace_count,
                 created_elements: r.element_count,
                 created_landmarks: r.landmark_count,
+                home_visited_count: r.home_visited_count,
+                history_visited_count: r.history_visited_count,
+                journal_opened_count: r.journal_opened_count,
+                followed_journal_opened_count: r.followed_journal_opened_count,
+                post_opened_count: r.post_opened_count,
+                feedback_opened_count: r.feedback_opened_count,
+                summary_opened_count: r.summary_opened_count,
             })
             .collect::<Vec<_>>();
 
