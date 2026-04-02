@@ -67,6 +67,7 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
+        .route("/drafts", get(trace::get_trace_drafts_route))
         .route(
             "/:id",
             get(trace::get_trace_route)
@@ -84,11 +85,8 @@ pub fn create_router() -> Router {
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
-    let drafts_router = Router::new()
-        .route("/", get(trace::get_drafts_route))
-        .layer(from_fn(sessions_service::auth_middleware_custom));
-
     let posts_router = Router::new()
+        .route("/drafts", get(post::get_post_drafts_route))
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
         .route(
@@ -279,7 +277,6 @@ pub fn create_router() -> Router {
         .nest("/users", users_router)
         .nest("/mentors", mentors_router)
         .nest("/admin", admin_router)
-        .nest("/drafts", drafts_router)
         .nest("/traces", traces_router)
         .nest("/posts", posts_router)
         .nest("/journals", journals_router)

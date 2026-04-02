@@ -462,4 +462,33 @@ impl Post {
 
         Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
+
+    pub fn find_drafts_for_user_paginated(
+        user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let total = posts::table
+            .filter(posts::user_id.eq(user_id))
+            .filter(posts::status.eq(PostStatus::Draft.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        let rows = posts::table
+            .filter(posts::user_id.eq(user_id))
+            .filter(posts::status.eq(PostStatus::Draft.to_db()))
+            .select(select_post_columns())
+            .order(posts::updated_at.desc())
+            .then_order_by(posts::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<PostTuple>(&mut conn)?;
+
+        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+    }
 }

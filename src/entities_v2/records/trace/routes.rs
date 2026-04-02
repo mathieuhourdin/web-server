@@ -438,7 +438,7 @@ pub async fn get_all_traces_for_user_route(
 }
 
 #[debug_handler]
-pub async fn get_drafts_route(
+pub async fn get_trace_drafts_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Query(params): Query<PaginationParams>,

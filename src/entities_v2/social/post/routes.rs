@@ -52,6 +52,12 @@ pub struct TracePostsQuery {
 }
 
 #[derive(Deserialize)]
+pub struct DraftPostsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+#[derive(Deserialize)]
 pub struct NewTracePostDto {
     pub title: Option<String>,
     pub subtitle: Option<String>,
@@ -233,6 +239,19 @@ pub async fn get_trace_posts_route(
     let pagination = params.pagination.validate()?;
     let (posts, total) =
         Post::find_for_trace_paginated(trace_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(posts, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn get_post_drafts_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<DraftPostsQuery>,
+) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.pagination.validate()?;
+    let (posts, total) =
+        Post::find_drafts_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
     Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 
