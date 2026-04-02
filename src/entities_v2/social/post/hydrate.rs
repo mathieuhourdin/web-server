@@ -211,6 +211,25 @@ impl Post {
         Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
 
+    pub fn find_default_for_trace(
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Post>, PpdcError> {
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+
+        let row = posts::table
+            .filter(posts::source_trace_id.eq(Some(trace_id)))
+            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .select(select_post_columns())
+            .order(posts::created_at.desc())
+            .first::<PostTuple>(&mut conn)
+            .optional()?;
+
+        Ok(row.map(tuple_to_post))
+    }
+
     pub fn find_for_user(
         viewer_user_id: Uuid,
         user_id: Uuid,

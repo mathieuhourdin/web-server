@@ -115,8 +115,7 @@ fn ensure_default_draft_post_for_shared_trace(
         return Ok(None);
     }
 
-    let existing_posts = Post::find_for_trace_paginated(trace.id, 0, 1, pool)?.0;
-    if let Some(existing_post) = existing_posts.into_iter().next() {
+    if let Some(existing_post) = Post::find_default_for_trace(trace.id, pool)? {
         return Ok(Some(existing_post.id));
     }
 
