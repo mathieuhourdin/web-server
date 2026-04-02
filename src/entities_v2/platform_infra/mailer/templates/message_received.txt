@@ -2,7 +2,6 @@ Bonjour {{recipient_display_name}},
 
 {{sender_display_name}} vous a envoye un message sur Matiere Grise.
 
-Titre : {{message_title}}
 Extrait : {{excerpt}}
 
 {{conversation_cta}}

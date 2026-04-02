@@ -1,3 +1,32 @@
-<p>Bonjour {{recipient_display_name}},</p>
-<p><strong>{{requester_display_name}}</strong> ({{requester_handle}}) souhaite vous suivre sur Matiere Grise.</p>
-<p><a href="https://matieregrise.ppdcoeur.fr/social/followers">Ouvrir la page des followers</a></p>
+<div style="margin:0;padding:32px 16px;background:#22201f;color:#f4efe7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:640px;margin:0 auto;">
+    <div style="margin-bottom:18px;color:#f4efe7;font-size:28px;font-weight:600;letter-spacing:-0.02em;">
+      🫀 Matière Grise
+    </div>
+
+    <div style="background:#1f1f1f;border:1px solid #2f2f2f;border-radius:24px;padding:28px;box-shadow:0 12px 32px rgba(0,0,0,0.28);">
+      <div style="margin-bottom:10px;font-size:15px;color:#d7d0c4;">
+        Bonjour {{recipient_display_name}},
+      </div>
+
+      <div style="margin-bottom:18px;font-size:30px;line-height:1.15;font-weight:700;color:#fff3e1;">
+        {{requester_display_name}} souhaite vous suivre
+      </div>
+
+      <div style="margin-bottom:18px;font-size:16px;line-height:1.7;color:#d9d3c8;">
+        <strong style="color:#ffffff;">{{requester_display_name}}</strong> ({{requester_handle}})
+        a envoye une demande pour rejoindre votre espace social sur
+        <strong style="color:#ffffff;">Matière Grise</strong>.
+      </div>
+
+      <div style="padding-top:6px;">
+        <a
+          href="https://matieregrise.ppdcoeur.fr/social/followers"
+          style="display:inline-block;padding:12px 18px;background:#f2eee7;color:#1e1b1a;text-decoration:none;border-radius:14px;font-weight:600;"
+        >
+          Ouvrir la page des followers
+        </a>
+      </div>
+    </div>
+  </div>
+</div>

@@ -56,7 +56,7 @@ pub fn shared_trace_finalized_email(
 ) -> EmailTemplate {
     let excerpt = build_trace_excerpt(trace_content, 150);
     let subject = format!("{} a écrit dans son journal", owner_display_name);
-    let interaction_date = interaction_date.to_string();
+    let interaction_date = interaction_date.format("%d/%m/%Y a %H:%M").to_string();
     let text_body = render_template(
         SHARED_TRACE_FINALIZED_TEXT,
         &[
@@ -93,25 +93,16 @@ pub fn shared_trace_finalized_email(
 pub fn message_received_email(
     recipient_display_name: &str,
     sender_display_name: &str,
-    message_title: &str,
     message_content: &str,
     conversation_url: Option<&str>,
 ) -> EmailTemplate {
     let excerpt = build_trace_excerpt(message_content, 180);
-    let subject = if message_title.trim().is_empty() {
-        format!("{} vous a envoye un message", sender_display_name)
-    } else {
-        format!(
-            "{} vous a envoye un message : {}",
-            sender_display_name, message_title
-        )
-    };
+    let subject = format!("{} vous a envoye un message", sender_display_name);
     let text_body = render_template(
         MESSAGE_RECEIVED_TEXT,
         &[
             ("recipient_display_name", recipient_display_name.to_string()),
             ("sender_display_name", sender_display_name.to_string()),
-            ("message_title", message_title.to_string()),
             ("excerpt", excerpt.clone()),
             (
                 "conversation_cta",
@@ -132,7 +123,6 @@ pub fn message_received_email(
                 escape_html(recipient_display_name),
             ),
             ("sender_display_name", escape_html(sender_display_name)),
-            ("message_title", escape_html(message_title)),
             ("excerpt_html", escape_html(&excerpt)),
             (
                 "conversation_link_html",

@@ -108,7 +108,6 @@ pub(crate) fn enqueue_received_message_notification_email(
     let template = mailer::message_received_email(
         &recipient.display_name(),
         &sender.display_name(),
-        &message.title,
         &message.content,
         conversation_url.as_deref(),
     );
