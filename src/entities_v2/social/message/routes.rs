@@ -84,7 +84,7 @@ pub(crate) fn enqueue_received_message_notification_email(
             .and_then(|trace| trace.journal_id)
             .map(|journal_id| {
                 format!(
-                    "{}/me/journals/{}?post_id={}&recipient_user_id={}",
+                    "{}/me/journals/{}?post_id={}&recipient_user_id={}&view=post_chat",
                     environment::get_app_base_url().trim_end_matches('/'),
                     journal_id,
                     post_id,
@@ -97,7 +97,7 @@ pub(crate) fn enqueue_received_message_notification_email(
     .or_else(|| {
         message.trace_id.as_ref().map(|trace_id| {
             format!(
-                "{}/me/journal-pad?trace_id={}&recipient_user_id={}",
+                "{}/me/journal-pad?trace_id={}&recipient_user_id={}&view=trace_chat",
                 environment::get_app_base_url().trim_end_matches('/'),
                 trace_id,
                 sender.id

@@ -462,6 +462,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    user_post_states (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        post_id -> Uuid,
+        first_seen_at -> Timestamp,
+        last_seen_at -> Timestamp,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     user_roles (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -575,6 +587,8 @@ diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
 diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
+diesel::joinable!(user_post_states -> posts (post_id));
+diesel::joinable!(user_post_states -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
 diesel::joinable!(usage_events -> sessions (session_id));
@@ -610,6 +624,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     sessions,
     trace_mirrors,
     traces,
+    user_post_states,
     user_roles,
     user_secure_actions,
     usage_events,
