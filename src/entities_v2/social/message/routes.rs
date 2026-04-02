@@ -78,32 +78,66 @@ pub(crate) fn enqueue_received_message_notification_email(
 
     let conversation_url = if let Some(post_id) = message.post_id {
         let post = Post::find_full(post_id, pool)?;
-        post.source_trace_id
+        let source_trace = post
+            .source_trace_id
             .map(|trace_id| Trace::find_full_trace(trace_id, pool))
-            .transpose()?
-            .and_then(|trace| trace.journal_id)
-            .map(|journal_id| {
+            .transpose()?;
+        let source_journal_id = source_trace.as_ref().and_then(|trace| trace.journal_id);
+        let sender_is_owner = sender.id == post.user_id;
+
+        if sender_is_owner {
+            source_journal_id.map(|journal_id| {
                 format!(
-                    "{}/me/journals/{}?post_id={}&recipient_user_id={}&view=post_chat",
+                    "{}/me/conversation?journal_id={}&post_id={}&view=post_chat&recipient_user_id={}",
                     environment::get_app_base_url().trim_end_matches('/'),
                     journal_id,
                     post_id,
                     sender.id
                 )
             })
+        } else {
+            source_trace
+                .and_then(|trace| {
+                    trace.journal_id.map(|journal_id| {
+                        format!(
+                            "{}/me/conversation?journal_id={}&trace_id={}&view=trace_chat&recipient_user_id={}",
+                            environment::get_app_base_url().trim_end_matches('/'),
+                            journal_id,
+                            trace.id,
+                            sender.id
+                        )
+                    })
+                })
+                .or_else(|| {
+                    source_journal_id.map(|journal_id| {
+                        format!(
+                            "{}/me/conversation?journal_id={}&post_id={}&view=post_chat&recipient_user_id={}",
+                            environment::get_app_base_url().trim_end_matches('/'),
+                            journal_id,
+                            post_id,
+                            sender.id
+                        )
+                    })
+                })
+        }
     } else {
-        None
-    }
-    .or_else(|| {
         message.trace_id.as_ref().map(|trace_id| {
-            format!(
-                "{}/me/journal-pad?trace_id={}&recipient_user_id={}&view=trace_chat",
-                environment::get_app_base_url().trim_end_matches('/'),
-                trace_id,
-                sender.id
-            )
+            Trace::find_full_trace(*trace_id, pool)
+                .ok()
+                .and_then(|trace| {
+                    trace.journal_id.map(|journal_id| {
+                        format!(
+                            "{}/me/conversation?journal_id={}&trace_id={}&view=trace_chat&recipient_user_id={}",
+                            environment::get_app_base_url().trim_end_matches('/'),
+                            journal_id,
+                            trace_id,
+                            sender.id
+                        )
+                    })
+                })
         })
-    });
+        .flatten()
+    };
 
     let template = mailer::message_received_email(
         &recipient.display_name(),
