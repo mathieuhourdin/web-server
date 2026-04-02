@@ -1,12 +1,13 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use diesel::dsl::not;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::shared::MaturingState;
-use crate::schema::{posts, traces};
+use crate::schema::{posts, traces, user_post_states};
 
 use super::model::{Post, PostAudienceRole, PostInteractionType, PostStatus, PostType};
 
@@ -345,7 +346,9 @@ impl Post {
         legacy_resource_type: Option<String>,
         _is_external: Option<bool>,
         user_id: Option<Uuid>,
+        journal_id: Option<Uuid>,
         status: Option<PostStatus>,
+        seen: Option<bool>,
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
@@ -356,7 +359,9 @@ impl Post {
             legacy_resource_type,
             _is_external,
             user_id,
+            journal_id,
             status,
+            seen,
             0,
             limit,
             pool,
@@ -372,7 +377,9 @@ impl Post {
         legacy_resource_type: Option<String>,
         _is_external: Option<bool>,
         user_id: Option<Uuid>,
+        journal_id: Option<Uuid>,
         status: Option<PostStatus>,
+        seen: Option<bool>,
         offset: i64,
         limit: i64,
         pool: &DbPool,
@@ -389,8 +396,18 @@ impl Post {
             .get()
             .expect("Failed to get a connection from the pool");
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
+        let seen_post_ids = if seen.is_some() {
+            user_post_states::table
+                .filter(user_post_states::user_id.eq(viewer_user_id))
+                .select(user_post_states::post_id)
+                .load::<Uuid>(&mut conn)?
+        } else {
+            vec![]
+        };
 
-        let mut count_query = posts::table.into_boxed();
+        let mut count_query = posts::table
+            .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .into_boxed();
         let effective_post_types = if post_types.is_empty() {
             mapped_post_type.into_iter().collect::<Vec<_>>()
         } else {
@@ -414,8 +431,30 @@ impl Post {
         if let Some(user_id) = user_id {
             count_query = count_query.filter(posts::user_id.eq(user_id));
         }
+        if let Some(journal_id) = journal_id {
+            count_query = count_query.filter(traces::journal_id.eq(journal_id));
+        }
         if let Some(status) = status {
             count_query = count_query.filter(posts::status.eq(status.to_db()));
+        }
+        if let Some(seen) = seen {
+            if seen {
+                if seen_post_ids.is_empty() {
+                    count_query = count_query.filter(posts::user_id.eq(viewer_user_id));
+                } else {
+                    count_query = count_query.filter(
+                        posts::user_id
+                            .eq(viewer_user_id)
+                            .or(posts::id.eq_any(seen_post_ids.clone())),
+                    );
+                }
+            } else {
+                count_query = count_query.filter(posts::user_id.ne(viewer_user_id));
+                if !seen_post_ids.is_empty() {
+                    count_query =
+                        count_query.filter(not(posts::id.eq_any(seen_post_ids.clone())));
+                }
+            }
         }
         if visible_post_ids.is_empty() {
             count_query = count_query.filter(posts::user_id.eq(viewer_user_id));
@@ -429,7 +468,9 @@ impl Post {
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let mut query = posts::table.into_boxed();
+        let mut query = posts::table
+            .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .into_boxed();
         if !interaction_type_values.is_empty() {
             query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
         }
@@ -439,8 +480,29 @@ impl Post {
         if let Some(user_id) = user_id {
             query = query.filter(posts::user_id.eq(user_id));
         }
+        if let Some(journal_id) = journal_id {
+            query = query.filter(traces::journal_id.eq(journal_id));
+        }
         if let Some(status) = status {
             query = query.filter(posts::status.eq(status.to_db()));
+        }
+        if let Some(seen) = seen {
+            if seen {
+                if seen_post_ids.is_empty() {
+                    query = query.filter(posts::user_id.eq(viewer_user_id));
+                } else {
+                    query = query.filter(
+                        posts::user_id
+                            .eq(viewer_user_id)
+                            .or(posts::id.eq_any(seen_post_ids)),
+                    );
+                }
+            } else {
+                query = query.filter(posts::user_id.ne(viewer_user_id));
+                if !seen_post_ids.is_empty() {
+                    query = query.filter(not(posts::id.eq_any(seen_post_ids)));
+                }
+            }
         }
         if visible_post_ids.is_empty() {
             query = query.filter(posts::user_id.eq(viewer_user_id));

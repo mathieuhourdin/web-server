@@ -462,6 +462,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    usage_events (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        session_id -> Nullable<Uuid>,
+        event_type -> Text,
+        resource_id -> Nullable<Uuid>,
+        context_json -> Nullable<Jsonb>,
+        occurred_at -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     user_post_states (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -495,19 +508,6 @@ diesel::table! {
         revoked_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    usage_events (id) {
-        id -> Uuid,
-        user_id -> Uuid,
-        session_id -> Nullable<Uuid>,
-        event_type -> Text,
-        resource_id -> Nullable<Uuid>,
-        context_json -> Nullable<Jsonb>,
-        occurred_at -> Timestamp,
-        created_at -> Timestamp,
     }
 }
 
@@ -587,12 +587,12 @@ diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
 diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
+diesel::joinable!(usage_events -> sessions (session_id));
+diesel::joinable!(usage_events -> users (user_id));
 diesel::joinable!(user_post_states -> posts (post_id));
 diesel::joinable!(user_post_states -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
-diesel::joinable!(usage_events -> sessions (session_id));
-diesel::joinable!(usage_events -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     analysis_summaries,
@@ -624,9 +624,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     sessions,
     trace_mirrors,
     traces,
+    usage_events,
     user_post_states,
     user_roles,
     user_secure_actions,
-    usage_events,
     users,
 );

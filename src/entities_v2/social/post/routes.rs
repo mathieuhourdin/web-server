@@ -29,7 +29,9 @@ pub struct PostFiltersQuery {
     pub is_external: Option<bool>,
     pub resource_type: Option<String>, // Legacy fallback mapped to post_type
     pub user_id: Option<Uuid>,
+    pub journal_id: Option<Uuid>,
     pub status: Option<PostStatus>,
+    pub seen: Option<bool>,
     pub limit: Option<i64>,
 }
 
@@ -154,7 +156,9 @@ pub async fn get_posts_route(
         filters.resource_type,
         filters.is_external,
         filters.user_id,
+        filters.journal_id,
         filters.status.or(Some(PostStatus::Published)),
+        filters.seen,
         pagination.offset,
         pagination.limit,
         &pool,
