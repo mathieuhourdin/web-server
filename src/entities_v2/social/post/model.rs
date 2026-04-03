@@ -16,6 +16,7 @@ pub struct Post {
     pub subtitle: String,
     pub content: String,
     pub image_url: Option<String>,
+    pub image_asset_id: Option<Uuid>,
     pub interaction_type: PostInteractionType,
     pub post_type: PostType,
     pub user_id: Uuid,
@@ -38,6 +39,7 @@ pub struct NewPostDto {
     pub subtitle: Option<String>,
     pub content: String,
     pub image_url: Option<String>,
+    pub image_asset_id: Option<Uuid>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
@@ -52,6 +54,7 @@ pub struct NewPost {
     pub subtitle: String,
     pub content: String,
     pub image_url: Option<String>,
+    pub image_asset_id: Option<Uuid>,
     pub post_type: PostType,
     pub interaction_type: PostInteractionType,
     pub user_id: Uuid,
@@ -92,6 +95,7 @@ impl NewPost {
             subtitle: payload.subtitle.unwrap_or_default(),
             content: payload.content,
             image_url: payload.image_url,
+            image_asset_id: payload.image_asset_id,
             post_type: payload.post_type.unwrap_or(PostType::Idea),
             interaction_type: payload
                 .interaction_type

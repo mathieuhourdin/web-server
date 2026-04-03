@@ -32,6 +32,23 @@ fn recalculate_journal_last_trace_at(
     Ok(())
 }
 
+fn sync_trace_image_asset_to_related_posts(
+    conn: &mut diesel::PgConnection,
+    trace_id: uuid::Uuid,
+    image_asset_id: Option<uuid::Uuid>,
+) -> Result<(), diesel::result::Error> {
+    diesel::sql_query(
+        "UPDATE posts
+         SET image_asset_id = $2,
+             updated_at = NOW()
+         WHERE source_trace_id = $1",
+    )
+    .bind::<SqlUuid, _>(trace_id)
+    .bind::<Nullable<SqlUuid>, _>(image_asset_id)
+    .execute(conn)?;
+    Ok(())
+}
+
 impl Trace {
     pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
@@ -53,12 +70,13 @@ impl Trace {
                      content = $4,
                      is_encrypted = $5,
                      encryption_metadata = CAST($6 AS jsonb),
-                     interaction_date = $7,
-                     trace_type = $8,
-                     status = $9,
-                     journal_id = $10,
-                     start_writing_at = $11,
-                     finalized_at = $12,
+                     image_asset_id = $7,
+                     interaction_date = $8,
+                     trace_type = $9,
+                     status = $10,
+                     journal_id = $11,
+                     start_writing_at = $12,
+                     finalized_at = $13,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -72,6 +90,7 @@ impl Trace {
                     .as_ref()
                     .map(|value| value.to_string()),
             )
+            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Text, _>(self.status.to_db())
@@ -79,6 +98,8 @@ impl Trace {
             .bind::<Timestamp, _>(self.start_writing_at)
             .bind::<Nullable<Timestamp>, _>(self.finalized_at)
             .execute(conn)?;
+
+            sync_trace_image_asset_to_related_posts(conn, self.id, self.image_asset_id)?;
 
             if let Some(journal_id) = self.journal_id {
                 recalculate_journal_last_trace_at(conn, journal_id)?;
@@ -129,6 +150,7 @@ impl NewTrace {
                     content,
                     is_encrypted,
                     encryption_metadata,
+                    image_asset_id,
                     interaction_date,
                     trace_type,
                     status,
@@ -145,8 +167,9 @@ impl NewTrace {
                     CAST($7 AS jsonb),
                     $8,
                     $9,
-                    'DRAFT',
                     $10,
+                    'DRAFT',
+                    $11,
                     NULL
                  )
                  RETURNING id",
@@ -162,6 +185,7 @@ impl NewTrace {
                     .as_ref()
                     .map(|value| value.to_string()),
             )
+            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Timestamp, _>(self.start_writing_at)

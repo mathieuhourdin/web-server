@@ -103,6 +103,7 @@ pub async fn get_user_search_route(
             NULLIF(first_name, '') AS first_name,
             NULLIF(last_name, '') AS last_name,
             profile_picture_url,
+            profile_asset_id,
             principal_type,
             pseudonymized,
             pseudonym

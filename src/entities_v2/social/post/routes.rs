@@ -65,6 +65,7 @@ pub struct NewTracePostDto {
     pub subtitle: Option<String>,
     pub content: Option<String>,
     pub image_url: Option<String>,
+    pub image_asset_id: Option<Uuid>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<chrono::NaiveDateTime>,
@@ -278,6 +279,7 @@ pub async fn post_trace_post_route(
         subtitle: payload.subtitle.or_else(|| Some(trace.subtitle.clone())),
         content: payload.content.unwrap_or_else(|| trace.content.clone()),
         image_url: payload.image_url,
+        image_asset_id: payload.image_asset_id.or(trace.image_asset_id),
         post_type: payload.post_type,
         interaction_type: payload.interaction_type,
         publishing_date: payload.publishing_date,
@@ -357,6 +359,7 @@ pub async fn put_post_route(
     post.subtitle = payload.subtitle.unwrap_or_default();
     post.content = payload.content;
     post.image_url = payload.image_url;
+    post.image_asset_id = payload.image_asset_id;
     post.publishing_date = payload.publishing_date;
     if let Some(interaction_type) = payload.interaction_type {
         post.interaction_type = interaction_type;

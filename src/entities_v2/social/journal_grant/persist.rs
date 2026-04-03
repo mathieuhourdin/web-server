@@ -288,6 +288,7 @@ impl JournalGrant {
                 posts::subtitle.eq(trace.subtitle.clone()),
                 posts::content.eq(trace.content.clone()),
                 posts::image_url.eq(None::<String>),
+                posts::image_asset_id.eq(trace.image_asset_id),
                 posts::interaction_type.eq(PostInteractionType::Output.to_db()),
                 posts::post_type.eq(PostType::Idea.to_db()),
                 posts::user_id.eq(trace.user_id),

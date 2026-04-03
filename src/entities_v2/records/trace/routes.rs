@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::{Extension, Json, Multipart, Path, Query},
 };
 use chrono::Utc;
 use std::cmp::Reverse;
@@ -20,7 +20,7 @@ use crate::entities_v2::{
     },
     post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
-    platform_infra::mailer,
+    platform_infra::{asset::{upload_asset_for_user_from_multipart, AssetUploadResponse}, mailer},
     session::Session,
     shared::MaturingState,
     user::User,
@@ -56,6 +56,14 @@ pub struct TraceMessageCreationResponse {
     pub pending_reply_message: Option<Message>,
 }
 
+#[derive(Serialize)]
+pub struct TraceAssetUploadResponse {
+    pub trace: Trace,
+    pub asset: crate::entities_v2::asset::Asset,
+    pub signed_url: String,
+    pub expires_at: chrono::NaiveDateTime,
+}
+
 #[derive(Deserialize)]
 pub struct CreateJournalDraftDto {
     #[serde(default)]
@@ -66,6 +74,8 @@ pub struct CreateJournalDraftDto {
     pub is_encrypted: Option<bool>,
     #[serde(default)]
     pub encryption_metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub image_asset_id: Option<Uuid>,
 }
 
 fn spawn_autoplay_lens_runs_for_trace(
@@ -125,6 +135,7 @@ fn ensure_default_draft_post_for_shared_trace(
         subtitle: trace.subtitle.clone(),
         content: trace.content.clone(),
         image_url: None,
+        image_asset_id: trace.image_asset_id,
         post_type: PostType::Idea,
         interaction_type: PostInteractionType::Output,
         user_id: trace.user_id,
@@ -191,6 +202,7 @@ fn create_or_get_journal_draft(
         interaction_date,
         is_encrypted,
         encryption_metadata,
+        image_asset_id,
     } = payload;
 
     let interaction_date = interaction_date.unwrap_or_else(|| Utc::now().naive_utc());
@@ -205,6 +217,7 @@ fn create_or_get_journal_draft(
     );
     trace.is_encrypted = is_encrypted.unwrap_or(false);
     trace.encryption_metadata = encryption_metadata;
+    trace.image_asset_id = image_asset_id;
     if trace.is_encrypted && trace.encryption_metadata.is_none() {
         return Err(PpdcError::new(
             400,
@@ -269,6 +282,10 @@ pub async fn put_trace_route(
         .interaction_date
         .map(|interaction_date| interaction_date != trace.interaction_date)
         .unwrap_or(false);
+    let image_asset_changed = payload
+        .image_asset_id
+        .map(|image_asset_id| image_asset_id != trace.image_asset_id)
+        .unwrap_or(false);
     let has_explicit_interaction_date = payload.interaction_date.is_some();
     let previous_status = trace.status;
 
@@ -279,6 +296,9 @@ pub async fn put_trace_route(
             }
             if let Some(interaction_date) = payload.interaction_date {
                 trace.interaction_date = interaction_date;
+            }
+            if let Some(image_asset_id) = payload.image_asset_id {
+                trace.image_asset_id = image_asset_id;
             }
 
             if let Some(status) = payload.status {
@@ -316,11 +336,11 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Finalized => {
-            if content_changed || interaction_date_changed {
+            if content_changed || interaction_date_changed || image_asset_changed {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content or interaction_date once trace is finalized".to_string(),
+                    "Cannot update content, interaction_date or image_asset_id once trace is finalized".to_string(),
                 ));
             }
 
@@ -339,11 +359,11 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Archived => {
-            if content_changed || interaction_date_changed {
+            if content_changed || interaction_date_changed || image_asset_changed {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content or interaction_date once trace is archived".to_string(),
+                    "Cannot update content, interaction_date or image_asset_id once trace is archived".to_string(),
                 ));
             }
 
@@ -415,9 +435,49 @@ pub async fn patch_trace_route(
     if let Some(interaction_date) = payload.interaction_date {
         trace.interaction_date = interaction_date;
     }
+    if let Some(image_asset_id) = payload.image_asset_id {
+        trace.image_asset_id = image_asset_id;
+    }
 
     let trace = trace.update(&pool)?;
     Ok(Json(trace))
+}
+
+#[debug_handler]
+pub async fn post_trace_asset_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    multipart: Multipart,
+) -> Result<Json<TraceAssetUploadResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if trace.status != super::enums::TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can receive uploaded assets".to_string(),
+        ));
+    }
+
+    let AssetUploadResponse {
+        asset,
+        signed_url,
+        expires_at,
+    } = upload_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
+
+    trace.image_asset_id = Some(asset.id);
+    let trace = trace.update(&pool)?;
+
+    Ok(Json(TraceAssetUploadResponse {
+        trace,
+        asset,
+        signed_url,
+        expires_at,
+    }))
 }
 
 #[debug_handler]

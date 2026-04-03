@@ -11,7 +11,7 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
-    analysis_summary, element,
+    analysis_summary, asset, element,
     error::{ErrorType, PpdcError},
     journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post,
     post_grant, reference, relationship, trace, trace_mirror, transcription, usage_event,
@@ -78,6 +78,7 @@ pub fn create_router() -> Router {
             "/:id/posts",
             get(post::get_trace_posts_route).post(post::post_trace_post_route),
         )
+        .route("/:id/assets", post(trace::post_trace_asset_route))
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
         .route(
             "/:id/messages",
@@ -102,6 +103,11 @@ pub fn create_router() -> Router {
             delete(post_grant::delete_post_grant_route),
         )
         .route("/users/:id", get(post::get_user_posts_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let assets_router = Router::new()
+        .route("/", post(asset::post_asset_route))
+        .route("/:id/url", get(asset::get_asset_signed_url_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()
@@ -282,6 +288,7 @@ pub fn create_router() -> Router {
         .nest("/admin", admin_router)
         .nest("/traces", traces_router)
         .nest("/posts", posts_router)
+        .nest("/assets", assets_router)
         .nest("/journals", journals_router)
         .nest("/transcriptions", transcriptions_router)
         .nest("/sessions", sessions_router)

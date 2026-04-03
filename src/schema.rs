@@ -18,6 +18,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    assets (id) {
+        id -> Uuid,
+        owner_user_id -> Uuid,
+        bucket -> Text,
+        object_key -> Text,
+        mime_type -> Text,
+        original_filename -> Text,
+        size_bytes -> Int8,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     element_landmarks (id) {
         id -> Uuid,
         element_id -> Uuid,
@@ -329,6 +344,7 @@ diesel::table! {
         subtitle -> Text,
         content -> Text,
         image_url -> Nullable<Text>,
+        image_asset_id -> Nullable<Uuid>,
         interaction_type -> Text,
         post_type -> Text,
         publishing_date -> Nullable<Timestamp>,
@@ -456,6 +472,7 @@ diesel::table! {
         updated_at -> Timestamp,
         is_encrypted -> Bool,
         encryption_metadata -> Nullable<Jsonb>,
+        image_asset_id -> Nullable<Uuid>,
         start_writing_at -> Timestamp,
         finalized_at -> Nullable<Timestamp>,
     }
@@ -522,6 +539,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
         profile_picture_url -> Nullable<Text>,
+        profile_asset_id -> Nullable<Uuid>,
         is_platform_user -> Bool,
         biography -> Nullable<Text>,
         pseudonym -> Text,
@@ -539,6 +557,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(assets -> users (owner_user_id));
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
@@ -574,6 +593,7 @@ diesel::joinable!(messages -> posts (post_id));
 diesel::joinable!(messages -> traces (trace_id));
 diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(post_grants -> posts (post_id));
+diesel::joinable!(posts -> assets (image_asset_id));
 diesel::joinable!(posts -> traces (source_trace_id));
 diesel::joinable!(posts -> users (user_id));
 diesel::joinable!(references -> landmarks (landmark_id));
@@ -585,6 +605,7 @@ diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
+diesel::joinable!(traces -> assets (image_asset_id));
 diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(usage_events -> sessions (session_id));
@@ -595,6 +616,7 @@ diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    assets,
     analysis_summaries,
     element_landmarks,
     element_relations,

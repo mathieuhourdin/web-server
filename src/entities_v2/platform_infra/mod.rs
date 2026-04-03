@@ -1,3 +1,4 @@
+pub mod asset;
 pub mod error;
 pub mod llm_call;
 pub mod mailer;
