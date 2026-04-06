@@ -15,6 +15,7 @@ use crate::entities_v2::{
     post::{Post, PostStatus},
     post_grant::PostGrant,
     session::Session,
+    user::User,
 };
 use crate::schema::user_post_states;
 
@@ -27,6 +28,14 @@ pub struct UserPostState {
     pub last_seen_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct PostSeenByUser {
+    pub user_id: Uuid,
+    pub display_name: String,
+    pub first_seen_at: NaiveDateTime,
+    pub last_seen_at: NaiveDateTime,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -123,6 +132,42 @@ impl UserPostState {
         .execute(&mut conn)?;
 
         Self::find_by_user_and_post(user_id, post_id, pool)
+    }
+
+    pub fn find_seen_by_for_post(
+        owner_user_id: Uuid,
+        post_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<PostSeenByUser>, PpdcError> {
+        let post = Post::find_full(post_id, pool)?;
+        if post.user_id != owner_user_id {
+            return Err(PpdcError::unauthorized());
+        }
+
+        let mut conn = pool
+            .get()
+            .expect("Failed to get a connection from the pool");
+        let rows = user_post_states::table
+            .filter(user_post_states::post_id.eq(post_id))
+            .order(user_post_states::last_seen_at.desc())
+            .select((
+                user_post_states::user_id,
+                user_post_states::first_seen_at,
+                user_post_states::last_seen_at,
+            ))
+            .load::<(Uuid, NaiveDateTime, NaiveDateTime)>(&mut conn)?;
+
+        rows.into_iter()
+            .map(|(user_id, first_seen_at, last_seen_at)| {
+                let user = User::find(&user_id, pool)?;
+                Ok(PostSeenByUser {
+                    user_id,
+                    display_name: user.display_name(),
+                    first_seen_at,
+                    last_seen_at,
+                })
+            })
+            .collect()
     }
 }
 

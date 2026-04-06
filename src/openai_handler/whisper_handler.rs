@@ -23,7 +23,7 @@ pub async fn transcribe_audio_with_openai(
 
     // Create form data for file upload
     let form = reqwest::multipart::Form::new()
-        .text("model", "whisper-1")
+        .text("model", "gpt-4o-mini-transcribe")
         .text("response_format", "text")
         .part(
             "file",
