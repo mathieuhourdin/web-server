@@ -441,6 +441,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    trace_attachments (id) {
+        id -> Uuid,
+        trace_id -> Uuid,
+        asset_id -> Uuid,
+        attachment_name -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     trace_mirrors (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -603,6 +613,8 @@ diesel::joinable!(references -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(references -> users (user_id));
 diesel::joinable!(resource_relations -> users (user_id));
 diesel::joinable!(sessions -> users (user_id));
+diesel::joinable!(trace_attachments -> assets (asset_id));
+diesel::joinable!(trace_attachments -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
@@ -645,6 +657,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     resource_relations,
     resources,
     sessions,
+    trace_attachments,
     trace_mirrors,
     traces,
     usage_events,

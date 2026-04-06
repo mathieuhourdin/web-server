@@ -85,6 +85,16 @@ pub fn create_router() -> Router {
             post(trace::post_trace_asset_route)
                 .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
+        .route(
+            "/:id/attachments",
+            get(trace::get_trace_attachments_route)
+                .post(trace::post_trace_attachment_route)
+                .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
+        )
+        .route(
+            "/:trace_id/attachments/:attachment_id",
+            delete(trace::delete_trace_attachment_route),
+        )
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
         .route(
             "/:id/messages",
@@ -96,6 +106,7 @@ pub fn create_router() -> Router {
         .route("/drafts", get(post::get_post_drafts_route))
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
+        .route("/:id/attachments", get(post::get_post_attachments_route))
         .route(
             "/:id/messages",
             get(message::get_post_messages_route).post(message::post_post_message_route),

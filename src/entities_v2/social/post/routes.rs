@@ -13,6 +13,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     trace::Trace,
+    trace_attachment::TraceAttachment,
     user::{User, UserPrincipalType},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -182,6 +183,18 @@ pub async fn get_post_route(
         return Err(PpdcError::unauthorized());
     }
     Ok(Json(post))
+}
+
+#[debug_handler]
+pub async fn get_post_attachments_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<crate::entities_v2::trace_attachment::TraceAttachmentWithAsset>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let post = Post::find_full(id, &pool)?;
+    let attachments = TraceAttachment::find_visible_for_post(&post, viewer_user_id, &pool)?;
+    Ok(Json(attachments))
 }
 
 #[debug_handler]

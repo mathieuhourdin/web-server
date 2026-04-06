@@ -9,6 +9,6 @@ pub mod social;
 pub use analysis_orchestration::{landscape_analysis, lens};
 pub use derived_context::{analysis_summary, element, landmark, reference, trace_mirror};
 pub use platform_infra::{asset, error, llm_call, session, transcription, usage_event, user, user_secure_action};
-pub use records::{journal, journal_import, trace};
+pub use records::{journal, journal_import, trace, trace_attachment};
 pub use shared::MaturingState;
 pub use social::{journal_grant, message, post, post_grant, relationship, user_post_state};

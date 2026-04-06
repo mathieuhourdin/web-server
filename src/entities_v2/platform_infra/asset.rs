@@ -23,7 +23,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
 };
-use crate::schema::{assets, posts, traces, users};
+use crate::schema::{assets, posts, trace_attachments, traces, users};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -211,7 +211,31 @@ impl Asset {
             .count()
             .get_result::<i64>(&mut conn)?;
 
-        Ok(trace_owner_count > 0)
+        if trace_owner_count > 0 {
+            return Ok(true);
+        }
+
+        let linked_attachment_trace_ids = trace_attachments::table
+            .filter(trace_attachments::asset_id.eq(asset_id))
+            .select(trace_attachments::trace_id)
+            .load::<Uuid>(&mut conn)?;
+        for trace_id in linked_attachment_trace_ids {
+            let linked_posts = posts::table
+                .filter(posts::source_trace_id.eq(Some(trace_id)))
+                .select(posts::id)
+                .load::<Uuid>(&mut conn)?;
+            for post_id in linked_posts {
+                let post = Post::find_full(post_id, pool)?;
+                if post.user_id == viewer_user_id
+                    || (post.status == PostStatus::Published
+                        && PostGrant::user_can_read_post(&post, viewer_user_id, pool)?)
+                {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     pub async fn signed_read_url(
@@ -296,6 +320,8 @@ fn validate_upload(content_type: &str, size_bytes: usize) -> Result<(), PpdcErro
             | "image/webp"
             | "image/gif"
             | "application/pdf"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "text/plain"
     );
     if !allowed {
         return Err(PpdcError::new(
@@ -346,6 +372,56 @@ async fn upload_object_to_gcs(
     Ok(())
 }
 
+pub async fn upload_asset_for_user(
+    user_id: Uuid,
+    pool: &DbPool,
+    file_name: Option<String>,
+    content_type: Option<String>,
+    content_bytes: Vec<u8>,
+) -> Result<AssetUploadResponse, PpdcError> {
+    let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("upload.bin"));
+    if content_bytes.is_empty() {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "No file provided in multipart payload".to_string(),
+        ));
+    }
+    let mime_type = infer_content_type(&original_filename, content_type.as_deref());
+    validate_upload(&mime_type, content_bytes.len())?;
+
+    let asset_id = Uuid::new_v4();
+    let bucket = crate::environment::get_gcs_bucket_name();
+    let object_key = format!(
+        "users/{}/original/{}/{}",
+        user_id, asset_id, original_filename
+    );
+
+    upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone()).await?;
+
+    let asset = NewAsset {
+        id: asset_id,
+        owner_user_id: user_id,
+        bucket,
+        object_key,
+        mime_type,
+        original_filename,
+        size_bytes: content_bytes.len() as i64,
+        status: AssetStatus::Ready,
+    }
+    .create(&pool)?;
+
+    let (signed_url, expires_at) = asset
+        .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
+        .await?;
+
+    Ok(AssetUploadResponse {
+        asset,
+        signed_url,
+        expires_at,
+    })
+}
+
 pub async fn upload_asset_for_user_from_multipart(
     user_id: Uuid,
     pool: &DbPool,
@@ -380,7 +456,6 @@ pub async fn upload_asset_for_user_from_multipart(
         break;
     }
 
-    let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("upload.bin"));
     let content_bytes = file_bytes.ok_or_else(|| {
         PpdcError::new(
             400,
@@ -388,39 +463,8 @@ pub async fn upload_asset_for_user_from_multipart(
             "No file provided in multipart payload".to_string(),
         )
     })?;
-    let mime_type = infer_content_type(&original_filename, content_type.as_deref());
-    validate_upload(&mime_type, content_bytes.len())?;
 
-    let asset_id = Uuid::new_v4();
-    let bucket = crate::environment::get_gcs_bucket_name();
-    let object_key = format!(
-        "users/{}/original/{}/{}",
-        user_id, asset_id, original_filename
-    );
-
-    upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone()).await?;
-
-    let asset = NewAsset {
-        id: asset_id,
-        owner_user_id: user_id,
-        bucket,
-        object_key,
-        mime_type,
-        original_filename,
-        size_bytes: content_bytes.len() as i64,
-        status: AssetStatus::Ready,
-    }
-    .create(&pool)?;
-
-    let (signed_url, expires_at) = asset
-        .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
-        .await?;
-
-    Ok(AssetUploadResponse {
-        asset,
-        signed_url,
-        expires_at,
-    })
+    upload_asset_for_user(user_id, pool, file_name, content_type, content_bytes).await
 }
 
 #[debug_handler]

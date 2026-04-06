@@ -21,12 +21,13 @@ use crate::entities_v2::{
     post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
     platform_infra::{
-        asset::{upload_asset_for_user_from_multipart, AssetUploadResponse},
+        asset::{upload_asset_for_user, upload_asset_for_user_from_multipart, AssetUploadResponse},
         mailer,
         usage_event::{create_usage_event, UsageEventType},
     },
     session::Session,
     shared::MaturingState,
+    trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
     user::User,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -64,6 +65,13 @@ pub struct TraceMessageCreationResponse {
 pub struct TraceAssetUploadResponse {
     pub trace: Trace,
     pub asset: crate::entities_v2::asset::Asset,
+    pub signed_url: String,
+    pub expires_at: chrono::NaiveDateTime,
+}
+
+#[derive(Serialize)]
+pub struct TraceAttachmentUploadResponse {
+    pub attachment: TraceAttachmentWithAsset,
     pub signed_url: String,
     pub expires_at: chrono::NaiveDateTime,
 }
@@ -250,6 +258,59 @@ async fn finalize_expired_drafts_for_user(
         let _ = finalize_trace_transition(trace, pool, session_id, true, false).await?;
     }
     Ok(())
+}
+
+async fn parse_trace_attachment_multipart(
+    mut multipart: Multipart,
+) -> Result<(Option<String>, Option<String>, Vec<u8>, Option<String>), PpdcError> {
+    let mut file_name: Option<String> = None;
+    let mut content_type: Option<String> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut attachment_name: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|err| {
+        PpdcError::new(400, ErrorType::ApiError, format!("Multipart error: {}", err))
+    })? {
+        let field_name = field.name().map(|value| value.to_string());
+        if field.file_name().is_some() {
+            file_name = field.file_name().map(|value| value.to_string());
+            content_type = field.content_type().map(|value| value.to_string());
+            file_bytes = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|err| {
+                        PpdcError::new(
+                            400,
+                            ErrorType::ApiError,
+                            format!("Failed to read multipart field: {}", err),
+                        )
+                    })?
+                    .to_vec(),
+            );
+            continue;
+        }
+
+        if field_name.as_deref() == Some("attachment_name") {
+            attachment_name = Some(field.text().await.map_err(|err| {
+                PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    format!("Failed to read attachment_name: {}", err),
+                )
+            })?);
+        }
+    }
+
+    let file_bytes = file_bytes.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "No file provided in multipart payload".to_string(),
+        )
+    })?;
+
+    Ok((file_name, content_type, file_bytes, attachment_name))
 }
 
 fn ensure_default_draft_post_for_shared_trace(
@@ -679,6 +740,114 @@ pub async fn post_trace_asset_route(
         signed_url,
         expires_at,
     }))
+}
+
+#[debug_handler]
+pub async fn get_trace_attachments_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<TraceAttachmentWithAsset>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let attachments = TraceAttachment::find_with_assets_for_trace(id, &pool)?;
+    Ok(Json(attachments))
+}
+
+#[debug_handler]
+pub async fn post_trace_attachment_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    multipart: Multipart,
+) -> Result<Json<TraceAttachmentUploadResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    if trace.status != super::enums::TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can receive attachment uploads".to_string(),
+        ));
+    }
+
+    let (file_name, content_type, file_bytes, attachment_name) =
+        parse_trace_attachment_multipart(multipart).await?;
+    let AssetUploadResponse {
+        asset,
+        signed_url,
+        expires_at,
+    } = upload_asset_for_user(user_id, &pool, file_name.clone(), content_type, file_bytes).await?;
+    let attachment_name = attachment_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            file_name
+                .unwrap_or_else(|| asset.original_filename.clone())
+                .trim()
+                .to_string()
+        });
+
+    let attachment = NewTraceAttachment {
+        trace_id: trace.id,
+        asset_id: asset.id,
+        attachment_name,
+    }
+    .create(&pool)?;
+    let attachment = TraceAttachmentWithAsset {
+        id: attachment.id,
+        trace_id: attachment.trace_id,
+        asset_id: attachment.asset_id,
+        attachment_name: attachment.attachment_name,
+        created_at: attachment.created_at,
+        asset,
+    };
+
+    Ok(Json(TraceAttachmentUploadResponse {
+        attachment,
+        signed_url,
+        expires_at,
+    }))
+}
+
+#[debug_handler]
+pub async fn delete_trace_attachment_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path((trace_id, attachment_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<TraceAttachment>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    if trace.status != super::enums::TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can remove attachments".to_string(),
+        ));
+    }
+
+    let attachment = TraceAttachment::find(attachment_id, &pool)?;
+    if attachment.trace_id != trace_id {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Trace attachment not found".to_string(),
+        ));
+    }
+    TraceAttachment::delete(attachment_id, &pool)?;
+    Ok(Json(attachment))
 }
 
 #[debug_handler]
