@@ -1,6 +1,6 @@
 use chrono::Utc;
 use diesel::prelude::*;
-use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid};
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
@@ -92,7 +92,7 @@ impl Trace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
-            .bind::<Nullable<Timestamp>, _>(self.timeout_at)
+            .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Text, _>(self.status.to_db())
@@ -191,7 +191,7 @@ impl NewTrace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
-            .bind::<Nullable<Timestamp>, _>(self.timeout_at)
+            .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Timestamp, _>(self.start_writing_at)

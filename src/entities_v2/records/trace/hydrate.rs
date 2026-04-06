@@ -1,7 +1,7 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel::dsl::sql;
 use diesel::prelude::*;
-use diesel::sql_types::{Nullable, Text};
+use diesel::sql_types::{Nullable, Text, Timestamptz};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ type TraceTuple = (
     bool,
     Option<String>,
     Option<Uuid>,
-    Option<NaiveDateTime>,
+    Option<DateTime<Utc>>,
     Option<Uuid>,
     Uuid,
     String,
@@ -91,7 +91,7 @@ impl Trace {
                 traces::is_encrypted,
                 sql::<Nullable<Text>>("encryption_metadata::text"),
                 traces::image_asset_id,
-                traces::timeout_at,
+                sql::<Nullable<Timestamptz>>("timeout_at"),
                 traces::journal_id.nullable(),
                 traces::user_id,
                 traces::trace_type,

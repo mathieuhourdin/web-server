@@ -1,0 +1,3 @@
+ALTER TABLE traces
+ALTER COLUMN timeout_at TYPE TIMESTAMP
+USING timeout_at AT TIME ZONE 'UTC';

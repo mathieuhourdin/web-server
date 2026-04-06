@@ -2,7 +2,7 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Multipart, Path, Query},
 };
-use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -81,7 +81,7 @@ pub struct CreateJournalDraftDto {
     #[serde(default)]
     pub image_asset_id: Option<Uuid>,
     #[serde(default)]
-    pub timeout_at: Option<chrono::NaiveDateTime>,
+    pub timeout_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -126,12 +126,12 @@ fn is_trace_timeout_expired(trace: &Trace) -> bool {
     trace.status == super::enums::TraceStatus::Draft
         && trace
             .timeout_at
-            .map(|timeout_at| timeout_at <= Utc::now().naive_utc())
+            .map(|timeout_at| timeout_at <= Utc::now())
             .unwrap_or(false)
 }
 
-fn validate_timeout_at(timeout_at: NaiveDateTime) -> Result<(), PpdcError> {
-    let now = Utc::now().naive_utc();
+fn validate_timeout_at(timeout_at: DateTime<Utc>) -> Result<(), PpdcError> {
+    let now = Utc::now();
     if timeout_at <= now {
         return Err(PpdcError::new(
             400,

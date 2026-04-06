@@ -1,6 +1,6 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel::prelude::*;
-use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -24,7 +24,7 @@ pub struct NewTraceDto {
     #[serde(default)]
     pub image_asset_id: Option<Uuid>,
     #[serde(default)]
-    pub timeout_at: Option<NaiveDateTime>,
+    pub timeout_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -33,7 +33,7 @@ pub struct UpdateTraceDto {
     pub interaction_date: Option<NaiveDateTime>,
     pub status: Option<TraceStatus>,
     pub image_asset_id: Option<Option<Uuid>>,
-    pub timeout_at: Option<Option<NaiveDateTime>>,
+    pub timeout_at: Option<Option<DateTime<Utc>>>,
 }
 
 #[derive(Deserialize)]
@@ -41,7 +41,7 @@ pub struct PatchTraceDto {
     pub content: Option<String>,
     pub interaction_date: Option<NaiveDateTime>,
     pub image_asset_id: Option<Option<Uuid>>,
-    pub timeout_at: Option<Option<NaiveDateTime>>,
+    pub timeout_at: Option<Option<DateTime<Utc>>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -54,7 +54,7 @@ pub struct Trace {
     pub is_encrypted: bool,
     pub encryption_metadata: Option<Value>,
     pub image_asset_id: Option<Uuid>,
-    pub timeout_at: Option<NaiveDateTime>,
+    pub timeout_at: Option<DateTime<Utc>>,
     pub journal_id: Option<Uuid>,
     pub user_id: Uuid,
     pub trace_type: TraceType,
@@ -83,8 +83,8 @@ pub(crate) struct TraceRow {
     pub encryption_metadata: Option<String>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     pub image_asset_id: Option<Uuid>,
-    #[diesel(sql_type = Nullable<Timestamp>)]
-    pub timeout_at: Option<NaiveDateTime>,
+    #[diesel(sql_type = Nullable<Timestamptz>)]
+    pub timeout_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     pub journal_id: Option<Uuid>,
     #[diesel(sql_type = SqlUuid)]
@@ -516,7 +516,7 @@ pub struct NewTrace {
     pub is_encrypted: bool,
     pub encryption_metadata: Option<Value>,
     pub image_asset_id: Option<Uuid>,
-    pub timeout_at: Option<NaiveDateTime>,
+    pub timeout_at: Option<DateTime<Utc>>,
     pub interaction_date: NaiveDateTime,
     pub user_id: Uuid,
     pub trace_type: TraceType,
