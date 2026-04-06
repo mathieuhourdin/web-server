@@ -3,7 +3,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     session::Session,
 };
-use crate::pagination::PaginationParams;
+use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::schema::users;
 use axum::{
     debug_handler,
@@ -100,22 +100,37 @@ fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, P
 pub async fn get_admin_recent_user_activity_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-) -> Result<Json<Vec<AdminUserRecentActivity>>, PpdcError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<AdminUserRecentActivity>>, PpdcError> {
     let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let pagination = params.validate()?;
 
     let mut conn = pool
         .get()
         .expect("Failed to get a connection from the pool");
 
+    let total = users::table
+        .filter(users::principal_type.eq(UserPrincipalType::Human))
+        .filter(users::is_platform_user.eq(true))
+        .count()
+        .get_result::<i64>(&mut conn)?;
+
     let user_rows = sql_query(
         r#"
-        SELECT user_id
-        FROM traces
-        GROUP BY user_id
-        ORDER BY MAX(COALESCE(interaction_date, created_at)) DESC
-        LIMIT 10
+        SELECT u.id AS user_id
+        FROM users u
+        LEFT JOIN usage_events ue ON ue.user_id = u.id
+        WHERE u.principal_type = $1
+          AND u.is_platform_user = TRUE
+        GROUP BY u.id, u.created_at
+        ORDER BY GREATEST(COALESCE(MAX(ue.occurred_at), u.created_at), u.created_at) DESC, u.created_at DESC
+        OFFSET $2
+        LIMIT $3
         "#,
     )
+    .bind::<diesel::sql_types::Text, _>(UserPrincipalType::Human.to_db())
+    .bind::<BigInt, _>(pagination.offset)
+    .bind::<BigInt, _>(pagination.limit)
     .load::<UserIdRow>(&mut conn)?;
 
     let to = Utc::now().date_naive();
@@ -259,7 +274,7 @@ pub async fn get_admin_recent_user_activity_route(
         });
     }
 
-    Ok(Json(payload))
+    Ok(Json(PaginatedResponse::new(payload, pagination, total)))
 }
 
 #[debug_handler]

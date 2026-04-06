@@ -28,7 +28,7 @@ use crate::entities_v2::{
     session::Session,
     shared::MaturingState,
     trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
-    user::User,
+    user::{User, UserRole},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -1029,21 +1029,16 @@ pub async fn post_trace_message_route(
     if !sender_is_owner {
         return Err(PpdcError::unauthorized());
     }
-    let owner = if sender_is_owner {
-        Some(User::find(&user_id, &pool)?)
-    } else {
-        None
-    };
-    let mentor_id = owner.as_ref().and_then(|user| user.mentor_id);
+    let recipient = payload
+        .recipient_user_id
+        .map(|recipient_user_id| User::find(&recipient_user_id, &pool))
+        .transpose()?;
     let message_type = payload.message_type.unwrap_or_else(|| {
-        if sender_is_owner {
-            match (payload.recipient_user_id, mentor_id) {
-                (None, _) => MessageType::Question,
-                (Some(recipient_user_id), Some(mentor_id)) if recipient_user_id == mentor_id => {
-                    MessageType::Question
-                }
-                _ => MessageType::General,
-            }
+        if recipient
+            .as_ref()
+            .is_some_and(|recipient| recipient.has_role(UserRole::Mentor, &pool).unwrap_or(false))
+        {
+            MessageType::Question
         } else {
             MessageType::General
         }
@@ -1061,13 +1056,20 @@ pub async fn post_trace_message_route(
             ));
         }
 
-        let mentor_id = mentor_id.ok_or_else(|| {
+        let mentor = recipient.ok_or_else(|| {
             PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "No mentor assigned to user".to_string(),
+                "recipient_user_id is required for mentor requests".to_string(),
             )
         })?;
+        if !mentor.has_role(UserRole::Mentor, &pool)? {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "recipient_user_id must belong to a mentor for mentor requests".to_string(),
+            ));
+        }
 
         if message_type == MessageType::TarotReadingRequest {
             let has_tarot_attachment = matches!(
@@ -1088,7 +1090,7 @@ pub async fn post_trace_message_route(
 
         let question_message = NewMessage {
             sender_user_id: user_id,
-            recipient_user_id: mentor_id,
+            recipient_user_id: mentor.id,
             landscape_analysis_id: None,
             trace_id: Some(trace_id),
             post_id: None,
@@ -1103,7 +1105,7 @@ pub async fn post_trace_message_route(
         .create(&pool)?;
 
         let pending_reply_message = NewMessage {
-            sender_user_id: mentor_id,
+            sender_user_id: mentor.id,
             recipient_user_id: user_id,
             landscape_analysis_id: None,
             trace_id: Some(trace_id),

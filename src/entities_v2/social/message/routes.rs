@@ -15,7 +15,7 @@ use crate::entities_v2::{
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
     trace::Trace,
-    user::{User, UserPrincipalType},
+    user::{User, UserPrincipalType, UserRole},
 };
 use crate::environment;
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -330,6 +330,15 @@ pub async fn post_message_route(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
     ) {
+        let recipient = User::find(&payload.recipient_user_id, &pool)?;
+        if !recipient.has_role(UserRole::Mentor, &pool)? {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "recipient_user_id must belong to a mentor for mentor requests".to_string(),
+            ));
+        }
+
         if message_type == MessageType::TarotReadingRequest {
             let has_tarot_attachment = matches!(
                 (payload.attachment_type, payload.attachment.as_ref()),
