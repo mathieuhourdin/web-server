@@ -20,6 +20,7 @@ use crate::entities_v2::{
     post::{Post, PostStatus},
     post_grant::PostGrant,
     session::Session,
+    trace::Trace,
 };
 use crate::schema::usage_events;
 
@@ -33,6 +34,9 @@ pub enum UsageEventType {
     PostOpened,
     FeedbackOpened,
     SummaryOpened,
+    TraceTimeoutSet,
+    TraceTimeoutExtended,
+    TraceTimeoutAutoFinalized,
 }
 
 impl UsageEventType {
@@ -45,6 +49,9 @@ impl UsageEventType {
             UsageEventType::PostOpened => "POST_OPENED",
             UsageEventType::FeedbackOpened => "FEEDBACK_OPENED",
             UsageEventType::SummaryOpened => "SUMMARY_OPENED",
+            UsageEventType::TraceTimeoutSet => "TRACE_TIMEOUT_SET",
+            UsageEventType::TraceTimeoutExtended => "TRACE_TIMEOUT_EXTENDED",
+            UsageEventType::TraceTimeoutAutoFinalized => "TRACE_TIMEOUT_AUTO_FINALIZED",
         }
     }
 
@@ -59,6 +66,13 @@ impl UsageEventType {
             "POST_OPENED" | "post_opened" => Ok(UsageEventType::PostOpened),
             "FEEDBACK_OPENED" | "feedback_opened" => Ok(UsageEventType::FeedbackOpened),
             "SUMMARY_OPENED" | "summary_opened" => Ok(UsageEventType::SummaryOpened),
+            "TRACE_TIMEOUT_SET" | "trace_timeout_set" => Ok(UsageEventType::TraceTimeoutSet),
+            "TRACE_TIMEOUT_EXTENDED" | "trace_timeout_extended" => {
+                Ok(UsageEventType::TraceTimeoutExtended)
+            }
+            "TRACE_TIMEOUT_AUTO_FINALIZED" | "trace_timeout_auto_finalized" => {
+                Ok(UsageEventType::TraceTimeoutAutoFinalized)
+            }
             _ => Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
@@ -209,6 +223,23 @@ impl UsageEvent {
     }
 }
 
+pub fn create_usage_event(
+    user_id: Uuid,
+    session_id: Option<Uuid>,
+    event_type: UsageEventType,
+    resource_id: Option<Uuid>,
+    context_json: Option<Value>,
+    pool: &DbPool,
+) -> Result<UsageEvent, PpdcError> {
+    let payload = NewUsageEventDto {
+        event_type,
+        resource_id,
+        context_json,
+    };
+    validate_usage_event_access(event_type, resource_id, user_id, pool)?;
+    NewUsageEvent::new(payload, user_id, session_id).create(pool)
+}
+
 fn validate_usage_event_access(
     event_type: UsageEventType,
     resource_id: Option<Uuid>,
@@ -282,6 +313,21 @@ fn validate_usage_event_access(
                 return Err(PpdcError::unauthorized());
             }
         }
+        UsageEventType::TraceTimeoutSet
+        | UsageEventType::TraceTimeoutExtended
+        | UsageEventType::TraceTimeoutAutoFinalized => {
+            let resource_id = resource_id.ok_or_else(|| {
+                PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "resource_id is required for this event type".to_string(),
+                )
+            })?;
+            let trace = Trace::find_full_trace(resource_id, pool)?;
+            if trace.user_id != user_id {
+                return Err(PpdcError::unauthorized());
+            }
+        }
     }
 
     Ok(())
@@ -294,7 +340,13 @@ pub async fn post_usage_event_route(
     Json(payload): Json<NewUsageEventDto>,
 ) -> Result<Json<UsageEvent>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    validate_usage_event_access(payload.event_type, payload.resource_id, user_id, &pool)?;
-    let usage_event = NewUsageEvent::new(payload, user_id, Some(session.id)).create(&pool)?;
+    let usage_event = create_usage_event(
+        user_id,
+        Some(session.id),
+        payload.event_type,
+        payload.resource_id,
+        payload.context_json,
+        &pool,
+    )?;
     Ok(Json(usage_event))
 }

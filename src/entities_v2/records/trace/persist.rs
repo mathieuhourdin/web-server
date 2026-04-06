@@ -71,12 +71,13 @@ impl Trace {
                      is_encrypted = $5,
                      encryption_metadata = CAST($6 AS jsonb),
                      image_asset_id = $7,
-                     interaction_date = $8,
-                     trace_type = $9,
-                     status = $10,
-                     journal_id = $11,
-                     start_writing_at = $12,
-                     finalized_at = $13,
+                     timeout_at = $8,
+                     interaction_date = $9,
+                     trace_type = $10,
+                     status = $11,
+                     journal_id = $12,
+                     start_writing_at = $13,
+                     finalized_at = $14,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -91,6 +92,7 @@ impl Trace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<Timestamp>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Text, _>(self.status.to_db())
@@ -117,6 +119,7 @@ impl Trace {
                 self.finalized_at = None;
             }
             TraceStatus::Finalized | TraceStatus::Archived => {
+                self.timeout_at = None;
                 if self.finalized_at.is_none() {
                     self.finalized_at = Some(Utc::now().naive_utc());
                 }
@@ -151,6 +154,7 @@ impl NewTrace {
                     is_encrypted,
                     encryption_metadata,
                     image_asset_id,
+                    timeout_at,
                     interaction_date,
                     trace_type,
                     status,
@@ -168,8 +172,9 @@ impl NewTrace {
                     $8,
                     $9,
                     $10,
-                    'DRAFT',
                     $11,
+                    'DRAFT',
+                    $12,
                     NULL
                  )
                  RETURNING id",
@@ -186,6 +191,7 @@ impl NewTrace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<Timestamp>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Timestamp, _>(self.start_writing_at)

@@ -473,6 +473,7 @@ diesel::table! {
         is_encrypted -> Bool,
         encryption_metadata -> Nullable<Jsonb>,
         image_asset_id -> Nullable<Uuid>,
+        timeout_at -> Nullable<Timestamp>,
         start_writing_at -> Timestamp,
         finalized_at -> Nullable<Timestamp>,
     }

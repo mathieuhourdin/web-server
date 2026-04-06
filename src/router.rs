@@ -1,10 +1,10 @@
 use axum::{
+    extract::DefaultBodyLimit,
     http::{Method, StatusCode},
     middleware::from_fn,
     response::IntoResponse,
     routing::{delete, get, patch, post, put, Router},
 };
-use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use tower_http::{
     cors::{Any, CorsLayer},
     services::ServeDir,
@@ -23,13 +23,14 @@ pub fn create_router() -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(vec![
+            Method::OPTIONS,
             Method::GET,
             Method::POST,
             Method::PUT,
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers([CONTENT_TYPE, ACCEPT, AUTHORIZATION]);
+        .allow_headers(Any);
 
     let users_router = Router::new()
         .route("/", get(user::get_users))
@@ -78,7 +79,12 @@ pub fn create_router() -> Router {
             "/:id/posts",
             get(post::get_trace_posts_route).post(post::post_trace_post_route),
         )
-        .route("/:id/assets", post(trace::post_trace_asset_route))
+        .route("/:id/extend_timeout", post(trace::post_trace_extend_timeout_route))
+        .route(
+            "/:id/assets",
+            post(trace::post_trace_asset_route)
+                .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
+        )
         .route("/:id/analysis", get(trace::get_trace_analysis_route))
         .route(
             "/:id/messages",
@@ -106,7 +112,10 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let assets_router = Router::new()
-        .route("/", post(asset::post_asset_route))
+        .route(
+            "/",
+            post(asset::post_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
+        )
         .route("/:id/url", get(asset::get_asset_signed_url_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 

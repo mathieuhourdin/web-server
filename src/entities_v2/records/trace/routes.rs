@@ -2,7 +2,7 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Multipart, Path, Query},
 };
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -20,7 +20,11 @@ use crate::entities_v2::{
     },
     post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
-    platform_infra::{asset::{upload_asset_for_user_from_multipart, AssetUploadResponse}, mailer},
+    platform_infra::{
+        asset::{upload_asset_for_user_from_multipart, AssetUploadResponse},
+        mailer,
+        usage_event::{create_usage_event, UsageEventType},
+    },
     session::Session,
     shared::MaturingState,
     user::User,
@@ -76,6 +80,13 @@ pub struct CreateJournalDraftDto {
     pub encryption_metadata: Option<serde_json::Value>,
     #[serde(default)]
     pub image_asset_id: Option<Uuid>,
+    #[serde(default)]
+    pub timeout_at: Option<chrono::NaiveDateTime>,
+}
+
+#[derive(Deserialize)]
+pub struct ExtendTraceTimeoutDto {
+    pub minutes: i64,
 }
 
 fn spawn_autoplay_lens_runs_for_trace(
@@ -107,6 +118,138 @@ fn enqueue_autoplay_lens_runs_for_trace(user_id: Uuid, trace_id: Uuid, pool: DbP
             );
         }
     });
+}
+
+const MAX_TRACE_TIMEOUT_HOURS: i64 = 8;
+
+fn is_trace_timeout_expired(trace: &Trace) -> bool {
+    trace.status == super::enums::TraceStatus::Draft
+        && trace
+            .timeout_at
+            .map(|timeout_at| timeout_at <= Utc::now().naive_utc())
+            .unwrap_or(false)
+}
+
+fn validate_timeout_at(timeout_at: NaiveDateTime) -> Result<(), PpdcError> {
+    let now = Utc::now().naive_utc();
+    if timeout_at <= now {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "timeout_at must be in the future".to_string(),
+        ));
+    }
+
+    if timeout_at > now + ChronoDuration::hours(MAX_TRACE_TIMEOUT_HOURS) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!(
+                "timeout_at cannot be more than {} hours in the future",
+                MAX_TRACE_TIMEOUT_HOURS
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_timeout_extension_minutes(minutes: i64) -> Result<(), PpdcError> {
+    if !matches!(minutes, 5 | 10 | 15) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Timeout extension must be 5, 10 or 15 minutes".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn enqueue_trace_post_finalize_side_effects(trace: &Trace, pool: &DbPool) {
+    if trace.trace_type == super::enums::TraceType::UserTrace {
+        if let Err(err) = ensure_default_draft_post_for_shared_trace(trace, pool) {
+            tracing::warn!(
+                target: "post",
+                "shared_trace_default_post_create_failed trace_id={} message={}",
+                trace.id,
+                err.message
+            );
+        }
+    }
+}
+
+async fn finalize_trace_transition(
+    mut trace: Trace,
+    pool: &DbPool,
+    session_id: Option<Uuid>,
+    auto_finalized: bool,
+    preserve_interaction_date: bool,
+) -> Result<Trace, PpdcError> {
+    let timeout_at_before = trace.timeout_at;
+
+    if !trace.is_encrypted && !trace.content.trim().is_empty() {
+        let qualified = llm_qualify::qualify_trace(trace.content.as_str()).await?;
+        trace.title = qualified.title;
+        trace.subtitle = qualified.subtitle;
+        if !preserve_interaction_date {
+            if let Some(qualified_interaction_date) = qualified
+                .interaction_date
+                .and_then(|d| d.and_hms_opt(12, 0, 0))
+            {
+                trace.interaction_date = qualified_interaction_date;
+            }
+        }
+    }
+
+    trace.status = super::enums::TraceStatus::Finalized;
+    trace.finalized_at = Some(Utc::now().naive_utc());
+    trace.timeout_at = None;
+
+    let trace = trace.update(pool)?;
+
+    if !trace.is_encrypted {
+        enqueue_autoplay_lens_runs_for_trace(trace.user_id, trace.id, pool.clone());
+        enqueue_trace_post_finalize_side_effects(&trace, pool);
+    }
+
+    if auto_finalized {
+        let _ = create_usage_event(
+            trace.user_id,
+            session_id,
+            UsageEventType::TraceTimeoutAutoFinalized,
+            Some(trace.id),
+            Some(serde_json::json!({
+                "timeout_at": timeout_at_before,
+            })),
+            pool,
+        );
+    }
+
+    Ok(trace)
+}
+
+async fn finalize_expired_trace_if_needed(
+    trace: Trace,
+    pool: &DbPool,
+    session_id: Option<Uuid>,
+) -> Result<Trace, PpdcError> {
+    if is_trace_timeout_expired(&trace) {
+        finalize_trace_transition(trace, pool, session_id, true, false).await
+    } else {
+        Ok(trace)
+    }
+}
+
+async fn finalize_expired_drafts_for_user(
+    user_id: Uuid,
+    pool: &DbPool,
+    session_id: Option<Uuid>,
+) -> Result<(), PpdcError> {
+    let expired_drafts = Trace::get_expired_drafts_for_user(user_id, pool)?;
+    for trace in expired_drafts {
+        let _ = finalize_trace_transition(trace, pool, session_id, true, false).await?;
+    }
+    Ok(())
 }
 
 fn ensure_default_draft_post_for_shared_trace(
@@ -176,9 +319,10 @@ fn ensure_default_draft_post_for_shared_trace(
     Ok(Some(post.id))
 }
 
-fn create_or_get_journal_draft(
+async fn create_or_get_journal_draft(
     journal: Journal,
     user_id: Uuid,
+    session_id: Option<Uuid>,
     payload: CreateJournalDraftDto,
     pool: &DbPool,
 ) -> Result<Trace, PpdcError> {
@@ -194,7 +338,10 @@ fn create_or_get_journal_draft(
     }
 
     if let Some(existing_draft) = Trace::find_draft_for_journal(journal.id, &pool)? {
-        return Ok(existing_draft);
+        let existing_draft = finalize_expired_trace_if_needed(existing_draft, pool, session_id).await?;
+        if existing_draft.status == super::enums::TraceStatus::Draft {
+            return Ok(existing_draft);
+        }
     }
 
     let CreateJournalDraftDto {
@@ -203,6 +350,7 @@ fn create_or_get_journal_draft(
         is_encrypted,
         encryption_metadata,
         image_asset_id,
+        timeout_at,
     } = payload;
 
     let interaction_date = interaction_date.unwrap_or_else(|| Utc::now().naive_utc());
@@ -218,6 +366,7 @@ fn create_or_get_journal_draft(
     trace.is_encrypted = is_encrypted.unwrap_or(false);
     trace.encryption_metadata = encryption_metadata;
     trace.image_asset_id = image_asset_id;
+    trace.timeout_at = timeout_at;
     if trace.is_encrypted && trace.encryption_metadata.is_none() {
         return Err(PpdcError::new(
             400,
@@ -228,7 +377,23 @@ fn create_or_get_journal_draft(
     if !trace.is_encrypted {
         trace.encryption_metadata = None;
     }
-    trace.create(pool)
+    if let Some(timeout_at) = trace.timeout_at {
+        validate_timeout_at(timeout_at)?;
+    }
+    let trace = trace.create(pool)?;
+    if let Some(timeout_at) = trace.timeout_at {
+        let _ = create_usage_event(
+            user_id,
+            session_id,
+            UsageEventType::TraceTimeoutSet,
+            Some(trace.id),
+            Some(serde_json::json!({
+                "timeout_at": timeout_at,
+            })),
+            pool,
+        );
+    }
+    Ok(trace)
 }
 
 #[debug_handler]
@@ -240,7 +405,7 @@ pub async fn post_journal_draft_route(
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let trace = create_or_get_journal_draft(journal, user_id, payload, &pool)?;
+    let trace = create_or_get_journal_draft(journal, user_id, Some(session.id), payload, &pool).await?;
     Ok(Json(trace))
 }
 
@@ -256,7 +421,17 @@ pub async fn get_journal_draft_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let draft = Trace::find_draft_for_journal(journal_id, &pool)?;
+    let draft = match Trace::find_draft_for_journal(journal_id, &pool)? {
+        Some(draft) => {
+            let draft = finalize_expired_trace_if_needed(draft, &pool, Some(session.id)).await?;
+            if draft.status == super::enums::TraceStatus::Draft {
+                Some(draft)
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
     Ok(Json(draft))
 }
 
@@ -272,6 +447,7 @@ pub async fn put_trace_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
 
     let content_changed = payload
         .content
@@ -286,8 +462,11 @@ pub async fn put_trace_route(
         .image_asset_id
         .map(|image_asset_id| image_asset_id != trace.image_asset_id)
         .unwrap_or(false);
+    let timeout_changed = payload
+        .timeout_at
+        .map(|timeout_at| timeout_at != trace.timeout_at)
+        .unwrap_or(false);
     let has_explicit_interaction_date = payload.interaction_date.is_some();
-    let previous_status = trace.status;
 
     match trace.status {
         super::enums::TraceStatus::Draft => {
@@ -299,6 +478,12 @@ pub async fn put_trace_route(
             }
             if let Some(image_asset_id) = payload.image_asset_id {
                 trace.image_asset_id = image_asset_id;
+            }
+            if let Some(timeout_at) = payload.timeout_at {
+                trace.timeout_at = timeout_at;
+            }
+            if let Some(timeout_at) = trace.timeout_at {
+                validate_timeout_at(timeout_at)?;
             }
 
             if let Some(status) = payload.status {
@@ -312,41 +497,37 @@ pub async fn put_trace_route(
                                 "Cannot finalize an empty trace".to_string(),
                             ));
                         }
-                        if !trace.is_encrypted {
-                            let qualified =
-                                llm_qualify::qualify_trace(trace.content.as_str()).await?;
-                            trace.title = qualified.title;
-                            trace.subtitle = qualified.subtitle;
-                            if !has_explicit_interaction_date {
-                                if let Some(qualified_interaction_date) = qualified
-                                    .interaction_date
-                                    .and_then(|d| d.and_hms_opt(12, 0, 0))
-                                {
-                                    trace.interaction_date = qualified_interaction_date;
-                                }
-                            }
-                        }
-                        trace.status = super::enums::TraceStatus::Finalized;
-                        trace.finalized_at = Some(Utc::now().naive_utc());
+                        let trace =
+                            finalize_trace_transition(
+                                trace,
+                                &pool,
+                                Some(session.id),
+                                false,
+                                has_explicit_interaction_date,
+                            )
+                            .await?;
+                        return Ok(Json(trace));
                     }
                     super::enums::TraceStatus::Archived => {
                         trace.status = super::enums::TraceStatus::Archived;
+                        trace.timeout_at = None;
                     }
                 }
             }
         }
         super::enums::TraceStatus::Finalized => {
-            if content_changed || interaction_date_changed || image_asset_changed {
+            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date or image_asset_id once trace is finalized".to_string(),
+                    "Cannot update content, interaction_date, image_asset_id or timeout_at once trace is finalized".to_string(),
                 ));
             }
 
             match payload.status {
                 Some(super::enums::TraceStatus::Archived) => {
                     trace.status = super::enums::TraceStatus::Archived;
+                    trace.timeout_at = None;
                 }
                 Some(super::enums::TraceStatus::Draft) => {
                     return Err(PpdcError::new(
@@ -359,16 +540,19 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Archived => {
-            if content_changed || interaction_date_changed || image_asset_changed {
+            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date or image_asset_id once trace is archived".to_string(),
+                    "Cannot update content, interaction_date, image_asset_id or timeout_at once trace is archived".to_string(),
                 ));
             }
 
             match payload.status {
-                Some(super::enums::TraceStatus::Archived) | None => {}
+                Some(super::enums::TraceStatus::Archived) => {
+                    trace.timeout_at = None;
+                }
+                None => {}
                 Some(super::enums::TraceStatus::Draft) => {
                     return Err(PpdcError::new(
                         400,
@@ -388,21 +572,18 @@ pub async fn put_trace_route(
     }
 
     let trace = trace.update(&pool)?;
-
-    if previous_status == super::enums::TraceStatus::Draft
-        && trace.status == super::enums::TraceStatus::Finalized
-        && !trace.is_encrypted
-    {
-        enqueue_autoplay_lens_runs_for_trace(user_id, trace.id, pool.clone());
-        if trace.trace_type == super::enums::TraceType::UserTrace {
-            if let Err(err) = ensure_default_draft_post_for_shared_trace(&trace, &pool) {
-                tracing::warn!(
-                    target: "post",
-                    "shared_trace_default_post_create_failed trace_id={} message={}",
-                    trace.id,
-                    err.message
-                );
-            }
+    if timeout_changed {
+        if let Some(Some(timeout_at)) = payload.timeout_at {
+            let _ = create_usage_event(
+                user_id,
+                Some(session.id),
+                UsageEventType::TraceTimeoutSet,
+                Some(trace.id),
+                Some(serde_json::json!({
+                    "timeout_at": timeout_at,
+                })),
+                &pool,
+            );
         }
     }
 
@@ -421,6 +602,7 @@ pub async fn patch_trace_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
     if trace.status != super::enums::TraceStatus::Draft {
         return Err(PpdcError::new(
             400,
@@ -438,8 +620,26 @@ pub async fn patch_trace_route(
     if let Some(image_asset_id) = payload.image_asset_id {
         trace.image_asset_id = image_asset_id;
     }
+    if let Some(timeout_at) = payload.timeout_at {
+        trace.timeout_at = timeout_at;
+    }
+    if let Some(timeout_at) = trace.timeout_at {
+        validate_timeout_at(timeout_at)?;
+    }
 
     let trace = trace.update(&pool)?;
+    if let Some(Some(timeout_at)) = payload.timeout_at {
+        let _ = create_usage_event(
+            user_id,
+            Some(session.id),
+            UsageEventType::TraceTimeoutSet,
+            Some(trace.id),
+            Some(serde_json::json!({
+                "timeout_at": timeout_at,
+            })),
+            &pool,
+        );
+    }
     Ok(Json(trace))
 }
 
@@ -455,6 +655,7 @@ pub async fn post_trace_asset_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
     if trace.status != super::enums::TraceStatus::Draft {
         return Err(PpdcError::new(
             400,
@@ -481,6 +682,58 @@ pub async fn post_trace_asset_route(
 }
 
 #[debug_handler]
+pub async fn post_trace_extend_timeout_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ExtendTraceTimeoutDto>,
+) -> Result<Json<Trace>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    validate_timeout_extension_minutes(payload.minutes)?;
+
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    if trace.status != super::enums::TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can extend timeout".to_string(),
+        ));
+    }
+
+    let previous_timeout_at = trace.timeout_at.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Trace has no timeout to extend".to_string(),
+        )
+    })?;
+    let new_timeout_at = previous_timeout_at + ChronoDuration::minutes(payload.minutes);
+    validate_timeout_at(new_timeout_at)?;
+
+    trace.timeout_at = Some(new_timeout_at);
+    let trace = trace.update(&pool)?;
+
+    let _ = create_usage_event(
+        user_id,
+        Some(session.id),
+        UsageEventType::TraceTimeoutExtended,
+        Some(trace.id),
+        Some(serde_json::json!({
+            "previous_timeout_at": previous_timeout_at,
+            "new_timeout_at": new_timeout_at,
+            "minutes": payload.minutes,
+        })),
+        &pool,
+    );
+
+    Ok(Json(trace))
+}
+
+#[debug_handler]
 pub async fn get_all_traces_for_user_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -491,6 +744,7 @@ pub async fn get_all_traces_for_user_route(
     if session_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    finalize_expired_drafts_for_user(user_id, &pool, Some(session.id)).await?;
     let pagination = params.validate()?;
     let (traces, total) =
         Trace::get_all_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
@@ -504,6 +758,7 @@ pub async fn get_trace_drafts_route(
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    finalize_expired_drafts_for_user(user_id, &pool, Some(session.id)).await?;
     let pagination = params.validate()?;
     let (drafts, total) = Trace::get_non_empty_drafts_for_user_paginated(
         user_id,
@@ -525,6 +780,7 @@ pub async fn get_trace_route(
     if trace.user_id != session_user_id {
         return Err(PpdcError::unauthorized());
     }
+    let trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
     Ok(Json(trace))
 }
 
