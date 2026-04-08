@@ -34,6 +34,7 @@ pub struct UpdateTraceDto {
     pub status: Option<TraceStatus>,
     pub image_asset_id: Option<Option<Uuid>>,
     pub timeout_at: Option<Option<DateTime<Utc>>>,
+    pub publish_default_post: Option<bool>,
 }
 
 #[derive(Deserialize)]

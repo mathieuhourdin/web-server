@@ -75,7 +75,7 @@ pub struct NewTracePostDto {
     pub audience_role: Option<PostAudienceRole>,
 }
 
-fn enqueue_post_published_notification_emails(
+pub(crate) fn enqueue_post_published_notification_emails(
     post: &Post,
     pool: &DbPool,
 ) -> Result<Vec<Uuid>, PpdcError> {

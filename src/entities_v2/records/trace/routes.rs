@@ -18,7 +18,7 @@ use crate::entities_v2::{
         routes::enqueue_received_message_notification_email, Message, MessageAttachment,
         MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
     },
-    post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
+    post::{model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
     platform_infra::{
         asset::{upload_asset_for_user, upload_asset_for_user_from_multipart, AssetUploadResponse},
@@ -32,6 +32,7 @@ use crate::entities_v2::{
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
+use crate::entities_v2::post::routes::enqueue_post_published_notification_emails;
 
 use super::{
     llm_qualify,
@@ -380,6 +381,61 @@ fn ensure_default_draft_post_for_shared_trace(
     Ok(Some(post.id))
 }
 
+fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
+    let Some(_) = ensure_default_draft_post_for_shared_trace(trace, pool)? else {
+        return Ok(None);
+    };
+
+    let mut post = Post::find_default_for_trace(trace.id, pool)?.ok_or_else(|| {
+        PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            "Default post could not be found for this trace".to_string(),
+        )
+    })?;
+
+    if post.status == crate::entities_v2::post::PostStatus::Archived {
+        return Err(PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            "Default post is archived and cannot be auto-published".to_string(),
+        ));
+    }
+
+    if post.status == crate::entities_v2::post::PostStatus::Published {
+        return Ok(Some(post));
+    }
+
+    post.status = crate::entities_v2::post::PostStatus::Published;
+    if post.publishing_date.is_none() {
+        post.publishing_date = Some(Utc::now().naive_utc());
+    }
+    let (publishing_state, maturing_state) = legacy_lifecycle_for_status(post.status);
+    post.publishing_state = publishing_state;
+    post.maturing_state = maturing_state;
+    let post = post.update(pool)?;
+
+    match enqueue_post_published_notification_emails(&post, pool) {
+        Ok(email_ids) if !email_ids.is_empty() => {
+            let pool_for_task = pool.clone();
+            tokio::spawn(async move {
+                let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
+            });
+        }
+        Ok(_) => {}
+        Err(err) => {
+            tracing::warn!(
+                target: "mailer",
+                "post_publish_email_enqueue_failed post_id={} message={}",
+                post.id,
+                err.message
+            );
+        }
+    }
+
+    Ok(Some(post))
+}
+
 async fn create_or_get_journal_draft(
     journal: Journal,
     user_id: Uuid,
@@ -528,6 +584,7 @@ pub async fn put_trace_route(
         .map(|timeout_at| timeout_at != trace.timeout_at)
         .unwrap_or(false);
     let has_explicit_interaction_date = payload.interaction_date.is_some();
+    let publish_default_post = payload.publish_default_post.unwrap_or(false);
 
     match trace.status {
         super::enums::TraceStatus::Draft => {
@@ -567,6 +624,9 @@ pub async fn put_trace_route(
                                 has_explicit_interaction_date,
                             )
                             .await?;
+                        if publish_default_post {
+                            let _ = publish_default_post_for_trace(&trace, &pool)?;
+                        }
                         return Ok(Json(trace));
                     }
                     super::enums::TraceStatus::Archived => {
@@ -633,6 +693,16 @@ pub async fn put_trace_route(
     }
 
     let trace = trace.update(&pool)?;
+    if publish_default_post {
+        if trace.status != super::enums::TraceStatus::Finalized {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "publish_default_post requires the trace to be finalized".to_string(),
+            ));
+        }
+        let _ = publish_default_post_for_trace(&trace, &pool)?;
+    }
     if timeout_changed {
         if let Some(Some(timeout_at)) = payload.timeout_at {
             let _ = create_usage_event(
