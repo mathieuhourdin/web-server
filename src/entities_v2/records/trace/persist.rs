@@ -50,13 +50,16 @@ fn sync_trace_image_asset_to_related_posts(
 }
 
 impl Trace {
-    pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
+    pub fn update(mut self, pool: &DbPool) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
                 "encryption_metadata is required when is_encrypted is true".to_string(),
             ));
+        }
+        if self.timeout_at.is_some() && self.timeout_start_at.is_none() {
+            self.timeout_start_at = Some(Utc::now());
         }
         let mut conn = pool
             .get()
@@ -71,13 +74,14 @@ impl Trace {
                      is_encrypted = $5,
                      encryption_metadata = CAST($6 AS jsonb),
                      image_asset_id = $7,
-                     timeout_at = $8,
-                     interaction_date = $9,
-                     trace_type = $10,
-                     status = $11,
-                     journal_id = $12,
-                     start_writing_at = $13,
-                     finalized_at = $14,
+                     timeout_start_at = $8,
+                     timeout_at = $9,
+                     interaction_date = $10,
+                     trace_type = $11,
+                     status = $12,
+                     journal_id = $13,
+                     start_writing_at = $14,
+                     finalized_at = $15,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -92,6 +96,7 @@ impl Trace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
@@ -130,13 +135,16 @@ impl Trace {
 }
 
 impl NewTrace {
-    pub fn create(self, pool: &DbPool) -> Result<Trace, PpdcError> {
+    pub fn create(mut self, pool: &DbPool) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
                 "encryption_metadata is required when is_encrypted is true".to_string(),
             ));
+        }
+        if self.timeout_at.is_some() && self.timeout_start_at.is_none() {
+            self.timeout_start_at = Some(Utc::now());
         }
         let mut conn = pool
             .get()
@@ -154,6 +162,7 @@ impl NewTrace {
                     is_encrypted,
                     encryption_metadata,
                     image_asset_id,
+                    timeout_start_at,
                     timeout_at,
                     interaction_date,
                     trace_type,
@@ -173,8 +182,9 @@ impl NewTrace {
                     $9,
                     $10,
                     $11,
-                    'DRAFT',
                     $12,
+                    'DRAFT',
+                    $13,
                     NULL
                  )
                  RETURNING id",
@@ -191,6 +201,7 @@ impl NewTrace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())

@@ -163,11 +163,11 @@ fn validate_timeout_at(timeout_at: DateTime<Utc>) -> Result<(), PpdcError> {
 }
 
 fn validate_timeout_extension_minutes(minutes: i64) -> Result<(), PpdcError> {
-    if !matches!(minutes, 5 | 10 | 15) {
+    if minutes <= 0 {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Timeout extension must be 5, 10 or 15 minutes".to_string(),
+            "Timeout extension minutes must be greater than 0".to_string(),
         ));
     }
     Ok(())

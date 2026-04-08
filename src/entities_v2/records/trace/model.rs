@@ -54,6 +54,7 @@ pub struct Trace {
     pub is_encrypted: bool,
     pub encryption_metadata: Option<Value>,
     pub image_asset_id: Option<Uuid>,
+    pub timeout_start_at: Option<DateTime<Utc>>,
     pub timeout_at: Option<DateTime<Utc>>,
     pub journal_id: Option<Uuid>,
     pub user_id: Uuid,
@@ -83,6 +84,8 @@ pub(crate) struct TraceRow {
     pub encryption_metadata: Option<String>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     pub image_asset_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<Timestamptz>)]
+    pub timeout_start_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Nullable<Timestamptz>)]
     pub timeout_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
@@ -116,6 +119,7 @@ impl From<TraceRow> for Trace {
                 .encryption_metadata
                 .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
             image_asset_id: row.image_asset_id,
+            timeout_start_at: row.timeout_start_at,
             timeout_at: row.timeout_at,
             journal_id: row.journal_id,
             user_id: row.user_id,
@@ -143,7 +147,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let row = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE journal_id = $1
                AND trace_type = 'USER_TRACE'
@@ -167,7 +171,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let row = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -190,7 +194,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let row = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
@@ -220,7 +224,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND interaction_date BETWEEN $2 AND $3
@@ -247,7 +251,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND interaction_date <= $2
@@ -266,7 +270,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let latest_hlp = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'HIGH_LEVEL_PROJECTS_DEFINITION'
@@ -282,7 +286,7 @@ impl Trace {
         }
 
         let latest_bio = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'BIO_TRACE'
@@ -313,7 +317,7 @@ impl Trace {
                 .expect("Failed to get a connection from the pool");
 
             let latest_bio = diesel::sql_query(
-                "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+                "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
                  FROM traces
                  WHERE user_id = $1
                    AND trace_type = 'BIO_TRACE'
@@ -341,7 +345,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let next = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -382,7 +386,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
@@ -423,7 +427,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE journal_id = $1
                AND status <> 'DRAFT'
@@ -462,7 +466,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -486,7 +490,7 @@ impl Trace {
             .expect("Failed to get a connection from the pool");
 
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -516,6 +520,7 @@ pub struct NewTrace {
     pub is_encrypted: bool,
     pub encryption_metadata: Option<Value>,
     pub image_asset_id: Option<Uuid>,
+    pub timeout_start_at: Option<DateTime<Utc>>,
     pub timeout_at: Option<DateTime<Utc>>,
     pub interaction_date: NaiveDateTime,
     pub user_id: Uuid,
@@ -540,6 +545,7 @@ impl NewTrace {
             is_encrypted: false,
             encryption_metadata: None,
             image_asset_id: None,
+            timeout_start_at: None,
             timeout_at: None,
             interaction_date,
             user_id,
