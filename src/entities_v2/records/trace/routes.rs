@@ -15,8 +15,8 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
-        routes::enqueue_received_message_notification_email, Message, MessageAttachment,
-        MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
+        routes::{enqueue_received_message_notification_email, is_service_mentor}, Message,
+        MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
     },
     post::{model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
     post_grant::{NewPostGrantDto, PostGrantScope},
@@ -28,7 +28,7 @@ use crate::entities_v2::{
     session::Session,
     shared::MaturingState,
     trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
-    user::{User, UserRole},
+    user::User,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -1105,16 +1105,16 @@ pub async fn post_trace_message_route(
         .recipient_user_id
         .map(|recipient_user_id| User::find(&recipient_user_id, &pool))
         .transpose()?;
-    let message_type = payload.message_type.unwrap_or_else(|| {
-        if recipient
-            .as_ref()
-            .is_some_and(|recipient| recipient.has_role(UserRole::Mentor, &pool).unwrap_or(false))
-        {
-            MessageType::Question
-        } else {
-            MessageType::General
-        }
-    });
+    let recipient_is_service_mentor = match recipient.as_ref() {
+        Some(recipient) => is_service_mentor(recipient, &pool)?,
+        None => false,
+    };
+    let message_type = match payload.message_type {
+        Some(MessageType::General) if recipient_is_service_mentor => MessageType::Question,
+        Some(message_type) => message_type,
+        None if recipient_is_service_mentor => MessageType::Question,
+        None => MessageType::General,
+    };
 
     if matches!(
         message_type,
@@ -1135,11 +1135,12 @@ pub async fn post_trace_message_route(
                 "recipient_user_id is required for mentor requests".to_string(),
             )
         })?;
-        if !mentor.has_role(UserRole::Mentor, &pool)? {
+        if !is_service_mentor(&mentor, &pool)? {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "recipient_user_id must belong to a mentor for mentor requests".to_string(),
+                "recipient_user_id must belong to a service mentor for mentor requests"
+                    .to_string(),
             ));
         }
 

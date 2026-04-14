@@ -62,6 +62,14 @@ pub struct MessageCreationResponse {
     pub pending_reply_message: Option<Message>,
 }
 
+pub(crate) fn is_service_mentor(recipient: &User, pool: &DbPool) -> Result<bool, PpdcError> {
+    if recipient.principal_type == UserPrincipalType::Service {
+        return Ok(true);
+    }
+
+    Ok(recipient.has_role(UserRole::Mentor, pool)?)
+}
+
 pub(crate) fn enqueue_received_message_notification_email(
     message: &Message,
     pool: &DbPool,
@@ -282,7 +290,14 @@ pub async fn post_message_route(
     Json(payload): Json<NewMessageDto>,
 ) -> Result<Json<MessageCreationResponse>, PpdcError> {
     let sender_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let message_type = payload.message_type.unwrap_or(MessageType::General);
+    let recipient = User::find(&payload.recipient_user_id, &pool)?;
+    let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
+    let message_type = match payload.message_type {
+        Some(MessageType::General) if recipient_is_service_mentor => MessageType::Question,
+        Some(message_type) => message_type,
+        None if recipient_is_service_mentor => MessageType::Question,
+        None => MessageType::General,
+    };
 
     if payload.post_id.is_some() && payload.trace_id.is_some() {
         return Err(PpdcError::new(
@@ -330,12 +345,12 @@ pub async fn post_message_route(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
     ) {
-        let recipient = User::find(&payload.recipient_user_id, &pool)?;
-        if !recipient.has_role(UserRole::Mentor, &pool)? {
+        if !recipient_is_service_mentor {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "recipient_user_id must belong to a mentor for mentor requests".to_string(),
+                "recipient_user_id must belong to a service mentor for mentor requests"
+                    .to_string(),
             ));
         }
 
@@ -356,7 +371,21 @@ pub async fn post_message_route(
             }
         }
 
-        let question_message = NewMessage::new(payload, sender_user_id).create(&pool)?;
+        let question_message = NewMessage {
+            sender_user_id,
+            recipient_user_id: payload.recipient_user_id,
+            landscape_analysis_id: payload.landscape_analysis_id,
+            trace_id: payload.trace_id,
+            post_id: payload.post_id,
+            reply_to_message_id: None,
+            message_type,
+            processing_state: MessageProcessingState::Processed,
+            title: payload.title.unwrap_or_default(),
+            content: payload.content,
+            attachment_type: payload.attachment_type,
+            attachment: payload.attachment,
+        }
+        .create(&pool)?;
         let pending_reply_message = NewMessage {
             sender_user_id: question_message.recipient_user_id,
             recipient_user_id: sender_user_id,
