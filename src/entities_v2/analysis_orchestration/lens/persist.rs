@@ -9,11 +9,20 @@ use crate::entities_v2::{
         self, create_for_trace_and_lens_with_options,
         create_for_trace_and_lens_with_options_and_anchor, LandscapeAnalysis, NewLandscapeAnalysis,
     },
-    trace::{Trace, TraceType},
+    trace::{Trace, TraceStatus, TraceType},
 };
 use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 
 use super::model::{Lens, LensProcessingState, NewLens};
+
+struct PendingAnalysisPlanningSummary {
+    planned_trace_count: usize,
+    created_analysis_count: usize,
+}
+
+fn is_finalized_trace(trace: &Trace) -> bool {
+    trace.status == TraceStatus::Finalized
+}
 
 fn ensure_lens_analysis_scope_relation(
     lens_id: Uuid,
@@ -58,9 +67,14 @@ fn enqueue_pending_analyses_for_lens_target(
     user_id: Uuid,
     target_trace_id: Uuid,
     pool: &DbPool,
-) -> Result<(), PpdcError> {
-    let all_user_traces = Trace::get_all_for_user(user_id, pool)?;
+) -> Result<PendingAnalysisPlanningSummary, PpdcError> {
+    let all_user_traces = Trace::get_all_for_user(user_id, pool)?
+        .into_iter()
+        .filter(is_finalized_trace)
+        .collect::<Vec<_>>();
     let trace_effective_date = |trace: &Trace| trace.interaction_date;
+    let mut planned_trace_count = 0usize;
+    let mut created_analysis_count = 0usize;
 
     let anchor_date = all_user_traces
         .iter()
@@ -80,13 +94,15 @@ fn enqueue_pending_analyses_for_lens_target(
         .max_by_key(|trace| trace_effective_date(trace))
         .map(|trace| trace.id);
     if let Some(hlp_trace_id) = latest_hlp_trace {
-        let _ = create_for_trace_and_lens_with_options_and_anchor(
+        let created = create_for_trace_and_lens_with_options_and_anchor(
             hlp_trace_id,
             lens_id,
             true,
             anchor_date,
             pool,
         )?;
+        planned_trace_count += 1;
+        created_analysis_count += created.len();
     }
 
     let latest_bio_trace = all_user_traces
@@ -95,26 +111,36 @@ fn enqueue_pending_analyses_for_lens_target(
         .max_by_key(|trace| trace_effective_date(trace))
         .map(|trace| trace.id);
     if let Some(bio_trace_id) = latest_bio_trace {
-        let _ = create_for_trace_and_lens_with_options_and_anchor(
+        let created = create_for_trace_and_lens_with_options_and_anchor(
             bio_trace_id,
             lens_id,
             true,
             anchor_date,
             pool,
         )?;
+        planned_trace_count += 1;
+        created_analysis_count += created.len();
     }
 
-    let traces = Trace::get_before(user_id, target_trace_id, pool)?;
+    let traces = Trace::get_before(user_id, target_trace_id, pool)?
+        .into_iter()
+        .filter(is_finalized_trace)
+        .collect::<Vec<_>>();
     for trace in traces.iter().filter(|trace| {
         !matches!(
             trace.trace_type,
             TraceType::HighLevelProjectsDefinition | TraceType::BioTrace
         )
     }) {
-        let _ = create_for_trace_and_lens_with_options(trace.id, lens_id, true, pool)?;
+        let created = create_for_trace_and_lens_with_options(trace.id, lens_id, true, pool)?;
+        planned_trace_count += 1;
+        created_analysis_count += created.len();
     }
 
-    Ok(())
+    Ok(PendingAnalysisPlanningSummary {
+        planned_trace_count,
+        created_analysis_count,
+    })
 }
 
 impl Lens {
@@ -267,12 +293,38 @@ impl Lens {
                 .set(lenses::processing_state.eq(LensProcessingState::OutOfSync.to_db()))
                 .execute(&mut conn)?;
             if let Some(next_target_trace_id) = new_target_trace_id {
-                enqueue_pending_analyses_for_lens_target(
+                match enqueue_pending_analyses_for_lens_target(
                     self.id,
                     user_id,
                     next_target_trace_id,
                     pool,
-                )?;
+                ) {
+                    Ok(summary) => {
+                        tracing::info!(
+                            target: "analysis",
+                            "lens_pending_analysis_planning_succeeded lens_id={} user_id={} target_trace_id={} planned_trace_count={} created_analysis_count={}",
+                            self.id,
+                            user_id,
+                            next_target_trace_id,
+                            summary.planned_trace_count,
+                            summary.created_analysis_count
+                        );
+                    }
+                    Err(err) => {
+                        diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
+                            .set(lenses::processing_state.eq(LensProcessingState::Failed.to_db()))
+                            .execute(&mut conn)?;
+                        tracing::error!(
+                            target: "analysis",
+                            "lens_pending_analysis_planning_failed lens_id={} user_id={} target_trace_id={} message={}",
+                            self.id,
+                            user_id,
+                            next_target_trace_id,
+                            err.message
+                        );
+                        return Err(err);
+                    }
+                }
             }
         }
         Lens::find_full_lens(self.id, pool)
@@ -359,14 +411,20 @@ pub fn create_landscape_placeholders(
     let user_id = previous_landscape.user_id;
     let traces: Vec<Trace>;
     if previous_landscape.analyzed_trace_id.is_none() {
-        traces = Trace::get_before(user_id, current_trace_id, pool)?;
+        traces = Trace::get_before(user_id, current_trace_id, pool)?
+            .into_iter()
+            .filter(is_finalized_trace)
+            .collect();
     } else {
         traces = Trace::get_between(
             user_id,
             previous_landscape.analyzed_trace_id.unwrap(),
             current_trace_id,
             pool,
-        )?;
+        )?
+        .into_iter()
+        .filter(is_finalized_trace)
+        .collect();
     }
     let mut landscape_analysis_ids = vec![previous_landscape_analysis_id];
     let mut previous_id = previous_landscape_analysis_id;
