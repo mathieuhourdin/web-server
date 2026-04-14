@@ -304,6 +304,8 @@ diesel::table! {
         provider_message_id -> Nullable<Text>,
         attempt_count -> Int4,
         last_error -> Nullable<Text>,
+        lock_owner -> Nullable<Uuid>,
+        lock_until -> Nullable<Timestamp>,
         scheduled_at -> Nullable<Timestamp>,
         sent_at -> Nullable<Timestamp>,
         created_at -> Timestamp,

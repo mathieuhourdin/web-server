@@ -13,7 +13,7 @@ use tower_http::{
 use crate::entities_v2::{
     analysis_summary, asset, element,
     error::{ErrorType, PpdcError},
-    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, message, post,
+    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, mailer, message, post,
     post_grant, reference, relationship, trace, trace_mirror, transcription, usage_event,
     user, user_post_state, user_secure_action,
 };
@@ -223,6 +223,10 @@ pub fn create_router() -> Router {
     let internal_router = Router::new().route(
         "/run_pending_analyses",
         post(landscape_analysis::post_run_pending_analyses_route),
+    )
+    .route(
+        "/process_pending_emails",
+        post(mailer::post_process_pending_emails_route),
     );
     let analysis_summaries_router = Router::new()
         .route(

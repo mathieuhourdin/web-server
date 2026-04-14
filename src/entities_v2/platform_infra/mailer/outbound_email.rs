@@ -1,5 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::Uuid as SqlUuid;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -9,10 +11,13 @@ use crate::schema::outbound_emails;
 
 use super::{send_email, SendEmailRequest};
 
+const EMAIL_RUN_LOCK_TTL_SECONDS: i64 = 600;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum OutboundEmailStatus {
     Pending,
+    Running,
     Sent,
     Failed,
 }
@@ -21,6 +26,7 @@ impl OutboundEmailStatus {
     pub fn to_db(self) -> &'static str {
         match self {
             OutboundEmailStatus::Pending => "PENDING",
+            OutboundEmailStatus::Running => "RUNNING",
             OutboundEmailStatus::Sent => "SENT",
             OutboundEmailStatus::Failed => "FAILED",
         }
@@ -28,6 +34,7 @@ impl OutboundEmailStatus {
 
     pub fn from_db(value: &str) -> Self {
         match value {
+            "RUNNING" => OutboundEmailStatus::Running,
             "SENT" => OutboundEmailStatus::Sent,
             "FAILED" => OutboundEmailStatus::Failed,
             _ => OutboundEmailStatus::Pending,
@@ -77,6 +84,8 @@ pub struct OutboundEmail {
     pub provider_message_id: Option<String>,
     pub attempt_count: i32,
     pub last_error: Option<String>,
+    pub lock_owner: Option<Uuid>,
+    pub lock_until: Option<NaiveDateTime>,
     pub scheduled_at: Option<NaiveDateTime>,
     pub sent_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
@@ -122,6 +131,97 @@ impl OutboundEmail {
         Ok(emails)
     }
 
+    pub fn claim_due_pending(
+        limit: i64,
+        worker_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Self>, PpdcError> {
+        let mut conn = pool
+            .get()?;
+
+        #[derive(diesel::QueryableByName)]
+        struct IdRow {
+            #[diesel(sql_type = SqlUuid)]
+            id: Uuid,
+        }
+
+        let claimed_ids = sql_query(
+            r#"
+WITH candidate AS (
+    SELECT oe.id
+    FROM outbound_emails oe
+    WHERE (
+        (oe.status = 'PENDING' AND (oe.scheduled_at IS NULL OR oe.scheduled_at <= NOW()))
+        OR (oe.status = 'RUNNING' AND oe.lock_until IS NOT NULL AND oe.lock_until <= NOW())
+    )
+    ORDER BY oe.scheduled_at ASC NULLS FIRST, oe.created_at ASC
+    LIMIT $1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE outbound_emails oe
+SET status = 'RUNNING',
+    lock_owner = $2,
+    lock_until = NOW() + ($3 * INTERVAL '1 second'),
+    updated_at = NOW()
+FROM candidate
+WHERE oe.id = candidate.id
+RETURNING oe.id
+            "#,
+        )
+        .bind::<diesel::sql_types::BigInt, _>(limit.max(1))
+        .bind::<SqlUuid, _>(worker_id)
+        .bind::<diesel::sql_types::BigInt, _>(EMAIL_RUN_LOCK_TTL_SECONDS)
+        .get_results::<IdRow>(&mut conn)?;
+
+        claimed_ids
+            .into_iter()
+            .map(|row| OutboundEmail::find(row.id, pool))
+            .collect()
+    }
+
+    pub fn claim_if_due(id: Uuid, worker_id: Uuid, pool: &DbPool) -> Result<Option<Self>, PpdcError> {
+        let mut conn = pool
+            .get()?;
+
+        #[derive(diesel::QueryableByName)]
+        struct IdRow {
+            #[diesel(sql_type = SqlUuid)]
+            id: Uuid,
+        }
+
+        let claimed = sql_query(
+            r#"
+WITH candidate AS (
+    SELECT oe.id
+    FROM outbound_emails oe
+    WHERE oe.id = $1
+      AND (
+        (oe.status = 'PENDING' AND (oe.scheduled_at IS NULL OR oe.scheduled_at <= NOW()))
+        OR (oe.status = 'RUNNING' AND oe.lock_until IS NOT NULL AND oe.lock_until <= NOW())
+      )
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE outbound_emails oe
+SET status = 'RUNNING',
+    lock_owner = $2,
+    lock_until = NOW() + ($3 * INTERVAL '1 second'),
+    updated_at = NOW()
+FROM candidate
+WHERE oe.id = candidate.id
+RETURNING oe.id
+            "#,
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(worker_id)
+        .bind::<diesel::sql_types::BigInt, _>(EMAIL_RUN_LOCK_TTL_SECONDS)
+        .get_result::<IdRow>(&mut conn)
+        .optional()?;
+
+        claimed
+            .map(|row| OutboundEmail::find(row.id, pool))
+            .transpose()
+    }
+
     pub fn mark_sent(
         id: Uuid,
         provider_message_id: Option<String>,
@@ -136,6 +236,8 @@ impl OutboundEmail {
                 outbound_emails::attempt_count.eq(outbound_emails::attempt_count + 1),
                 outbound_emails::sent_at.eq(diesel::dsl::now),
                 outbound_emails::last_error.eq::<Option<String>>(None),
+                outbound_emails::lock_owner.eq::<Option<Uuid>>(None),
+                outbound_emails::lock_until.eq::<Option<NaiveDateTime>>(None),
                 outbound_emails::updated_at.eq(diesel::dsl::now),
             ))
             .execute(&mut conn)?;
@@ -150,6 +252,8 @@ impl OutboundEmail {
                 outbound_emails::status.eq(OutboundEmailStatus::Failed.to_db()),
                 outbound_emails::attempt_count.eq(outbound_emails::attempt_count + 1),
                 outbound_emails::last_error.eq(Some(error)),
+                outbound_emails::lock_owner.eq::<Option<Uuid>>(None),
+                outbound_emails::lock_until.eq::<Option<NaiveDateTime>>(None),
                 outbound_emails::updated_at.eq(diesel::dsl::now),
             ))
             .execute(&mut conn)?;
@@ -174,6 +278,8 @@ pub struct NewOutboundEmail {
     pub provider_message_id: Option<String>,
     pub attempt_count: i32,
     pub last_error: Option<String>,
+    pub lock_owner: Option<Uuid>,
+    pub lock_until: Option<NaiveDateTime>,
     pub scheduled_at: Option<NaiveDateTime>,
     pub sent_at: Option<NaiveDateTime>,
 }
@@ -207,6 +313,8 @@ impl NewOutboundEmail {
             provider_message_id: None,
             attempt_count: 0,
             last_error: None,
+            lock_owner: None,
+            lock_until: None,
             scheduled_at,
             sent_at: None,
         }
@@ -223,11 +331,11 @@ impl NewOutboundEmail {
     }
 }
 
-pub async fn process_pending_email(id: Uuid, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
-    let email = OutboundEmail::find(id, pool)?;
-    if email.status_enum() != OutboundEmailStatus::Pending {
+async fn process_claimed_email(email: OutboundEmail, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
+    if email.status_enum() != OutboundEmailStatus::Running {
         return Ok(email);
     }
+    let id = email.id;
 
     let result = match email.provider_enum() {
         OutboundEmailProvider::Resend => send_email(SendEmailRequest {
@@ -245,6 +353,19 @@ pub async fn process_pending_email(id: Uuid, pool: &DbPool) -> Result<OutboundEm
         Ok(provider_message_id) => OutboundEmail::mark_sent(id, Some(provider_message_id), pool),
         Err(err) => OutboundEmail::mark_failed(id, err.message, pool),
     }
+}
+
+pub async fn process_pending_email(id: Uuid, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
+    let worker_id = Uuid::new_v4();
+    if let Some(email) = OutboundEmail::claim_if_due(id, worker_id, pool)? {
+        return process_claimed_email(email, pool).await;
+    }
+
+    let email = OutboundEmail::find(id, pool)?;
+    if email.status_enum() == OutboundEmailStatus::Running {
+        return process_claimed_email(email, pool).await;
+    }
+    Ok(email)
 }
 
 pub async fn process_pending_emails(ids: Vec<Uuid>, pool: &DbPool) -> Result<(), PpdcError> {
