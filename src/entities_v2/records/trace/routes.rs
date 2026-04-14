@@ -106,7 +106,9 @@ fn spawn_autoplay_lens_runs_for_trace(
     let user_lenses = Lens::get_user_lenses(user_id, pool)?;
     for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
         let lens = if lens.target_trace_id != Some(trace_id) {
-            lens.update_target_trace(Some(trace_id), pool)?
+            let lens = lens.set_target_trace(Some(trace_id), pool)?;
+            let _ = lens.clone().plan_pending_analyses_for_target(pool)?;
+            Lens::find_full_lens(lens.id, pool)?
         } else {
             lens
         };

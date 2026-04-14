@@ -42,7 +42,9 @@ pub async fn post_lens_route(
 
     if lens.target_trace_id.is_none() {
         if let Some(most_recent_trace) = Trace::get_most_recent_for_user(user_id, &pool)? {
-            lens = lens.update_target_trace(Some(most_recent_trace.id), &pool)?;
+            lens = lens.set_target_trace(Some(most_recent_trace.id), &pool)?;
+            let _ = lens.clone().plan_pending_analyses_for_target(&pool)?;
+            lens = Lens::find_full_lens(lens.id, &pool)?;
         }
     }
 
@@ -70,16 +72,20 @@ pub async fn put_lens_route(
                 let payload_trace = Trace::find_full_trace(new_target_trace_id, &pool)?;
                 let current_trace = Trace::find_full_trace(current_target_trace_id, &pool)?;
                 if payload_trace.interaction_date > current_trace.interaction_date {
-                    lens = lens.update_target_trace(Some(new_target_trace_id), &pool)?;
+                    lens = lens.set_target_trace(Some(new_target_trace_id), &pool)?;
+                    let _ = lens.clone().plan_pending_analyses_for_target(&pool)?;
+                    lens = Lens::find_full_lens(lens.id, &pool)?;
                     tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
                 }
             }
             (Some(new_target_trace_id), None) => {
-                lens = lens.update_target_trace(Some(new_target_trace_id), &pool)?;
+                lens = lens.set_target_trace(Some(new_target_trace_id), &pool)?;
+                let _ = lens.clone().plan_pending_analyses_for_target(&pool)?;
+                lens = Lens::find_full_lens(lens.id, &pool)?;
                 tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
             }
             (None, Some(_)) => {
-                lens = lens.update_target_trace(None, &pool)?;
+                lens = lens.set_target_trace(None, &pool)?;
             }
             (None, None) => {}
         }

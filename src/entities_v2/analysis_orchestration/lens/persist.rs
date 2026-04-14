@@ -251,18 +251,11 @@ impl Lens {
         Lens::find_full_lens(self.id, pool)
     }
 
-    pub fn update_target_trace(
+    pub fn set_target_trace(
         self,
         new_target_trace_id: Option<Uuid>,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
-        let user_id = self.user_id.ok_or_else(|| {
-            PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Lens user_id is missing".to_string(),
-            )
-        })?;
         let target_changed = self.target_trace_id != new_target_trace_id;
 
         let mut conn = pool
@@ -292,42 +285,67 @@ impl Lens {
             diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
                 .set(lenses::processing_state.eq(LensProcessingState::OutOfSync.to_db()))
                 .execute(&mut conn)?;
-            if let Some(next_target_trace_id) = new_target_trace_id {
-                match enqueue_pending_analyses_for_lens_target(
-                    self.id,
-                    user_id,
-                    next_target_trace_id,
-                    pool,
-                ) {
-                    Ok(summary) => {
-                        tracing::info!(
-                            target: "analysis",
-                            "lens_pending_analysis_planning_succeeded lens_id={} user_id={} target_trace_id={} planned_trace_count={} created_analysis_count={}",
-                            self.id,
-                            user_id,
-                            next_target_trace_id,
-                            summary.planned_trace_count,
-                            summary.created_analysis_count
-                        );
-                    }
-                    Err(err) => {
-                        diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
-                            .set(lenses::processing_state.eq(LensProcessingState::Failed.to_db()))
-                            .execute(&mut conn)?;
-                        tracing::error!(
-                            target: "analysis",
-                            "lens_pending_analysis_planning_failed lens_id={} user_id={} target_trace_id={} message={}",
-                            self.id,
-                            user_id,
-                            next_target_trace_id,
-                            err.message
-                        );
-                        return Err(err);
-                    }
-                }
-            }
         }
         Lens::find_full_lens(self.id, pool)
+    }
+
+    pub fn plan_pending_analyses_for_target(self, pool: &DbPool) -> Result<(), PpdcError> {
+        let user_id = self.user_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Lens user_id is missing".to_string(),
+            )
+        })?;
+        let Some(target_trace_id) = self.target_trace_id else {
+            tracing::info!(
+                target: "analysis",
+                "lens_pending_analysis_planning_skipped lens_id={} user_id={} reason=no_target_trace",
+                self.id,
+                user_id
+            );
+            return Ok(());
+        };
+
+        match enqueue_pending_analyses_for_lens_target(self.id, user_id, target_trace_id, pool) {
+            Ok(summary) => {
+                tracing::info!(
+                    target: "analysis",
+                    "lens_pending_analysis_planning_succeeded lens_id={} user_id={} target_trace_id={} planned_trace_count={} created_analysis_count={}",
+                    self.id,
+                    user_id,
+                    target_trace_id,
+                    summary.planned_trace_count,
+                    summary.created_analysis_count
+                );
+                Ok(())
+            }
+            Err(err) => {
+                if let Err(state_err) = self
+                    .clone()
+                    .set_processing_state(LensProcessingState::Failed, pool)
+                {
+                    tracing::error!(
+                        target: "analysis",
+                        "lens_pending_analysis_planning_failed_state_update_failed lens_id={} user_id={} target_trace_id={} original_error={} state_error={}",
+                        self.id,
+                        user_id,
+                        target_trace_id,
+                        err.message,
+                        state_err.message
+                    );
+                }
+                tracing::error!(
+                    target: "analysis",
+                    "lens_pending_analysis_planning_failed lens_id={} user_id={} target_trace_id={} message={}",
+                    self.id,
+                    user_id,
+                    target_trace_id,
+                    err.message
+                );
+                Err(err)
+            }
+        }
     }
 
     pub fn set_processing_state(
@@ -395,9 +413,13 @@ impl NewLens {
                 .do_update()
                 .set(lens_targets::trace_id.eq(target_trace_id))
                 .execute(&mut conn)?;
-            enqueue_pending_analyses_for_lens_target(id, self.user_id, target_trace_id, pool)?;
         }
-        Lens::find_full_lens(id, pool)
+        let mut lens = Lens::find_full_lens(id, pool)?;
+        if lens.target_trace_id.is_some() {
+            lens = lens.set_processing_state(LensProcessingState::OutOfSync, pool)?;
+            let _ = lens.clone().plan_pending_analyses_for_target(pool)?;
+        }
+        Ok(lens)
     }
 }
 
