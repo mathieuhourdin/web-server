@@ -19,6 +19,8 @@ const NEW_USER_SIGNUP_TEXT: &str = include_str!("templates/new_user_signup.txt")
 const NEW_USER_SIGNUP_HTML: &str = include_str!("templates/new_user_signup.html");
 const JOURNAL_ACCESS_GRANTED_TEXT: &str = include_str!("templates/journal_access_granted.txt");
 const JOURNAL_ACCESS_GRANTED_HTML: &str = include_str!("templates/journal_access_granted.html");
+const DAILY_RECAP_FEEDBACK_TEXT: &str = include_str!("templates/daily_recap_feedback.txt");
+const DAILY_RECAP_FEEDBACK_HTML: &str = include_str!("templates/daily_recap_feedback.html");
 
 fn build_trace_excerpt(content: &str, max_chars: usize) -> String {
     let excerpt = content.trim().chars().take(max_chars).collect::<String>();
@@ -280,22 +282,31 @@ pub fn daily_recap_email(
     recap_url: &str,
 ) -> EmailTemplate {
     let subject = if feedback_title.trim().is_empty() {
-        format!("Votre retour du jour de {}", mentor_display_name)
+        format!("🫀 Votre retour du jour de {}", mentor_display_name)
     } else {
-        format!("{} vous a laisse un retour: {}", mentor_display_name, feedback_title)
+        format!("🫀 {} vous a laissé un retour : {}", mentor_display_name, feedback_title)
     };
-    let text_body = format!(
-        "Bonjour {},\n\n{} vous a laisse un retour sur votre journee :\n\n{}\n\nApercu du recap du jour :\n{}\n\nOuvrir le feedback dans Matiere Grise : {}\n",
-        recipient_display_name, mentor_display_name, feedback_preview, recap_preview, recap_url
+    let text_body = render_template(
+        DAILY_RECAP_FEEDBACK_TEXT,
+        &[
+            ("recipient_display_name", recipient_display_name.to_string()),
+            ("mentor_display_name", mentor_display_name.to_string()),
+            ("feedback_preview", feedback_preview.to_string()),
+            ("recap_title", recap_title.to_string()),
+            ("recap_preview", recap_preview.to_string()),
+            ("recap_url", recap_url.to_string()),
+        ],
     );
-    let html_body = format!(
-        "<p>Bonjour {},</p><p><strong>{}</strong> vous a laisse un retour sur votre journee :</p><p>{}</p><p><strong>Apercu du recap du jour :</strong></p><p><strong>{}</strong><br>{}</p><p><a href=\"{}\">Ouvrir le feedback dans Matiere Grise</a></p>",
-        escape_html(recipient_display_name),
-        escape_html(mentor_display_name),
-        escape_html(feedback_preview),
-        escape_html(recap_title),
-        escape_html(recap_preview),
-        escape_html(recap_url),
+    let html_body = render_template(
+        DAILY_RECAP_FEEDBACK_HTML,
+        &[
+            ("recipient_display_name", escape_html(recipient_display_name)),
+            ("mentor_display_name", escape_html(mentor_display_name)),
+            ("feedback_preview_html", escape_html(feedback_preview)),
+            ("recap_title", escape_html(recap_title)),
+            ("recap_preview_html", escape_html(recap_preview)),
+            ("recap_url", escape_html(recap_url)),
+        ],
     );
 
     EmailTemplate {

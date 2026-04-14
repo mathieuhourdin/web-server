@@ -282,6 +282,7 @@ diesel::table! {
         processing_state -> Text,
         attachment_type -> Nullable<Text>,
         attachment -> Nullable<Jsonb>,
+        metadata -> Nullable<Jsonb>,
         seen_at -> Nullable<Timestamp>,
         post_id -> Nullable<Uuid>,
     }

@@ -7,7 +7,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 
 use super::attachment::MessageAttachment;
-use super::model::{Message, NewMessage};
+use super::model::{Message, MessageMetadata, NewMessage};
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -46,12 +46,27 @@ fn serialize_attachment(
     }
 }
 
+fn serialize_metadata(metadata: Option<&MessageMetadata>) -> Result<Option<String>, PpdcError> {
+    metadata
+        .map(|value| {
+            serde_json::to_string(value).map_err(|err| {
+                PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Failed to serialize message metadata: {}", err),
+                )
+            })
+        })
+        .transpose()
+}
+
 impl Message {
     pub fn update(self, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool
             .get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
+        let metadata_json = serialize_metadata(self.metadata.as_ref())?;
 
         sql_query(
             r#"
@@ -67,9 +82,10 @@ impl Message {
                 content = $9,
                 attachment_type = $10,
                 attachment = CAST($11 AS jsonb),
-                seen_at = $12,
+                metadata = CAST($12 AS jsonb),
+                seen_at = $13,
                 updated_at = NOW()
-            WHERE id = $13
+            WHERE id = $14
             "#,
         )
         .bind::<SqlUuid, _>(self.recipient_user_id)
@@ -83,6 +99,7 @@ impl Message {
         .bind::<Text, _>(self.content)
         .bind::<Nullable<Text>, _>(attachment_type_db)
         .bind::<Nullable<Text>, _>(attachment_json)
+        .bind::<Nullable<Text>, _>(metadata_json)
         .bind::<Nullable<Timestamp>, _>(self.seen_at)
         .bind::<SqlUuid, _>(self.id)
         .execute(&mut conn)?;
@@ -119,6 +136,7 @@ impl NewMessage {
             .get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
+        let metadata_json = serialize_metadata(self.metadata.as_ref())?;
 
         let id = sql_query(
             r#"
@@ -135,10 +153,11 @@ impl NewMessage {
                 content,
                 attachment_type,
                 attachment,
+                metadata,
                 seen_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CAST($12 AS jsonb), NULL
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CAST($12 AS jsonb), CAST($13 AS jsonb), NULL
             )
             RETURNING id
             "#,
@@ -155,6 +174,7 @@ impl NewMessage {
         .bind::<Text, _>(self.content)
         .bind::<Nullable<Text>, _>(attachment_type_db)
         .bind::<Nullable<Text>, _>(attachment_json)
+        .bind::<Nullable<Text>, _>(metadata_json)
         .get_result::<IdRow>(&mut conn)?
         .id;
         Message::find(id, pool)

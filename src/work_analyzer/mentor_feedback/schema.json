@@ -7,7 +7,37 @@
     },
     "content": {
       "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": ["user", "hlp", "trace", "landmark"]
+        },
+        "feedback_mode": {
+          "type": "string",
+          "enum": [
+            "reflection",
+            "guidance",
+            "playful",
+            "resource",
+            "technical",
+            "recognition",
+            "support"
+          ]
+        },
+        "tone": {
+          "type": "string",
+          "enum": ["warm", "light", "serious", "playful", "direct"]
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": ["scope", "feedback_mode", "tone", "subject"]
     }
   },
-  "required": ["title", "content"]
+  "required": ["title", "content", "metadata"]
 }

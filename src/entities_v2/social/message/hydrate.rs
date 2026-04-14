@@ -9,7 +9,7 @@ use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::messages;
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
-use super::model::{Message, MessageProcessingState, MessageType};
+use super::model::{Message, MessageMetadata, MessageProcessingState, MessageType};
 
 type MessageTuple = (
     Uuid,
@@ -23,6 +23,7 @@ type MessageTuple = (
     String,
     String,
     String,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<NaiveDateTime>,
@@ -45,6 +46,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         content,
         attachment_type_raw,
         attachment_json,
+        metadata_json,
         seen_at,
         created_at,
         updated_at,
@@ -57,6 +59,9 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         (Some(kind), Some(json)) => MessageAttachment::from_json_string(kind, &json),
         _ => None,
     };
+    let metadata = metadata_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str::<MessageMetadata>(json).ok());
 
     Message {
         id,
@@ -72,6 +77,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         content,
         attachment_type,
         attachment,
+        metadata,
         seen_at,
         created_at,
         updated_at,
@@ -98,6 +104,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -207,6 +214,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -269,6 +277,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -320,6 +329,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -358,6 +368,7 @@ impl Message {
                 messages::content,
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -366,5 +377,42 @@ impl Message {
             .first::<MessageTuple>(&mut conn)
             .optional()?;
         Ok(row.map(tuple_to_message))
+    }
+
+    pub fn find_recent_mentor_feedbacks_for_user(
+        user_id: Uuid,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<Vec<Message>, PpdcError> {
+        let mut conn = pool
+            .get()?;
+        let rows = messages::table
+            .filter(messages::recipient_user_id.eq(user_id))
+            .filter(messages::sender_user_id.ne(user_id))
+            .filter(messages::message_type.eq(MessageType::MentorFeedback.to_db()))
+            .filter(messages::content.ne(""))
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::post_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .order(messages::created_at.desc())
+            .limit(limit.max(1))
+            .load::<MessageTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_message).collect())
     }
 }

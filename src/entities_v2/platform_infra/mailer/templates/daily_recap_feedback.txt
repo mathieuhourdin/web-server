@@ -1,0 +1,13 @@
+Bonjour {{recipient_display_name}},
+
+{{mentor_display_name}} vous a laissé un retour sur votre journée.
+
+Retour :
+{{feedback_preview}}
+
+Aperçu du récap du jour :
+{{recap_title}}
+{{recap_preview}}
+
+Ouvrir le feedback dans Matière Grise :
+{{recap_url}}

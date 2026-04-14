@@ -1,6 +1,6 @@
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
-use crate::entities_v2::message::Message;
+use crate::entities_v2::message::{Message, MentorFeedbackMetadata};
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::analysis_context::AnalysisContext;
@@ -13,6 +13,7 @@ use super::persistence::create_mentor_feedback;
 struct MentorFeedbackDraft {
     title: String,
     content: String,
+    metadata: MentorFeedbackMetadata,
 }
 
 #[derive(Debug, Serialize)]
@@ -63,6 +64,7 @@ pub async fn send(
         mentor_id,
         feedback.title,
         feedback.content,
+        feedback.metadata,
         &context.pool,
     )?))
 }

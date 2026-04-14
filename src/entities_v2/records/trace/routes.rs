@@ -1174,6 +1174,7 @@ pub async fn post_trace_message_route(
             content: payload.content,
             attachment_type: payload.attachment_type,
             attachment: payload.attachment,
+            metadata: None,
         }
         .create(&pool)?;
 
@@ -1190,6 +1191,7 @@ pub async fn post_trace_message_route(
             content: String::new(),
             attachment_type: None,
             attachment: None,
+            metadata: None,
         }
         .create(&pool)?;
 
@@ -1252,6 +1254,7 @@ pub async fn post_trace_message_route(
         content: payload.content,
         attachment_type: payload.attachment_type,
         attachment: payload.attachment,
+        metadata: None,
     }
     .create(&pool)?;
     if let Some(email_id) = enqueue_received_message_notification_email(&message, &pool)? {
