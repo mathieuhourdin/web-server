@@ -32,7 +32,7 @@ pub async fn run(
         "gpt-4.1-mini".to_string(),
         system_prompt,
         &serde_json::to_string(&element)?,
-        Some(serde_json::from_str(&schema).unwrap()),
+        Some(serde_json::from_str(&schema)?),
         Some(context.analysis_id),
     )
     .with_display_name("Mirror / Primary Resource Creation");

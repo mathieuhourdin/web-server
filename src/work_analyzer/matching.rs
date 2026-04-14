@@ -120,7 +120,7 @@ where
         "gpt-4.1-mini".to_string(),
         system_prompt.to_string(),
         &user_prompt,
-        Some(serde_json::from_str(&schema).unwrap()),
+        Some(serde_json::from_str(&schema)?),
         Some(analysis_id),
     )
     .with_display_name(display_name);
