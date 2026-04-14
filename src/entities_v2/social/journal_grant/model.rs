@@ -96,8 +96,7 @@ fn select_journal_grant_columns() -> (
 impl JournalGrant {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<JournalGrant, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = journal_grants::table
             .filter(journal_grants::id.eq(id))
             .select(select_journal_grant_columns())
@@ -127,8 +126,7 @@ impl JournalGrant {
         pool: &DbPool,
     ) -> Result<(Vec<JournalGrant>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .count()

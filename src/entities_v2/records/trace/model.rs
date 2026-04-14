@@ -144,8 +144,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let row = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -168,8 +167,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let row = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -191,8 +189,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let row = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -221,8 +218,7 @@ impl Trace {
         let to = end_trace.interaction_date;
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -248,8 +244,7 @@ impl Trace {
         let until = trace.interaction_date;
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -267,8 +262,7 @@ impl Trace {
 
     pub fn get_first(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let latest_hlp = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -314,8 +308,7 @@ impl Trace {
 
         if trace.trace_type == TraceType::HighLevelProjectsDefinition {
             let mut conn = pool
-                .get()
-                .expect("Failed to get a connection from the pool");
+                .get()?;
 
             let latest_bio = diesel::sql_query(
                 "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -342,8 +335,7 @@ impl Trace {
 
         let reference_ts = trace.interaction_date;
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let next = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -374,8 +366,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
@@ -414,8 +405,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
@@ -451,8 +441,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
@@ -487,8 +476,7 @@ impl Trace {
 
     pub fn get_expired_drafts_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at

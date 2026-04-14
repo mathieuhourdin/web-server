@@ -393,8 +393,7 @@ fn persist_claim_relations(
                 };
                 let mut conn = context
                     .pool
-                    .get()
-                    .expect("Failed to get a connection from the pool");
+                    .get()?;
                 diesel::insert_into(element_relations::table)
                     .values((
                         element_relations::origin_element_id.eq(origin_resource_id),

@@ -10,8 +10,7 @@ use super::model::{NewPost, Post};
 impl Post {
     pub fn update(self, pool: &DbPool) -> Result<Post, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         diesel::update(posts::table.filter(posts::id.eq(self.id)))
             .set((
                 posts::source_trace_id.eq(self.source_trace_id),
@@ -37,8 +36,7 @@ impl Post {
 impl NewPost {
     pub fn create(self, pool: &DbPool) -> Result<Post, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let id: Uuid = diesel::insert_into(posts::table)
             .values((
                 posts::source_trace_id.eq(self.source_trace_id),

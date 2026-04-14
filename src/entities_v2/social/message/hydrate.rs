@@ -81,8 +81,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
 impl Message {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = messages::table
             .filter(messages::id.eq(id))
             .select((
@@ -149,8 +148,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let mut count_query = messages::table.into_boxed();
 
         if received_only || unread_only {
@@ -239,8 +237,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = messages::table
             .filter(messages::trace_id.eq(Some(trace_id)))
             .filter(
@@ -291,8 +288,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = messages::table
             .filter(messages::post_id.eq(Some(post_id)))
             .filter(
@@ -341,8 +337,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<Option<Message>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = messages::table
             .filter(messages::landscape_analysis_id.eq(Some(analysis_id)))
             .filter(messages::recipient_user_id.eq(user_id))

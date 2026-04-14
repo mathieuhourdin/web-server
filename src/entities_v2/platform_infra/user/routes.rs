@@ -55,8 +55,7 @@ pub async fn get_users(
     Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let mut query = crate::schema::users::table.into_boxed();
     if let Some(principal_type) = params.principal_type {
@@ -92,8 +91,7 @@ pub async fn get_user_search_route(
     let prefix_query = format!("{}%", query);
 
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let rows = sql_query(
         r#"
@@ -143,8 +141,7 @@ pub async fn get_mentors_route(
     Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let results: Vec<UserPseudonymizedResponse> = crate::schema::users::table
         .filter(crate::schema::users::principal_type.eq(UserPrincipalType::Service))

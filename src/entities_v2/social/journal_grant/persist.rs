@@ -109,8 +109,7 @@ impl JournalGrant {
 
     fn list_platform_human_user_ids(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let ids = users::table
             .filter(users::is_platform_user.eq(true))
@@ -446,8 +445,7 @@ impl JournalGrant {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let (grant_id, should_notify) =
             conn.transaction::<(Uuid, bool), PpdcError, _>(|conn| {
                 if let Some(existing) = Self::find_existing_with_conn(
@@ -540,8 +538,7 @@ impl JournalGrant {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         conn.transaction::<(), PpdcError, _>(|conn| {
             diesel::update(journal_grants::table.filter(journal_grants::id.eq(grant_id)))
                 .set((
@@ -617,8 +614,7 @@ impl JournalGrant {
 
         let mut ids = HashSet::new();
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let direct_ids = journal_grants::table
             .filter(journal_grants::grantee_user_id.eq(Some(user_id)))
             .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
@@ -694,8 +690,7 @@ impl JournalGrant {
         pool: &DbPool,
     ) -> Result<bool, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let count = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))

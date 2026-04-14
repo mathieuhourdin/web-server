@@ -34,7 +34,7 @@ impl PostGrant {
     }
 
     fn list_platform_human_user_ids(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
 
         let ids = users::table
             .filter(users::is_platform_user.eq(true))
@@ -72,7 +72,7 @@ impl PostGrant {
         grantee_scope: Option<PostGrantScope>,
         pool: &DbPool,
     ) -> Result<Option<PostGrant>, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
         let mut query = post_grants::table
             .filter(post_grants::post_id.eq(post_id))
             .into_boxed();
@@ -158,7 +158,7 @@ impl PostGrant {
 
         if let Some(existing) = Self::find_existing(post.id, grantee_user_id, grantee_scope, pool)?
         {
-            let mut conn = pool.get().expect("Failed to get a connection from the pool");
+            let mut conn = pool.get()?;
             diesel::update(post_grants::table.filter(post_grants::id.eq(existing.id)))
                 .set((
                     post_grants::access_level.eq(access_level.to_db()),
@@ -169,7 +169,7 @@ impl PostGrant {
             return PostGrant::find(existing.id, pool);
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
         let id = Uuid::new_v4();
         diesel::insert_into(post_grants::table)
             .values((
@@ -204,7 +204,7 @@ impl PostGrant {
             ));
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
         diesel::update(post_grants::table.filter(post_grants::id.eq(grant_id)))
             .set((
                 post_grants::status.eq(PostGrantStatus::Revoked.to_db()),
@@ -260,7 +260,7 @@ impl PostGrant {
             created_at: NaiveDateTime,
         }
 
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
         let direct_ids = post_grants::table
             .filter(post_grants::grantee_user_id.eq(Some(user_id)))
             .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))

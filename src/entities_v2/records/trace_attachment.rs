@@ -55,8 +55,7 @@ impl TraceAttachment {
 
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Self, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = trace_attachments::table
             .filter(trace_attachments::id.eq(id))
             .select((
@@ -80,8 +79,7 @@ impl TraceAttachment {
 
     pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<Self>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = trace_attachments::table
             .filter(trace_attachments::trace_id.eq(trace_id))
             .order((trace_attachments::created_at.asc(), trace_attachments::id.asc()))
@@ -138,8 +136,7 @@ impl TraceAttachment {
 
     pub fn delete(id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         diesel::delete(trace_attachments::table.filter(trace_attachments::id.eq(id)))
             .execute(&mut conn)?;
         Ok(())
@@ -149,8 +146,7 @@ impl TraceAttachment {
 impl NewTraceAttachment {
     pub fn create(self, pool: &DbPool) -> Result<TraceAttachment, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let id = diesel::sql_query(
             "INSERT INTO trace_attachments (
                 id,

@@ -175,8 +175,7 @@ impl UserSecureAction {
 
     fn create_password_reset(user_id: Uuid, pool: &DbPool) -> Result<String, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let now = Utc::now().naive_utc();
         let secret = Self::generate_secret();
         let secret_hash = Self::hash_secret(&secret)?;
@@ -231,8 +230,7 @@ impl UserSecureAction {
         })?;
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let action = user_secure_actions::table
             .filter(user_secure_actions::id.eq(action_id))
             .select(UserSecureAction::as_select())
@@ -304,8 +302,7 @@ fn find_password_reset_user_by_email(
     pool: &DbPool,
 ) -> Result<Option<User>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     users::table
         .filter(users::email.eq(email))
         .filter(users::principal_type.eq(UserPrincipalType::Human))

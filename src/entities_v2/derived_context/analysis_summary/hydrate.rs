@@ -99,8 +99,7 @@ fn select_analysis_summary_columns() -> (
 impl AnalysisSummary {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<AnalysisSummary, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = analysis_summaries::table
             .filter(analysis_summaries::id.eq(id))
             .select(select_analysis_summary_columns())
@@ -120,8 +119,7 @@ impl AnalysisSummary {
         pool: &DbPool,
     ) -> Result<Vec<AnalysisSummary>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = analysis_summaries::table
             .filter(analysis_summaries::landscape_analysis_id.eq(landscape_analysis_id))
             .select(select_analysis_summary_columns())

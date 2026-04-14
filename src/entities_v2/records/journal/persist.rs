@@ -15,8 +15,7 @@ struct IdRow {
 impl Journal {
     pub fn update(self, pool: &DbPool) -> Result<Journal, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let _ = diesel::sql_query(
             "UPDATE journals
@@ -47,8 +46,7 @@ impl Journal {
         pool: &DbPool,
     ) -> Result<Journal, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let journal_type = payload.journal_type.unwrap_or(JournalType::WorkLogJournal);
         let is_encrypted = payload.is_encrypted.unwrap_or(false);

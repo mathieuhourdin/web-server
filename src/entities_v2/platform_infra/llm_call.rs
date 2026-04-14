@@ -90,7 +90,7 @@ impl LlmCall {
         created_at_to: Option<NaiveDateTime>,
         db: &DbPool,
     ) -> Result<(Vec<Self>, i64), PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let mut count_query = llm_calls::table
             .inner_join(
                 landscape_analyses::table
@@ -128,7 +128,7 @@ impl LlmCall {
     }
 
     pub fn get_by_id_for_user(id: Uuid, user_id: Uuid, db: &DbPool) -> Result<Self, PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let llm_call = llm_calls::table
             .inner_join(
                 landscape_analyses::table
@@ -142,7 +142,7 @@ impl LlmCall {
     }
 
     pub fn get_paginated(offset: i64, limit: i64, db: &DbPool) -> Result<Vec<Self>, PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let llm_calls = llm_calls::table
             .select(LlmCall::as_select())
             .order(llm_calls::created_at.desc())
@@ -152,7 +152,7 @@ impl LlmCall {
         Ok(llm_calls)
     }
     pub fn get_by_id(id: Uuid, db: &DbPool) -> Result<Self, PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let llm_call = llm_calls::table
             .select(LlmCall::as_select())
             .filter(llm_calls::id.eq(id))
@@ -160,7 +160,7 @@ impl LlmCall {
         Ok(llm_call)
     }
     pub fn get_by_analysis_id(analysis_id: Uuid, db: &DbPool) -> Result<Vec<Self>, PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let llm_calls = llm_calls::table
             .select(LlmCall::as_select())
             .filter(llm_calls::analysis_id.eq(analysis_id))
@@ -194,7 +194,7 @@ impl LlmCall {
         created_at_to: Option<NaiveDateTime>,
         db: &DbPool,
     ) -> Result<(Vec<Self>, i64), PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let mut count_query = llm_calls::table
             .inner_join(
                 landscape_analyses::table
@@ -276,7 +276,7 @@ impl NewLlmCall {
     }
 
     pub fn create(self, db: &DbPool) -> Result<LlmCall, PpdcError> {
-        let mut conn = db.get().expect("Failed to get a connection from the pool");
+        let mut conn = db.get()?;
         let llm_call = diesel::insert_into(llm_calls::table)
             .values(&self)
             .returning(LlmCall::as_returning())

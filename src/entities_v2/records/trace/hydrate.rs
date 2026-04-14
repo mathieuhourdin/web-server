@@ -80,8 +80,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
 impl Trace {
     pub fn find_full_trace(id: Uuid, pool: &DbPool) -> Result<Trace, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let row = traces::table
             .filter(traces::id.eq(id))

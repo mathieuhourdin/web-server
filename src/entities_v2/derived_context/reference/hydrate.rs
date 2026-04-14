@@ -70,8 +70,7 @@ fn tuple_to_reference(row: ReferenceTuple) -> Reference {
 impl Reference {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Reference, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = references::table
             .filter(references::id.eq(id))
             .select((
@@ -102,8 +101,7 @@ impl Reference {
         pool: &DbPool,
     ) -> Result<Vec<Reference>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = references::table
             .filter(references::trace_mirror_id.eq(trace_mirror_id))
             .select((
@@ -132,8 +130,7 @@ impl Reference {
         pool: &DbPool,
     ) -> Result<Vec<Reference>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = references::table
             .filter(references::landmark_id.eq(landmark_id))
             .select((
@@ -162,8 +159,7 @@ impl Reference {
         pool: &DbPool,
     ) -> Result<Vec<Reference>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = references::table
             .filter(references::landscape_analysis_id.eq(landscape_analysis_id))
             .select((

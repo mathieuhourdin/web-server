@@ -10,8 +10,7 @@ use super::model::{AnalysisSummary, NewAnalysisSummary};
 impl AnalysisSummary {
     pub fn update(self, pool: &DbPool) -> Result<AnalysisSummary, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let meaningful_event_title = self
             .meaningful_event
             .as_ref()
@@ -42,8 +41,7 @@ impl AnalysisSummary {
 impl NewAnalysisSummary {
     pub fn create(self, pool: &DbPool) -> Result<AnalysisSummary, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let meaningful_event_title = self
             .meaningful_event
             .as_ref()

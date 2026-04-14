@@ -118,8 +118,7 @@ fn select_post_columns() -> (
 impl Post {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = posts::table
             .filter(posts::id.eq(id))
             .select(select_post_columns())
@@ -141,8 +140,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut count_query = posts::table
@@ -197,8 +195,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
@@ -222,8 +219,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let row = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
@@ -287,8 +283,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let visible_post_ids = if viewer_user_id == user_id {
             vec![]
         } else {
@@ -398,8 +393,7 @@ impl Post {
         });
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
         let seen_post_ids = if seen.is_some() {
             user_post_states::table
@@ -537,8 +531,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = posts::table
             .filter(posts::user_id.eq(user_id))

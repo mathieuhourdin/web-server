@@ -1,6 +1,7 @@
 use crate::work_analyzer::observability::format_text_log_field;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use diesel::r2d2::PoolError;
 use axum::Json;
 use diesel::result::Error as DieselError;
 use serde::{Deserialize, Serialize};
@@ -90,6 +91,17 @@ impl From<DieselError> for PpdcError {
         }
     }
 }
+
+impl From<PoolError> for PpdcError {
+    fn from(error: PoolError) -> PpdcError {
+        PpdcError::new(
+            500,
+            ErrorType::DatabaseError,
+            format!("Database pool error: {}", error),
+        )
+    }
+}
+
 impl From<SerdeError> for PpdcError {
     fn from(error: SerdeError) -> PpdcError {
         PpdcError::new(400, ErrorType::ApiError, format!("serde error : {}", error))

@@ -49,8 +49,7 @@ fn serialize_attachment(
 impl Message {
     pub fn update(self, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
 
@@ -99,8 +98,7 @@ impl Message {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         sql_query(
             r#"
             UPDATE messages
@@ -118,8 +116,7 @@ impl Message {
 impl NewMessage {
     pub fn create(self, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
 

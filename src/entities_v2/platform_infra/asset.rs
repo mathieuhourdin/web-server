@@ -164,8 +164,7 @@ fn select_asset_columns() -> (
 impl Asset {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Asset, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = assets::table
             .filter(assets::id.eq(id))
             .select(select_asset_columns())
@@ -183,8 +182,7 @@ impl Asset {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let profile_owner_ids = users::table
             .filter(users::profile_asset_id.eq(Some(asset_id)))
@@ -265,8 +263,7 @@ impl Asset {
 impl NewAsset {
     fn create(self, pool: &DbPool) -> Result<Asset, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let id = diesel::insert_into(assets::table)
             .values((
                 assets::id.eq(self.id),

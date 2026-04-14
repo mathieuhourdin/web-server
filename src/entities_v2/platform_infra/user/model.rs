@@ -418,8 +418,7 @@ impl NewServiceUserDto {
 impl NewUser {
     pub fn create(self, pool: &DbPool) -> Result<User, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let mut payload = self;
         if payload.principal_type.is_none() {
@@ -480,8 +479,7 @@ impl NewUser {
 
     pub fn update(self, id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let result = diesel::update(users::table)
             .filter(users::id.eq(id))
@@ -533,8 +531,7 @@ impl User {
 
     pub fn find(id: &Uuid, pool: &DbPool) -> Result<User, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let user = users::table
             .filter(users::id.eq(id))
@@ -545,8 +542,7 @@ impl User {
 
     pub fn find_by_username(email: &String, pool: &DbPool) -> Result<User, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let user = users::table
             .filter(users::email.eq(email))
             .select(User::as_select())
@@ -560,8 +556,7 @@ impl User {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let users = users::table
             .filter(users::id.eq_any(ids))
@@ -580,8 +575,7 @@ impl User {
 
     pub fn list_roles(&self, pool: &DbPool) -> Result<Vec<UserRole>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let role_values = user_roles::table
             .filter(user_roles::user_id.eq(self.id))
@@ -596,8 +590,7 @@ impl User {
 
     pub fn has_role(&self, role: UserRole, pool: &DbPool) -> Result<bool, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let has_role = diesel::select(diesel::dsl::exists(
             user_roles::table
@@ -610,8 +603,7 @@ impl User {
 
     pub fn add_role(&self, role: UserRole, pool: &DbPool) -> Result<(), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         diesel::insert_into(user_roles::table)
             .values((
@@ -627,8 +619,7 @@ impl User {
 
 pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let has_meta_journal = diesel::select(diesel::dsl::exists(
         journals::table
@@ -658,8 +649,7 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
 
 pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let has_autoplay_lens = diesel::select(diesel::dsl::exists(
         lenses::table
@@ -699,8 +689,7 @@ fn find_latest_meta_journal_id_for_user(
     pool: &DbPool,
 ) -> Result<Option<Uuid>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let journal_id = journals::table
         .filter(journals::user_id.eq(user_id))
@@ -715,8 +704,7 @@ fn find_latest_meta_journal_id_for_user(
 
 fn find_latest_lens_id_for_user(user_id: Uuid, pool: &DbPool) -> Result<Option<Uuid>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let lens_id = lenses::table
         .filter(lenses::user_id.eq(user_id))
@@ -739,8 +727,7 @@ fn ensure_user_has_current_lens(user_id: Uuid, pool: &DbPool) -> Result<(), Ppdc
     };
 
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     diesel::update(
         users::table
             .filter(users::id.eq(user_id))
@@ -832,8 +819,7 @@ pub fn find_similar_users(
     limit: i64,
 ) -> Result<Vec<UserMatch>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let query = format!(
         "

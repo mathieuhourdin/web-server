@@ -92,8 +92,7 @@ fn select_relationship_columns() -> (
 impl Relationship {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Relationship, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = relationships::table
             .filter(relationships::id.eq(id))
             .select(select_relationship_columns())
@@ -120,8 +119,7 @@ impl Relationship {
         pool: &DbPool,
     ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = relationships::table
             .filter(
                 relationships::requester_user_id
@@ -160,8 +158,7 @@ impl Relationship {
         pool: &DbPool,
     ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = relationships::table
             .filter(relationships::target_user_id.eq(user_id))
             .filter(relationships::status.eq(RelationshipStatus::Pending.to_db()))
@@ -194,8 +191,7 @@ impl Relationship {
         pool: &DbPool,
     ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = relationships::table
             .filter(relationships::requester_user_id.eq(user_id))
             .filter(relationships::status.eq(RelationshipStatus::Pending.to_db()))
@@ -227,8 +223,7 @@ impl Relationship {
         pool: &DbPool,
     ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = relationships::table
             .filter(relationships::target_user_id.eq(user_id))
             .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
@@ -265,8 +260,7 @@ impl Relationship {
         pool: &DbPool,
     ) -> Result<(Vec<Relationship>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let total = relationships::table
             .filter(relationships::requester_user_id.eq(user_id))
             .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
@@ -295,8 +289,7 @@ impl Relationship {
         pool: &DbPool,
     ) -> Result<Option<Relationship>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = relationships::table
             .filter(relationships::requester_user_id.eq(requester_user_id))
             .filter(relationships::target_user_id.eq(target_user_id))

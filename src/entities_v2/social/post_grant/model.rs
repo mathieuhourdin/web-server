@@ -93,7 +93,7 @@ fn select_post_grant_columns() -> (
 
 impl PostGrant {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<PostGrant, PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
         let row = post_grants::table
             .filter(post_grants::id.eq(id))
             .select(select_post_grant_columns())
@@ -110,7 +110,7 @@ impl PostGrant {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<PostGrant>, i64), PpdcError> {
-        let mut conn = pool.get().expect("Failed to get a connection from the pool");
+        let mut conn = pool.get()?;
         let total = post_grants::table
             .filter(post_grants::post_id.eq(post_id))
             .count()

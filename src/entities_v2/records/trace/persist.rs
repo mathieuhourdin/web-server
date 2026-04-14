@@ -62,8 +62,7 @@ impl Trace {
             self.timeout_start_at = Some(Utc::now());
         }
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         conn.transaction::<(), diesel::result::Error, _>(|conn| {
             diesel::sql_query(
@@ -147,8 +146,7 @@ impl NewTrace {
             self.timeout_start_at = Some(Utc::now());
         }
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
             let inserted = diesel::sql_query(

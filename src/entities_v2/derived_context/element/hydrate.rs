@@ -86,8 +86,7 @@ fn load_first_landmark_id_for_element(
     pool: &DbPool,
 ) -> Result<Option<Uuid>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     element_landmarks::table
         .filter(element_landmarks::element_id.eq(element_id))
         .order(element_landmarks::created_at.asc())
@@ -159,8 +158,7 @@ fn select_element_columns() -> (
 impl Element {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Element, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = elements::table
             .filter(elements::id.eq(id))
             .select(select_element_columns())
@@ -187,8 +185,7 @@ impl Element {
 
     pub fn find_landmarks(&self, pool: &DbPool) -> Result<Vec<Landmark>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let landmark_ids = element_landmarks::table
             .filter(element_landmarks::element_id.eq(self.id))
             .select(element_landmarks::landmark_id)
@@ -201,8 +198,7 @@ impl Element {
 
     pub fn find_for_landmark(landmark_id: Uuid, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = elements::table
             .inner_join(element_landmarks::table.on(element_landmarks::element_id.eq(elements::id)))
             .filter(element_landmarks::landmark_id.eq(landmark_id))
@@ -214,8 +210,7 @@ impl Element {
 
     pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let rows = elements::table
             .filter(elements::trace_id.eq(trace_id))
             .select(select_element_columns())
@@ -293,8 +288,7 @@ impl Element {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let mut count_query = elements::table
             .filter(elements::user_id.eq(user_id))
             .filter(elements::analysis_id.eq_any(&analysis_ids))
@@ -387,8 +381,7 @@ impl Element {
         pool: &DbPool,
     ) -> Result<Vec<ElementRelationWithRelatedElement>, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let mut relations = Vec::new();
         let mut seen = HashSet::<(Uuid, String)>::new();

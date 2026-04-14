@@ -165,8 +165,7 @@ impl NewUsageEvent {
 
     fn create(self, pool: &DbPool) -> Result<UsageEvent, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         sql_query(
             r#"
@@ -200,8 +199,7 @@ impl NewUsageEvent {
 impl UsageEvent {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<UsageEvent, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         let row = usage_events::table
             .filter(usage_events::id.eq(id))
             .select((

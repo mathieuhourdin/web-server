@@ -86,8 +86,7 @@ pub async fn get_user_heatmap_route(
         ));
     }
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     let rows = heatmap_sum_trace_content_len(&mut conn, from, to, user_id)?;
     Ok(Json(rows))
 }

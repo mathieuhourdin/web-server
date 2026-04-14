@@ -60,8 +60,7 @@ impl From<JournalTuple> for Journal {
 impl Journal {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let row = journals::table
             .filter(journals::id.eq(id))
@@ -94,8 +93,7 @@ impl Journal {
 
     pub fn count_for_user(user_id: Uuid, pool: &DbPool) -> Result<i64, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = journals::table
             .filter(journals::user_id.eq(user_id))
@@ -112,8 +110,7 @@ impl Journal {
         pool: &DbPool,
     ) -> Result<(Vec<Journal>, i64), PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = journals::table
             .filter(journals::user_id.eq(user_id))
@@ -163,8 +160,7 @@ impl Journal {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = {
             let mut count_query = journals::table
@@ -227,8 +223,7 @@ impl Journal {
         }
 
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let total = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))

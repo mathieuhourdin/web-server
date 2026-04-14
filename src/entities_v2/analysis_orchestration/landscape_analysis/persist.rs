@@ -33,8 +33,7 @@ impl LandscapeAnalysis {
     /// Persists all mutable fields of an analysis row after a worker or route has changed its state.
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         diesel::update(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
             .set((
                 landscape_analyses::title.eq(self.title),
@@ -68,8 +67,7 @@ impl LandscapeAnalysis {
     /// Deletes the analysis row itself after higher-level guards have confirmed the analysis can be removed.
     pub fn delete(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
         diesel::delete(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
             .execute(&mut conn)?;
         Ok(self)
@@ -80,8 +78,7 @@ impl NewLandscapeAnalysis {
     /// Inserts a standalone pending analysis without attaching it to a specific lens scope.
     pub fn create(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let id: Uuid = diesel::insert_into(landscape_analyses::table)
             .values((
@@ -113,8 +110,7 @@ impl NewLandscapeAnalysis {
         pool: &DbPool,
     ) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
-            .get()
-            .expect("Failed to get a connection from the pool");
+            .get()?;
 
         let analysis_id: Uuid = conn.transaction::<Uuid, diesel::result::Error, _>(|conn| {
             let id: Uuid = diesel::insert_into(landscape_analyses::table)
@@ -239,8 +235,7 @@ fn find_analysis_covering_moment_for_lens(
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let maybe_id = lens_analysis_scopes::table
         .inner_join(
@@ -269,8 +264,7 @@ fn has_trace_analysis_for_lens(
     pool: &DbPool,
 ) -> Result<bool, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let maybe_id = lens_analysis_scopes::table
         .inner_join(
@@ -487,8 +481,7 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
     pool: &DbPool,
 ) -> Result<(usize, usize, usize), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let pending_summary_rows = lens_analysis_scopes::table
         .inner_join(
@@ -543,8 +536,7 @@ pub fn claim_next_pending_for_lens(
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let claimed = sql_query(
         r#"
@@ -607,8 +599,7 @@ RETURNING la.id
 /// Lists the lens ids that still have pending analysis work, ordered so the oldest due work is handled first.
 pub fn find_lens_ids_with_pending_analyses(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let rows = sql_query(
         r#"
@@ -649,8 +640,7 @@ pub fn find_last_analysis_resource(
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     let maybe_id = landscape_analyses::table
         .filter(landscape_analyses::user_id.eq(user_id))
         .order(landscape_analyses::interaction_date.desc().nulls_last())
@@ -710,8 +700,7 @@ pub fn add_trace_input(
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     add_trace_input_with_conn(&mut conn, landscape_analysis_id, trace_id, input_type)?;
     Ok(())
 }
@@ -724,8 +713,7 @@ pub fn add_trace_mirror_input(
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     add_trace_mirror_input_with_conn(
         &mut conn,
         landscape_analysis_id,
@@ -745,8 +733,7 @@ pub fn replace_covered_inputs_for_period(
     pool: &DbPool,
 ) -> Result<(usize, usize), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let counts = conn.transaction::<(usize, usize), diesel::result::Error, _>(|conn| {
         diesel::delete(
@@ -831,8 +818,7 @@ pub fn add_landmark_ref(
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
     diesel::insert_into(landscape_landmarks::table)
         .values((
             landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id),
@@ -856,8 +842,7 @@ pub fn copy_landmark_links_from_analysis(
     pool: &DbPool,
 ) -> Result<usize, PpdcError> {
     let mut conn = pool
-        .get()
-        .expect("Failed to get a connection from the pool");
+        .get()?;
 
     let source_landmark_ids = landscape_landmarks::table
         .filter(landscape_landmarks::landscape_analysis_id.eq(source_landscape_analysis_id))

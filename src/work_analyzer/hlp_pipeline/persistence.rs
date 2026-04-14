@@ -151,8 +151,7 @@ pub fn persist_hlp_entities(
 
             let mut conn = context
                 .pool
-                .get()
-                .expect("Failed to get a connection from the pool");
+                .get()?;
             diesel::insert_into(landmark_relations::table)
                 .values((
                     landmark_relations::origin_landmark_id.eq(landmark.id),
