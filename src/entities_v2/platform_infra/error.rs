@@ -1,4 +1,3 @@
-use crate::work_analyzer::observability::format_text_log_field;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use diesel::r2d2::PoolError;
@@ -30,9 +29,9 @@ impl PpdcError {
     pub fn new(status_code: u32, error_type: ErrorType, message: String) -> PpdcError {
         tracing::error!(
             target: "api",
-            "ppdc_error_created status_code={} {}",
+            "ppdc_error_created status_code={} message={}",
             status_code,
-            format_text_log_field("message", &message)
+            message
         );
         PpdcError {
             status_code,
