@@ -67,9 +67,19 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
             Ok(lens)
         }
         (Err(err), Ok(_)) => {
-            let _ = lens
+            if let Err(state_err) = lens
                 .clone()
-                .set_processing_state(LensProcessingState::Failed, pool);
+                .set_processing_state(LensProcessingState::Failed, pool)
+            {
+                tracing::error!(
+                    target: "work_analyzer",
+                    "run_lens_failed_state_update_failed lens_id={} worker_id={} original_error={} state_error={}",
+                    lens.id,
+                    worker_id,
+                    err,
+                    state_err
+                );
+            }
             tracing::error!(
                 target: "work_analyzer",
                 "run_lens_failed lens_id={} worker_id={} error={}",
@@ -80,6 +90,19 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
             Err(err)
         }
         (Ok(()), Err(err)) => {
+            if let Err(state_err) = lens
+                .clone()
+                .set_processing_state(LensProcessingState::Failed, pool)
+            {
+                tracing::error!(
+                    target: "work_analyzer",
+                    "run_lens_lock_release_failed_state_update_failed lens_id={} worker_id={} original_error={} state_error={}",
+                    lens.id,
+                    worker_id,
+                    err,
+                    state_err
+                );
+            }
             tracing::error!(
                 target: "work_analyzer",
                 "run_lens_lock_release_failed lens_id={} worker_id={} error={}",
@@ -90,9 +113,19 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
             Err(err)
         }
         (Err(err), Err(_release_err)) => {
-            let _ = lens
+            if let Err(state_err) = lens
                 .clone()
-                .set_processing_state(LensProcessingState::Failed, pool);
+                .set_processing_state(LensProcessingState::Failed, pool)
+            {
+                tracing::error!(
+                    target: "work_analyzer",
+                    "run_lens_failed_and_lock_release_failed_state_update_failed lens_id={} worker_id={} original_error={} state_error={}",
+                    lens.id,
+                    worker_id,
+                    err,
+                    state_err
+                );
+            }
             Err(err)
         }
     }
@@ -181,8 +214,19 @@ async fn run_claim_loop(
                 claimed_analysis_type.to_db(),
                 err
             );
-            let _ = claimed_analysis_for_fail
-                .set_processing_state(LandscapeProcessingState::Failed, pool);
+            if let Err(state_err) = claimed_analysis_for_fail
+                .set_processing_state(LandscapeProcessingState::Failed, pool)
+            {
+                tracing::error!(
+                    target: "work_analyzer",
+                    "run_lens_analysis_failed_state_update_failed lens_id={} analysis_id={} analysis_type={} original_error={} state_error={}",
+                    lens.id,
+                    claimed_analysis_id,
+                    claimed_analysis_type.to_db(),
+                    err,
+                    state_err
+                );
+            }
             return Err(err);
         }
     }
