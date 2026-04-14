@@ -607,7 +607,10 @@ SELECT las.lens_id AS id
 FROM lens_analysis_scopes las
 INNER JOIN landscape_analyses la
     ON la.id = las.landscape_analysis_id
+INNER JOIN lenses l
+    ON l.id = las.lens_id
 WHERE la.processing_state = 'PENDING'
+  AND l.processing_state != 'FAILED'
 GROUP BY las.lens_id
 ORDER BY MIN(la.period_end) ASC, MIN(la.created_at) ASC
         "#,
