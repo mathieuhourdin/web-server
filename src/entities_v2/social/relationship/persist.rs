@@ -9,6 +9,99 @@ use super::enums::{RelationshipStatus, RelationshipType};
 use super::model::{NewRelationshipDto, Relationship};
 
 impl Relationship {
+    fn find_between_with_conn(
+        requester_user_id: Uuid,
+        target_user_id: Uuid,
+        relationship_type: RelationshipType,
+        conn: &mut diesel::PgConnection,
+    ) -> Result<Option<Relationship>, PpdcError> {
+        let row = relationships::table
+            .filter(relationships::requester_user_id.eq(requester_user_id))
+            .filter(relationships::target_user_id.eq(target_user_id))
+            .filter(relationships::relationship_type.eq(relationship_type.to_db()))
+            .select((
+                relationships::id,
+                relationships::requester_user_id,
+                relationships::target_user_id,
+                relationships::relationship_type,
+                relationships::status,
+                relationships::accepted_at,
+                relationships::created_at,
+                relationships::updated_at,
+            ))
+            .first::<(
+                Uuid,
+                Uuid,
+                Uuid,
+                String,
+                String,
+                Option<chrono::NaiveDateTime>,
+                chrono::NaiveDateTime,
+                chrono::NaiveDateTime,
+            )>(conn)
+            .optional()?;
+
+        Ok(row.map(|row| Relationship {
+            id: row.0,
+            requester_user_id: row.1,
+            target_user_id: row.2,
+            relationship_type: RelationshipType::from_db(&row.3),
+            status: RelationshipStatus::from_db(&row.4),
+            accepted_at: row.5,
+            created_at: row.6,
+            updated_at: row.7,
+        }))
+    }
+
+    fn ensure_auto_followback_with_conn(
+        accepter_user_id: Uuid,
+        requester_user_id: Uuid,
+        conn: &mut diesel::PgConnection,
+    ) -> Result<(), PpdcError> {
+        let reverse = Self::find_between_with_conn(
+            accepter_user_id,
+            requester_user_id,
+            RelationshipType::Follow,
+            conn,
+        )?;
+
+        match reverse {
+            Some(existing) => match existing.status {
+                RelationshipStatus::Accepted => Ok(()),
+                RelationshipStatus::Blocked => Ok(()),
+                RelationshipStatus::Pending | RelationshipStatus::Rejected => {
+                    diesel::update(relationships::table.filter(relationships::id.eq(existing.id)))
+                        .set((
+                            relationships::status.eq(RelationshipStatus::Accepted.to_db()),
+                            relationships::accepted_at.eq(diesel::dsl::sql::<
+                                diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                            >(
+                                "COALESCE(accepted_at, NOW())"
+                            )),
+                            relationships::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(conn)?;
+                    Ok(())
+                }
+            },
+            None => {
+                diesel::insert_into(relationships::table)
+                    .values((
+                        relationships::id.eq(Uuid::new_v4()),
+                        relationships::requester_user_id.eq(accepter_user_id),
+                        relationships::target_user_id.eq(requester_user_id),
+                        relationships::relationship_type.eq(RelationshipType::Follow.to_db()),
+                        relationships::status.eq(RelationshipStatus::Accepted.to_db()),
+                        relationships::accepted_at.eq(diesel::dsl::sql::<
+                            diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                        >("NOW()")),
+                    ))
+                    .execute(conn)?;
+                Ok(())
+            }
+        }
+    }
+
     pub fn create_request(
         requester_user_id: Uuid,
         payload: NewRelationshipDto,
@@ -100,26 +193,38 @@ impl Relationship {
         let mut conn = pool
             .get()
             .expect("Failed to get a connection from the pool");
-        if status == RelationshipStatus::Accepted {
-            diesel::update(relationships::table.filter(relationships::id.eq(id)))
-                .set((
-                    relationships::status.eq(status.to_db()),
-                    relationships::accepted_at.eq(diesel::dsl::sql::<
-                        diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
-                    >(
-                        "COALESCE(accepted_at, NOW())"
-                    )),
-                    relationships::updated_at.eq(diesel::dsl::now),
-                ))
-                .execute(&mut conn)?;
-        } else {
-            diesel::update(relationships::table.filter(relationships::id.eq(id)))
-                .set((
-                    relationships::status.eq(status.to_db()),
-                    relationships::updated_at.eq(diesel::dsl::now),
-                ))
-                .execute(&mut conn)?;
-        }
+        conn.transaction::<(), diesel::result::Error, _>(|conn| {
+            if status == RelationshipStatus::Accepted {
+                diesel::update(relationships::table.filter(relationships::id.eq(id)))
+                    .set((
+                        relationships::status.eq(status.to_db()),
+                        relationships::accepted_at.eq(diesel::dsl::sql::<
+                            diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                        >(
+                            "COALESCE(accepted_at, NOW())"
+                        )),
+                        relationships::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+
+                if relationship.relationship_type == RelationshipType::Follow {
+                    Self::ensure_auto_followback_with_conn(
+                        actor_user_id,
+                        relationship.requester_user_id,
+                        conn,
+                    )
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                }
+            } else {
+                diesel::update(relationships::table.filter(relationships::id.eq(id)))
+                    .set((
+                        relationships::status.eq(status.to_db()),
+                        relationships::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })?;
         Relationship::find(id, pool)
     }
 }

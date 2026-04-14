@@ -1,9 +1,10 @@
 use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query, RawQuery},
+    http::HeaderMap,
 };
 use chrono::{Duration, NaiveDate, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -19,16 +20,33 @@ use crate::entities_v2::{
     trace_mirror::TraceMirror,
     user::User,
 };
+use crate::environment;
+use crate::work_analyzer;
 
 use super::model::{
     LandscapeAnalysis, LandscapeAnalysisType, LandscapeProcessingState, NewLandscapeAnalysis,
 };
-use super::persist::{delete_leaf_and_cleanup, find_last_analysis_resource};
+use super::persist::{
+    delete_leaf_and_cleanup, find_last_analysis_resource, find_lens_ids_with_pending_analyses,
+};
 
 #[derive(Deserialize)]
 pub struct NewAnalysisDto {
     pub date: Option<NaiveDate>,
     pub user_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct PendingAnalysesRunError {
+    pub lens_id: Uuid,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct PendingAnalysesRunResponse {
+    pub candidate_lens_ids: Vec<Uuid>,
+    pub processed_lens_ids: Vec<Uuid>,
+    pub failed: Vec<PendingAnalysesRunError>,
 }
 
 #[derive(Deserialize)]
@@ -149,6 +167,41 @@ fn filtered_completed_analyses_for_lens(
     analyses
         .sort_by_key(|analysis| Reverse(analysis.interaction_date.unwrap_or(analysis.created_at)));
     Ok(analyses)
+}
+
+#[debug_handler]
+pub async fn post_run_pending_analyses_route(
+    Extension(pool): Extension<DbPool>,
+    headers: HeaderMap,
+) -> Result<Json<PendingAnalysesRunResponse>, PpdcError> {
+    let provided_token = headers
+        .get("x-internal-cron-token")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(PpdcError::unauthorized)?;
+
+    if provided_token != environment::get_internal_cron_token() {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let candidate_lens_ids = find_lens_ids_with_pending_analyses(&pool)?;
+    let mut processed_lens_ids = Vec::new();
+    let mut failed = Vec::new();
+
+    for lens_id in candidate_lens_ids.iter().copied() {
+        match work_analyzer::run_lens(lens_id).await {
+            Ok(_) => processed_lens_ids.push(lens_id),
+            Err(err) => failed.push(PendingAnalysesRunError {
+                lens_id,
+                message: err.message,
+            }),
+        }
+    }
+
+    Ok(Json(PendingAnalysesRunResponse {
+        candidate_lens_ids,
+        processed_lens_ids,
+        failed,
+    }))
 }
 
 #[debug_handler]

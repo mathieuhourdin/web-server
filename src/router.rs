@@ -220,6 +220,10 @@ pub fn create_router() -> Router {
             get(llm_call::get_llm_calls_by_analysis_id_route),
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let internal_router = Router::new().route(
+        "/run_pending_analyses",
+        post(landscape_analysis::post_run_pending_analyses_route),
+    );
     let analysis_summaries_router = Router::new()
         .route(
             "/:id",
@@ -317,6 +321,7 @@ pub fn create_router() -> Router {
         .nest("/user_post_states", user_post_states_router)
         .nest("/usage_events", usage_events_router)
         .nest("/analysis", analysis_router)
+        .nest("/internal", internal_router)
         .nest("/analysis_summaries", analysis_summaries_router)
         .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)

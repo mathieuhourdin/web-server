@@ -83,3 +83,8 @@ pub fn get_assets_signed_url_ttl_seconds() -> u64 {
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(3600)
 }
+
+pub fn get_internal_cron_token() -> String {
+    dotenv().ok();
+    std::env::var("INTERNAL_CRON_TOKEN").expect("INTERNAL_CRON_TOKEN should be provided")
+}

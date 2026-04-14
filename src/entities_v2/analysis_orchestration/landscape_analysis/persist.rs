@@ -587,6 +587,27 @@ RETURNING la.id
     }
 }
 
+pub fn find_lens_ids_with_pending_analyses(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
+    let mut conn = pool
+        .get()
+        .expect("Failed to get a connection from the pool");
+
+    let rows = sql_query(
+        r#"
+SELECT las.lens_id AS id
+FROM lens_analysis_scopes las
+INNER JOIN landscape_analyses la
+    ON la.id = las.landscape_analysis_id
+WHERE la.processing_state = 'PENDING'
+GROUP BY las.lens_id
+ORDER BY MIN(la.period_end) ASC, MIN(la.created_at) ASC
+        "#,
+    )
+    .get_results::<IdRow>(&mut conn)?;
+
+    Ok(rows.into_iter().map(|row| row.id).collect())
+}
+
 pub fn delete_leaf_and_cleanup(
     id: Uuid,
     pool: &DbPool,
