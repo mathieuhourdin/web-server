@@ -30,6 +30,7 @@ struct IdRow {
 }
 
 impl LandscapeAnalysis {
+    /// Persists all mutable fields of an analysis row after a worker or route has changed its state.
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
             .get()
@@ -54,6 +55,7 @@ impl LandscapeAnalysis {
         LandscapeAnalysis::find_full_analysis(self.id, pool)
     }
 
+    /// Convenience helper used by the analysis queue to move an analysis between pending, running, completed, and failed.
     pub fn set_processing_state(
         mut self,
         state: LandscapeProcessingState,
@@ -63,6 +65,7 @@ impl LandscapeAnalysis {
         self.update(pool)
     }
 
+    /// Deletes the analysis row itself after higher-level guards have confirmed the analysis can be removed.
     pub fn delete(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
             .get()
@@ -74,6 +77,7 @@ impl LandscapeAnalysis {
 }
 
 impl NewLandscapeAnalysis {
+    /// Inserts a standalone pending analysis without attaching it to a specific lens scope.
     pub fn create(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
             .get()
@@ -102,6 +106,7 @@ impl NewLandscapeAnalysis {
         LandscapeAnalysis::find_full_analysis(id, pool)
     }
 
+    /// Inserts a pending analysis and immediately scopes it to one lens so the queue can pick it up later.
     pub fn create_for_lens(
         self,
         lens_id: Uuid,
@@ -153,6 +158,7 @@ impl NewLandscapeAnalysis {
     }
 }
 
+/// Resolves local midnight for a user timezone while handling ambiguous or skipped civil times.
 fn local_midnight(tz: Tz, date: NaiveDate) -> Result<DateTime<Tz>, PpdcError> {
     let naive_midnight = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
         PpdcError::new(
@@ -175,14 +181,17 @@ fn local_midnight(tz: Tz, date: NaiveDate) -> Result<DateTime<Tz>, PpdcError> {
         })
 }
 
+/// Parses the user timezone used for daily and weekly recap boundaries, defaulting to UTC when unset or invalid.
 fn parse_user_timezone_or_utc(user: &User) -> Tz {
     user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
 }
 
+/// Chooses the trace timestamp that should anchor analysis scheduling, preferring interaction time over persistence time.
 fn trace_effective_datetime(trace: &Trace) -> NaiveDateTime {
     trace.interaction_date
 }
 
+/// Computes the inclusive day window used by daily recap analyses for one user-local day.
 fn day_period_for_datetime(
     datetime_utc: NaiveDateTime,
     tz: Tz,
@@ -198,6 +207,7 @@ fn day_period_for_datetime(
     ))
 }
 
+/// Computes the user-local week window used by weekly recap analyses based on the configured recap weekday.
 fn week_period_for_datetime(
     datetime_utc: NaiveDateTime,
     tz: Tz,
@@ -221,6 +231,7 @@ fn week_period_for_datetime(
     ))
 }
 
+/// Finds an existing recap analysis whose coverage period already contains the given moment for this lens.
 fn find_analysis_covering_moment_for_lens(
     lens_id: Uuid,
     analysis_type: LandscapeAnalysisType,
@@ -250,6 +261,7 @@ fn find_analysis_covering_moment_for_lens(
     }
 }
 
+/// Checks whether the lens already has the trace-scoped analysis job needed for this trace and type.
 fn has_trace_analysis_for_lens(
     lens_id: Uuid,
     analysis_type: LandscapeAnalysisType,
@@ -275,6 +287,7 @@ fn has_trace_analysis_for_lens(
     Ok(maybe_id.is_some())
 }
 
+/// Queues every analysis job implied by one trace for one lens using the default context rules.
 pub fn create_for_trace_and_lens(
     trace_id: Uuid,
     lens_id: Uuid,
@@ -283,6 +296,7 @@ pub fn create_for_trace_and_lens(
     create_for_trace_and_lens_with_options(trace_id, lens_id, false, pool)
 }
 
+/// Variant of trace-to-analysis planning that lets callers control special context anchoring behavior.
 pub fn create_for_trace_and_lens_with_options(
     trace_id: Uuid,
     lens_id: Uuid,
@@ -298,6 +312,7 @@ pub fn create_for_trace_and_lens_with_options(
     )
 }
 
+/// Plans all pending analyses implied by a trace inside a lens, including trace, daily, weekly, HLP, and bio cases.
 pub fn create_for_trace_and_lens_with_options_and_anchor(
     trace_id: Uuid,
     lens_id: Uuid,
@@ -464,6 +479,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
     Ok(created)
 }
 
+/// Rebuilds the covered inputs of pending daily and weekly recaps affected by one newly available trace.
 pub fn refresh_pending_summary_covered_inputs_for_trace(
     lens_id: Uuid,
     user_id: Uuid,
@@ -520,6 +536,7 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
     ))
 }
 
+/// Atomically claims the next runnable pending analysis for a lens so concurrent workers do not process the same job.
 pub fn claim_next_pending_for_lens(
     lens_id: Uuid,
     claim_cutoff_at: NaiveDateTime,
@@ -587,6 +604,7 @@ RETURNING la.id
     }
 }
 
+/// Lists the lens ids that still have pending analysis work, ordered so the oldest due work is handled first.
 pub fn find_lens_ids_with_pending_analyses(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
     let mut conn = pool
         .get()
@@ -608,6 +626,7 @@ ORDER BY MIN(la.period_end) ASC, MIN(la.created_at) ASC
     Ok(rows.into_iter().map(|row| row.id).collect())
 }
 
+/// Deletes an analysis only when it has no children and no lens still points to it as a head state.
 pub fn delete_leaf_and_cleanup(
     id: Uuid,
     pool: &DbPool,
@@ -624,6 +643,7 @@ pub fn delete_leaf_and_cleanup(
     Ok(Some(deleted))
 }
 
+/// Returns the latest analysis resource for a user, which is used by manual analysis creation and history views.
 pub fn find_last_analysis_resource(
     user_id: Uuid,
     pool: &DbPool,
@@ -644,6 +664,7 @@ pub fn find_last_analysis_resource(
     }
 }
 
+/// Inserts one trace input row inside an existing transaction so batch input refreshes stay atomic.
 fn add_trace_input_with_conn(
     conn: &mut diesel::PgConnection,
     landscape_analysis_id: Uuid,
@@ -662,6 +683,7 @@ fn add_trace_input_with_conn(
     Ok(())
 }
 
+/// Inserts one trace-mirror input row inside an existing transaction so replay context stays aligned with the lens.
 fn add_trace_mirror_input_with_conn(
     conn: &mut diesel::PgConnection,
     landscape_analysis_id: Uuid,
@@ -680,6 +702,7 @@ fn add_trace_mirror_input_with_conn(
     Ok(())
 }
 
+/// Public wrapper that records a trace as an explicit input to an analysis.
 pub fn add_trace_input(
     landscape_analysis_id: Uuid,
     trace_id: Uuid,
@@ -693,6 +716,7 @@ pub fn add_trace_input(
     Ok(())
 }
 
+/// Public wrapper that records a trace mirror as an explicit input to an analysis.
 pub fn add_trace_mirror_input(
     landscape_analysis_id: Uuid,
     trace_mirror_id: Uuid,
@@ -711,6 +735,7 @@ pub fn add_trace_mirror_input(
     Ok(())
 }
 
+/// Recomputes the traces and trace mirrors covered by a recap analysis for its period window.
 pub fn replace_covered_inputs_for_period(
     landscape_analysis_id: Uuid,
     lens_id: Uuid,
@@ -798,6 +823,7 @@ ORDER BY tm.id ASC
     Ok(counts)
 }
 
+/// Links a landmark as a referenced context item for an analysis without duplicating the landmark itself.
 pub fn add_landmark_ref(
     landscape_analysis_id: Uuid,
     landmark_id: Uuid,
@@ -823,6 +849,7 @@ pub fn add_landmark_ref(
     Ok(())
 }
 
+/// Copies referenced landmark links from one analysis to another when a rerun should inherit prior context.
 pub fn copy_landmark_links_from_analysis(
     source_landscape_analysis_id: Uuid,
     target_landscape_analysis_id: Uuid,

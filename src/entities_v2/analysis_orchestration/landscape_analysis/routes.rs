@@ -57,6 +57,7 @@ pub struct LandmarksQuery {
 }
 
 impl LandmarksQuery {
+    /// Translates the API filter into the underlying landmark relation role used in analysis retrieval.
     pub fn relation_type(&self) -> Result<Option<&'static str>, PpdcError> {
         match self.kind.as_deref() {
             None | Some("all") => Ok(None),
@@ -70,6 +71,7 @@ impl LandmarksQuery {
         }
     }
 
+    /// Validates the requested landmark ordering so the route can keep one stable sorting implementation.
     fn sort(&self) -> Result<(LandmarkOrderBy, SortOrder), PpdcError> {
         let order_by = match self.order_by.as_deref() {
             None | Some("related_elements_count") => LandmarkOrderBy::RelatedElementsCount,
@@ -113,6 +115,7 @@ enum SortOrder {
     Desc,
 }
 
+/// Applies the API ordering rules used when browsing landmarks inside one analysis.
 fn sort_landmarks(landmarks: &mut [Landmark], order_by: LandmarkOrderBy, order: SortOrder) {
     match (order_by, order) {
         (LandmarkOrderBy::RelatedElementsCount, SortOrder::Desc) => landmarks.sort_by(|a, b| {
@@ -144,6 +147,7 @@ fn sort_landmarks(landmarks: &mut [Landmark], order_by: LandmarkOrderBy, order: 
     }
 }
 
+/// Returns completed analyses visible from a lens, filtered by repeated query params and ordered by recency.
 fn filtered_completed_analyses_for_lens(
     lens: Lens,
     raw_query: Option<&str>,
@@ -169,6 +173,7 @@ fn filtered_completed_analyses_for_lens(
     Ok(analyses)
 }
 
+/// Internal cron-triggered route that runs pending analysis work for every lens with runnable backlog.
 #[debug_handler]
 pub async fn post_run_pending_analyses_route(
     Extension(pool): Extension<DbPool>,
@@ -204,6 +209,7 @@ pub async fn post_run_pending_analyses_route(
     }))
 }
 
+/// Creates a manual analysis anchored on a given day for the authenticated user.
 #[debug_handler]
 pub async fn post_analysis_route(
     Extension(pool): Extension<DbPool>,
@@ -262,6 +268,7 @@ pub async fn post_analysis_route(
     Ok(Json(analysis))
 }
 
+/// Returns the completed analyses currently visible from the user's default lens.
 #[debug_handler]
 pub async fn get_current_lens_analysis_route(
     Extension(pool): Extension<DbPool>,
@@ -286,6 +293,7 @@ pub async fn get_current_lens_analysis_route(
     Ok(Json(analyses))
 }
 
+/// Deletes an analysis only when it is a leaf in the analysis graph and no lens still heads on it.
 #[debug_handler]
 pub async fn delete_analysis_route(
     Extension(pool): Extension<DbPool>,
@@ -301,6 +309,7 @@ pub async fn delete_analysis_route(
     Ok(Json(analysis.expect("No analysis found")))
 }
 
+/// Returns the landmarks associated with one analysis, using the query filters expected by the UI.
 #[debug_handler]
 pub async fn get_landmarks_route(
     Extension(pool): Extension<DbPool>,
@@ -320,6 +329,7 @@ pub async fn get_landmarks_route(
     Ok(Json(landmarks))
 }
 
+/// Returns the analytic elements produced by one analysis run.
 #[debug_handler]
 pub async fn get_elements_route(
     Extension(pool): Extension<DbPool>,
@@ -335,6 +345,7 @@ pub async fn get_elements_route(
     Ok(Json(elements))
 }
 
+/// Resolves the source traces covered by an analysis, including traces reached through mirrored inputs.
 #[debug_handler]
 pub async fn get_analysis_traces_route(
     Extension(pool): Extension<DbPool>,
@@ -376,6 +387,7 @@ pub async fn get_analysis_traces_route(
     Ok(Json(traces))
 }
 
+/// Resolves the trace mirrors that were used as inputs or direct targets of an analysis.
 #[debug_handler]
 pub async fn get_analysis_trace_mirrors_route(
     Extension(pool): Extension<DbPool>,
@@ -409,6 +421,7 @@ pub async fn get_analysis_trace_mirrors_route(
     Ok(Json(trace_mirrors))
 }
 
+/// Returns the most recent analysis resource for the authenticated user.
 #[debug_handler]
 pub async fn get_last_analysis_route(
     Extension(pool): Extension<DbPool>,
@@ -423,6 +436,7 @@ pub async fn get_last_analysis_route(
     Ok(Json(last_analysis.expect("No last analysis found")))
 }
 
+/// Returns one analysis after enforcing that it belongs to the authenticated user.
 #[debug_handler]
 pub async fn get_analysis_route(
     Extension(pool): Extension<DbPool>,
@@ -437,6 +451,7 @@ pub async fn get_analysis_route(
     Ok(Json(landscape))
 }
 
+/// Returns the analyses that precede the current one from the point of view of the active or scoped lens.
 #[debug_handler]
 pub async fn get_analysis_parents_route(
     Extension(pool): Extension<DbPool>,

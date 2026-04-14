@@ -54,6 +54,7 @@ pub struct NewLandscapeAnalysis {
 }
 
 impl NewLandscapeAnalysis {
+    /// Builds the pending analysis job created for a single trace inside a lens timeline.
     pub fn new_trace_incremental(
         title: String,
         subtitle: String,
@@ -80,6 +81,7 @@ impl NewLandscapeAnalysis {
         }
     }
 
+    /// Builds the daily recap job that summarizes all covered work for one local user day.
     pub fn new_daily_recap(
         title: String,
         subtitle: String,
@@ -107,6 +109,7 @@ impl NewLandscapeAnalysis {
         }
     }
 
+    /// Builds the weekly recap job that summarizes the user's work week for a lens.
     pub fn new_weekly_recap(
         title: String,
         subtitle: String,
@@ -134,6 +137,7 @@ impl NewLandscapeAnalysis {
         }
     }
 
+    /// Builds the special high-level-project analysis that is treated as contextual input for a lens.
     pub fn new_hlp(
         title: String,
         subtitle: String,
@@ -160,6 +164,7 @@ impl NewLandscapeAnalysis {
         }
     }
 
+    /// Builds the special biography analysis that seeds long-term personal context for a lens.
     pub fn new_bio(
         title: String,
         subtitle: String,
@@ -186,7 +191,7 @@ impl NewLandscapeAnalysis {
         }
     }
 
-    /// Creates a new NewLandscapeAnalysis with all fields.
+    /// Preserves the historical default constructor by mapping generic creation to trace-incremental analysis.
     pub fn new(
         title: String,
         subtitle: String,
@@ -209,6 +214,7 @@ impl NewLandscapeAnalysis {
         )
     }
 
+    /// Creates the placeholder trace analysis used when a trace must be queued before its full pipeline runs.
     pub fn new_placeholder(
         user_id: Uuid,
         trace_id: Uuid,

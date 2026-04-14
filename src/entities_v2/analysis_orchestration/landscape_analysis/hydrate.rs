@@ -43,6 +43,7 @@ type LandscapeAnalysisInputTuple = (
     NaiveDateTime,
 );
 
+/// Maps a raw SQL row into the API/domain shape used for landscape analyses.
 fn tuple_to_analysis(row: LandscapeAnalysisTuple) -> LandscapeAnalysis {
     let (
         id,
@@ -83,6 +84,7 @@ fn tuple_to_analysis(row: LandscapeAnalysisTuple) -> LandscapeAnalysis {
     }
 }
 
+/// Maps a raw SQL row into the domain shape used for analysis inputs.
 fn tuple_to_analysis_input(row: LandscapeAnalysisInputTuple) -> LandscapeAnalysisInput {
     let (
         id,
@@ -105,6 +107,7 @@ fn tuple_to_analysis_input(row: LandscapeAnalysisInputTuple) -> LandscapeAnalysi
     }
 }
 
+/// Centralizes the analysis projection used by hydrate queries so tuple decoding stays consistent.
 fn select_analysis_columns() -> (
     landscape_analyses::id,
     landscape_analyses::title,
@@ -144,6 +147,7 @@ fn select_analysis_columns() -> (
 }
 
 impl LandscapeAnalysis {
+    /// Resolves the direct parent analysis, which represents the previous state in the lens timeline.
     pub fn find_full_parent(&self, pool: &DbPool) -> Result<Option<LandscapeAnalysis>, PpdcError> {
         let parent_analysis_id = self.parent_analysis_id;
         if let Some(parent_analysis_id) = parent_analysis_id {
@@ -154,6 +158,7 @@ impl LandscapeAnalysis {
         }
     }
 
+    /// Walks the parent chain to rebuild the full ancestry of an analysis in chronological reverse order.
     pub fn find_all_parents(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
         let mut parents = vec![];
         let mut current_analysis = self.clone();
@@ -164,6 +169,7 @@ impl LandscapeAnalysis {
         Ok(parents)
     }
 
+    /// Loads one analysis with all persisted fields, which is the base read path for analysis routes and workers.
     pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool
             .get()
@@ -182,6 +188,7 @@ impl LandscapeAnalysis {
         })
     }
 
+    /// Returns every analysis directly tied to a given source trace, ordered from most recent run to oldest.
     pub fn find_by_trace(
         trace_id: Uuid,
         pool: &DbPool,
@@ -198,6 +205,7 @@ impl LandscapeAnalysis {
         Ok(rows.into_iter().map(tuple_to_analysis).collect())
     }
 
+    /// Returns the landmarks visible from this analysis, optionally restricted to one relation role.
     pub fn get_landmarks(
         &self,
         relation_type: Option<&str>,
@@ -206,6 +214,7 @@ impl LandscapeAnalysis {
         Landmark::get_for_landscape_analysis(self.id, relation_type, pool)
     }
 
+    /// Loads the elements produced by this analysis run, which are the trace-scoped analytic outputs.
     pub fn get_elements(&self, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
         let mut conn = pool
             .get()
@@ -220,6 +229,7 @@ impl LandscapeAnalysis {
             .collect()
     }
 
+    /// Returns direct child analyses that continue this analysis state in later runs.
     pub fn get_children_landscape_analyses(
         &self,
         pool: &DbPool,
@@ -236,6 +246,7 @@ impl LandscapeAnalysis {
             .collect()
     }
 
+    /// Returns the lenses whose current head points to this analysis.
     pub fn get_heading_lens(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
         let mut conn = pool
             .get()
@@ -250,6 +261,7 @@ impl LandscapeAnalysis {
             .collect()
     }
 
+    /// Returns every lens scope that includes this analysis, including forked descendants.
     pub fn get_scoped_lenses(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
         let mut conn = pool
             .get()
@@ -264,6 +276,7 @@ impl LandscapeAnalysis {
             .collect()
     }
 
+    /// Returns the traces and trace mirrors explicitly recorded as inputs to this analysis run.
     pub fn get_inputs(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysisInput>, PpdcError> {
         let mut conn = pool
             .get()
