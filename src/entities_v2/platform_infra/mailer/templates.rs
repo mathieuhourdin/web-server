@@ -269,3 +269,38 @@ pub fn journal_access_granted_email(
         html_body: Some(html_body),
     }
 }
+
+pub fn daily_recap_email(
+    recipient_display_name: &str,
+    mentor_display_name: &str,
+    feedback_title: &str,
+    feedback_preview: &str,
+    recap_title: &str,
+    recap_preview: &str,
+    recap_url: &str,
+) -> EmailTemplate {
+    let subject = if feedback_title.trim().is_empty() {
+        format!("Votre retour du jour de {}", mentor_display_name)
+    } else {
+        format!("{} vous a laisse un retour: {}", mentor_display_name, feedback_title)
+    };
+    let text_body = format!(
+        "Bonjour {},\n\n{} vous a laisse un retour sur votre journee :\n\n{}\n\nApercu du recap du jour :\n{}\n\nOuvrir le feedback dans Matiere Grise : {}\n",
+        recipient_display_name, mentor_display_name, feedback_preview, recap_preview, recap_url
+    );
+    let html_body = format!(
+        "<p>Bonjour {},</p><p><strong>{}</strong> vous a laisse un retour sur votre journee :</p><p>{}</p><p><strong>Apercu du recap du jour :</strong></p><p><strong>{}</strong><br>{}</p><p><a href=\"{}\">Ouvrir le feedback dans Matiere Grise</a></p>",
+        escape_html(recipient_display_name),
+        escape_html(mentor_display_name),
+        escape_html(feedback_preview),
+        escape_html(recap_title),
+        escape_html(recap_preview),
+        escape_html(recap_url),
+    );
+
+    EmailTemplate {
+        subject,
+        text_body: Some(text_body),
+        html_body: Some(html_body),
+    }
+}
