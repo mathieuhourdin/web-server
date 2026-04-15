@@ -194,8 +194,9 @@ fn day_period_for_datetime(
 ) -> Result<(NaiveDateTime, NaiveDateTime), PpdcError> {
     let utc_dt = DateTime::<Utc>::from_naive_utc_and_offset(datetime_utc, Utc);
     let local_dt = utc_dt.with_timezone(&tz);
-    let local_day_start = local_midnight(tz, local_dt.date_naive())?;
-    let local_day_end = local_day_start + Duration::days(1);
+    let local_day_date = local_dt.date_naive();
+    let local_day_start = local_midnight(tz, local_day_date)?;
+    let local_day_end = local_midnight(tz, local_day_date + Duration::days(1))?;
 
     Ok((
         local_day_start.with_timezone(&Utc).naive_utc(),
@@ -219,7 +220,7 @@ fn week_period_for_datetime(
     let week_start_date = local_date - Duration::days(delta_days);
 
     let local_week_start = local_midnight(tz, week_start_date)?;
-    let local_week_end = local_week_start + Duration::days(7);
+    let local_week_end = local_midnight(tz, week_start_date + Duration::days(7))?;
 
     Ok((
         local_week_start.with_timezone(&Utc).naive_utc(),
