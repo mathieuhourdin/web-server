@@ -194,7 +194,6 @@ async fn finalize_trace_transition(
     pool: &DbPool,
     session_id: Option<Uuid>,
     auto_finalized: bool,
-    preserve_interaction_date: bool,
 ) -> Result<Trace, PpdcError> {
     let timeout_at_before = trace.timeout_at;
 
@@ -202,14 +201,6 @@ async fn finalize_trace_transition(
         let qualified = llm_qualify::qualify_trace(trace.content.as_str()).await?;
         trace.title = qualified.title;
         trace.subtitle = qualified.subtitle;
-        if !preserve_interaction_date {
-            if let Some(qualified_interaction_date) = qualified
-                .interaction_date
-                .and_then(|d| d.and_hms_opt(12, 0, 0))
-            {
-                trace.interaction_date = qualified_interaction_date;
-            }
-        }
     }
 
     trace.status = super::enums::TraceStatus::Finalized;
@@ -245,7 +236,7 @@ async fn finalize_expired_trace_if_needed(
     session_id: Option<Uuid>,
 ) -> Result<Trace, PpdcError> {
     if is_trace_timeout_expired(&trace) {
-        finalize_trace_transition(trace, pool, session_id, true, false).await
+        finalize_trace_transition(trace, pool, session_id, true).await
     } else {
         Ok(trace)
     }
@@ -258,7 +249,7 @@ async fn finalize_expired_drafts_for_user(
 ) -> Result<(), PpdcError> {
     let expired_drafts = Trace::get_expired_drafts_for_user(user_id, pool)?;
     for trace in expired_drafts {
-        let _ = finalize_trace_transition(trace, pool, session_id, true, false).await?;
+        let _ = finalize_trace_transition(trace, pool, session_id, true).await?;
     }
     Ok(())
 }
@@ -585,7 +576,6 @@ pub async fn put_trace_route(
         .timeout_at
         .map(|timeout_at| timeout_at != trace.timeout_at)
         .unwrap_or(false);
-    let has_explicit_interaction_date = payload.interaction_date.is_some();
     let publish_default_post = payload.publish_default_post.unwrap_or(false);
 
     match trace.status {
@@ -618,13 +608,7 @@ pub async fn put_trace_route(
                             ));
                         }
                         let trace =
-                            finalize_trace_transition(
-                                trace,
-                                &pool,
-                                Some(session.id),
-                                false,
-                                has_explicit_interaction_date,
-                            )
+                            finalize_trace_transition(trace, &pool, Some(session.id), false)
                             .await?;
                         if publish_default_post {
                             let _ = publish_default_post_for_trace(&trace, &pool)?;
