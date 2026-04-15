@@ -14,7 +14,7 @@ use crate::entities_v2::{
     element::Element,
     error::{ErrorType, PpdcError},
     landmark::Landmark,
-    lens::Lens,
+    lens::{Lens, LensProcessingState},
     session::Session,
     trace::Trace,
     trace_mirror::TraceMirror,
@@ -47,6 +47,26 @@ pub struct PendingAnalysesRunResponse {
     pub candidate_lens_ids: Vec<Uuid>,
     pub processed_lens_ids: Vec<Uuid>,
     pub failed: Vec<PendingAnalysesRunError>,
+}
+
+#[derive(Serialize)]
+pub struct ReplanAutoplayLensesSkipped {
+    pub lens_id: Uuid,
+    pub reason: String,
+}
+
+#[derive(Serialize)]
+pub struct ReplanAutoplayLensesError {
+    pub lens_id: Uuid,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct ReplanAutoplayLensesResponse {
+    pub candidate_lens_ids: Vec<Uuid>,
+    pub planned_lens_ids: Vec<Uuid>,
+    pub skipped: Vec<ReplanAutoplayLensesSkipped>,
+    pub failed: Vec<ReplanAutoplayLensesError>,
 }
 
 #[derive(Deserialize)]
@@ -205,6 +225,63 @@ pub async fn post_run_pending_analyses_route(
     Ok(Json(PendingAnalysesRunResponse {
         candidate_lens_ids,
         processed_lens_ids,
+        failed,
+    }))
+}
+
+/// Internal repair route that re-runs queue planning for autoplay lenses without changing their targets or executing analysis work.
+#[debug_handler]
+pub async fn post_replan_autoplay_lenses_route(
+    Extension(pool): Extension<DbPool>,
+    headers: HeaderMap,
+) -> Result<Json<ReplanAutoplayLensesResponse>, PpdcError> {
+    let provided_token = headers
+        .get("x-internal-cron-token")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(PpdcError::unauthorized)?;
+
+    if provided_token != environment::get_internal_cron_token() {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let autoplay_lenses = Lens::get_autoplay_lenses(&pool)?;
+    let candidate_lens_ids = autoplay_lenses.iter().map(|lens| lens.id).collect::<Vec<_>>();
+    let mut planned_lens_ids = Vec::new();
+    let mut skipped = Vec::new();
+    let mut failed = Vec::new();
+
+    for lens in autoplay_lenses {
+        let lens_id = lens.id;
+
+        if lens.target_trace_id.is_none() {
+            skipped.push(ReplanAutoplayLensesSkipped {
+                lens_id,
+                reason: "no_target_trace".to_string(),
+            });
+            continue;
+        }
+
+        if lens.processing_state == LensProcessingState::Failed {
+            skipped.push(ReplanAutoplayLensesSkipped {
+                lens_id,
+                reason: "failed_lens".to_string(),
+            });
+            continue;
+        }
+
+        match lens.plan_pending_analyses_for_target(&pool) {
+            Ok(_) => planned_lens_ids.push(lens_id),
+            Err(err) => failed.push(ReplanAutoplayLensesError {
+                lens_id,
+                message: err.message,
+            }),
+        }
+    }
+
+    Ok(Json(ReplanAutoplayLensesResponse {
+        candidate_lens_ids,
+        planned_lens_ids,
+        skipped,
         failed,
     }))
 }

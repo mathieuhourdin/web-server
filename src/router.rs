@@ -225,6 +225,10 @@ pub fn create_router() -> Router {
         post(landscape_analysis::post_run_pending_analyses_route),
     )
     .route(
+        "/replan_autoplay_lenses",
+        post(landscape_analysis::post_replan_autoplay_lenses_route),
+    )
+    .route(
         "/process_pending_emails",
         post(mailer::post_process_pending_emails_route),
     );

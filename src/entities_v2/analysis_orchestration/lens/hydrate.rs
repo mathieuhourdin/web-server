@@ -75,6 +75,17 @@ impl Lens {
             .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Lens not found".to_string()))
     }
 
+    pub fn get_autoplay_lenses(pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
+        let mut conn = pool
+            .get()?;
+        let rows = lenses::table
+            .filter(lenses::autoplay.eq(true))
+            .select(select_lens_columns())
+            .order(lenses::updated_at.desc())
+            .load::<LensTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(tuple_to_lens).collect())
+    }
+
     pub fn get_user_lenses(user_id: Uuid, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
         let mut conn = pool
             .get()?;
