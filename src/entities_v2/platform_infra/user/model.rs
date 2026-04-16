@@ -67,6 +67,7 @@ pub struct User {
     pub home_focus_view: HomeFocusView,
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
+    pub mentor_feedback_email_enabled: bool,
 }
 
 pub enum UserResponse {
@@ -121,6 +122,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub home_focus_view: HomeFocusView,
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
+    pub mentor_feedback_email_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRole>>,
     pub display_name: String,
@@ -159,6 +161,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             home_focus_view: user.home_focus_view,
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
+            mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             roles: None,
             display_name: user.display_name(),
         }
@@ -188,6 +191,7 @@ pub struct UserPseudonymizedResponse {
     pub home_focus_view: HomeFocusView,
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
+    pub mentor_feedback_email_enabled: bool,
     pub display_name: String,
 }
 
@@ -221,6 +225,7 @@ impl UserPseudonymizedResponse {
             home_focus_view: user.home_focus_view,
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
+            mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             display_name: user.display_name(),
         }
     }
@@ -341,6 +346,7 @@ pub struct NewUser {
     pub home_focus_view: Option<HomeFocusView>,
     pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
     pub received_message_email_mode: Option<EmailNotificationMode>,
+    pub mentor_feedback_email_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -397,6 +403,7 @@ impl NewServiceUserDto {
             home_focus_view: None,
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
+            mentor_feedback_email_enabled: None,
         }
     }
 
@@ -428,6 +435,7 @@ impl NewServiceUserDto {
             home_focus_view: Some(existing_user.home_focus_view),
             shared_journal_activity_email_mode: Some(existing_user.shared_journal_activity_email_mode),
             received_message_email_mode: Some(existing_user.received_message_email_mode),
+            mentor_feedback_email_enabled: Some(existing_user.mentor_feedback_email_enabled),
         }
     }
 }
@@ -452,6 +460,9 @@ impl NewUser {
         }
         if payload.received_message_email_mode.is_none() {
             payload.received_message_email_mode = Some(EmailNotificationMode::Instant);
+        }
+        if payload.mentor_feedback_email_enabled.is_none() {
+            payload.mentor_feedback_email_enabled = Some(true);
         }
         let email = payload.email.clone();
 
@@ -602,6 +613,10 @@ impl User {
 
     pub fn allows_instant_received_message_email(&self) -> bool {
         self.received_message_email_mode == EmailNotificationMode::Instant
+    }
+
+    pub fn allows_mentor_feedback_email(&self) -> bool {
+        self.mentor_feedback_email_enabled
     }
 
     pub fn list_roles(&self, pool: &DbPool) -> Result<Vec<UserRole>, PpdcError> {
@@ -919,6 +934,7 @@ mod tests {
             home_focus_view: HomeFocusView::Follows,
             shared_journal_activity_email_mode: EmailNotificationMode::Instant,
             received_message_email_mode: EmailNotificationMode::Instant,
+            mentor_feedback_email_enabled: true,
         }
     }
 
@@ -948,6 +964,7 @@ mod tests {
             home_focus_view: None,
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
+            mentor_feedback_email_enabled: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

@@ -71,7 +71,7 @@ fn schedule_daily_recap_email(
     pool: &DbPool,
 ) -> Result<Option<(Uuid, chrono::NaiveDateTime)>, PpdcError> {
     let user = User::find(&analysis.user_id, pool)?;
-    if user.email.trim().is_empty() {
+    if user.email.trim().is_empty() || !user.allows_mentor_feedback_email() {
         return Ok(None);
     }
 
