@@ -9,7 +9,8 @@ pub use admin::{
     AdminUserDailyActivity, AdminUserRecentActivity,
 };
 pub use enums::{
-    HomeFocusView, JournalTheme, UserPrincipalType, UserRole, WeekAnalysisWeekday,
+    EmailNotificationMode, HomeFocusView, JournalTheme, UserPrincipalType, UserRole,
+    WeekAnalysisWeekday,
 };
 pub use model::{
     ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, find_similar_users, NewServiceUserDto,

@@ -110,6 +110,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
         recipient.id != owner.id
             && recipient.principal_type == UserPrincipalType::Human
             && !recipient.email.trim().is_empty()
+            && recipient.allows_instant_shared_journal_activity_email()
     }) {
         let template = mailer::shared_trace_finalized_email(
             &recipient.display_name(),

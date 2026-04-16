@@ -23,7 +23,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::enums::{
-    HomeFocusView, JournalTheme, UserPrincipalType, UserRole, WeekAnalysisWeekday,
+    EmailNotificationMode, HomeFocusView, JournalTheme, UserPrincipalType, UserRole,
+    WeekAnalysisWeekday,
 };
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable, Identifiable, Debug)]
@@ -64,6 +65,8 @@ pub struct User {
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
     pub home_focus_view: HomeFocusView,
+    pub shared_journal_activity_email_mode: EmailNotificationMode,
+    pub received_message_email_mode: EmailNotificationMode,
 }
 
 pub enum UserResponse {
@@ -116,6 +119,8 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
     pub home_focus_view: HomeFocusView,
+    pub shared_journal_activity_email_mode: EmailNotificationMode,
+    pub received_message_email_mode: EmailNotificationMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRole>>,
     pub display_name: String,
@@ -152,6 +157,8 @@ impl UserPseudonymizedAuthentifiedResponse {
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
             home_focus_view: user.home_focus_view,
+            shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
+            received_message_email_mode: user.received_message_email_mode,
             roles: None,
             display_name: user.display_name(),
         }
@@ -179,6 +186,8 @@ pub struct UserPseudonymizedResponse {
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
     pub home_focus_view: HomeFocusView,
+    pub shared_journal_activity_email_mode: EmailNotificationMode,
+    pub received_message_email_mode: EmailNotificationMode,
     pub display_name: String,
 }
 
@@ -210,6 +219,8 @@ impl UserPseudonymizedResponse {
             context_anchor_at: user.context_anchor_at,
             welcome_message: user.welcome_message.clone(),
             home_focus_view: user.home_focus_view,
+            shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
+            received_message_email_mode: user.received_message_email_mode,
             display_name: user.display_name(),
         }
     }
@@ -328,6 +339,8 @@ pub struct NewUser {
     pub context_anchor_at: Option<NaiveDateTime>,
     pub welcome_message: Option<String>,
     pub home_focus_view: Option<HomeFocusView>,
+    pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
+    pub received_message_email_mode: Option<EmailNotificationMode>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -382,6 +395,8 @@ impl NewServiceUserDto {
             context_anchor_at: None,
             welcome_message: self.welcome_message,
             home_focus_view: None,
+            shared_journal_activity_email_mode: None,
+            received_message_email_mode: None,
         }
     }
 
@@ -411,6 +426,8 @@ impl NewServiceUserDto {
             context_anchor_at: existing_user.context_anchor_at,
             welcome_message: self.welcome_message,
             home_focus_view: Some(existing_user.home_focus_view),
+            shared_journal_activity_email_mode: Some(existing_user.shared_journal_activity_email_mode),
+            received_message_email_mode: Some(existing_user.received_message_email_mode),
         }
     }
 }
@@ -429,6 +446,12 @@ impl NewUser {
         }
         if payload.home_focus_view.is_none() {
             payload.home_focus_view = Some(HomeFocusView::Follows);
+        }
+        if payload.shared_journal_activity_email_mode.is_none() {
+            payload.shared_journal_activity_email_mode = Some(EmailNotificationMode::Instant);
+        }
+        if payload.received_message_email_mode.is_none() {
+            payload.received_message_email_mode = Some(EmailNotificationMode::Instant);
         }
         let email = payload.email.clone();
 
@@ -571,6 +594,14 @@ impl User {
         } else {
             format!("{} {}", self.first_name, self.last_name)
         }
+    }
+
+    pub fn allows_instant_shared_journal_activity_email(&self) -> bool {
+        self.shared_journal_activity_email_mode == EmailNotificationMode::Instant
+    }
+
+    pub fn allows_instant_received_message_email(&self) -> bool {
+        self.received_message_email_mode == EmailNotificationMode::Instant
     }
 
     pub fn list_roles(&self, pool: &DbPool) -> Result<Vec<UserRole>, PpdcError> {
@@ -886,6 +917,8 @@ mod tests {
             context_anchor_at: None,
             welcome_message: None,
             home_focus_view: HomeFocusView::Follows,
+            shared_journal_activity_email_mode: EmailNotificationMode::Instant,
+            received_message_email_mode: EmailNotificationMode::Instant,
         }
     }
 
@@ -913,6 +946,8 @@ mod tests {
             context_anchor_at: None,
             welcome_message: None,
             home_focus_view: None,
+            shared_journal_activity_email_mode: None,
+            received_message_email_mode: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

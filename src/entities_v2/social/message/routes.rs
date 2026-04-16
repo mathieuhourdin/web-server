@@ -80,6 +80,7 @@ pub(crate) fn enqueue_received_message_notification_email(
         || recipient.principal_type != UserPrincipalType::Human
         || recipient.email.trim().is_empty()
         || sender.id == recipient.id
+        || !recipient.allows_instant_received_message_email()
     {
         return Ok(None);
     }

@@ -279,6 +279,77 @@ impl FromSql<Text, Pg> for HomeFocusView {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+pub enum EmailNotificationMode {
+    Off,
+    Instant,
+    DailyDigest,
+}
+
+impl EmailNotificationMode {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            EmailNotificationMode::Off => "off",
+            EmailNotificationMode::Instant => "instant",
+            EmailNotificationMode::DailyDigest => "daily_digest",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Result<Self, PpdcError> {
+        match code {
+            "off" | "OFF" | "Off" => Ok(EmailNotificationMode::Off),
+            "instant" | "INSTANT" | "Instant" => Ok(EmailNotificationMode::Instant),
+            "daily_digest" | "DAILY_DIGEST" | "DailyDigest" | "dailyDigest" => {
+                Ok(EmailNotificationMode::DailyDigest)
+            }
+            _ => Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!("Invalid email_notification_mode: {}", code),
+            )),
+        }
+    }
+
+    pub fn to_api_value(self) -> &'static str {
+        self.to_code()
+    }
+}
+
+impl Serialize for EmailNotificationMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_api_value())
+    }
+}
+
+impl<'de> Deserialize<'de> for EmailNotificationMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        EmailNotificationMode::from_code(&value)
+            .map_err(|_| de::Error::custom("unknown email_notification_mode"))
+    }
+}
+
+impl ToSql<Text, Pg> for EmailNotificationMode {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <str as ToSql<Text, Pg>>::to_sql(self.to_code(), out)
+    }
+}
+
+impl FromSql<Text, Pg> for EmailNotificationMode {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let value = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+        EmailNotificationMode::from_code(value.as_str())
+            .map_err(|_| "invalid email_notification_mode value in database".into())
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UserRole {
