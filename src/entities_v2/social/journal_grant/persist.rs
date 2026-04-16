@@ -6,9 +6,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus};
-use crate::entities_v2::post::{
-    PostAudienceRole, PostInteractionType, PostStatus, PostType,
-};
+use crate::entities_v2::post::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
 use crate::entities_v2::post_grant::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};
 use crate::entities_v2::relationship::{Relationship, RelationshipStatus};
 use crate::entities_v2::shared::MaturingState;
@@ -23,7 +21,9 @@ use super::model::{JournalGrant, NewJournalGrantDto};
 impl JournalGrant {
     fn to_post_grant_scope(grantee_scope: Option<JournalGrantScope>) -> Option<PostGrantScope> {
         match grantee_scope {
-            Some(JournalGrantScope::AllAcceptedFollowers) => Some(PostGrantScope::AllAcceptedFollowers),
+            Some(JournalGrantScope::AllAcceptedFollowers) => {
+                Some(PostGrantScope::AllAcceptedFollowers)
+            }
             Some(JournalGrantScope::AllPlatformUsers) => Some(PostGrantScope::AllPlatformUsers),
             None => None,
         }
@@ -108,8 +108,7 @@ impl JournalGrant {
     }
 
     fn list_platform_human_user_ids(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let ids = users::table
             .filter(users::is_platform_user.eq(true))
@@ -347,7 +346,12 @@ impl JournalGrant {
                 created_at: row.7,
                 updated_at: row.8,
             };
-            Self::create_or_update_synced_post_grant_with_conn(post_id, owner_user_id, &grant, conn)?;
+            Self::create_or_update_synced_post_grant_with_conn(
+                post_id,
+                owner_user_id,
+                &grant,
+                conn,
+            )?;
         }
 
         Ok(())
@@ -372,7 +376,8 @@ impl JournalGrant {
                     )?;
                 }
                 None => {
-                    let post_id = Self::create_default_published_post_for_trace_with_conn(&trace, conn)?;
+                    let post_id =
+                        Self::create_default_published_post_for_trace_with_conn(&trace, conn)?;
                     Self::sync_all_active_journal_grants_to_post_with_conn(
                         journal.id,
                         journal.user_id,
@@ -394,7 +399,9 @@ impl JournalGrant {
         let traces = Self::find_finalized_user_traces_for_journal_with_conn(journal_id, conn)?;
 
         for trace in traces {
-            if let Some((post_id, status)) = Self::find_default_post_for_trace_with_conn(trace.id, conn)? {
+            if let Some((post_id, status)) =
+                Self::find_default_post_for_trace_with_conn(trace.id, conn)?
+            {
                 if status == PostStatus::Archived {
                     continue;
                 }
@@ -444,76 +451,75 @@ impl JournalGrant {
             }
         }
 
-        let mut conn = pool
-            .get()?;
-        let (grant_id, should_notify) =
-            conn.transaction::<(Uuid, bool), PpdcError, _>(|conn| {
-                if let Some(existing) = Self::find_existing_with_conn(
-                    journal.id,
-                    grantee_user_id,
-                    grantee_scope,
-                    conn,
-                )? {
-                    let should_notify = existing.grantee_user_id.is_some()
-                        && existing.status != JournalGrantStatus::Active;
-                    diesel::update(journal_grants::table.filter(journal_grants::id.eq(existing.id)))
-                        .set((
-                            journal_grants::access_level.eq(access_level.to_db()),
-                            journal_grants::status.eq(JournalGrantStatus::Active.to_db()),
-                            journal_grants::updated_at.eq(diesel::dsl::now),
-                        ))
-                        .execute(conn)?;
-
-                    let updated_grant = Self::find_existing_with_conn(
-                        journal.id,
-                        grantee_user_id,
-                        grantee_scope,
-                        conn,
-                    )?
-                    .ok_or_else(|| {
-                        PpdcError::new(404, ErrorType::ApiError, "Journal grant not found".to_string())
-                    })?;
-
-                    Self::sync_default_post_grants_for_journal_grant_with_conn(
-                        journal,
-                        &updated_grant,
-                        conn,
-                    )?;
-
-                    return Ok((existing.id, should_notify));
-                }
-
-                let id = Uuid::new_v4();
-                diesel::insert_into(journal_grants::table)
-                    .values((
-                        journal_grants::id.eq(id),
-                        journal_grants::journal_id.eq(journal.id),
-                        journal_grants::owner_user_id.eq(owner_user_id),
-                        journal_grants::grantee_user_id.eq(grantee_user_id),
-                        journal_grants::grantee_scope.eq(grantee_scope.map(|scope| scope.to_db())),
+        let mut conn = pool.get()?;
+        let (grant_id, should_notify) = conn.transaction::<(Uuid, bool), PpdcError, _>(|conn| {
+            if let Some(existing) =
+                Self::find_existing_with_conn(journal.id, grantee_user_id, grantee_scope, conn)?
+            {
+                let should_notify = existing.grantee_user_id.is_some()
+                    && existing.status != JournalGrantStatus::Active;
+                diesel::update(journal_grants::table.filter(journal_grants::id.eq(existing.id)))
+                    .set((
                         journal_grants::access_level.eq(access_level.to_db()),
                         journal_grants::status.eq(JournalGrantStatus::Active.to_db()),
+                        journal_grants::updated_at.eq(diesel::dsl::now),
                     ))
                     .execute(conn)?;
 
-                let created_grant = Self::find_existing_with_conn(
+                let updated_grant = Self::find_existing_with_conn(
                     journal.id,
                     grantee_user_id,
                     grantee_scope,
                     conn,
                 )?
                 .ok_or_else(|| {
-                    PpdcError::new(404, ErrorType::ApiError, "Journal grant not found".to_string())
+                    PpdcError::new(
+                        404,
+                        ErrorType::ApiError,
+                        "Journal grant not found".to_string(),
+                    )
                 })?;
 
                 Self::sync_default_post_grants_for_journal_grant_with_conn(
                     journal,
-                    &created_grant,
+                    &updated_grant,
                     conn,
                 )?;
 
-                Ok((id, grantee_user_id.is_some()))
-            })?;
+                return Ok((existing.id, should_notify));
+            }
+
+            let id = Uuid::new_v4();
+            diesel::insert_into(journal_grants::table)
+                .values((
+                    journal_grants::id.eq(id),
+                    journal_grants::journal_id.eq(journal.id),
+                    journal_grants::owner_user_id.eq(owner_user_id),
+                    journal_grants::grantee_user_id.eq(grantee_user_id),
+                    journal_grants::grantee_scope.eq(grantee_scope.map(|scope| scope.to_db())),
+                    journal_grants::access_level.eq(access_level.to_db()),
+                    journal_grants::status.eq(JournalGrantStatus::Active.to_db()),
+                ))
+                .execute(conn)?;
+
+            let created_grant =
+                Self::find_existing_with_conn(journal.id, grantee_user_id, grantee_scope, conn)?
+                    .ok_or_else(|| {
+                        PpdcError::new(
+                            404,
+                            ErrorType::ApiError,
+                            "Journal grant not found".to_string(),
+                        )
+                    })?;
+
+            Self::sync_default_post_grants_for_journal_grant_with_conn(
+                journal,
+                &created_grant,
+                conn,
+            )?;
+
+            Ok((id, grantee_user_id.is_some()))
+        })?;
 
         Ok((JournalGrant::find(grant_id, pool)?, should_notify))
     }
@@ -537,8 +543,7 @@ impl JournalGrant {
             ));
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         conn.transaction::<(), PpdcError, _>(|conn| {
             diesel::update(journal_grants::table.filter(journal_grants::id.eq(grant_id)))
                 .set((
@@ -594,8 +599,7 @@ impl JournalGrant {
                 return Ok(true);
             }
 
-            if grant.grantee_scope == Some(JournalGrantScope::AllPlatformUsers)
-            {
+            if grant.grantee_scope == Some(JournalGrantScope::AllPlatformUsers) {
                 let user = User::find(&user_id, pool)?;
                 if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
                     return Ok(true);
@@ -613,8 +617,7 @@ impl JournalGrant {
         use std::collections::HashSet;
 
         let mut ids = HashSet::new();
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let direct_ids = journal_grants::table
             .filter(journal_grants::grantee_user_id.eq(Some(user_id)))
             .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
@@ -689,8 +692,7 @@ impl JournalGrant {
         journal_id: Uuid,
         pool: &DbPool,
     ) -> Result<bool, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let count = journal_grants::table
             .filter(journal_grants::journal_id.eq(journal_id))
             .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))

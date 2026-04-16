@@ -14,16 +14,16 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
     trace_attachment::TraceAttachment,
-    user_post_state::{PostSeenByUser, UserPostState},
     user::{User, UserPrincipalType},
+    user_post_state::{PostSeenByUser, UserPostState},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use chrono::Utc;
 use serde::Deserialize;
 
 use super::model::{
-    legacy_lifecycle_for_status, NewPost, NewPostDto, Post, PostAudienceRole,
-    PostInteractionType, PostStatus, PostType,
+    legacy_lifecycle_for_status, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType,
+    PostStatus, PostType,
 };
 
 #[derive(Deserialize)]
@@ -249,8 +249,13 @@ pub async fn get_journal_posts_route(
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.pagination.validate()?;
-    let (posts, total) =
-        Post::find_for_journal_paginated(viewer_user_id, journal_id, pagination.offset, pagination.limit, &pool)?;
+    let (posts, total) = Post::find_for_journal_paginated(
+        viewer_user_id,
+        journal_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 

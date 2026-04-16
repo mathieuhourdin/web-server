@@ -102,8 +102,7 @@ impl OutboundEmail {
     }
 
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Self, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let email = outbound_emails::table
             .select(Self::as_select())
             .filter(outbound_emails::id.eq(id))
@@ -112,8 +111,7 @@ impl OutboundEmail {
     }
 
     pub fn list_due_pending(limit: i64, pool: &DbPool) -> Result<Vec<Self>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let emails = outbound_emails::table
             .filter(outbound_emails::status.eq(OutboundEmailStatus::Pending.to_db()))
             .filter(
@@ -136,8 +134,7 @@ impl OutboundEmail {
         worker_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Self>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         #[derive(diesel::QueryableByName)]
         struct IdRow {
@@ -179,9 +176,12 @@ RETURNING oe.id
             .collect()
     }
 
-    pub fn claim_if_due(id: Uuid, worker_id: Uuid, pool: &DbPool) -> Result<Option<Self>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+    pub fn claim_if_due(
+        id: Uuid,
+        worker_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Self>, PpdcError> {
+        let mut conn = pool.get()?;
 
         #[derive(diesel::QueryableByName)]
         struct IdRow {
@@ -227,8 +227,7 @@ RETURNING oe.id
         provider_message_id: Option<String>,
         pool: &DbPool,
     ) -> Result<Self, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::update(outbound_emails::table.filter(outbound_emails::id.eq(id)))
             .set((
                 outbound_emails::status.eq(OutboundEmailStatus::Sent.to_db()),
@@ -245,8 +244,7 @@ RETURNING oe.id
     }
 
     pub fn mark_failed(id: Uuid, error: String, pool: &DbPool) -> Result<Self, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::update(outbound_emails::table.filter(outbound_emails::id.eq(id)))
             .set((
                 outbound_emails::status.eq(OutboundEmailStatus::Failed.to_db()),
@@ -321,8 +319,7 @@ impl NewOutboundEmail {
     }
 
     pub fn create(self, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let email = diesel::insert_into(outbound_emails::table)
             .values(&self)
             .returning(OutboundEmail::as_returning())
@@ -331,7 +328,10 @@ impl NewOutboundEmail {
     }
 }
 
-async fn process_claimed_email(email: OutboundEmail, pool: &DbPool) -> Result<OutboundEmail, PpdcError> {
+async fn process_claimed_email(
+    email: OutboundEmail,
+    pool: &DbPool,
+) -> Result<OutboundEmail, PpdcError> {
     if email.status_enum() != OutboundEmailStatus::Running {
         return Ok(email);
     }

@@ -59,7 +59,9 @@ fn tuple_to_post_grant(row: PostGrantTuple) -> PostGrant {
         post_id,
         owner_user_id,
         grantee_user_id,
-        grantee_scope: grantee_scope_raw.as_deref().and_then(PostGrantScope::from_db),
+        grantee_scope: grantee_scope_raw
+            .as_deref()
+            .and_then(PostGrantScope::from_db),
         access_level: PostGrantAccessLevel::from_db(&access_level_raw),
         status: PostGrantStatus::from_db(&status_raw),
         created_at,

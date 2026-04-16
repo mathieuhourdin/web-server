@@ -103,8 +103,7 @@ fn select_landmark_columns() -> (
 
 impl Landmark {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = landmarks::table
             .filter(landmarks::id.eq(id))
             .select(select_landmark_columns())
@@ -116,8 +115,7 @@ impl Landmark {
     }
 
     pub fn find_user_id(id: Uuid, pool: &DbPool) -> Result<Uuid, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let user_id = landmarks::table
             .filter(landmarks::id.eq(id))
             .select(landmarks::user_id)
@@ -129,8 +127,7 @@ impl Landmark {
     }
 
     pub fn find_parent(&self, pool: &DbPool) -> Result<Option<Landmark>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let parent_id = landmarks::table
             .filter(landmarks::id.eq(self.id))
             .select(landmarks::parent_id)
@@ -176,8 +173,7 @@ impl Landmark {
             "refr" | "REFERENCED" => vec!["REFERENCED", "refr", "REFR"],
             other => vec![other],
         });
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let mut query = landscape_landmarks::table
             .filter(landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id))
@@ -200,8 +196,7 @@ impl Landmark {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Landmark>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let landmark_ids = landmarks::table
             .filter(landmarks::user_id.eq(user_id))
             .filter(landmarks::landmark_type.eq("HIGH_LEVEL_PROJECT"))

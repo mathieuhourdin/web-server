@@ -196,7 +196,11 @@ impl JournalShareLink {
             .optional()?;
 
         link.ok_or_else(|| {
-            PpdcError::new(404, ErrorType::ApiError, "Journal share link not found".to_string())
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Journal share link not found".to_string(),
+            )
         })
     }
 
@@ -257,7 +261,11 @@ impl JournalShareLink {
         })
     }
 
-    pub fn revoke(self, owner_user_id: Uuid, pool: &DbPool) -> Result<JournalShareLinkRevocationResponse, PpdcError> {
+    pub fn revoke(
+        self,
+        owner_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<JournalShareLinkRevocationResponse, PpdcError> {
         if self.owner_user_id != owner_user_id {
             return Err(PpdcError::unauthorized());
         }

@@ -93,8 +93,7 @@ impl Session {
     }
 
     pub fn find(id: &Uuid, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let session = sessions::table
             .filter(sessions::id.eq(id))
@@ -103,8 +102,7 @@ impl Session {
     }
 
     pub fn update(session: &Session, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let session = diesel::update(sessions::table)
             .filter(sessions::id.eq(session.id))
@@ -114,8 +112,7 @@ impl Session {
     }
 
     pub fn create(session: &NewSession, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let session = diesel::insert_into(sessions::table)
             .values(session)
             .get_result(&mut conn)?;
@@ -189,8 +186,7 @@ impl Session {
     }
 
     pub fn revoke(session_id: Uuid, pool: &DbPool) -> Result<Session, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let now = Utc::now().naive_utc();
         let session = diesel::update(sessions::table)
             .filter(sessions::id.eq(session_id))
@@ -204,8 +200,7 @@ impl Session {
     }
 
     fn touch(session_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let now = Utc::now().naive_utc();
         diesel::update(sessions::table)
             .filter(sessions::id.eq(session_id))

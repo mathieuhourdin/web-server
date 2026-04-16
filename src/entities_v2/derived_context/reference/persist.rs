@@ -17,8 +17,7 @@ struct IdRow {
 
 impl NewReference {
     pub fn create(self, pool: &DbPool) -> Result<Reference, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let context_tags_json =
             serde_json::to_string(&self.context_tags).unwrap_or_else(|_| "[]".to_string());
@@ -58,8 +57,7 @@ impl NewReference {
 
 impl Reference {
     pub fn delete(self, pool: &DbPool) -> Result<Reference, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let deleted = diesel::delete(references::table.filter(references::id.eq(self.id)))
             .execute(&mut conn)?;
@@ -77,8 +75,7 @@ impl Reference {
         landscape_analysis_id: Uuid,
         pool: &DbPool,
     ) -> Result<(), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::delete(
             references::table.filter(references::landscape_analysis_id.eq(landscape_analysis_id)),
         )

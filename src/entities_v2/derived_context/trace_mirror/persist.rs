@@ -17,8 +17,7 @@ struct IdRow {
 
 impl TraceMirror {
     pub fn update(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
         sql_query(
@@ -54,8 +53,7 @@ impl TraceMirror {
 
 impl NewTraceMirror {
     pub fn create(self, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let tags_json = serde_json::to_string(&self.tags).unwrap_or_else(|_| "[]".to_string());
         let id = sql_query(
@@ -96,8 +94,7 @@ pub fn link_to_primary_resource(
     _user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Uuid, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     diesel::update(trace_mirrors::table.filter(trace_mirrors::id.eq(trace_mirror_id)))
         .set(trace_mirrors::primary_landmark_id.eq(Some(primary_resource_id)))
         .execute(&mut conn)?;

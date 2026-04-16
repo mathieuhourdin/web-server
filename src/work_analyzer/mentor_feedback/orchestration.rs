@@ -1,6 +1,6 @@
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
-use crate::entities_v2::message::{Message, MentorFeedbackMetadata};
+use crate::entities_v2::message::{MentorFeedbackMetadata, Message};
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::analysis_context::AnalysisContext;

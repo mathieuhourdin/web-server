@@ -8,10 +8,7 @@ use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use google_cloud_auth::credentials::Builder as CredentialsBuilder;
-use google_cloud_storage::{
-    builder::storage::SignedUrlBuilder,
-    client::Storage,
-};
+use google_cloud_storage::{builder::storage::SignedUrlBuilder, client::Storage};
 use http::Method;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -163,8 +160,7 @@ fn select_asset_columns() -> (
 
 impl Asset {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Asset, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = assets::table
             .filter(assets::id.eq(id))
             .select(select_asset_columns())
@@ -175,14 +171,17 @@ impl Asset {
             .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Asset not found".to_string()))
     }
 
-    pub fn can_user_read(asset_id: Uuid, viewer_user_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+    pub fn can_user_read(
+        asset_id: Uuid,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
         let asset = Asset::find(asset_id, pool)?;
         if asset.owner_user_id == viewer_user_id {
             return Ok(true);
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let profile_owner_ids = users::table
             .filter(users::profile_asset_id.eq(Some(asset_id)))
@@ -198,7 +197,10 @@ impl Asset {
             .load::<Uuid>(&mut conn)?;
         for post_id in linked_posts {
             let post = Post::find_full(post_id, pool)?;
-            if post.user_id == viewer_user_id || (post.status == PostStatus::Published && PostGrant::user_can_read_post(&post, viewer_user_id, pool)?) {
+            if post.user_id == viewer_user_id
+                || (post.status == PostStatus::Published
+                    && PostGrant::user_can_read_post(&post, viewer_user_id, pool)?)
+            {
                 return Ok(true);
             }
         }
@@ -242,7 +244,13 @@ impl Asset {
     ) -> Result<(String, NaiveDateTime), PpdcError> {
         let signer = CredentialsBuilder::default()
             .build_signer()
-            .map_err(|err| PpdcError::new(500, ErrorType::InternalError, format!("Failed to build GCP signer: {}", err)))?;
+            .map_err(|err| {
+                PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Failed to build GCP signer: {}", err),
+                )
+            })?;
 
         let url = SignedUrlBuilder::for_object(
             format!("projects/_/buckets/{}", self.bucket),
@@ -252,7 +260,13 @@ impl Asset {
         .with_expiration(Duration::from_secs(expires_in_seconds))
         .sign_with(&signer)
         .await
-        .map_err(|err| PpdcError::new(500, ErrorType::InternalError, format!("Failed to sign asset URL: {}", err)))?;
+        .map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Failed to sign asset URL: {}", err),
+            )
+        })?;
 
         let expires_at =
             Utc::now().naive_utc() + ChronoDuration::seconds(expires_in_seconds as i64);
@@ -262,8 +276,7 @@ impl Asset {
 
 impl NewAsset {
     fn create(self, pool: &DbPool) -> Result<Asset, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let id = diesel::insert_into(assets::table)
             .values((
                 assets::id.eq(self.id),
@@ -305,7 +318,11 @@ fn sanitize_filename(filename: &str) -> String {
 fn infer_content_type(filename: &str, explicit_content_type: Option<&str>) -> String {
     explicit_content_type
         .map(|value| value.to_string())
-        .or_else(|| mime_guess::from_path(filename).first_raw().map(|value| value.to_string()))
+        .or_else(|| {
+            mime_guess::from_path(filename)
+                .first_raw()
+                .map(|value| value.to_string())
+        })
         .unwrap_or_else(|| "application/octet-stream".to_string())
 }
 
@@ -350,10 +367,13 @@ async fn upload_object_to_gcs(
     mime_type: &str,
     content_bytes: Vec<u8>,
 ) -> Result<(), PpdcError> {
-    let storage = Storage::builder()
-        .build()
-        .await
-        .map_err(|err| PpdcError::new(500, ErrorType::InternalError, format!("Failed to build GCS client: {}", err)))?;
+    let storage = Storage::builder().build().await.map_err(|err| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            format!("Failed to build GCS client: {}", err),
+        )
+    })?;
 
     storage
         .write_object(
@@ -364,7 +384,13 @@ async fn upload_object_to_gcs(
         .set_content_type(mime_type.to_string())
         .send_buffered()
         .await
-        .map_err(|err| PpdcError::new(500, ErrorType::InternalError, format!("Failed to upload to GCS: {}", err)))?;
+        .map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Failed to upload to GCS: {}", err),
+            )
+        })?;
 
     Ok(())
 }
@@ -429,7 +455,11 @@ pub async fn upload_asset_for_user_from_multipart(
     let mut file_bytes: Option<Vec<u8>> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|err| {
-        PpdcError::new(400, ErrorType::ApiError, format!("Multipart error: {}", err))
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!("Multipart error: {}", err),
+        )
     })? {
         if field.file_name().is_none() {
             continue;

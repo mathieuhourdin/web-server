@@ -85,8 +85,7 @@ pub async fn get_user_heatmap_route(
             "`from` must be <= `to`".to_string(),
         ));
     }
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     let rows = heatmap_sum_trace_content_len(&mut conn, from, to, user_id)?;
     Ok(Json(rows))
 }

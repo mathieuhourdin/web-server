@@ -391,9 +391,7 @@ fn persist_claim_relations(
                     "theme_of" => "THEME_OF",
                     _ => "SUBTASK_OF",
                 };
-                let mut conn = context
-                    .pool
-                    .get()?;
+                let mut conn = context.pool.get()?;
                 diesel::insert_into(element_relations::table)
                     .values((
                         element_relations::origin_element_id.eq(origin_resource_id),

@@ -61,8 +61,7 @@ impl Trace {
         if self.timeout_at.is_some() && self.timeout_start_at.is_none() {
             self.timeout_start_at = Some(Utc::now());
         }
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         conn.transaction::<(), diesel::result::Error, _>(|conn| {
             diesel::sql_query(
@@ -145,8 +144,7 @@ impl NewTrace {
         if self.timeout_at.is_some() && self.timeout_start_at.is_none() {
             self.timeout_start_at = Some(Utc::now());
         }
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
             let inserted = diesel::sql_query(

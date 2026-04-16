@@ -4,7 +4,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
-    message::{Message, MessageMetadata, MessageType, MentorFeedbackMetadata, NewMessage},
+    message::{MentorFeedbackMetadata, Message, MessageMetadata, MessageType, NewMessage},
 };
 
 pub fn create_mentor_feedback(

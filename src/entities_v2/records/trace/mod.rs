@@ -12,9 +12,8 @@ pub use model::{
 };
 pub use routes::{
     delete_trace_attachment_route, get_all_traces_for_user_route, get_journal_draft_route,
-    get_trace_attachments_route, get_trace_drafts_route, get_trace_analysis_route,
-    get_trace_messages_route, get_trace_route, get_traces_for_journal_route,
-    patch_trace_route, post_journal_draft_route, post_trace_asset_route,
-    post_trace_attachment_route, post_trace_extend_timeout_route, post_trace_message_route,
-    put_trace_route,
+    get_trace_analysis_route, get_trace_attachments_route, get_trace_drafts_route,
+    get_trace_messages_route, get_trace_route, get_traces_for_journal_route, patch_trace_route,
+    post_journal_draft_route, post_trace_asset_route, post_trace_attachment_route,
+    post_trace_extend_timeout_route, post_trace_message_route, put_trace_route,
 };

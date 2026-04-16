@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use diesel::r2d2::PoolError;
 use axum::Json;
+use diesel::r2d2::PoolError;
 use diesel::result::Error as DieselError;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as SerdeError;

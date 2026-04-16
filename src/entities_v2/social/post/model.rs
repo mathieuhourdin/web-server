@@ -103,7 +103,9 @@ impl NewPost {
             user_id,
             publishing_date: payload.publishing_date,
             status,
-            audience_role: payload.audience_role.unwrap_or_else(default_post_audience_role),
+            audience_role: payload
+                .audience_role
+                .unwrap_or_else(default_post_audience_role),
             publishing_state,
             maturing_state,
         }

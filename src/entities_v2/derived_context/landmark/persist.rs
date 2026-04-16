@@ -9,8 +9,7 @@ use super::model::{Landmark, NewLandmark};
 
 impl Landmark {
     pub fn update(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         diesel::update(landmarks::table.filter(landmarks::id.eq(self.id)))
             .set((
@@ -31,8 +30,7 @@ impl Landmark {
 
 impl NewLandmark {
     pub fn create(self, pool: &DbPool) -> Result<Landmark, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let analysis_id = self.analysis_id;
         let parent_id = self.parent_id;

@@ -64,8 +64,7 @@ fn select_lens_columns() -> (
 
 impl Lens {
     pub fn find_full_lens(id: Uuid, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = lenses::table
             .filter(lenses::id.eq(id))
             .select(select_lens_columns())
@@ -76,8 +75,7 @@ impl Lens {
     }
 
     pub fn get_autoplay_lenses(pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = lenses::table
             .filter(lenses::autoplay.eq(true))
             .select(select_lens_columns())
@@ -87,8 +85,7 @@ impl Lens {
     }
 
     pub fn get_user_lenses(user_id: Uuid, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = lenses::table
             .filter(lenses::user_id.eq(user_id))
             .select(select_lens_columns())
@@ -98,8 +95,7 @@ impl Lens {
     }
 
     pub fn get_analysis_scope_ids(&self, pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let mut seen = HashSet::new();
         let ids = lens_analysis_scopes::table
             .filter(lens_analysis_scopes::lens_id.eq(self.id))

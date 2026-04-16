@@ -214,7 +214,11 @@ impl PostGrant {
         PostGrant::find(grant_id, pool)
     }
 
-    pub fn user_can_read_post(post: &Post, user_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+    pub fn user_can_read_post(
+        post: &Post,
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
         if post.user_id == user_id {
             return Ok(true);
         }
@@ -314,7 +318,11 @@ impl PostGrant {
         for (post_id, source_trace_id, publishing_date, created_at) in candidate_rows {
             let candidate = VisiblePostCandidate {
                 post_id,
-                specificity: if direct_ids_set.contains(&post_id) { 2 } else { 1 },
+                specificity: if direct_ids_set.contains(&post_id) {
+                    2
+                } else {
+                    1
+                },
                 published_or_created_at: publishing_date.unwrap_or(created_at),
                 created_at,
             };
@@ -341,7 +349,11 @@ impl PostGrant {
             }
         }
 
-        selected_ids.extend(best_by_trace_id.into_values().map(|candidate| candidate.post_id));
+        selected_ids.extend(
+            best_by_trace_id
+                .into_values()
+                .map(|candidate| candidate.post_id),
+        );
         Ok(selected_ids.into_iter().collect())
     }
 

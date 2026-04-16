@@ -29,8 +29,7 @@ fn ensure_lens_analysis_scope_relation(
     analysis_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     diesel::insert_into(lens_analysis_scopes::table)
         .values((
             lens_analysis_scopes::id.eq(Uuid::new_v4()),
@@ -51,8 +50,7 @@ fn remove_lens_analysis_scope_relation(
     analysis_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     diesel::delete(
         lens_analysis_scopes::table
             .filter(lens_analysis_scopes::lens_id.eq(lens_id))
@@ -152,8 +150,7 @@ impl Lens {
     ) -> Result<bool, PpdcError> {
         let now = Utc::now().naive_utc();
         let lock_until = now + Duration::seconds(ttl_seconds.max(1));
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let updated_rows = diesel::update(
             lenses::table.filter(lenses::id.eq(self.id)).filter(
@@ -180,8 +177,7 @@ impl Lens {
     ) -> Result<bool, PpdcError> {
         let now = Utc::now().naive_utc();
         let lock_until = now + Duration::seconds(ttl_seconds.max(1));
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let updated_rows = diesel::update(
             lenses::table
@@ -195,8 +191,7 @@ impl Lens {
     }
 
     pub fn release_run_lock(&self, worker_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let updated_rows = diesel::update(
             lenses::table
@@ -213,8 +208,7 @@ impl Lens {
     }
 
     pub fn delete(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::delete(lenses::table.filter(lenses::id.eq(self.id))).execute(&mut conn)?;
         Ok(self)
     }
@@ -225,8 +219,7 @@ impl Lens {
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
         let new_landscape = LandscapeAnalysis::find_full_analysis(new_landscape_analysis_id, pool)?;
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
             .set(lenses::current_landscape_id.eq(Some(new_landscape_analysis_id)))
@@ -258,8 +251,7 @@ impl Lens {
     ) -> Result<Lens, PpdcError> {
         let target_changed = self.target_trace_id != new_target_trace_id;
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
             .set(lenses::target_trace_id.eq(new_target_trace_id))
@@ -353,8 +345,7 @@ impl Lens {
         new_processing_state: LensProcessingState,
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
             .set(lenses::processing_state.eq(new_processing_state.to_db()))
             .execute(&mut conn)?;
@@ -362,8 +353,7 @@ impl Lens {
     }
 
     pub fn update_autoplay(self, autoplay: bool, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
             .set(lenses::autoplay.eq(autoplay))
             .execute(&mut conn)?;
@@ -373,8 +363,7 @@ impl Lens {
 
 impl NewLens {
     pub fn create(self, pool: &DbPool) -> Result<Lens, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let id = Uuid::new_v4();
         diesel::insert_into(lenses::table)

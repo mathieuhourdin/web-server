@@ -82,15 +82,16 @@ fn schedule_daily_recap_email(
             PpdcError::new(
                 500,
                 ErrorType::InternalError,
-                format!("Daily recap analysis {} is missing its period summary", analysis.id),
+                format!(
+                    "Daily recap analysis {} is missing its period summary",
+                    analysis.id
+                ),
             )
         })?;
 
-    let Some(feedback_message) = Message::find_latest_feedback_for_analysis(
-        analysis.id,
-        analysis.user_id,
-        pool,
-    )? else {
+    let Some(feedback_message) =
+        Message::find_latest_feedback_for_analysis(analysis.id, analysis.user_id, pool)?
+    else {
         return Ok(None);
     };
     let mentor = User::find(&feedback_message.sender_user_id, pool)?;

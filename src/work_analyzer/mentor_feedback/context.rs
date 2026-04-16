@@ -53,7 +53,8 @@ pub fn build(
     })?;
     let mentor_user = User::find(&mentor_id, &context.pool)?;
     let summary_context = build_day_context(context, analysis)?;
-    let recent_feedbacks = Message::find_recent_mentor_feedbacks_for_user(recipient_user.id, 30, &context.pool)?;
+    let recent_feedbacks =
+        Message::find_recent_mentor_feedbacks_for_user(recipient_user.id, 30, &context.pool)?;
     let recent_feedback_metadata = recent_feedbacks
         .iter()
         .filter_map(|message| {
@@ -74,7 +75,9 @@ pub fn build(
         .map(|message| RecentMentorFeedbackContextItem {
             title: message.title,
             content: message.content,
-            metadata: message.metadata.and_then(|metadata| metadata.mentor_feedback),
+            metadata: message
+                .metadata
+                .and_then(|metadata| metadata.mentor_feedback),
             created_at: message.created_at,
         })
         .collect::<Vec<_>>();

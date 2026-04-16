@@ -10,9 +10,9 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     landscape_analysis::LandscapeAnalysis,
+    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     post::Post,
     post_grant::PostGrant,
-    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
     trace::Trace,
     user::{User, UserPrincipalType, UserRole},
@@ -350,8 +350,7 @@ pub async fn post_message_route(
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "recipient_user_id must belong to a service mentor for mentor requests"
-                    .to_string(),
+                "recipient_user_id must belong to a service mentor for mentor requests".to_string(),
             ));
         }
 

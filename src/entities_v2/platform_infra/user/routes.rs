@@ -9,10 +9,10 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Text};
-use chrono::Utc;
 use uuid::Uuid;
 
 use super::enums::UserPrincipalType;
@@ -54,8 +54,7 @@ pub async fn get_users(
     Query(params): Query<UserListParams>,
     Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let mut query = crate::schema::users::table.into_boxed();
     if let Some(principal_type) = params.principal_type {
@@ -90,8 +89,7 @@ pub async fn get_user_search_route(
     let contains_query = format!("%{}%", query);
     let prefix_query = format!("{}%", query);
 
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let rows = sql_query(
         r#"
@@ -140,8 +138,7 @@ pub async fn get_mentors_route(
     Query(params): Query<crate::pagination::PaginationParams>,
     Extension(pool): Extension<DbPool>,
 ) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let results: Vec<UserPseudonymizedResponse> = crate::schema::users::table
         .filter(crate::schema::users::principal_type.eq(UserPrincipalType::Service))

@@ -149,9 +149,7 @@ pub fn persist_hlp_entities(
                 continue;
             };
 
-            let mut conn = context
-                .pool
-                .get()?;
+            let mut conn = context.pool.get()?;
             diesel::insert_into(landmark_relations::table)
                 .values((
                     landmark_relations::origin_landmark_id.eq(landmark.id),

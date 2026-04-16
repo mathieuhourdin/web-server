@@ -105,8 +105,7 @@ pub async fn get_admin_recent_user_activity_route(
     let _admin_user = ensure_admin_session_user(&session, &pool)?;
     let pagination = params.validate()?;
 
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let total = users::table
         .filter(users::principal_type.eq(UserPrincipalType::Human))
@@ -283,8 +282,7 @@ pub async fn get_admin_service_users_route(
     Extension(session): Extension<Session>,
 ) -> Result<Json<Vec<User>>, PpdcError> {
     let _admin_user = ensure_admin_session_user(&session, &pool)?;
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let users = users::table
         .filter(users::principal_type.eq(UserPrincipalType::Service))

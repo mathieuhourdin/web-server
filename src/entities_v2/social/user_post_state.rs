@@ -74,8 +74,7 @@ impl UserPostState {
         post_id: Uuid,
         pool: &DbPool,
     ) -> Result<UserPostState, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = user_post_states::table
             .filter(user_post_states::user_id.eq(user_id))
             .filter(user_post_states::post_id.eq(post_id))
@@ -105,8 +104,7 @@ impl UserPostState {
             return Err(PpdcError::unauthorized());
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         sql_query(
             r#"
@@ -142,8 +140,7 @@ impl UserPostState {
             return Err(PpdcError::unauthorized());
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = user_post_states::table
             .filter(user_post_states::post_id.eq(post_id))
             .order(user_post_states::last_seen_at.desc())

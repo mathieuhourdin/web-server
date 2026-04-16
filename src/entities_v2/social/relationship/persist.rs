@@ -136,8 +136,7 @@ impl Relationship {
                     ))
                 }
                 RelationshipStatus::Rejected => {
-                    let mut conn = pool
-                        .get()?;
+                    let mut conn = pool.get()?;
                     diesel::update(relationships::table.filter(relationships::id.eq(existing.id)))
                         .set((
                             relationships::status.eq(RelationshipStatus::Pending.to_db()),
@@ -150,8 +149,7 @@ impl Relationship {
             }
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let id = Uuid::new_v4();
         diesel::insert_into(relationships::table)
             .values((
@@ -188,8 +186,7 @@ impl Relationship {
             ));
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         conn.transaction::<(), diesel::result::Error, _>(|conn| {
             if status == RelationshipStatus::Accepted {
                 diesel::update(relationships::table.filter(relationships::id.eq(id)))

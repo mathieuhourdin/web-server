@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
-use diesel::prelude::*;
 use diesel::dsl::not;
+use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -117,8 +117,7 @@ fn select_post_columns() -> (
 
 impl Post {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = posts::table
             .filter(posts::id.eq(id))
             .select(select_post_columns())
@@ -139,8 +138,7 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut count_query = posts::table
@@ -225,8 +223,7 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
@@ -249,8 +246,7 @@ impl Post {
         trace_id: Uuid,
         pool: &DbPool,
     ) -> Result<Option<Post>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let row = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
@@ -270,16 +266,15 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<Vec<Post>, PpdcError> {
-        let (items, _) =
-            Self::find_for_user_filtered_paginated(
-                viewer_user_id,
-                user_id,
-                vec![],
-                vec![],
-                offset,
-                limit,
-                pool,
-            )?;
+        let (items, _) = Self::find_for_user_filtered_paginated(
+            viewer_user_id,
+            user_id,
+            vec![],
+            vec![],
+            offset,
+            limit,
+            pool,
+        )?;
         Ok(items)
     }
 
@@ -313,8 +308,7 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let visible_post_ids = if viewer_user_id == user_id {
             vec![]
         } else {
@@ -423,8 +417,7 @@ impl Post {
             }
         });
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
         let seen_post_ids = if seen.is_some() {
             user_post_states::table
@@ -481,8 +474,7 @@ impl Post {
             } else {
                 count_query = count_query.filter(posts::user_id.ne(viewer_user_id));
                 if !seen_post_ids.is_empty() {
-                    count_query =
-                        count_query.filter(not(posts::id.eq_any(seen_post_ids.clone())));
+                    count_query = count_query.filter(not(posts::id.eq_any(seen_post_ids.clone())));
                 }
             }
         }
@@ -561,8 +553,7 @@ impl Post {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Post>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = posts::table
             .filter(posts::user_id.eq(user_id))

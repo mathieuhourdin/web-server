@@ -62,8 +62,7 @@ fn serialize_metadata(metadata: Option<&MessageMetadata>) -> Result<Option<Strin
 
 impl Message {
     pub fn update(self, pool: &DbPool) -> Result<Message, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
         let metadata_json = serialize_metadata(self.metadata.as_ref())?;
@@ -114,8 +113,7 @@ impl Message {
             return Ok(self);
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         sql_query(
             r#"
             UPDATE messages
@@ -132,8 +130,7 @@ impl Message {
 
 impl NewMessage {
     pub fn create(self, pool: &DbPool) -> Result<Message, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
         let metadata_json = serialize_metadata(self.metadata.as_ref())?;

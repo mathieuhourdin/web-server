@@ -65,8 +65,7 @@ fn tuple_to_trace_mirror(row: TraceMirrorTuple) -> TraceMirror {
 
 impl TraceMirror {
     pub fn find_full_trace_mirror(id: Uuid, pool: &DbPool) -> Result<TraceMirror, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = trace_mirrors::table
             .filter(trace_mirrors::id.eq(id))
             .select((
@@ -98,8 +97,7 @@ impl TraceMirror {
         landscape_analysis_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<TraceMirror>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = trace_mirrors::table
             .filter(trace_mirrors::landscape_analysis_id.eq(landscape_analysis_id))
             .select((
@@ -122,8 +120,7 @@ impl TraceMirror {
     }
 
     pub fn find_by_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = trace_mirrors::table
             .filter(trace_mirrors::trace_id.eq(trace_id))
             .select((
@@ -146,8 +143,7 @@ impl TraceMirror {
     }
 
     pub fn find_by_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<TraceMirror>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = trace_mirrors::table
             .filter(trace_mirrors::user_id.eq(user_id))
             .select((

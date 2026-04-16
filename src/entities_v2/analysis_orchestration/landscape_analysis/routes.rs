@@ -173,11 +173,9 @@ fn filtered_completed_analyses_for_lens(
     raw_query: Option<&str>,
     pool: &DbPool,
 ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-    let landscape_analysis_type =
-        crate::pagination::parse_repeated_query_param::<LandscapeAnalysisType>(
-            raw_query,
-            "landscape_analysis_type",
-        )?;
+    let landscape_analysis_type = crate::pagination::parse_repeated_query_param::<
+        LandscapeAnalysisType,
+    >(raw_query, "landscape_analysis_type")?;
 
     let mut analyses = lens
         .get_analysis_scope(pool)?
@@ -245,7 +243,10 @@ pub async fn post_replan_autoplay_lenses_route(
     }
 
     let autoplay_lenses = Lens::get_autoplay_lenses(&pool)?;
-    let candidate_lens_ids = autoplay_lenses.iter().map(|lens| lens.id).collect::<Vec<_>>();
+    let candidate_lens_ids = autoplay_lenses
+        .iter()
+        .map(|lens| lens.id)
+        .collect::<Vec<_>>();
     let mut planned_lens_ids = Vec::new();
     let mut skipped = Vec::new();
     let mut failed = Vec::new();

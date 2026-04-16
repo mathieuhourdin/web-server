@@ -1,9 +1,4 @@
-use axum::{
-    debug_handler,
-    extract::Extension,
-    http::HeaderMap,
-    Json,
-};
+use axum::{debug_handler, extract::Extension, http::HeaderMap, Json};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -45,7 +40,10 @@ pub async fn post_process_pending_emails_route(
 
     let claimed_emails =
         OutboundEmail::claim_due_pending(EMAIL_CRON_BATCH_LIMIT, Uuid::new_v4(), &pool)?;
-    let candidate_email_ids = claimed_emails.iter().map(|email| email.id).collect::<Vec<_>>();
+    let candidate_email_ids = claimed_emails
+        .iter()
+        .map(|email| email.id)
+        .collect::<Vec<_>>();
     let mut processed_email_ids = Vec::new();
     let mut failed = Vec::new();
 

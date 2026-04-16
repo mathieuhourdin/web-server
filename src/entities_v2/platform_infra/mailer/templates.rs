@@ -291,7 +291,10 @@ pub fn journal_access_granted_email(
     let html_body = render_template(
         JOURNAL_ACCESS_GRANTED_HTML,
         &[
-            ("recipient_display_name", escape_html(recipient_display_name)),
+            (
+                "recipient_display_name",
+                escape_html(recipient_display_name),
+            ),
             ("owner_display_name", escape_html(owner_display_name)),
             ("journal_title", escape_html(journal_title)),
             ("journal_url", escape_html(journal_url)),
@@ -317,7 +320,10 @@ pub fn daily_recap_email(
     let subject = if feedback_title.trim().is_empty() {
         format!("🫀 Votre retour du jour de {}", mentor_display_name)
     } else {
-        format!("🫀 {} vous a laissé un retour : {}", mentor_display_name, feedback_title)
+        format!(
+            "🫀 {} vous a laissé un retour : {}",
+            mentor_display_name, feedback_title
+        )
     };
     let text_body = render_template(
         DAILY_RECAP_FEEDBACK_TEXT,
@@ -333,7 +339,10 @@ pub fn daily_recap_email(
     let html_body = render_template(
         DAILY_RECAP_FEEDBACK_HTML,
         &[
-            ("recipient_display_name", escape_html(recipient_display_name)),
+            (
+                "recipient_display_name",
+                escape_html(recipient_display_name),
+            ),
             ("mentor_display_name", escape_html(mentor_display_name)),
             ("feedback_preview_html", escape_html(feedback_preview)),
             ("recap_title", escape_html(recap_title)),

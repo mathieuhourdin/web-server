@@ -1,4 +1,5 @@
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use chrono::Weekday;
 use diesel::deserialize::{self, FromSql};
 use diesel::pg::{Pg, PgValue};
 use diesel::serialize::{self, Output, ToSql};
@@ -6,7 +7,6 @@ use diesel::sql_types::{SmallInt, Text};
 use diesel::{AsExpression, FromSqlRow};
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
-use chrono::Weekday;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Text)]

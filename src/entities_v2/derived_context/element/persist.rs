@@ -11,8 +11,7 @@ use super::model::{Element, NewElement};
 
 impl Element {
     pub fn update(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         diesel::update(elements::table.filter(elements::id.eq(self.id)))
             .set((
@@ -38,8 +37,7 @@ impl Element {
 
 impl NewElement {
     pub fn create(self, pool: &DbPool) -> Result<Element, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let landmark_id = self.landmark_id;
         let id = conn.transaction::<Uuid, diesel::result::Error, _>(|conn| {
             let id: Uuid = diesel::insert_into(elements::table)
@@ -91,8 +89,7 @@ pub fn link_to_landmark(
     _user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Uuid, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     conn.transaction::<(), diesel::result::Error, _>(|conn| {
         let inserted = diesel::insert_into(element_landmarks::table)
             .values((

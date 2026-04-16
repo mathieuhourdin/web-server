@@ -14,8 +14,8 @@ use crate::entities_v2::{
     analysis_summary, asset, element,
     error::{ErrorType, PpdcError},
     journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
-    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror,
-    transcription, usage_event, user, user_post_state, user_secure_action,
+    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, transcription,
+    usage_event, user, user_post_state, user_secure_action,
 };
 use crate::sessions_service;
 
@@ -79,11 +79,13 @@ pub fn create_router() -> Router {
             "/:id/posts",
             get(post::get_trace_posts_route).post(post::post_trace_post_route),
         )
-        .route("/:id/extend_timeout", post(trace::post_trace_extend_timeout_route))
+        .route(
+            "/:id/extend_timeout",
+            post(trace::post_trace_extend_timeout_route),
+        )
         .route(
             "/:id/assets",
-            post(trace::post_trace_asset_route)
-                .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
+            post(trace::post_trace_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .route(
             "/:id/attachments",
@@ -133,7 +135,10 @@ pub fn create_router() -> Router {
 
     let journals_router = Router::new()
         .route("/", post(journal::post_journal_route))
-        .route("/shared/recent", get(journal::get_recent_shared_journals_route))
+        .route(
+            "/shared/recent",
+            get(journal::get_recent_shared_journals_route),
+        )
         .route("/shared", get(journal::get_shared_journals_route))
         .route(
             "/:id/draft",
@@ -143,7 +148,10 @@ pub fn create_router() -> Router {
             "/:id",
             get(journal::get_journal_route).put(journal::put_journal_route),
         )
-        .route("/:id/share_links", post(journal_share_link::post_journal_share_link_route))
+        .route(
+            "/:id/share_links",
+            post(journal_share_link::post_journal_share_link_route),
+        )
         .route(
             "/:journal_id/share_links/:share_link_id",
             delete(journal_share_link::delete_journal_share_link_route),
@@ -225,18 +233,19 @@ pub fn create_router() -> Router {
             get(llm_call::get_llm_calls_by_analysis_id_route),
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
-    let internal_router = Router::new().route(
-        "/run_pending_analyses",
-        post(landscape_analysis::post_run_pending_analyses_route),
-    )
-    .route(
-        "/replan_autoplay_lenses",
-        post(landscape_analysis::post_replan_autoplay_lenses_route),
-    )
-    .route(
-        "/process_pending_emails",
-        post(mailer::post_process_pending_emails_route),
-    );
+    let internal_router = Router::new()
+        .route(
+            "/run_pending_analyses",
+            post(landscape_analysis::post_run_pending_analyses_route),
+        )
+        .route(
+            "/replan_autoplay_lenses",
+            post(landscape_analysis::post_replan_autoplay_lenses_route),
+        )
+        .route(
+            "/process_pending_emails",
+            post(mailer::post_process_pending_emails_route),
+        );
     let analysis_summaries_router = Router::new()
         .route(
             "/:id",
@@ -319,7 +328,10 @@ pub fn create_router() -> Router {
         .route("/", post(user_post_state::post_user_post_state_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let shared_router = Router::new()
-        .route("/journals/:id", get(journal_share_link::get_shared_journal_route))
+        .route(
+            "/journals/:id",
+            get(journal_share_link::get_shared_journal_route),
+        )
         .route(
             "/journals/:id/posts",
             get(journal_share_link::get_shared_journal_posts_route),

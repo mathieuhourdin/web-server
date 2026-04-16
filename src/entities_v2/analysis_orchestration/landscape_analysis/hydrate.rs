@@ -171,8 +171,7 @@ impl LandscapeAnalysis {
 
     /// Loads one analysis with all persisted fields, which is the base read path for analysis routes and workers.
     pub fn find_full_analysis(id: Uuid, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = landscape_analyses::table
             .filter(landscape_analyses::id.eq(id))
             .select(select_analysis_columns())
@@ -192,8 +191,7 @@ impl LandscapeAnalysis {
         trace_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = landscape_analyses::table
             .filter(landscape_analyses::analyzed_trace_id.eq(trace_id))
             .select(select_analysis_columns())
@@ -214,8 +212,7 @@ impl LandscapeAnalysis {
 
     /// Loads the elements produced by this analysis run, which are the trace-scoped analytic outputs.
     pub fn get_elements(&self, pool: &DbPool) -> Result<Vec<Element>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let element_ids = crate::schema::elements::table
             .filter(crate::schema::elements::analysis_id.eq(self.id))
             .select(crate::schema::elements::id)
@@ -231,8 +228,7 @@ impl LandscapeAnalysis {
         &self,
         pool: &DbPool,
     ) -> Result<Vec<LandscapeAnalysis>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let rows = landscape_analyses::table
             .filter(landscape_analyses::parent_id.eq(self.id))
             .select(landscape_analyses::id)
@@ -244,8 +240,7 @@ impl LandscapeAnalysis {
 
     /// Returns the lenses whose current head points to this analysis.
     pub fn get_heading_lens(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let lens_ids = lens_heads::table
             .filter(lens_heads::landscape_analysis_id.eq(self.id))
             .select(lens_heads::lens_id)
@@ -258,8 +253,7 @@ impl LandscapeAnalysis {
 
     /// Returns every lens scope that includes this analysis, including forked descendants.
     pub fn get_scoped_lenses(&self, pool: &DbPool) -> Result<Vec<Lens>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let lens_ids = lens_analysis_scopes::table
             .filter(lens_analysis_scopes::landscape_analysis_id.eq(self.id))
             .select(lens_analysis_scopes::lens_id)
@@ -272,8 +266,7 @@ impl LandscapeAnalysis {
 
     /// Returns the traces and trace mirrors explicitly recorded as inputs to this analysis run.
     pub fn get_inputs(&self, pool: &DbPool) -> Result<Vec<LandscapeAnalysisInput>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let rows = landscape_analysis_inputs::table
             .filter(landscape_analysis_inputs::landscape_analysis_id.eq(self.id))

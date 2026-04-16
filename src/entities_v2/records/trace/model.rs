@@ -143,8 +143,7 @@ impl Trace {
         journal_id: Uuid,
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -166,8 +165,7 @@ impl Trace {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -188,8 +186,7 @@ impl Trace {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Option<Trace>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -217,8 +214,7 @@ impl Trace {
         let from = start_trace.interaction_date;
         let to = end_trace.interaction_date;
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -243,8 +239,7 @@ impl Trace {
         let trace = Trace::find_full_trace(trace_id, pool)?;
         let until = trace.interaction_date;
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -261,8 +256,7 @@ impl Trace {
     }
 
     pub fn get_first(user_id: Uuid, pool: &DbPool) -> Result<Option<Trace>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let latest_hlp = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -307,8 +301,7 @@ impl Trace {
         let trace = Trace::find_full_trace(trace_id, pool)?;
 
         if trace.trace_type == TraceType::HighLevelProjectsDefinition {
-            let mut conn = pool
-                .get()?;
+            let mut conn = pool.get()?;
 
             let latest_bio = diesel::sql_query(
                 "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -334,8 +327,7 @@ impl Trace {
         }
 
         let reference_ts = trace.interaction_date;
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let next = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
@@ -365,8 +357,7 @@ impl Trace {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
@@ -404,8 +395,7 @@ impl Trace {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
@@ -440,8 +430,7 @@ impl Trace {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
@@ -474,9 +463,11 @@ impl Trace {
         Ok((rows.into_iter().map(Trace::from).collect(), total))
     }
 
-    pub fn get_expired_drafts_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
-        let mut conn = pool
-            .get()?;
+    pub fn get_expired_drafts_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Trace>, PpdcError> {
+        let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
             "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at

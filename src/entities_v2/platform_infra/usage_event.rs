@@ -164,8 +164,7 @@ impl NewUsageEvent {
     }
 
     fn create(self, pool: &DbPool) -> Result<UsageEvent, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         sql_query(
             r#"
@@ -198,8 +197,7 @@ impl NewUsageEvent {
 
 impl UsageEvent {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<UsageEvent, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         let row = usage_events::table
             .filter(usage_events::id.eq(id))
             .select((
@@ -216,7 +214,11 @@ impl UsageEvent {
             .optional()?;
 
         row.map(TryInto::try_into).transpose()?.ok_or_else(|| {
-            PpdcError::new(404, ErrorType::ApiError, "Usage event not found".to_string())
+            PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Usage event not found".to_string(),
+            )
         })
     }
 }

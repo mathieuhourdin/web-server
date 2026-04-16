@@ -1,8 +1,8 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::sql;
 use diesel::prelude::*;
-use diesel::PgSortExpressionMethods;
 use diesel::sql_types::{BigInt, Nullable, Timestamp};
+use diesel::PgSortExpressionMethods;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -59,8 +59,7 @@ impl From<JournalTuple> for Journal {
 
 impl Journal {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let row = journals::table
             .filter(journals::id.eq(id))
@@ -92,8 +91,7 @@ impl Journal {
     }
 
     pub fn count_for_user(user_id: Uuid, pool: &DbPool) -> Result<i64, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = journals::table
             .filter(journals::user_id.eq(user_id))
@@ -109,8 +107,7 @@ impl Journal {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Journal>, i64), PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = journals::table
             .filter(journals::user_id.eq(user_id))
@@ -159,8 +156,7 @@ impl Journal {
             return Ok((vec![], 0));
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = {
             let mut count_query = journals::table
@@ -222,8 +218,7 @@ impl Journal {
             return Ok((vec![], 0));
         }
 
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let total = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))

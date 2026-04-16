@@ -32,8 +32,7 @@ struct IdRow {
 impl LandscapeAnalysis {
     /// Persists all mutable fields of an analysis row after a worker or route has changed its state.
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::update(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
             .set((
                 landscape_analyses::title.eq(self.title),
@@ -66,8 +65,7 @@ impl LandscapeAnalysis {
 
     /// Deletes the analysis row itself after higher-level guards have confirmed the analysis can be removed.
     pub fn delete(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
         diesel::delete(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
             .execute(&mut conn)?;
         Ok(self)
@@ -77,8 +75,7 @@ impl LandscapeAnalysis {
 impl NewLandscapeAnalysis {
     /// Inserts a standalone pending analysis without attaching it to a specific lens scope.
     pub fn create(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let id: Uuid = diesel::insert_into(landscape_analyses::table)
             .values((
@@ -109,8 +106,7 @@ impl NewLandscapeAnalysis {
         lens_id: Uuid,
         pool: &DbPool,
     ) -> Result<LandscapeAnalysis, PpdcError> {
-        let mut conn = pool
-            .get()?;
+        let mut conn = pool.get()?;
 
         let analysis_id: Uuid = conn.transaction::<Uuid, diesel::result::Error, _>(|conn| {
             let id: Uuid = diesel::insert_into(landscape_analyses::table)
@@ -235,8 +231,7 @@ fn find_analysis_covering_moment_for_lens(
     moment: NaiveDateTime,
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let maybe_id = lens_analysis_scopes::table
         .inner_join(
@@ -257,6 +252,61 @@ fn find_analysis_covering_moment_for_lens(
     }
 }
 
+/// Finds the latest recap of one type that ends before or exactly at the given moment for this lens.
+fn find_latest_prior_analysis_for_lens(
+    lens_id: Uuid,
+    analysis_type: LandscapeAnalysisType,
+    moment: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<Option<LandscapeAnalysis>, PpdcError> {
+    let mut conn = pool.get()?;
+
+    let maybe_id = lens_analysis_scopes::table
+        .inner_join(
+            landscape_analyses::table
+                .on(lens_analysis_scopes::landscape_analysis_id.eq(landscape_analyses::id)),
+        )
+        .filter(lens_analysis_scopes::lens_id.eq(lens_id))
+        .filter(landscape_analyses::landscape_analysis_type.eq(analysis_type.to_db()))
+        .filter(landscape_analyses::period_end.le(moment))
+        .order((
+            landscape_analyses::period_end.desc(),
+            landscape_analyses::created_at.desc(),
+        ))
+        .select(landscape_analyses::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?;
+
+    match maybe_id {
+        Some(id) => Ok(Some(LandscapeAnalysis::find_full_analysis(id, pool)?)),
+        None => Ok(None),
+    }
+}
+
+/// Builds a recap period that preserves the new timezone boundary while remaining contiguous with prior coverage.
+fn adjust_recap_period_start_for_previous_period(
+    candidate_start: NaiveDateTime,
+    candidate_end: NaiveDateTime,
+    previous_period_end: Option<NaiveDateTime>,
+) -> Result<(NaiveDateTime, NaiveDateTime), PpdcError> {
+    let adjusted_start = previous_period_end
+        .map(|previous_end| previous_end.max(candidate_start))
+        .unwrap_or(candidate_start);
+
+    if adjusted_start >= candidate_end {
+        return Err(PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            format!(
+                "Invalid recap transition period: start {} must stay before end {}",
+                adjusted_start, candidate_end
+            ),
+        ));
+    }
+
+    Ok((adjusted_start, candidate_end))
+}
+
 /// Checks whether the lens already has the trace-scoped analysis job needed for this trace and type.
 fn has_trace_analysis_for_lens(
     lens_id: Uuid,
@@ -264,8 +314,7 @@ fn has_trace_analysis_for_lens(
     analyzed_trace_id: Uuid,
     pool: &DbPool,
 ) -> Result<bool, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let maybe_id = lens_analysis_scopes::table
         .inner_join(
@@ -415,7 +464,19 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 pool,
             )?;
         } else {
-            let (day_start, day_end) = day_period_for_datetime(trace_datetime, tz)?;
+            let previous_daily = find_latest_prior_analysis_for_lens(
+                lens_id,
+                LandscapeAnalysisType::DailyRecap,
+                trace_datetime,
+                pool,
+            )?;
+            let (candidate_day_start, candidate_day_end) =
+                day_period_for_datetime(trace_datetime, tz)?;
+            let (day_start, day_end) = adjust_recap_period_start_for_previous_period(
+                candidate_day_start,
+                candidate_day_end,
+                previous_daily.map(|analysis| analysis.period_end),
+            )?;
             let daily = NewLandscapeAnalysis::new_daily_recap(
                 format!("Daily recap {}", day_start.date()),
                 String::new(),
@@ -450,8 +511,19 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             )?;
         } else {
             let week_start_weekday = user.week_analysis_weekday.to_chrono_weekday();
-            let (week_start, week_end) =
+            let previous_weekly = find_latest_prior_analysis_for_lens(
+                lens_id,
+                LandscapeAnalysisType::WeeklyRecap,
+                trace_datetime,
+                pool,
+            )?;
+            let (candidate_week_start, candidate_week_end) =
                 week_period_for_datetime(trace_datetime, tz, week_start_weekday)?;
+            let (week_start, week_end) = adjust_recap_period_start_for_previous_period(
+                candidate_week_start,
+                candidate_week_end,
+                previous_weekly.map(|analysis| analysis.period_end),
+            )?;
             let weekly = NewLandscapeAnalysis::new_weekly_recap(
                 format!("Weekly recap {}", week_start.date()),
                 String::new(),
@@ -481,8 +553,7 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
     trace_datetime: NaiveDateTime,
     pool: &DbPool,
 ) -> Result<(usize, usize, usize), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let pending_summary_rows = lens_analysis_scopes::table
         .inner_join(
@@ -536,8 +607,7 @@ pub fn claim_next_pending_for_lens(
     claim_cutoff_at: NaiveDateTime,
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let claimed = sql_query(
         r#"
@@ -599,8 +669,7 @@ RETURNING la.id
 
 /// Lists the lens ids that still have pending analysis work, ordered so the oldest due work is handled first.
 pub fn find_lens_ids_with_pending_analyses(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let rows = sql_query(
         r#"
@@ -644,8 +713,7 @@ pub fn find_last_analysis_resource(
     user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Option<LandscapeAnalysis>, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     let maybe_id = landscape_analyses::table
         .filter(landscape_analyses::user_id.eq(user_id))
         .order(landscape_analyses::interaction_date.desc().nulls_last())
@@ -704,8 +772,7 @@ pub fn add_trace_input(
     input_type: LandscapeAnalysisInputType,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     add_trace_input_with_conn(&mut conn, landscape_analysis_id, trace_id, input_type)?;
     Ok(())
 }
@@ -717,8 +784,7 @@ pub fn add_trace_mirror_input(
     input_type: LandscapeAnalysisInputType,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     add_trace_mirror_input_with_conn(
         &mut conn,
         landscape_analysis_id,
@@ -737,8 +803,7 @@ pub fn replace_covered_inputs_for_period(
     period_end: NaiveDateTime,
     pool: &DbPool,
 ) -> Result<(usize, usize), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let counts = conn.transaction::<(usize, usize), diesel::result::Error, _>(|conn| {
         diesel::delete(
@@ -822,8 +887,7 @@ pub fn add_landmark_ref(
     _user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
     diesel::insert_into(landscape_landmarks::table)
         .values((
             landscape_landmarks::landscape_analysis_id.eq(landscape_analysis_id),
@@ -846,8 +910,7 @@ pub fn copy_landmark_links_from_analysis(
     target_landscape_analysis_id: Uuid,
     pool: &DbPool,
 ) -> Result<usize, PpdcError> {
-    let mut conn = pool
-        .get()?;
+    let mut conn = pool.get()?;
 
     let source_landmark_ids = landscape_landmarks::table
         .filter(landscape_landmarks::landscape_analysis_id.eq(source_landscape_analysis_id))
@@ -874,4 +937,55 @@ pub fn copy_landmark_links_from_analysis(
     }
 
     Ok(inserted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::adjust_recap_period_start_for_previous_period;
+    use chrono::NaiveDate;
+
+    fn dt(year: i32, month: u32, day: u32, hour: u32) -> chrono::NaiveDateTime {
+        NaiveDate::from_ymd_opt(year, month, day)
+            .unwrap()
+            .and_hms_opt(hour, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn keeps_candidate_period_when_previous_period_does_not_overlap() {
+        let (start, end) = adjust_recap_period_start_for_previous_period(
+            dt(2026, 4, 16, 2),
+            dt(2026, 4, 17, 2),
+            Some(dt(2026, 4, 16, 1)),
+        )
+        .unwrap();
+
+        assert_eq!(start, dt(2026, 4, 16, 2));
+        assert_eq!(end, dt(2026, 4, 17, 2));
+    }
+
+    #[test]
+    fn clamps_candidate_start_to_previous_period_end() {
+        let (start, end) = adjust_recap_period_start_for_previous_period(
+            dt(2026, 4, 16, 2),
+            dt(2026, 4, 17, 2),
+            Some(dt(2026, 4, 16, 4)),
+        )
+        .unwrap();
+
+        assert_eq!(start, dt(2026, 4, 16, 4));
+        assert_eq!(end, dt(2026, 4, 17, 2));
+    }
+
+    #[test]
+    fn rejects_collapsed_transition_period() {
+        let error = adjust_recap_period_start_for_previous_period(
+            dt(2026, 4, 16, 2),
+            dt(2026, 4, 16, 4),
+            Some(dt(2026, 4, 16, 4)),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.status_code, 409);
+    }
 }

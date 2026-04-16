@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::entities_v2::post::routes::enqueue_post_published_notification_emails;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
@@ -15,16 +16,20 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
-        routes::{enqueue_received_message_notification_email, is_service_mentor}, Message,
-        MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
+        routes::{enqueue_received_message_notification_email, is_service_mentor},
+        Message, MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType,
+        NewMessage,
     },
-    post::{model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType, PostType},
-    post_grant::{NewPostGrantDto, PostGrantScope},
     platform_infra::{
         asset::{upload_asset_for_user, upload_asset_for_user_from_multipart, AssetUploadResponse},
         mailer,
         usage_event::{create_usage_event, UsageEventType},
     },
+    post::{
+        model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType,
+        PostType,
+    },
+    post_grant::{NewPostGrantDto, PostGrantScope},
     session::Session,
     shared::MaturingState,
     trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
@@ -32,7 +37,6 @@ use crate::entities_v2::{
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
-use crate::entities_v2::post::routes::enqueue_post_published_notification_emails;
 
 use super::{
     llm_qualify,
@@ -263,7 +267,11 @@ async fn parse_trace_attachment_multipart(
     let mut attachment_name: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|err| {
-        PpdcError::new(400, ErrorType::ApiError, format!("Multipart error: {}", err))
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!("Multipart error: {}", err),
+        )
     })? {
         let field_name = field.name().map(|value| value.to_string());
         if field.file_name().is_some() {
@@ -356,9 +364,7 @@ fn ensure_default_draft_post_for_shared_trace(
                 Some(JournalGrantScope::AllAcceptedFollowers) => {
                     Some(PostGrantScope::AllAcceptedFollowers)
                 }
-                Some(JournalGrantScope::AllPlatformUsers) => {
-                    Some(PostGrantScope::AllPlatformUsers)
-                }
+                Some(JournalGrantScope::AllPlatformUsers) => Some(PostGrantScope::AllPlatformUsers),
                 None => None,
             },
             access_level: None,
@@ -448,7 +454,8 @@ async fn create_or_get_journal_draft(
     }
 
     if let Some(existing_draft) = Trace::find_draft_for_journal(journal.id, &pool)? {
-        let existing_draft = finalize_expired_trace_if_needed(existing_draft, pool, session_id).await?;
+        let existing_draft =
+            finalize_expired_trace_if_needed(existing_draft, pool, session_id).await?;
         if existing_draft.status == super::enums::TraceStatus::Draft {
             return Ok(existing_draft);
         }
@@ -515,7 +522,8 @@ pub async fn post_journal_draft_route(
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let trace = create_or_get_journal_draft(journal, user_id, Some(session.id), payload, &pool).await?;
+    let trace =
+        create_or_get_journal_draft(journal, user_id, Some(session.id), payload, &pool).await?;
     Ok(Json(trace))
 }
 
@@ -609,7 +617,7 @@ pub async fn put_trace_route(
                         }
                         let trace =
                             finalize_trace_transition(trace, &pool, Some(session.id), false)
-                            .await?;
+                                .await?;
                         if publish_default_post {
                             let _ = publish_default_post_for_trace(&trace, &pool)?;
                         }
@@ -623,7 +631,8 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Finalized => {
-            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed {
+            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed
+            {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -647,7 +656,8 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Archived => {
-            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed {
+            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed
+            {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -1123,8 +1133,7 @@ pub async fn post_trace_message_route(
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "recipient_user_id must belong to a service mentor for mentor requests"
-                    .to_string(),
+                "recipient_user_id must belong to a service mentor for mentor requests".to_string(),
             ));
         }
 
