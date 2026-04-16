@@ -13,9 +13,9 @@ use tower_http::{
 use crate::entities_v2::{
     analysis_summary, asset, element,
     error::{ErrorType, PpdcError},
-    journal, journal_grant, landmark, landscape_analysis, lens, llm_call, mailer, message, post,
-    post_grant, reference, relationship, trace, trace_mirror, transcription, usage_event,
-    user, user_post_state, user_secure_action,
+    journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
+    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror,
+    transcription, usage_event, user, user_post_state, user_secure_action,
 };
 use crate::sessions_service;
 
@@ -142,6 +142,11 @@ pub fn create_router() -> Router {
         .route(
             "/:id",
             get(journal::get_journal_route).put(journal::put_journal_route),
+        )
+        .route("/:id/share_links", post(journal_share_link::post_journal_share_link_route))
+        .route(
+            "/:journal_id/share_links/:share_link_id",
+            delete(journal_share_link::delete_journal_share_link_route),
         )
         .route("/:id/exports", post(journal::post_journal_export_route))
         .route(
@@ -313,6 +318,12 @@ pub fn create_router() -> Router {
     let user_post_states_router = Router::new()
         .route("/", post(user_post_state::post_user_post_state_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let shared_router = Router::new()
+        .route("/journals/:id", get(journal_share_link::get_shared_journal_route))
+        .route(
+            "/journals/:id/posts",
+            get(journal_share_link::get_shared_journal_posts_route),
+        );
 
     Router::new()
         .route("/users", post(user::post_user))
@@ -338,6 +349,7 @@ pub fn create_router() -> Router {
         .nest("/landmarks", landmarks_router)
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)
+        .nest("/shared", shared_router)
         .fallback(fallback_handler)
         .route("/", get(root_handler))
         .layer(from_fn(sessions_service::add_session_to_request))

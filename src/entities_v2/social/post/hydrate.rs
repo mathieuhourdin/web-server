@@ -188,6 +188,37 @@ impl Post {
         Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
 
+    pub fn find_public_default_for_journal_paginated(
+        journal_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+
+        let total = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        let rows = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .select(select_post_columns())
+            .order(posts::publishing_date.desc().nulls_last())
+            .then_order_by(posts::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<PostTuple>(&mut conn)?;
+
+        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+    }
+
     pub fn find_for_trace_paginated(
         trace_id: Uuid,
         offset: i64,

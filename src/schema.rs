@@ -104,6 +104,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    journal_share_links (id) {
+        id -> Uuid,
+        journal_id -> Uuid,
+        owner_user_id -> Uuid,
+        token_hash -> Text,
+        expires_at -> Timestamp,
+        revoked_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     journals (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -587,6 +600,8 @@ diesel::joinable!(elements -> users (user_id));
 diesel::joinable!(interactions -> resources (resource_id));
 diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(journal_grants -> journals (journal_id));
+diesel::joinable!(journal_share_links -> journals (journal_id));
+diesel::joinable!(journal_share_links -> users (owner_user_id));
 diesel::joinable!(journals -> users (user_id));
 diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
 diesel::joinable!(landmarks -> users (user_id));
@@ -643,6 +658,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     elements,
     interactions,
     journal_grants,
+    journal_share_links,
     journals,
     landmark_relations,
     landmarks,
