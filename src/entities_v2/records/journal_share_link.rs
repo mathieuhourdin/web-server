@@ -95,8 +95,6 @@ pub struct PublicSharedJournalResponse {
 #[derive(Serialize)]
 pub struct PublicSharedJournalPostResponse {
     pub id: Uuid,
-    pub title: String,
-    pub subtitle: String,
     pub content: String,
     pub image_asset_id: Option<Uuid>,
     pub publishing_date: Option<NaiveDateTime>,
@@ -122,8 +120,6 @@ impl From<Post> for PublicSharedJournalPostResponse {
     fn from(post: Post) -> Self {
         Self {
             id: post.id,
-            title: post.title,
-            subtitle: post.subtitle,
             content: post.content,
             image_asset_id: post.image_asset_id,
             publishing_date: post.publishing_date,
