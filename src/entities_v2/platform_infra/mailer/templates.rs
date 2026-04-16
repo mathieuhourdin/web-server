@@ -1,5 +1,7 @@
 use chrono::NaiveDateTime;
 
+use crate::environment;
+
 #[derive(Debug, Clone)]
 pub struct EmailTemplate {
     pub subject: String,
@@ -48,6 +50,37 @@ fn render_template(template: &str, variables: &[(&str, String)]) -> String {
     rendered
 }
 
+fn append_contact_preferences_footer(template: EmailTemplate) -> EmailTemplate {
+    let preferences_url = format!(
+        "{}/me/user#email-preferences",
+        environment::get_app_base_url().trim_end_matches('/')
+    );
+    let footer_title = "Réglez vos préférences de contact par mail";
+
+    let text_body = template.text_body.map(|body| {
+        format!(
+            "{body}\n\n{footer_title} : {preferences_url}",
+            body = body.trim_end(),
+            footer_title = footer_title,
+            preferences_url = preferences_url
+        )
+    });
+    let html_body = template.html_body.map(|body| {
+        format!(
+            "{body}<p style=\"margin-top:24px;\"><a href=\"{url}\">{title}</a></p>",
+            body = body.trim_end(),
+            url = escape_html(&preferences_url),
+            title = escape_html(footer_title)
+        )
+    });
+
+    EmailTemplate {
+        subject: template.subject,
+        text_body,
+        html_body,
+    }
+}
+
 pub fn shared_trace_finalized_email(
     recipient_display_name: &str,
     owner_display_name: &str,
@@ -85,11 +118,11 @@ pub fn shared_trace_finalized_email(
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
 
 pub fn message_received_email(
@@ -143,11 +176,11 @@ pub fn message_received_email(
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
 
 pub fn follow_request_received_email(
@@ -179,11 +212,11 @@ pub fn follow_request_received_email(
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
 
 pub fn password_reset_email(recipient_display_name: &str, reset_url: &str) -> EmailTemplate {
@@ -206,11 +239,11 @@ pub fn password_reset_email(recipient_display_name: &str, reset_url: &str) -> Em
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
 
 pub fn new_user_signup_email(first_name: &str, last_name: &str, users_url: &str) -> EmailTemplate {
@@ -232,11 +265,11 @@ pub fn new_user_signup_email(first_name: &str, last_name: &str, users_url: &str)
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
 
 pub fn journal_access_granted_email(
@@ -265,11 +298,11 @@ pub fn journal_access_granted_email(
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
 
 pub fn daily_recap_email(
@@ -309,9 +342,9 @@ pub fn daily_recap_email(
         ],
     );
 
-    EmailTemplate {
+    append_contact_preferences_footer(EmailTemplate {
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
-    }
+    })
 }
