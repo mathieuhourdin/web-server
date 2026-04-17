@@ -147,7 +147,10 @@ pub fn shared_journal_daily_digest_email(
     let subject = if post_count == 1 {
         format!("Résumé du {} : 1 nouveau post", digest_date_label)
     } else {
-        format!("Résumé du {} : {} nouveaux posts", digest_date_label, post_count)
+        format!(
+            "Résumé du {} : {} nouveaux posts",
+            digest_date_label, post_count
+        )
     };
     let summary_line = if post_count == 1 {
         "1 nouvelle publication est disponible dans vos journaux partagés.".to_string()

@@ -1,4 +1,3 @@
-use argon2::Config;
 use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
@@ -6,8 +5,11 @@ use axum::{
 };
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;
+use hmac::{Hmac, Mac};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -25,6 +27,15 @@ use crate::schema::journal_share_links;
 
 const JOURNAL_SHARE_LINK_SECRET_BYTES: usize = 32;
 const JOURNAL_SHARE_LINK_MAX_TTL_HOURS: i64 = 48;
+const JOURNAL_SHARE_LINK_HMAC_PREFIX: &str = "hmac_sha256:";
+
+type HmacSha256 = Hmac<Sha256>;
+
+enum SecretVerification {
+    Invalid,
+    Verified,
+    VerifiedAndUpgrade(String),
+}
 
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::journal_share_links)]
@@ -168,25 +179,89 @@ impl JournalShareLink {
     }
 
     fn hash_secret(secret: &str) -> Result<String, PpdcError> {
-        let salt: [u8; 32] = rand::thread_rng().gen();
-        let config = Config::default();
-        argon2::hash_encoded(secret.as_bytes(), &salt, &config).map_err(|err| {
+        let hmac_secret = environment::get_journal_share_link_hmac_secret();
+        let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes()).map_err(|err| {
             PpdcError::new(
                 500,
                 ErrorType::InternalError,
-                format!("Unable to hash journal share link secret: {:#?}", err),
+                format!("Unable to initialize journal share link HMAC: {:#?}", err),
             )
-        })
+        })?;
+        mac.update(secret.as_bytes());
+        let digest = mac.finalize().into_bytes();
+
+        Ok(format!(
+            "{}{}",
+            JOURNAL_SHARE_LINK_HMAC_PREFIX,
+            Self::hex_encode(&digest)
+        ))
     }
 
-    fn verify_secret(secret_hash: &str, candidate: &str) -> Result<bool, PpdcError> {
-        argon2::verify_encoded(secret_hash, candidate.as_bytes()).map_err(|err| {
-            PpdcError::new(
-                500,
-                ErrorType::InternalError,
-                format!("Unable to verify journal share link secret: {:#?}", err),
-            )
-        })
+    fn hex_encode(bytes: &[u8]) -> String {
+        let mut encoded = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            encoded.push_str(&format!("{:02x}", byte));
+        }
+        encoded
+    }
+
+    fn verify_secret(secret_hash: &str, candidate: &str) -> Result<SecretVerification, PpdcError> {
+        if let Some(expected_digest) = secret_hash.strip_prefix(JOURNAL_SHARE_LINK_HMAC_PREFIX) {
+            let candidate_digest = Self::hash_secret(candidate)?;
+            let Some(candidate_digest) =
+                candidate_digest.strip_prefix(JOURNAL_SHARE_LINK_HMAC_PREFIX)
+            else {
+                return Err(PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    "Invalid journal share link hash format".to_string(),
+                ));
+            };
+
+            return Ok(
+                if expected_digest
+                    .as_bytes()
+                    .ct_eq(candidate_digest.as_bytes())
+                    .into()
+                {
+                    SecretVerification::Verified
+                } else {
+                    SecretVerification::Invalid
+                },
+            );
+        }
+
+        let verified =
+            argon2::verify_encoded(secret_hash, candidate.as_bytes()).map_err(|err| {
+                PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Unable to verify journal share link secret: {:#?}", err),
+                )
+            })?;
+
+        if verified {
+            Ok(SecretVerification::VerifiedAndUpgrade(Self::hash_secret(
+                candidate,
+            )?))
+        } else {
+            Ok(SecretVerification::Invalid)
+        }
+    }
+
+    fn persist_upgraded_secret_hash(
+        link_id: Uuid,
+        upgraded_secret_hash: &str,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        let mut conn = pool.get()?;
+        diesel::update(journal_share_links::table.filter(journal_share_links::id.eq(link_id)))
+            .set((
+                journal_share_links::token_hash.eq(upgraded_secret_hash),
+                journal_share_links::updated_at.eq(Utc::now().naive_utc()),
+            ))
+            .execute(&mut conn)?;
+        Ok(())
     }
 
     fn validate_requested_expiry(expires_at: DateTime<Utc>) -> Result<NaiveDateTime, PpdcError> {
@@ -315,9 +390,14 @@ impl JournalShareLink {
         token: &str,
         pool: &DbPool,
     ) -> Result<(JournalShareLink, Journal), PpdcError> {
-        let link = Self::find(id, pool)?;
-        if !Self::verify_secret(&link.token_hash, token)? {
-            return Err(PpdcError::unauthorized());
+        let mut link = Self::find(id, pool)?;
+        match Self::verify_secret(&link.token_hash, token)? {
+            SecretVerification::Invalid => return Err(PpdcError::unauthorized()),
+            SecretVerification::Verified => {}
+            SecretVerification::VerifiedAndUpgrade(upgraded_secret_hash) => {
+                Self::persist_upgraded_secret_hash(link.id, &upgraded_secret_hash, pool)?;
+                link.token_hash = upgraded_secret_hash;
+            }
         }
         if !link.is_accessible() {
             return Err(PpdcError::new(

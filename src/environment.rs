@@ -88,3 +88,10 @@ pub fn get_internal_cron_token() -> String {
     dotenv().ok();
     std::env::var("INTERNAL_CRON_TOKEN").expect("INTERNAL_CRON_TOKEN should be provided")
 }
+
+pub fn get_journal_share_link_hmac_secret() -> String {
+    dotenv().ok();
+    std::env::var("JOURNAL_SHARE_LINK_HMAC_SECRET")
+        .or_else(|_| std::env::var("INTERNAL_CRON_TOKEN"))
+        .expect("JOURNAL_SHARE_LINK_HMAC_SECRET or INTERNAL_CRON_TOKEN should be provided")
+}
