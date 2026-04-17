@@ -246,6 +246,10 @@ pub fn create_router() -> Router {
             "/process_pending_emails",
             post(mailer::post_process_pending_emails_route),
         );
+    let internal_router = internal_router.route(
+        "/generate_shared_journal_daily_digests",
+        post(mailer::post_generate_shared_journal_daily_digests_route),
+    );
     let analysis_summaries_router = Router::new()
         .route(
             "/:id",

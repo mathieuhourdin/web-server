@@ -23,6 +23,19 @@ const JOURNAL_ACCESS_GRANTED_TEXT: &str = include_str!("templates/journal_access
 const JOURNAL_ACCESS_GRANTED_HTML: &str = include_str!("templates/journal_access_granted.html");
 const DAILY_RECAP_FEEDBACK_TEXT: &str = include_str!("templates/daily_recap_feedback.txt");
 const DAILY_RECAP_FEEDBACK_HTML: &str = include_str!("templates/daily_recap_feedback.html");
+const SHARED_JOURNAL_DAILY_DIGEST_TEXT: &str =
+    include_str!("templates/shared_journal_daily_digest.txt");
+const SHARED_JOURNAL_DAILY_DIGEST_HTML: &str =
+    include_str!("templates/shared_journal_daily_digest.html");
+
+#[derive(Debug, Clone)]
+pub struct SharedJournalDigestEmailItem {
+    pub owner_display_name: String,
+    pub journal_title: String,
+    pub journal_url: String,
+    pub publishing_date_label: String,
+    pub excerpt: String,
+}
 
 fn build_trace_excerpt(content: &str, max_chars: usize) -> String {
     let excerpt = content.trim().chars().take(max_chars).collect::<String>();
@@ -115,6 +128,93 @@ pub fn shared_trace_finalized_email(
             ("journal_url", escape_html(journal_url)),
             ("interaction_date", escape_html(&interaction_date)),
             ("excerpt_html", escape_html(&excerpt)),
+        ],
+    );
+
+    append_contact_preferences_footer(EmailTemplate {
+        subject,
+        text_body: Some(text_body),
+        html_body: Some(html_body),
+    })
+}
+
+pub fn shared_journal_daily_digest_email(
+    recipient_display_name: &str,
+    digest_date_label: &str,
+    items: Vec<SharedJournalDigestEmailItem>,
+) -> EmailTemplate {
+    let post_count = items.len();
+    let subject = if post_count == 1 {
+        format!("Résumé du {} : 1 nouveau post", digest_date_label)
+    } else {
+        format!("Résumé du {} : {} nouveaux posts", digest_date_label, post_count)
+    };
+    let summary_line = if post_count == 1 {
+        "1 nouvelle publication est disponible dans vos journaux partagés.".to_string()
+    } else {
+        format!(
+            "{} nouvelles publications sont disponibles dans vos journaux partagés.",
+            post_count
+        )
+    };
+    let items_text = items
+        .iter()
+        .map(|item| {
+            format!(
+                "- {} • {} • {}\n{}\n{}\n",
+                item.owner_display_name,
+                item.journal_title,
+                item.publishing_date_label,
+                item.excerpt,
+                item.journal_url
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let items_html = items
+        .iter()
+        .map(|item| {
+            format!(
+                "<div style=\"margin-bottom:16px;padding:16px 18px;background:#262626;border:1px solid #343434;border-radius:18px;\">
+                    <div style=\"margin-bottom:6px;font-size:15px;color:#fff3e1;font-weight:600;\">{owner} • <a href=\"{url}\" style=\"color:#f4efe7;text-decoration:underline;\">{journal}</a></div>
+                    <div style=\"margin-bottom:10px;font-size:13px;color:#b7ae9f;\">{date}</div>
+                    <div style=\"font-size:16px;line-height:1.65;color:#f1ebdf;\">{excerpt}</div>
+                </div>",
+                owner = escape_html(&item.owner_display_name),
+                url = escape_html(&item.journal_url),
+                journal = escape_html(&item.journal_title),
+                date = escape_html(&item.publishing_date_label),
+                excerpt = escape_html(&item.excerpt),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let home_url = format!(
+        "{}/me/home",
+        environment::get_app_base_url().trim_end_matches('/')
+    );
+
+    let text_body = render_template(
+        SHARED_JOURNAL_DAILY_DIGEST_TEXT,
+        &[
+            ("recipient_display_name", recipient_display_name.to_string()),
+            ("digest_date_label", digest_date_label.to_string()),
+            ("summary_line", summary_line.clone()),
+            ("items_text", items_text),
+            ("home_url", home_url.clone()),
+        ],
+    );
+    let html_body = render_template(
+        SHARED_JOURNAL_DAILY_DIGEST_HTML,
+        &[
+            (
+                "recipient_display_name",
+                escape_html(recipient_display_name),
+            ),
+            ("digest_date_label", escape_html(digest_date_label)),
+            ("summary_line", escape_html(&summary_line)),
+            ("items_html", items_html),
+            ("home_url", escape_html(&home_url)),
         ],
     );
 

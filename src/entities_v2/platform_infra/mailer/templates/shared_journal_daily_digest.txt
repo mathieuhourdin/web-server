@@ -1,0 +1,9 @@
+Bonjour {{recipient_display_name}},
+
+Voici un récapitulatif des traces écrites par vos amis le {{digest_date_label}}. Bonne lecture !
+
+{{summary_line}}
+
+{{items_text}}
+
+Ouvrir Matière Grise : {{home_url}}

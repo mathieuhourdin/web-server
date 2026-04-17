@@ -4,6 +4,7 @@ pub mod model;
 pub mod persist;
 pub mod routes;
 
+pub use hydrate::DigestVisiblePost;
 pub use model::{
     NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
 };

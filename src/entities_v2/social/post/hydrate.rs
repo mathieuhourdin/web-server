@@ -7,7 +7,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::shared::MaturingState;
-use crate::schema::{posts, traces, user_post_states};
+use crate::schema::{journals, posts, traces, user_post_states};
 
 use super::model::{Post, PostAudienceRole, PostInteractionType, PostStatus, PostType};
 
@@ -30,6 +30,33 @@ type PostTuple = (
     NaiveDateTime,
     NaiveDateTime,
 );
+
+type DigestVisiblePostTuple = (
+    Uuid,
+    Uuid,
+    Option<Uuid>,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<Uuid>,
+    String,
+    String,
+    Option<NaiveDateTime>,
+    String,
+    String,
+    String,
+    String,
+    NaiveDateTime,
+    NaiveDateTime,
+    Uuid,
+);
+
+#[derive(Debug, Clone)]
+pub struct DigestVisiblePost {
+    pub post: Post,
+    pub journal_id: Uuid,
+}
 
 fn tuple_to_post(row: PostTuple) -> Post {
     let (
@@ -113,6 +140,54 @@ fn select_post_columns() -> (
         posts::created_at,
         posts::updated_at,
     )
+}
+
+fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePost {
+    let (
+        id,
+        user_id,
+        source_trace_id,
+        title,
+        subtitle,
+        content,
+        image_url,
+        image_asset_id,
+        interaction_type_raw,
+        post_type_raw,
+        publishing_date,
+        status_raw,
+        audience_role_raw,
+        publishing_state,
+        maturing_state_raw,
+        created_at,
+        updated_at,
+        journal_id,
+    ) = row;
+
+    DigestVisiblePost {
+        post: Post {
+            id,
+            resource_id: id,
+            source_trace_id,
+            title,
+            subtitle,
+            content,
+            image_url,
+            image_asset_id,
+            interaction_type: PostInteractionType::from_db(&interaction_type_raw),
+            post_type: PostType::from_db(&post_type_raw),
+            user_id,
+            publishing_date,
+            status: PostStatus::from_db(&status_raw),
+            audience_role: PostAudienceRole::from_db(&audience_role_raw),
+            publishing_state,
+            maturing_state: MaturingState::from_code(&maturing_state_raw)
+                .unwrap_or(MaturingState::Draft),
+            created_at,
+            updated_at,
+        },
+        journal_id,
+    }
 }
 
 impl Post {
@@ -235,6 +310,58 @@ impl Post {
             .optional()?;
 
         Ok(matching_post_id.is_some())
+    }
+
+    pub fn find_visible_shared_published_for_user_in_period(
+        viewer_user_id: Uuid,
+        period_start: NaiveDateTime,
+        period_end: NaiveDateTime,
+        pool: &DbPool,
+    ) -> Result<Vec<DigestVisiblePost>, PpdcError> {
+        let mut conn = pool.get()?;
+
+        let rows = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(journals::table.on(traces::journal_id.eq(journals::id)))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::publishing_date.is_not_null())
+            .filter(posts::publishing_date.ge(Some(period_start)))
+            .filter(posts::publishing_date.lt(Some(period_end)))
+            .filter(posts::user_id.ne(viewer_user_id))
+            .filter(journals::is_encrypted.eq(false))
+            .select((
+                posts::id,
+                posts::user_id,
+                posts::source_trace_id,
+                posts::title,
+                posts::subtitle,
+                posts::content,
+                posts::image_url,
+                posts::image_asset_id,
+                posts::interaction_type,
+                posts::post_type,
+                posts::publishing_date,
+                posts::status,
+                posts::audience_role,
+                posts::publishing_state,
+                posts::maturing_state,
+                posts::created_at,
+                posts::updated_at,
+                journals::id,
+            ))
+            .order(posts::publishing_date.desc().nulls_last())
+            .then_order_by(posts::created_at.desc())
+            .load::<DigestVisiblePostTuple>(&mut conn)?;
+
+        let mut visible_posts = Vec::new();
+        for row in rows {
+            let visible_post = tuple_to_digest_visible_post(row);
+            if PostGrant::user_can_read_post(&visible_post.post, viewer_user_id, pool)? {
+                visible_posts.push(visible_post);
+            }
+        }
+
+        Ok(visible_posts)
     }
 
     pub fn find_for_trace_paginated(

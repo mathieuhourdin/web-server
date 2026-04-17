@@ -302,6 +302,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    notification_digests (id) {
+        id -> Uuid,
+        recipient_user_id -> Uuid,
+        digest_kind -> Text,
+        local_date -> Date,
+        timezone -> Text,
+        status -> Text,
+        outbound_email_id -> Nullable<Uuid>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     outbound_emails (id) {
         id -> Uuid,
         recipient_user_id -> Nullable<Uuid>,
@@ -624,6 +638,8 @@ diesel::joinable!(llm_calls -> landscape_analyses (analysis_id));
 diesel::joinable!(messages -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(messages -> posts (post_id));
 diesel::joinable!(messages -> traces (trace_id));
+diesel::joinable!(notification_digests -> outbound_emails (outbound_email_id));
+diesel::joinable!(notification_digests -> users (recipient_user_id));
 diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(post_grants -> posts (post_id));
 diesel::joinable!(posts -> assets (image_asset_id));
@@ -671,6 +687,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lenses,
     llm_calls,
     messages,
+    notification_digests,
     outbound_emails,
     post_grants,
     post_relations,
