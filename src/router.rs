@@ -333,6 +333,10 @@ pub fn create_router() -> Router {
             get(journal_share_link::get_shared_journal_route),
         )
         .route(
+            "/journals/:id/assets/:asset_id",
+            get(journal_share_link::get_shared_journal_asset_route),
+        )
+        .route(
             "/journals/:id/posts",
             get(journal_share_link::get_shared_journal_posts_route),
         );

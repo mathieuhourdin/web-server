@@ -2,6 +2,7 @@ use argon2::Config;
 use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
+    response::Redirect,
 };
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;
@@ -11,6 +12,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::Asset,
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
     post::Post,
@@ -96,6 +98,7 @@ pub struct PublicSharedJournalResponse {
 pub struct PublicSharedJournalPostResponse {
     pub id: Uuid,
     pub content: String,
+    pub image_url: Option<String>,
     pub image_asset_id: Option<Uuid>,
     pub publishing_date: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
@@ -116,11 +119,36 @@ pub struct PublicShareLinkQuery {
     pub pagination: PaginationParams,
 }
 
-impl From<Post> for PublicSharedJournalPostResponse {
-    fn from(post: Post) -> Self {
+#[derive(Deserialize)]
+pub struct PublicShareLinkAssetQuery {
+    pub token: String,
+}
+
+fn build_shared_journal_asset_url(share_link_id: Uuid, asset_id: Uuid, token: &str) -> String {
+    format!(
+        "{}/shared/journals/{}/assets/{}?token={}",
+        environment::get_api_url().trim_end_matches('/'),
+        share_link_id,
+        asset_id,
+        token
+    )
+}
+
+impl PublicSharedJournalPostResponse {
+    fn from_post(post: Post, share_link_id: Uuid, token: &str) -> Self {
+        let image_url = match (post.image_asset_id, post.image_url.clone()) {
+            (Some(asset_id), _) => Some(build_shared_journal_asset_url(
+                share_link_id,
+                asset_id,
+                token,
+            )),
+            (None, image_url) => image_url,
+        };
+
         Self {
             id: post.id,
             content: post.content,
+            image_url,
             image_asset_id: post.image_asset_id,
             publishing_date: post.publishing_date,
             created_at: post.created_at,
@@ -358,6 +386,30 @@ fn build_public_journal_response(journal: Journal, owner: User) -> PublicSharedJ
     }
 }
 
+async fn authorize_shared_journal_asset_redirect(
+    share_link_id: Uuid,
+    asset_id: Uuid,
+    token: &str,
+    pool: &DbPool,
+) -> Result<Redirect, PpdcError> {
+    let (_, journal) = JournalShareLink::authorize(share_link_id, token, pool)?;
+
+    if !Post::public_default_post_uses_image_asset_in_journal(journal.id, asset_id, pool)? {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Shared journal asset not found".to_string(),
+        ));
+    }
+
+    let asset = Asset::find(asset_id, pool)?;
+    let (url, _) = asset
+        .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
+        .await?;
+
+    Ok(Redirect::temporary(&url))
+}
+
 #[debug_handler]
 pub async fn get_shared_journal_route(
     Extension(pool): Extension<DbPool>,
@@ -383,7 +435,9 @@ pub async fn get_shared_journal_route(
         posts: PaginatedResponse::new(
             posts
                 .into_iter()
-                .map(PublicSharedJournalPostResponse::from)
+                .map(|post| {
+                    PublicSharedJournalPostResponse::from_post(post, link.id, &params.token)
+                })
                 .collect(),
             pagination,
             total,
@@ -409,9 +463,20 @@ pub async fn get_shared_journal_posts_route(
     Ok(Json(PaginatedResponse::new(
         posts
             .into_iter()
-            .map(PublicSharedJournalPostResponse::from)
+            .map(|post| {
+                PublicSharedJournalPostResponse::from_post(post, share_link_id, &params.token)
+            })
             .collect(),
         pagination,
         total,
     )))
+}
+
+#[debug_handler]
+pub async fn get_shared_journal_asset_route(
+    Extension(pool): Extension<DbPool>,
+    Path((share_link_id, asset_id)): Path<(Uuid, Uuid)>,
+    Query(params): Query<PublicShareLinkAssetQuery>,
+) -> Result<Redirect, PpdcError> {
+    authorize_shared_journal_asset_redirect(share_link_id, asset_id, &params.token, &pool).await
 }

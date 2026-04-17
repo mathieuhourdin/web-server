@@ -217,6 +217,26 @@ impl Post {
         Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
 
+    pub fn public_default_post_uses_image_asset_in_journal(
+        journal_id: Uuid,
+        asset_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+
+        let matching_post_id = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(posts::image_asset_id.eq(Some(asset_id)))
+            .select(posts::id)
+            .first::<Uuid>(&mut conn)
+            .optional()?;
+
+        Ok(matching_post_id.is_some())
+    }
+
     pub fn find_for_trace_paginated(
         trace_id: Uuid,
         offset: i64,
