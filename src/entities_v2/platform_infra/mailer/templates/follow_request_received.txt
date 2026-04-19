@@ -1,6 +1,6 @@
 Bonjour {{recipient_display_name}},
 
-{{requester_display_name}} ({{requester_handle}}) souhaite vous suivre sur Matiere Grise.
+{{requester_display_name}} ({{requester_handle}}) souhaite vous suivre sur Matière Grise.
 
 Ouvrir la page des followers :
 https://matieregrise.ppdcoeur.fr/social/followers

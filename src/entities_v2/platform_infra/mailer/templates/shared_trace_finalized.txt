@@ -1,10 +1,10 @@
 Bonjour {{recipient_display_name}},
 
-{{owner_display_name}} wrote a new journal entry in a journal you can access.
+{{owner_display_name}} a partagé une nouvelle trace dans un journal auquel vous avez accès.
 
-Journal: {{journal_title}}
-Date: {{interaction_date}}
+Journal : {{journal_title}}
+Date : {{interaction_date}}
 Lien: {{journal_url}}
 
-Extract:
+Extrait :
 {{excerpt}}

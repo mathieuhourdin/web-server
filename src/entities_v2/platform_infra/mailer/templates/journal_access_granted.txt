@@ -1,9 +1,9 @@
 Bonjour {{recipient_display_name}},
 
-{{owner_display_name}} vous a donne acces au journal "{{journal_title}}".
+{{owner_display_name}} vous a donné accès au journal "{{journal_title}}".
 
 Vous pouvez l'ouvrir ici :
 {{journal_url}}
 
-A bientot,
-Matiere Grise
+À bientôt,
+Matière Grise

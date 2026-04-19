@@ -1,6 +1,6 @@
 Bonjour {{recipient_display_name}},
 
-{{sender_display_name}} vous a envoye un message sur Matiere Grise.
+{{sender_display_name}} vous a envoyé un message sur Matière Grise.
 
 Extrait : {{excerpt}}
 
