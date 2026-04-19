@@ -57,6 +57,8 @@ struct UserDailyActivityRow {
     feedback_opened_count: i64,
     #[diesel(sql_type = BigInt)]
     summary_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
+    generated_mentor_feedback_count: i64,
 }
 
 #[derive(Serialize)]
@@ -72,6 +74,7 @@ pub struct AdminUserDailyActivity {
     pub post_opened_count: i64,
     pub feedback_opened_count: i64,
     pub summary_opened_count: i64,
+    pub generated_mentor_feedback_count: i64,
 }
 
 #[derive(Serialize)]
@@ -236,7 +239,14 @@ pub async fn get_admin_recent_user_activity_route(
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'SUMMARY_OPENED'
                       AND ue.occurred_at::date = d.day
-                ), 0)::bigint AS summary_opened_count
+                ), 0)::bigint AS summary_opened_count,
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM messages m
+                    WHERE m.recipient_user_id = $1
+                      AND m.message_type = 'MENTOR_FEEDBACK'
+                      AND m.created_at::date = d.day
+                ), 0)::bigint AS generated_mentor_feedback_count
             FROM days d
             ORDER BY d.day
             "#,
@@ -260,6 +270,7 @@ pub async fn get_admin_recent_user_activity_route(
                 post_opened_count: r.post_opened_count,
                 feedback_opened_count: r.feedback_opened_count,
                 summary_opened_count: r.summary_opened_count,
+                generated_mentor_feedback_count: r.generated_mentor_feedback_count,
             })
             .collect::<Vec<_>>();
 
