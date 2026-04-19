@@ -104,7 +104,7 @@ pub fn shared_trace_finalized_email(
 ) -> EmailTemplate {
     let excerpt = build_trace_excerpt(trace_content, 150);
     let subject = format!("{} a écrit dans son journal", owner_display_name);
-    let interaction_date = interaction_date.format("%d/%m/%Y a %H:%M").to_string();
+    let interaction_date = interaction_date.format("%d/%m/%Y à %H:%M").to_string();
     let text_body = render_template(
         SHARED_TRACE_FINALIZED_TEXT,
         &[
@@ -235,7 +235,7 @@ pub fn message_received_email(
     conversation_url: Option<&str>,
 ) -> EmailTemplate {
     let excerpt = build_trace_excerpt(message_content, 180);
-    let subject = format!("{} vous a envoye un message", sender_display_name);
+    let subject = format!("{} vous a envoyé un message", sender_display_name);
     let text_body = render_template(
         MESSAGE_RECEIVED_TEXT,
         &[
@@ -247,7 +247,7 @@ pub fn message_received_email(
                 conversation_url
                     .map(|url| format!("Ouvrir la conversation : {}", url))
                     .unwrap_or_else(|| {
-                        "Connectez-vous a Matiere Grise pour lire et repondre au message."
+                        "Connectez-vous à Matière Grise pour lire et répondre au message."
                             .to_string()
                     }),
             ),
@@ -272,7 +272,7 @@ pub fn message_received_email(
                         )
                     })
                     .unwrap_or_else(|| {
-                        "Connectez-vous a Matiere Grise pour lire et repondre au message."
+                        "Connectez-vous à Matière Grise pour lire et répondre au message."
                             .to_string()
                     }),
             ),
@@ -323,7 +323,7 @@ pub fn follow_request_received_email(
 }
 
 pub fn password_reset_email(recipient_display_name: &str, reset_url: &str) -> EmailTemplate {
-    let subject = "Reinitialisation de votre mot de passe Matiere Grise".to_string();
+    let subject = "Réinitialisation de votre mot de passe Matière Grise".to_string();
     let text_body = render_template(
         PASSWORD_RESET_TEXT,
         &[
@@ -381,7 +381,7 @@ pub fn journal_access_granted_email(
     journal_title: &str,
     journal_url: &str,
 ) -> EmailTemplate {
-    let subject = format!("{} vous a donne acces a son journal", owner_display_name);
+    let subject = format!("{} vous a donné accès à son journal", owner_display_name);
     let text_body = render_template(
         JOURNAL_ACCESS_GRANTED_TEXT,
         &[
