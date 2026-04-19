@@ -83,6 +83,7 @@ pub struct AdminUserRecentActivity {
     pub display_name: String,
     pub draft_posts_count: i64,
     pub hlp_landmarks_count: i64,
+    pub failed_lenses_count: i64,
     pub heatmap: Vec<AdminUserDailyActivity>,
 }
 
@@ -160,6 +161,18 @@ pub async fn get_admin_recent_user_activity_route(
             FROM landmarks
             WHERE user_id = $1
               AND landmark_type = 'HIGH_LEVEL_PROJECT'
+            "#,
+        )
+        .bind::<SqlUuid, _>(row.user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .value;
+
+        let failed_lenses_count = sql_query(
+            r#"
+            SELECT COUNT(*)::bigint AS value
+            FROM lenses
+            WHERE user_id = $1
+              AND processing_state = 'FAILED'
             "#,
         )
         .bind::<SqlUuid, _>(row.user_id)
@@ -279,6 +292,7 @@ pub async fn get_admin_recent_user_activity_route(
             display_name: user.display_name(),
             draft_posts_count,
             hlp_landmarks_count,
+            failed_lenses_count,
             heatmap,
         });
     }
