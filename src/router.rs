@@ -34,6 +34,7 @@ pub fn create_router() -> Router {
 
     let users_router = Router::new()
         .route("/", get(user::get_users))
+        .route("/suggested", get(user::get_suggested_users_route))
         .route("/search", get(user::get_user_search_route))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/posts", get(post::get_user_posts_route))

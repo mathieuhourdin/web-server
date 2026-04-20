@@ -67,7 +67,7 @@ pub struct User {
 }
 
 pub enum UserResponse {
-    Pseudonymized(UserPseudonymizedResponse),
+    Public(UserPublicResponse),
     PseudonymizedAuthentified(UserPseudonymizedAuthentifiedResponse),
     Full(User),
 }
@@ -75,7 +75,7 @@ pub enum UserResponse {
 impl IntoResponse for UserResponse {
     fn into_response(self) -> axum::response::Response {
         match self {
-            UserResponse::Pseudonymized(user) => (AxumStatusCode::OK, Json(user)).into_response(),
+            UserResponse::Public(user) => (AxumStatusCode::OK, Json(user)).into_response(),
             UserResponse::PseudonymizedAuthentified(user) => {
                 (AxumStatusCode::OK, Json(user)).into_response()
             }
@@ -159,6 +159,35 @@ impl UserPseudonymizedAuthentifiedResponse {
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             roles: None,
+            display_name: user.display_name(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct UserPublicResponse {
+    pub id: Uuid,
+    pub principal_type: UserPrincipalType,
+    pub handle: String,
+    pub created_at: NaiveDateTime,
+    pub profile_picture_url: Option<String>,
+    pub profile_asset_id: Option<Uuid>,
+    pub pseudonymized: bool,
+    pub welcome_message: Option<String>,
+    pub display_name: String,
+}
+
+impl From<&User> for UserPublicResponse {
+    fn from(user: &User) -> Self {
+        UserPublicResponse {
+            id: user.id,
+            principal_type: user.principal_type,
+            handle: user.handle.clone(),
+            created_at: user.created_at,
+            profile_picture_url: user.profile_picture_url.clone(),
+            profile_asset_id: user.profile_asset_id,
+            pseudonymized: user.pseudonymized,
+            welcome_message: user.welcome_message.clone(),
             display_name: user.display_name(),
         }
     }
@@ -955,16 +984,16 @@ mod tests {
     }
 
     #[test]
-    fn test_user_pseudonymized_response_uses_real_name_as_display_name() {
+    fn test_user_public_response_uses_real_name_as_display_name() {
         let user = build_test_user(false, UserPrincipalType::Human);
-        let response = UserPseudonymizedResponse::from(&user);
+        let response = UserPublicResponse::from(&user);
         assert_eq!(response.display_name, "Ada Lovelace");
     }
 
     #[test]
-    fn test_user_pseudonymized_response_uses_pseudonym_as_display_name() {
+    fn test_user_public_response_uses_pseudonym_as_display_name() {
         let user = build_test_user(true, UserPrincipalType::Human);
-        let response = UserPseudonymizedResponse::from(&user);
+        let response = UserPublicResponse::from(&user);
         assert_eq!(response.display_name, "Analytical Poet");
     }
 
@@ -980,13 +1009,6 @@ mod tests {
         let user = build_test_user(true, UserPrincipalType::Human);
         let response = UserPseudonymizedAuthentifiedResponse::from(&user);
         assert_eq!(response.display_name, "Analytical Poet");
-    }
-
-    #[test]
-    fn test_user_pseudonymized_response_hides_human_biography_for_other_users() {
-        let user = build_test_user(false, UserPrincipalType::Human);
-        let response = UserPseudonymizedResponse::from(&user);
-        assert_eq!(response.biography, None);
     }
 
     #[test]

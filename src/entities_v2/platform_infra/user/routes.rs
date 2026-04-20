@@ -12,16 +12,29 @@ use axum::{
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Text};
+use diesel::sql_types::{BigInt, Text, Timestamp, Uuid as SqlUuid};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use super::enums::UserPrincipalType;
 use super::model::{
     create_bio_trace_for_user, create_high_level_projects_definition_trace_for_user,
     ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, NewUser, User, UserListParams,
-    UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserResponse,
+    UserPublicResponse, UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse,
+    UserResponse,
     UserSearchParams, UserSearchResult, UserSearchRow,
 };
+
+#[derive(QueryableByName)]
+struct SuggestedUserIdRow {
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SuggestedUsersParams {
+    pub limit: Option<i64>,
+}
 
 fn enqueue_new_user_signup_notification_email(
     user: &User,
@@ -53,7 +66,7 @@ fn enqueue_new_user_signup_notification_email(
 pub async fn get_users(
     Query(params): Query<UserListParams>,
     Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
+) -> Result<Json<Vec<UserPublicResponse>>, PpdcError> {
     let mut conn = pool.get()?;
 
     let mut query = crate::schema::users::table.into_boxed();
@@ -64,13 +77,13 @@ pub async fn get_users(
         query = query.filter(crate::schema::users::is_platform_user.eq(is_platform_user));
     }
 
-    let results: Vec<UserPseudonymizedResponse> = query
+    let results: Vec<UserPublicResponse> = query
         .offset(params.pagination.offset())
         .limit(params.pagination.limit())
         .select(User::as_select())
         .load::<User>(&mut conn)?
         .iter()
-        .map(UserPseudonymizedResponse::from)
+        .map(UserPublicResponse::from)
         .collect();
     Ok(Json(results))
 }
@@ -131,6 +144,57 @@ pub async fn get_user_search_route(
     .load::<UserSearchRow>(&mut conn)?;
 
     Ok(Json(rows.into_iter().map(UserSearchResult::from).collect()))
+}
+
+#[debug_handler]
+pub async fn get_suggested_users_route(
+    Query(params): Query<SuggestedUsersParams>,
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<Vec<UserPublicResponse>>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let limit = params.limit.unwrap_or(10).clamp(1, 20);
+    let since = Utc::now().naive_utc() - chrono::Duration::days(30);
+
+    let mut conn = pool.get()?;
+
+    let ranked_user_ids = sql_query(
+        r#"
+        SELECT u.id AS user_id
+        FROM users u
+        JOIN posts p ON p.user_id = u.id
+        WHERE u.principal_type = 'HUMAN'
+          AND u.is_platform_user = TRUE
+          AND u.id <> $1
+          AND p.status = 'PUBLISHED'
+          AND COALESCE(p.publishing_date, p.created_at) >= $2
+          AND NOT EXISTS (
+            SELECT 1
+            FROM relationships r
+            WHERE r.relationship_type = 'FOLLOW'
+              AND r.status IN ('PENDING', 'ACCEPTED')
+              AND (
+                (r.requester_user_id = $1 AND r.target_user_id = u.id)
+                OR
+                (r.requester_user_id = u.id AND r.target_user_id = $1)
+              )
+          )
+        GROUP BY u.id, u.created_at
+        ORDER BY COUNT(*) DESC, MAX(COALESCE(p.publishing_date, p.created_at)) DESC, u.created_at DESC
+        LIMIT $3
+        "#,
+    )
+    .bind::<SqlUuid, _>(session_user_id)
+    .bind::<Timestamp, _>(since)
+    .bind::<BigInt, _>(limit)
+    .load::<SuggestedUserIdRow>(&mut conn)?;
+
+    let results = ranked_user_ids
+        .into_iter()
+        .map(|row| User::find(&row.user_id, &pool).map(|user| UserPublicResponse::from(&user)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Json(results))
 }
 
 #[debug_handler]
@@ -258,7 +322,7 @@ pub async fn get_user_route(
         }
         Ok(UserResponse::PseudonymizedAuthentified(user_response))
     } else {
-        let user_response = UserPseudonymizedResponse::from_viewer(&user, viewer_user_id);
-        Ok(UserResponse::Pseudonymized(user_response))
+        let user_response = UserPublicResponse::from(&user);
+        Ok(UserResponse::Public(user_response))
     }
 }

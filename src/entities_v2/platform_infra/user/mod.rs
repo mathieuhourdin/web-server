@@ -15,9 +15,11 @@ pub use enums::{
 pub use model::{
     ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, find_similar_users,
     NewServiceUserDto, NewUser, User, UserListParams, UserMatch,
-    UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserResponse,
+    UserPublicResponse, UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse,
+    UserResponse,
     UserRoleAssignment, UserSearchParams, UserSearchResult,
 };
 pub use routes::{
-    get_mentors_route, get_user_route, get_user_search_route, get_users, post_user, put_user_route,
+    get_mentors_route, get_suggested_users_route, get_user_route, get_user_search_route, get_users,
+    post_user, put_user_route,
 };
