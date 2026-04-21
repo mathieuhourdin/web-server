@@ -330,6 +330,7 @@ SELECT EXISTS (
     SELECT 1
     FROM traces t
     WHERE t.user_id = $1
+      AND t.status = 'FINALIZED'
       AND t.interaction_date >= $2
       AND t.interaction_date < $3
       AND NOT EXISTS (
@@ -730,6 +731,7 @@ WITH candidate AS (
             SELECT 1
             FROM traces t
             WHERE t.user_id = la.user_id
+              AND t.status = 'FINALIZED'
               AND t.interaction_date >= la.period_start
               AND t.interaction_date < la.period_end
               AND NOT EXISTS (
@@ -926,6 +928,7 @@ pub fn replace_covered_inputs_for_period(
 SELECT t.id
 FROM traces t
 WHERE t.user_id = $1
+  AND t.status = 'FINALIZED'
   AND t.interaction_date >= $2
   AND t.interaction_date < $3
 ORDER BY t.interaction_date ASC, t.created_at ASC
