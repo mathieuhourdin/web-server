@@ -99,6 +99,8 @@ pub struct AdminUserDailyActivity {
 pub struct AdminUserRecentActivity {
     pub id: Uuid,
     pub display_name: String,
+    pub has_mentor: bool,
+    pub has_current_lens: bool,
     pub draft_posts_count: i64,
     pub hlp_landmarks_count: i64,
     pub failed_lenses_count: i64,
@@ -332,6 +334,8 @@ pub async fn get_admin_recent_user_activity_route(
         payload.push(AdminUserRecentActivity {
             id: row.user_id,
             display_name: user.display_name(),
+            has_mentor: user.mentor_id.is_some(),
+            has_current_lens: user.current_lens_id.is_some(),
             draft_posts_count,
             hlp_landmarks_count,
             failed_lenses_count,
