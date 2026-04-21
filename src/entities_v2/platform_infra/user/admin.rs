@@ -40,9 +40,15 @@ struct PlatformDailyOverviewRow {
     #[diesel(sql_type = BigInt)]
     written_traces_count: i64,
     #[diesel(sql_type = BigInt)]
+    published_posts_count: i64,
+    #[diesel(sql_type = BigInt)]
     followed_journal_opened_count: i64,
     #[diesel(sql_type = BigInt)]
     users_count: i64,
+    #[diesel(sql_type = BigInt)]
+    users_with_written_trace_last_30_days_count: i64,
+    #[diesel(sql_type = BigInt)]
+    users_with_followed_journal_open_last_30_days_count: i64,
 }
 
 #[derive(QueryableByName)]
@@ -110,8 +116,11 @@ pub struct AdminPlatformCurrentHealth {
 pub struct AdminPlatformDailyOverview {
     pub day: NaiveDate,
     pub written_traces_count: i64,
+    pub published_posts_count: i64,
     pub followed_journal_opened_count: i64,
     pub users_count: i64,
+    pub users_with_written_trace_last_30_days_count: i64,
+    pub users_with_followed_journal_open_last_30_days_count: i64,
 }
 
 #[derive(Serialize)]
@@ -387,8 +396,16 @@ pub async fn get_admin_platform_overview_route(
             COALESCE((
                 SELECT COUNT(*)::bigint
                 FROM traces t
-                WHERE t.created_at::date = d.day
+                WHERE t.finalized_at IS NOT NULL
+                  AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
+                  AND t.finalized_at::date = d.day
             ), 0)::bigint AS written_traces_count,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM posts p
+                WHERE p.status = 'PUBLISHED'
+                  AND COALESCE(p.publishing_date, p.created_at)::date = d.day
+            ), 0)::bigint AS published_posts_count,
             COALESCE((
                 SELECT COUNT(*)::bigint
                 FROM usage_events ue
@@ -401,7 +418,28 @@ pub async fn get_admin_platform_overview_route(
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
                   AND u.created_at < (d.day + interval '1 day')
-            ), 0)::bigint AS users_count
+            ), 0)::bigint AS users_count,
+            COALESCE((
+                SELECT COUNT(DISTINCT t.user_id)::bigint
+                FROM traces t
+                INNER JOIN users u ON u.id = t.user_id
+                WHERE u.principal_type = 'HUMAN'
+                  AND u.is_platform_user = TRUE
+                  AND t.finalized_at IS NOT NULL
+                  AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
+                  AND t.finalized_at >= (d.day::timestamp - interval '29 days')
+                  AND t.finalized_at < (d.day::timestamp + interval '1 day')
+            ), 0)::bigint AS users_with_written_trace_last_30_days_count,
+            COALESCE((
+                SELECT COUNT(DISTINCT ue.user_id)::bigint
+                FROM usage_events ue
+                INNER JOIN users u ON u.id = ue.user_id
+                WHERE u.principal_type = 'HUMAN'
+                  AND u.is_platform_user = TRUE
+                  AND ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
+                  AND ue.occurred_at >= (d.day::timestamp - interval '29 days')
+                  AND ue.occurred_at < (d.day::timestamp + interval '1 day')
+            ), 0)::bigint AS users_with_followed_journal_open_last_30_days_count
         FROM days d
         ORDER BY d.day
         "#,
@@ -415,8 +453,13 @@ pub async fn get_admin_platform_overview_route(
         .map(|row| AdminPlatformDailyOverview {
             day: row.day,
             written_traces_count: row.written_traces_count,
+            published_posts_count: row.published_posts_count,
             followed_journal_opened_count: row.followed_journal_opened_count,
             users_count: row.users_count,
+            users_with_written_trace_last_30_days_count: row
+                .users_with_written_trace_last_30_days_count,
+            users_with_followed_journal_open_last_30_days_count: row
+                .users_with_followed_journal_open_last_30_days_count,
         })
         .collect::<Vec<_>>();
 
