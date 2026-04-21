@@ -29,6 +29,7 @@ type LandscapeAnalysisTuple = (
     Option<Uuid>,
     String,
     String,
+    Option<String>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -60,6 +61,7 @@ fn tuple_to_analysis(row: LandscapeAnalysisTuple) -> LandscapeAnalysis {
         trace_mirror_id,
         landscape_analysis_type_raw,
         processing_state_raw,
+        failure_reason,
         created_at,
         updated_at,
     ) = row;
@@ -79,6 +81,7 @@ fn tuple_to_analysis(row: LandscapeAnalysisTuple) -> LandscapeAnalysis {
         trace_mirror_id,
         landscape_analysis_type: LandscapeAnalysisType::from_db(&landscape_analysis_type_raw),
         processing_state: LandscapeProcessingState::from_db(&processing_state_raw),
+        failure_reason,
         created_at,
         updated_at,
     }
@@ -123,6 +126,7 @@ fn select_analysis_columns() -> (
     landscape_analyses::trace_mirror_id,
     landscape_analyses::landscape_analysis_type,
     landscape_analyses::processing_state,
+    landscape_analyses::failure_reason,
     landscape_analyses::created_at,
     landscape_analyses::updated_at,
 ) {
@@ -141,6 +145,7 @@ fn select_analysis_columns() -> (
         landscape_analyses::trace_mirror_id,
         landscape_analyses::landscape_analysis_type,
         landscape_analyses::processing_state,
+        landscape_analyses::failure_reason,
         landscape_analyses::created_at,
         landscape_analyses::updated_at,
     )

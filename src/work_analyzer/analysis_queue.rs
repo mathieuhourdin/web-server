@@ -215,7 +215,7 @@ async fn run_claim_loop(
                 err
             );
             if let Err(state_err) = claimed_analysis_for_fail
-                .set_processing_state(LandscapeProcessingState::Failed, pool)
+                .set_failed(err.message.clone(), pool)
             {
                 tracing::error!(
                     target: "work_analyzer",

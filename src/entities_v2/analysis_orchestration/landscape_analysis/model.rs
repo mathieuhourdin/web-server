@@ -22,6 +22,7 @@ pub struct LandscapeAnalysis {
     pub trace_mirror_id: Option<Uuid>,
     pub landscape_analysis_type: LandscapeAnalysisType,
     pub processing_state: LandscapeProcessingState,
+    pub failure_reason: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

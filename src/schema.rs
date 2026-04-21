@@ -182,6 +182,7 @@ diesel::table! {
         landscape_analysis_type -> Text,
         period_start -> Timestamp,
         period_end -> Timestamp,
+        failure_reason -> Nullable<Text>,
     }
 }
 

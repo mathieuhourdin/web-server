@@ -51,6 +51,7 @@ impl LandscapeAnalysis {
                 landscape_analyses::landscape_analysis_type
                     .eq(self.landscape_analysis_type.to_db()),
                 landscape_analyses::processing_state.eq(self.processing_state.to_db()),
+                landscape_analyses::failure_reason.eq(self.failure_reason),
                 landscape_analyses::parent_id.eq(self.parent_analysis_id),
                 landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
                 landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
@@ -67,6 +68,20 @@ impl LandscapeAnalysis {
         pool: &DbPool,
     ) -> Result<LandscapeAnalysis, PpdcError> {
         self.processing_state = state;
+        if state != LandscapeProcessingState::Failed {
+            self.failure_reason = None;
+        }
+        self.update(pool)
+    }
+
+    /// Marks an analysis as failed while recording a short operational reason on the row.
+    pub fn set_failed(
+        mut self,
+        failure_reason: String,
+        pool: &DbPool,
+    ) -> Result<LandscapeAnalysis, PpdcError> {
+        self.processing_state = LandscapeProcessingState::Failed;
+        self.failure_reason = Some(failure_reason);
         self.update(pool)
     }
 
@@ -96,6 +111,7 @@ impl NewLandscapeAnalysis {
                 landscape_analyses::landscape_analysis_type
                     .eq(self.landscape_analysis_type.to_db()),
                 landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()),
+                landscape_analyses::failure_reason.eq::<Option<String>>(None),
                 landscape_analyses::parent_id.eq(self.parent_analysis_id),
                 landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
                 landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
@@ -130,6 +146,7 @@ impl NewLandscapeAnalysis {
                         .eq(self.landscape_analysis_type.to_db()),
                     landscape_analyses::processing_state
                         .eq(LandscapeProcessingState::Pending.to_db()),
+                    landscape_analyses::failure_reason.eq::<Option<String>>(None),
                     landscape_analyses::parent_id.eq(self.parent_analysis_id),
                     landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
                     landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
