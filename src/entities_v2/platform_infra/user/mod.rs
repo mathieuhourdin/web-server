@@ -4,9 +4,11 @@ mod model;
 mod routes;
 
 pub use admin::{
-    get_admin_recent_user_activity_route, get_admin_service_user_route,
-    get_admin_service_users_route, post_admin_service_user_route, put_admin_service_user_route,
-    AdminUserDailyActivity, AdminUserRecentActivity,
+    get_admin_platform_overview_route, get_admin_recent_user_activity_route,
+    get_admin_service_user_route, get_admin_service_users_route,
+    post_admin_service_user_route, put_admin_service_user_route, AdminPlatformCurrentHealth,
+    AdminPlatformDailyOverview, AdminPlatformOverview, AdminUserDailyActivity,
+    AdminUserRecentActivity,
 };
 pub use enums::{
     EmailNotificationMode, HomeFocusView, JournalTheme, UserPrincipalType, UserRole,

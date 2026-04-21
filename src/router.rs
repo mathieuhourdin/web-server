@@ -53,11 +53,18 @@ pub fn create_router() -> Router {
         .route("/", get(user::get_mentors_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
-    let admin_router = Router::new()
+    let admin_analytics_router = Router::new()
+        .route(
+            "/platform_overview",
+            get(user::get_admin_platform_overview_route),
+        )
         .route(
             "/recent_activity",
             get(user::get_admin_recent_user_activity_route),
-        )
+        );
+
+    let admin_router = Router::new()
+        .nest("/analytics", admin_analytics_router)
         .route(
             "/service_users",
             get(user::get_admin_service_users_route).post(user::post_admin_service_user_route),

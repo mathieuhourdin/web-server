@@ -34,6 +34,18 @@ struct CountRow {
 }
 
 #[derive(QueryableByName)]
+struct PlatformDailyOverviewRow {
+    #[diesel(sql_type = Date)]
+    day: NaiveDate,
+    #[diesel(sql_type = BigInt)]
+    written_traces_count: i64,
+    #[diesel(sql_type = BigInt)]
+    followed_journal_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
+    users_count: i64,
+}
+
+#[derive(QueryableByName)]
 struct UserDailyActivityRow {
     #[diesel(sql_type = Date)]
     day: NaiveDate,
@@ -85,6 +97,27 @@ pub struct AdminUserRecentActivity {
     pub hlp_landmarks_count: i64,
     pub failed_lenses_count: i64,
     pub heatmap: Vec<AdminUserDailyActivity>,
+}
+
+#[derive(Serialize)]
+pub struct AdminPlatformCurrentHealth {
+    pub failed_lenses_count: i64,
+    pub failed_analyses_count: i64,
+    pub onboarded_users_without_mentor_count: i64,
+}
+
+#[derive(Serialize)]
+pub struct AdminPlatformDailyOverview {
+    pub day: NaiveDate,
+    pub written_traces_count: i64,
+    pub followed_journal_opened_count: i64,
+    pub users_count: i64,
+}
+
+#[derive(Serialize)]
+pub struct AdminPlatformOverview {
+    pub current_health: AdminPlatformCurrentHealth,
+    pub daily_overview: Vec<AdminPlatformDailyOverview>,
 }
 
 fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
@@ -298,6 +331,103 @@ pub async fn get_admin_recent_user_activity_route(
     }
 
     Ok(Json(PaginatedResponse::new(payload, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn get_admin_platform_overview_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<AdminPlatformOverview>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let mut conn = pool.get()?;
+
+    let failed_lenses_count = sql_query(
+        r#"
+        SELECT COUNT(*)::bigint AS value
+        FROM lenses
+        WHERE processing_state = 'FAILED'
+        "#,
+    )
+    .get_result::<CountRow>(&mut conn)?
+    .value;
+
+    let failed_analyses_count = sql_query(
+        r#"
+        SELECT COUNT(*)::bigint AS value
+        FROM landscape_analyses
+        WHERE processing_state = 'FAILED'
+        "#,
+    )
+    .get_result::<CountRow>(&mut conn)?
+    .value;
+
+    let onboarded_users_without_mentor_count = sql_query(
+        r#"
+        SELECT COUNT(*)::bigint AS value
+        FROM users
+        WHERE principal_type = 'HUMAN'
+          AND is_platform_user = TRUE
+          AND onboarding_version = 1
+          AND mentor_id IS NULL
+        "#,
+    )
+    .get_result::<CountRow>(&mut conn)?
+    .value;
+
+    let to = Utc::now().date_naive();
+    let from = to - Duration::days(29);
+
+    let daily_rows = sql_query(
+        r#"
+        WITH days AS (
+            SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
+        )
+        SELECT
+            d.day AS day,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM traces t
+                WHERE t.created_at::date = d.day
+            ), 0)::bigint AS written_traces_count,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM usage_events ue
+                WHERE ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
+                  AND ue.occurred_at::date = d.day
+            ), 0)::bigint AS followed_journal_opened_count,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM users u
+                WHERE u.principal_type = 'HUMAN'
+                  AND u.is_platform_user = TRUE
+                  AND u.created_at < (d.day + interval '1 day')
+            ), 0)::bigint AS users_count
+        FROM days d
+        ORDER BY d.day
+        "#,
+    )
+    .bind::<Date, _>(from)
+    .bind::<Date, _>(to)
+    .load::<PlatformDailyOverviewRow>(&mut conn)?;
+
+    let daily_overview = daily_rows
+        .into_iter()
+        .map(|row| AdminPlatformDailyOverview {
+            day: row.day,
+            written_traces_count: row.written_traces_count,
+            followed_journal_opened_count: row.followed_journal_opened_count,
+            users_count: row.users_count,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(Json(AdminPlatformOverview {
+        current_health: AdminPlatformCurrentHealth {
+            failed_lenses_count,
+            failed_analyses_count,
+            onboarded_users_without_mentor_count,
+        },
+        daily_overview,
+    }))
 }
 
 #[debug_handler]
