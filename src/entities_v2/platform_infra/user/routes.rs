@@ -271,6 +271,10 @@ pub async fn put_user_route(
     Json(payload): Json<NewUser>,
 ) -> Result<Json<User>, PpdcError> {
     let session_user_id = session.user_id.unwrap();
+    if session_user_id != id {
+        return Err(PpdcError::unauthorized());
+    }
+
     let existing_user = User::find(&id, &pool)?;
     let new_biography = payload.biography.clone();
     let biography_changed = new_biography
@@ -283,9 +287,13 @@ pub async fn put_user_route(
         .map(|definition| existing_user.high_level_projects_definition.as_ref() != Some(definition))
         .unwrap_or(false);
 
-    if session_user_id != id && existing_user.is_platform_user {
-        return Err(PpdcError::unauthorized());
+    if let Some(requested_onboarding_version) = payload.onboarding_version {
+        User::validate_onboarding_version_transition(
+            existing_user.onboarding_version,
+            requested_onboarding_version,
+        )?;
     }
+
     let updated_user = payload.update(&id, &pool)?;
 
     if biography_changed {
@@ -314,7 +322,7 @@ pub async fn get_user_route(
 ) -> Result<impl axum::response::IntoResponse, PpdcError> {
     let user = User::find(&id, &pool)?;
     let viewer_user_id = session.user_id;
-    if !user.is_platform_user || session.user_id.unwrap() == id {
+    if session.user_id == Some(id) {
         let mut user_response =
             UserPseudonymizedAuthentifiedResponse::from_viewer(&user, viewer_user_id);
         if session.user_id == Some(id) {

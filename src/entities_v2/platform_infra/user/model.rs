@@ -23,6 +23,8 @@ use super::enums::{
     WeekAnalysisWeekday,
 };
 
+pub const CURRENT_ONBOARDING_VERSION: i32 = 1;
+
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable, Identifiable, Debug)]
 #[diesel(table_name = crate::schema::user_roles)]
 pub struct UserRoleAssignment {
@@ -64,6 +66,7 @@ pub struct User {
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
+    pub onboarding_version: i32,
 }
 
 pub enum UserResponse {
@@ -119,6 +122,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
+    pub onboarding_version: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRole>>,
     pub display_name: String,
@@ -158,6 +162,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
+            onboarding_version: user.onboarding_version,
             roles: None,
             display_name: user.display_name(),
         }
@@ -372,6 +377,7 @@ pub struct NewUser {
     pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
     pub received_message_email_mode: Option<EmailNotificationMode>,
     pub mentor_feedback_email_enabled: Option<bool>,
+    pub onboarding_version: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -429,6 +435,7 @@ impl NewServiceUserDto {
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
             mentor_feedback_email_enabled: None,
+            onboarding_version: None,
         }
     }
 
@@ -463,6 +470,7 @@ impl NewServiceUserDto {
             ),
             received_message_email_mode: Some(existing_user.received_message_email_mode),
             mentor_feedback_email_enabled: Some(existing_user.mentor_feedback_email_enabled),
+            onboarding_version: Some(existing_user.onboarding_version),
         }
     }
 }
@@ -490,6 +498,7 @@ impl NewUser {
         if payload.mentor_feedback_email_enabled.is_none() {
             payload.mentor_feedback_email_enabled = Some(true);
         }
+        payload.onboarding_version = Some(0);
         let email = payload.email.clone();
 
         let user = conn.transaction::<User, diesel::result::Error, _>(|conn| {
@@ -566,6 +575,35 @@ impl NewUser {
 }
 
 impl User {
+    pub fn validate_onboarding_version_transition(
+        current_version: i32,
+        requested_version: i32,
+    ) -> Result<(), PpdcError> {
+        if requested_version < current_version {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!(
+                    "onboarding_version cannot decrease from {} to {}",
+                    current_version, requested_version
+                ),
+            ));
+        }
+
+        if requested_version > CURRENT_ONBOARDING_VERSION {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                format!(
+                    "onboarding_version cannot exceed current supported version {}",
+                    CURRENT_ONBOARDING_VERSION
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn hash_password_value(password: &str) -> Result<String, PpdcError> {
         let salt: [u8; 32] = rand::thread_rng().gen();
         let config = Config::default();
@@ -948,6 +986,7 @@ mod tests {
             shared_journal_activity_email_mode: EmailNotificationMode::Instant,
             received_message_email_mode: EmailNotificationMode::Instant,
             mentor_feedback_email_enabled: true,
+            onboarding_version: 0,
         }
     }
 
@@ -978,9 +1017,29 @@ mod tests {
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
             mentor_feedback_email_enabled: None,
+            onboarding_version: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));
+    }
+
+    #[test]
+    fn test_validate_onboarding_version_transition_rejects_decrease() {
+        let error = User::validate_onboarding_version_transition(1, 0).unwrap_err();
+        assert_eq!(error.status_code, 400);
+    }
+
+    #[test]
+    fn test_validate_onboarding_version_transition_rejects_future_version() {
+        let error =
+            User::validate_onboarding_version_transition(0, CURRENT_ONBOARDING_VERSION + 1)
+                .unwrap_err();
+        assert_eq!(error.status_code, 400);
+    }
+
+    #[test]
+    fn test_validate_onboarding_version_transition_allows_upgrade_to_current_version() {
+        User::validate_onboarding_version_transition(0, CURRENT_ONBOARDING_VERSION).unwrap();
     }
 
     #[test]

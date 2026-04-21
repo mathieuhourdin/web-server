@@ -599,6 +599,7 @@ diesel::table! {
         shared_journal_activity_email_mode -> Text,
         received_message_email_mode -> Text,
         mentor_feedback_email_enabled -> Bool,
+        onboarding_version -> Int4,
     }
 }
 
