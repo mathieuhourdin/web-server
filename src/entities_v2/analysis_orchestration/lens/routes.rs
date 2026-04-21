@@ -15,6 +15,7 @@ use crate::entities_v2::{
     },
     session::Session,
     trace::Trace,
+    user::{ensure_user_has_any_lens, User},
 };
 use crate::work_analyzer;
 
@@ -113,7 +114,16 @@ pub async fn delete_lens_route(
     if lens.user_id != Some(user_id) {
         return Err(PpdcError::unauthorized());
     }
+    let user = User::find(&user_id, &pool)?;
+    if user.requires_personal_lens() && Lens::get_user_lenses(user_id, &pool)?.len() <= 1 {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Cannot delete the last lens for this user".to_string(),
+        ));
+    }
     let lens = delete_lens_and_landscapes(id, &pool)?;
+    ensure_user_has_any_lens(user_id, &pool)?;
     Ok(Json(lens))
 }
 

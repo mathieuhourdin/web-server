@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use super::enums::{UserPrincipalType, UserRole};
 use super::model::{
-    ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, NewServiceUserDto, User,
+    ensure_user_has_any_lens, ensure_user_has_meta_journal, NewServiceUserDto, User,
 };
 
 #[derive(QueryableByName)]
@@ -515,7 +515,7 @@ pub async fn post_admin_service_user_route(
         }
         return Err(err);
     }
-    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
+    if let Err(err) = ensure_user_has_any_lens(created_user.id, &pool) {
         if let Ok(mut conn) = pool.get() {
             let _ = diesel::delete(users::table.filter(users::id.eq(created_user.id)))
                 .execute(&mut conn);

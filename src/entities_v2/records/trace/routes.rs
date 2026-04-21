@@ -33,7 +33,7 @@ use crate::entities_v2::{
     session::Session,
     shared::MaturingState,
     trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
-    user::User,
+    user::{ensure_user_has_any_lens, User},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -107,6 +107,7 @@ fn spawn_autoplay_lens_runs_for_trace(
     trace_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
+    ensure_user_has_any_lens(user_id, pool)?;
     let user_lenses = Lens::get_user_lenses(user_id, pool)?;
     for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {
         let lens = if lens.target_trace_id != Some(trace_id) {
@@ -452,6 +453,8 @@ async fn create_or_get_journal_draft(
             "Cannot create a draft in an archived journal".to_string(),
         ));
     }
+
+    ensure_user_has_any_lens(user_id, pool)?;
 
     if let Some(existing_draft) = Trace::find_draft_for_journal(journal.id, &pool)? {
         let existing_draft =

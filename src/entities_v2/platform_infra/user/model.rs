@@ -604,6 +604,10 @@ impl User {
         Ok(())
     }
 
+    pub fn requires_personal_lens(&self) -> bool {
+        self.principal_type == UserPrincipalType::Human && self.is_platform_user
+    }
+
     pub fn hash_password_value(password: &str) -> Result<String, PpdcError> {
         let salt: [u8; 32] = rand::thread_rng().gen();
         let config = Config::default();
@@ -749,22 +753,25 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
     Ok(())
 }
 
-pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+pub fn ensure_user_has_any_lens(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    let user = User::find(&user_id, pool)?;
+    if !user.requires_personal_lens() {
+        return Ok(());
+    }
+
     let mut conn = pool.get()?;
 
-    let has_autoplay_lens = diesel::select(diesel::dsl::exists(
-        lenses::table
-            .filter(lenses::user_id.eq(user_id))
-            .filter(lenses::autoplay.eq(true)),
+    let has_any_lens = diesel::select(diesel::dsl::exists(
+        lenses::table.filter(lenses::user_id.eq(user_id)),
     ))
     .get_result::<bool>(&mut conn)?;
 
-    if has_autoplay_lens {
+    if has_any_lens {
         ensure_user_has_current_lens(user_id, pool)?;
         return Ok(());
     }
 
-    let autoplay_lens = NewLens {
+    let default_lens = NewLens {
         processing_state: LensProcessingState::InSync,
         fork_landscape_id: None,
         target_trace_id: None,
@@ -772,7 +779,7 @@ pub fn ensure_user_has_autoplay_lens(user_id: Uuid, pool: &DbPool) -> Result<(),
         autoplay: true,
         user_id,
     };
-    let lens = autoplay_lens.create(pool)?;
+    let lens = default_lens.create(pool)?;
 
     diesel::update(
         users::table
@@ -817,8 +824,17 @@ fn find_latest_lens_id_for_user(user_id: Uuid, pool: &DbPool) -> Result<Option<U
 
 fn ensure_user_has_current_lens(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
     let user = User::find(&user_id, pool)?;
-    if user.current_lens_id.is_some() {
-        return Ok(());
+    if let Some(current_lens_id) = user.current_lens_id {
+        let mut conn = pool.get()?;
+        let current_lens_exists = diesel::select(diesel::dsl::exists(
+            lenses::table
+                .filter(lenses::id.eq(current_lens_id))
+                .filter(lenses::user_id.eq(user_id)),
+        ))
+        .get_result::<bool>(&mut conn)?;
+        if current_lens_exists {
+            return Ok(());
+        }
     }
 
     let Some(latest_lens_id) = find_latest_lens_id_for_user(user_id, pool)? else {
@@ -826,13 +842,9 @@ fn ensure_user_has_current_lens(user_id: Uuid, pool: &DbPool) -> Result<(), Ppdc
     };
 
     let mut conn = pool.get()?;
-    diesel::update(
-        users::table
-            .filter(users::id.eq(user_id))
-            .filter(users::current_lens_id.is_null()),
-    )
-    .set(users::current_lens_id.eq(Some(latest_lens_id)))
-    .execute(&mut conn)?;
+    diesel::update(users::table.filter(users::id.eq(user_id)))
+        .set(users::current_lens_id.eq(Some(latest_lens_id)))
+        .execute(&mut conn)?;
 
     Ok(())
 }

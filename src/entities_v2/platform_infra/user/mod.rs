@@ -15,7 +15,7 @@ pub use enums::{
     WeekAnalysisWeekday,
 };
 pub use model::{
-    ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, find_similar_users,
+    ensure_user_has_any_lens, ensure_user_has_meta_journal, find_similar_users,
     NewServiceUserDto, NewUser, User, UserListParams, UserMatch,
     UserPublicResponse, UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse,
     UserResponse,

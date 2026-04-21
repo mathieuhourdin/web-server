@@ -19,7 +19,7 @@ use uuid::Uuid;
 use super::enums::UserPrincipalType;
 use super::model::{
     create_bio_trace_for_user, create_high_level_projects_definition_trace_for_user,
-    ensure_user_has_autoplay_lens, ensure_user_has_meta_journal, NewUser, User, UserListParams,
+    ensure_user_has_any_lens, ensure_user_has_meta_journal, NewUser, User, UserListParams,
     UserPublicResponse, UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse,
     UserResponse,
     UserSearchParams, UserSearchResult, UserSearchRow,
@@ -233,7 +233,7 @@ pub async fn post_user(
         }
         return Err(err);
     }
-    if let Err(err) = ensure_user_has_autoplay_lens(created_user.id, &pool) {
+    if let Err(err) = ensure_user_has_any_lens(created_user.id, &pool) {
         if let Ok(mut conn) = pool.get() {
             let _ = diesel::delete(
                 crate::schema::users::table.filter(crate::schema::users::id.eq(created_user.id)),
