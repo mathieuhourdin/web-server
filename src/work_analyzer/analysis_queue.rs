@@ -13,6 +13,7 @@ use crate::entities_v2::{
     },
     lens::{Lens, LensProcessingState},
     trace::Trace,
+    user::{User, UserPrincipalType},
 };
 use crate::work_analyzer::analysis_processor;
 use crate::work_analyzer::period_analysis_processor;
@@ -23,6 +24,21 @@ const MAX_ANALYSES_PER_RUN: usize = 100;
 pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
     let pool = get_global_pool();
     let mut lens = Lens::find_full_lens(lens_id, pool)?;
+    if let Some(user_id) = lens.user_id {
+        let user = User::find(&user_id, pool)?;
+        if user.principal_type == UserPrincipalType::Human
+            && user.is_platform_user
+            && user.mentor_id.is_none()
+        {
+            tracing::info!(
+                target: "work_analyzer",
+                "run_lens_skipped_missing_mentor lens_id={} user_id={}",
+                lens.id,
+                user_id
+            );
+            return Ok(lens);
+        }
+    }
     let worker_id = Uuid::new_v4();
     let claim_cutoff_at = resolve_claim_cutoff_at(&lens, pool)?;
     tracing::info!(

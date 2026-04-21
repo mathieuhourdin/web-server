@@ -803,9 +803,16 @@ INNER JOIN landscape_analyses la
     ON la.id = las.landscape_analysis_id
 INNER JOIN lenses l
     ON l.id = las.lens_id
+INNER JOIN users u
+    ON u.id = l.user_id
 WHERE la.processing_state = 'PENDING'
   AND la.period_end <= NOW()
   AND l.processing_state != 'FAILED'
+  AND NOT (
+    u.principal_type = 'HUMAN'
+    AND u.is_platform_user = TRUE
+    AND u.mentor_id IS NULL
+  )
 GROUP BY las.lens_id
 ORDER BY MIN(la.period_end) ASC, MIN(la.created_at) ASC
         "#,
