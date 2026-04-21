@@ -10,56 +10,58 @@ fn is_work_analyzer_target(target: &str) -> bool {
     target == "work_analyzer" || target.starts_with("web_server::work_analyzer")
 }
 
-fn is_api_target(target: &str) -> bool {
-    (target == "api"
-        || target.starts_with("web_server::entities_v2")
-        || target.starts_with("web_server::openai_handler")
-        || target.starts_with("web_server::router")
-        || target.starts_with("web_server::environment")
-        || target.starts_with("web_server::db"))
-        && !is_work_analyzer_target(target)
+fn is_app_target(target: &str) -> bool {
+    !is_work_analyzer_target(target)
+}
+
+fn build_json_layer<S, W>(writer: W) -> tracing_subscriber::fmt::Layer<S, tracing_subscriber::fmt::format::JsonFields, tracing_subscriber::fmt::format::Format<tracing_subscriber::fmt::format::Json>, W>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    W: for<'writer> tracing_subscriber::fmt::MakeWriter<'writer> + Send + Sync + 'static,
+{
+    fmt::layer()
+        .json()
+        .with_writer(writer)
+        .with_ansi(false)
+        .with_target(true)
+        .with_level(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_current_span(false)
+        .with_span_list(true)
+        .flatten_event(true)
 }
 
 pub fn init_tracing() {
     let _ = std::fs::create_dir_all("logs");
 
-    let work_analyzer_file_appender = tracing_appender::rolling::never("logs", "work_analyzer.log");
+    let work_analyzer_file_appender =
+        tracing_appender::rolling::never("logs", "work_analyzer.jsonl");
     let (work_analyzer_non_blocking, work_analyzer_guard) =
         tracing_appender::non_blocking(work_analyzer_file_appender);
 
-    let api_file_appender = tracing_appender::rolling::never("logs", "api.log");
-    let (api_non_blocking, api_guard) = tracing_appender::non_blocking(api_file_appender);
+    let app_file_appender = tracing_appender::rolling::never("logs", "app.jsonl");
+    let (app_non_blocking, app_guard) = tracing_appender::non_blocking(app_file_appender);
 
-    let _ = TRACING_GUARDS.set(vec![work_analyzer_guard, api_guard]);
+    let _ = TRACING_GUARDS.set(vec![work_analyzer_guard, app_guard]);
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let stdout_layer = fmt::layer()
-        .with_writer(std::io::stdout)
-        .with_ansi(false)
-        .with_target(true)
-        .with_level(true);
+    let stdout_layer = build_json_layer(std::io::stdout);
 
-    let work_analyzer_file_layer = fmt::layer()
-        .with_writer(work_analyzer_non_blocking)
-        .with_ansi(false)
-        .with_target(true)
-        .with_level(true)
-        .with_filter(filter_fn(|metadata| {
-            is_work_analyzer_target(metadata.target())
+    let work_analyzer_file_layer = build_json_layer(work_analyzer_non_blocking).with_filter(
+        filter_fn(|metadata| is_work_analyzer_target(metadata.target())),
+    );
+
+    let app_file_layer =
+        build_json_layer(app_non_blocking).with_filter(filter_fn(|metadata| {
+            is_app_target(metadata.target())
         }));
-
-    let api_file_layer = fmt::layer()
-        .with_writer(api_non_blocking)
-        .with_ansi(false)
-        .with_target(true)
-        .with_level(true)
-        .with_filter(filter_fn(|metadata| is_api_target(metadata.target())));
 
     let _ = tracing_subscriber::registry()
         .with(filter)
         .with(stdout_layer)
         .with(work_analyzer_file_layer)
-        .with(api_file_layer)
+        .with(app_file_layer)
         .try_init();
 }

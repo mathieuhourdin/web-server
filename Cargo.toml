@@ -32,11 +32,14 @@ async-trait = "0.1.89"
 anyhow = "1.0.100"
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 google-cloud-auth = "1.5.0"
 google-cloud-storage = "1.9.0"
 mime_guess = "2.0.5"
 bytes = "1.10.1"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+subtle = "2.6.1"
 
 [dev-dependencies]
 tokio-test = "*"
