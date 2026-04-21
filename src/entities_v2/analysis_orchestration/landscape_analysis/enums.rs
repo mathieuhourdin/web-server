@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum LandscapeProcessingState {
     Pending,
+    BlockedWaitingCoverage,
     Running,
     ReplayRequested,
     Completed,
@@ -14,6 +15,7 @@ impl LandscapeProcessingState {
     pub fn to_db(self) -> &'static str {
         match self {
             LandscapeProcessingState::Pending => "PENDING",
+            LandscapeProcessingState::BlockedWaitingCoverage => "BLOCKED_WAITING_COVERAGE",
             LandscapeProcessingState::Running => "RUNNING",
             LandscapeProcessingState::ReplayRequested => "REPLAY_REQUESTED",
             LandscapeProcessingState::Completed => "COMPLETED",
@@ -23,6 +25,9 @@ impl LandscapeProcessingState {
 
     pub fn from_db(value: &str) -> Self {
         match value {
+            "BLOCKED_WAITING_COVERAGE" | "blocked_waiting_coverage" => {
+                LandscapeProcessingState::BlockedWaitingCoverage
+            }
             "RUNNING" | "running" => LandscapeProcessingState::Running,
             "REPLAY_REQUESTED" | "replay_requested" => LandscapeProcessingState::ReplayRequested,
             "COMPLETED" | "completed" => LandscapeProcessingState::Completed,

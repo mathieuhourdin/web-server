@@ -2,6 +2,7 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, U
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::sql_query;
+use diesel::sql_types::Bool;
 use diesel::sql_types::Timestamp as SqlTimestamp;
 use diesel::sql_types::Uuid as SqlUuid;
 use uuid::Uuid;
@@ -27,6 +28,12 @@ use super::model::{
 struct IdRow {
     #[diesel(sql_type = SqlUuid)]
     id: Uuid,
+}
+
+#[derive(diesel::QueryableByName)]
+struct BoolRow {
+    #[diesel(sql_type = Bool)]
+    value: bool,
 }
 
 impl LandscapeAnalysis {
@@ -307,6 +314,73 @@ fn adjust_recap_period_start_for_previous_period(
     Ok((adjusted_start, candidate_end))
 }
 
+/// Returns whether a recap period is still missing at least one covered trace mirror for this lens.
+fn period_has_uncovered_traces_for_lens(
+    lens_id: Uuid,
+    user_id: Uuid,
+    period_start: NaiveDateTime,
+    period_end: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<bool, PpdcError> {
+    let mut conn = pool.get()?;
+
+    let row = sql_query(
+        r#"
+SELECT EXISTS (
+    SELECT 1
+    FROM traces t
+    WHERE t.user_id = $1
+      AND t.interaction_date >= $2
+      AND t.interaction_date < $3
+      AND NOT EXISTS (
+          SELECT 1
+          FROM trace_mirrors tm
+          INNER JOIN lens_analysis_scopes las_tm
+              ON las_tm.landscape_analysis_id = tm.landscape_analysis_id
+          WHERE las_tm.lens_id = $4
+            AND tm.trace_id = t.id
+      )
+) AS value
+        "#,
+    )
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<SqlTimestamp, _>(period_start)
+    .bind::<SqlTimestamp, _>(period_end)
+    .bind::<SqlUuid, _>(lens_id)
+    .get_result::<BoolRow>(&mut conn)?;
+
+    Ok(row.value)
+}
+
+/// Classifies a recap analysis as runnable pending or blocked, based on whether all traces in its period are covered.
+fn refresh_recap_processing_state(
+    analysis_id: Uuid,
+    lens_id: Uuid,
+    user_id: Uuid,
+    period_start: NaiveDateTime,
+    period_end: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<LandscapeAnalysis, PpdcError> {
+    let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, pool)?;
+    let next_state = if period_has_uncovered_traces_for_lens(
+        lens_id,
+        user_id,
+        period_start,
+        period_end,
+        pool,
+    )? {
+        LandscapeProcessingState::BlockedWaitingCoverage
+    } else {
+        LandscapeProcessingState::Pending
+    };
+
+    if analysis.processing_state == next_state {
+        Ok(analysis)
+    } else {
+        analysis.set_processing_state(next_state, pool)
+    }
+}
+
 /// Checks whether the lens already has the trace-scoped analysis job needed for this trace and type.
 fn has_trace_analysis_for_lens(
     lens_id: Uuid,
@@ -463,6 +537,14 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
                 existing_daily.period_end,
                 pool,
             )?;
+            let _ = refresh_recap_processing_state(
+                existing_daily.id,
+                lens_id,
+                user_id,
+                existing_daily.period_start,
+                existing_daily.period_end,
+                pool,
+            )?;
         } else {
             let previous_daily = find_latest_prior_analysis_for_lens(
                 lens_id,
@@ -492,7 +574,9 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             let _ = replace_covered_inputs_for_period(
                 daily.id, lens_id, user_id, day_start, day_end, pool,
             )?;
-            created.push(daily);
+            created.push(refresh_recap_processing_state(
+                daily.id, lens_id, user_id, day_start, day_end, pool,
+            )?);
         }
 
         if let Some(existing_weekly) = find_analysis_covering_moment_for_lens(
@@ -502,6 +586,14 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             pool,
         )? {
             let _ = replace_covered_inputs_for_period(
+                existing_weekly.id,
+                lens_id,
+                user_id,
+                existing_weekly.period_start,
+                existing_weekly.period_end,
+                pool,
+            )?;
+            let _ = refresh_recap_processing_state(
                 existing_weekly.id,
                 lens_id,
                 user_id,
@@ -539,14 +631,16 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             let _ = replace_covered_inputs_for_period(
                 weekly.id, lens_id, user_id, week_start, week_end, pool,
             )?;
-            created.push(weekly);
+            created.push(refresh_recap_processing_state(
+                weekly.id, lens_id, user_id, week_start, week_end, pool,
+            )?);
         }
     }
 
     Ok(created)
 }
 
-/// Rebuilds the covered inputs of pending daily and weekly recaps affected by one newly available trace.
+/// Rebuilds the covered inputs of pending or blocked daily and weekly recaps affected by one newly available trace.
 pub fn refresh_pending_summary_covered_inputs_for_trace(
     lens_id: Uuid,
     user_id: Uuid,
@@ -566,7 +660,10 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
             LandscapeAnalysisType::DailyRecap.to_db(),
             LandscapeAnalysisType::WeeklyRecap.to_db(),
         ]))
-        .filter(landscape_analyses::processing_state.eq(LandscapeProcessingState::Pending.to_db()))
+        .filter(landscape_analyses::processing_state.eq_any(vec![
+            LandscapeProcessingState::Pending.to_db(),
+            LandscapeProcessingState::BlockedWaitingCoverage.to_db(),
+        ]))
         .filter(landscape_analyses::period_start.le(trace_datetime))
         .filter(landscape_analyses::period_end.gt(trace_datetime))
         .select((
@@ -582,6 +679,14 @@ pub fn refresh_pending_summary_covered_inputs_for_trace(
 
     for (analysis_id, period_start, period_end) in pending_summary_rows {
         let (trace_count, trace_mirror_count) = replace_covered_inputs_for_period(
+            analysis_id,
+            lens_id,
+            user_id,
+            period_start,
+            period_end,
+            pool,
+        )?;
+        let _ = refresh_recap_processing_state(
             analysis_id,
             lens_id,
             user_id,
