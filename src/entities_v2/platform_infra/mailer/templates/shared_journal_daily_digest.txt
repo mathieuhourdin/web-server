@@ -1,6 +1,6 @@
 Bonjour {{recipient_display_name}},
 
-Voici un récapitulatif des traces écrites par vos amis le {{digest_date_label}}. Bonne lecture !
+{{intro_line}}
 
 {{summary_line}}
 

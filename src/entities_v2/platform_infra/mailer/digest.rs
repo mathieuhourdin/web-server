@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use axum::{debug_handler, extract::Extension, http::HeaderMap, Json};
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
@@ -123,6 +123,37 @@ fn local_day_bounds_utc(
         start.with_timezone(&Utc).naive_utc(),
         end.with_timezone(&Utc).naive_utc(),
     ))
+}
+
+fn french_month_name(month: u32) -> &'static str {
+    match month {
+        1 => "janvier",
+        2 => "février",
+        3 => "mars",
+        4 => "avril",
+        5 => "mai",
+        6 => "juin",
+        7 => "juillet",
+        8 => "août",
+        9 => "septembre",
+        10 => "octobre",
+        11 => "novembre",
+        12 => "décembre",
+        _ => "",
+    }
+}
+
+fn french_day_label(date: NaiveDate) -> String {
+    format!("{} {}", date.day(), french_month_name(date.month()))
+}
+
+fn french_day_time_label(datetime: DateTime<Tz>) -> String {
+    format!(
+        "{} {} à {}",
+        datetime.day(),
+        french_month_name(datetime.month()),
+        datetime.format("%H:%M")
+    )
 }
 
 fn find_shared_journal_daily_digest_recipients(pool: &DbPool) -> Result<Vec<User>, PpdcError> {
@@ -265,11 +296,10 @@ fn build_shared_journal_digest_items(
             .post
             .publishing_date
             .unwrap_or(visible_post.post.created_at);
-        let publishing_date_label =
+        let publishing_date_label = french_day_time_label(
             DateTime::<Utc>::from_naive_utc_and_offset(publishing_date, Utc)
-                .with_timezone(&timezone)
-                .format("%d/%m/%Y à %H:%M")
-                .to_string();
+                .with_timezone(&timezone),
+        );
 
         items.push(SharedJournalDigestEmailItem {
             owner_display_name: owner.display_name(),
@@ -325,7 +355,7 @@ fn create_shared_journal_daily_digest_for_user(
         build_shared_journal_digest_items(recipient, local_date, timezone, visible_posts, pool)?;
     let template = shared_journal_daily_digest_email(
         &recipient.display_name(),
-        &local_date.format("%d/%m/%Y").to_string(),
+        &french_day_label(local_date),
         items,
     );
 

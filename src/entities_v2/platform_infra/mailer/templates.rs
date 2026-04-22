@@ -46,6 +46,20 @@ fn build_trace_excerpt(content: &str, max_chars: usize) -> String {
     }
 }
 
+fn distinct_owner_display_names(items: &[SharedJournalDigestEmailItem]) -> Vec<String> {
+    let mut owners = Vec::new();
+    for item in items {
+        if !owners.contains(&item.owner_display_name) {
+            owners.push(item.owner_display_name.clone());
+        }
+    }
+    owners
+}
+
+fn join_owner_display_names(owners: &[String]) -> String {
+    owners.join(", ")
+}
+
 fn escape_html(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -144,22 +158,36 @@ pub fn shared_journal_daily_digest_email(
     items: Vec<SharedJournalDigestEmailItem>,
 ) -> EmailTemplate {
     let post_count = items.len();
+    let owners = distinct_owner_display_names(&items);
+    let owners_preview = if owners.len() > 2 {
+        format!("{}, {}...", owners[0], owners[1])
+    } else {
+        join_owner_display_names(&owners)
+    };
+    let owners_sentence = join_owner_display_names(&owners);
     let subject = if post_count == 1 {
-        format!("Résumé du {} : 1 nouveau post", digest_date_label)
+        format!(
+            "Récap : 1 nouveau post le {} ({})",
+            digest_date_label, owners_preview
+        )
     } else {
         format!(
-            "Résumé du {} : {} nouveaux posts",
-            digest_date_label, post_count
+            "Récap : {} nouveaux posts le {} ({})",
+            post_count, digest_date_label, owners_preview
         )
     };
-    let summary_line = if post_count == 1 {
-        "1 nouvelle publication est disponible dans vos journaux partagés.".to_string()
+    let intro_line = if owners.len() == 1 {
+        format!("{} a écrit dans son journal.", owners_sentence)
     } else {
         format!(
-            "{} nouvelles publications sont disponibles dans vos journaux partagés.",
-            post_count
+            "{} ont écrit dans leur journal.",
+            owners_sentence
         )
     };
+    let summary_line = format!(
+        "Voici un récapitulatif des traces écrites par vos amis le {}. Bonne lecture !",
+        digest_date_label
+    );
     let items_text = items
         .iter()
         .map(|item| {
@@ -202,6 +230,7 @@ pub fn shared_journal_daily_digest_email(
         &[
             ("recipient_display_name", recipient_display_name.to_string()),
             ("digest_date_label", digest_date_label.to_string()),
+            ("intro_line", intro_line.clone()),
             ("summary_line", summary_line.clone()),
             ("items_text", items_text),
             ("home_url", home_url.clone()),
@@ -215,6 +244,7 @@ pub fn shared_journal_daily_digest_email(
                 escape_html(recipient_display_name),
             ),
             ("digest_date_label", escape_html(digest_date_label)),
+            ("intro_line", escape_html(&intro_line)),
             ("summary_line", escape_html(&summary_line)),
             ("items_html", items_html),
             ("home_url", escape_html(&home_url)),
