@@ -291,6 +291,7 @@ pub async fn post_message_route(
     Json(payload): Json<NewMessageDto>,
 ) -> Result<Json<MessageCreationResponse>, PpdcError> {
     let sender_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let sender_user = User::find(&sender_user_id, &pool)?;
     let recipient = User::find(&payload.recipient_user_id, &pool)?;
     let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
     let message_type = match payload.message_type {
@@ -346,6 +347,13 @@ pub async fn post_message_route(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
     ) {
+        if !sender_user.allows_ai_features() {
+            return Err(PpdcError::new(
+                403,
+                ErrorType::ApiError,
+                "AI features are disabled for this account".to_string(),
+            ));
+        }
         if !recipient_is_service_mentor {
             return Err(PpdcError::new(
                 400,

@@ -1,0 +1,2 @@
+ALTER TABLE users
+ADD COLUMN ai_features_enabled BOOLEAN NOT NULL DEFAULT TRUE;

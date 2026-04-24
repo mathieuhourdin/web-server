@@ -1127,6 +1127,7 @@ pub async fn post_trace_message_route(
     Json(payload): Json<NewTraceMessageDto>,
 ) -> Result<Json<TraceMessageCreationResponse>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let sender_user = User::find(&user_id, &pool)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     let sender_is_owner = trace.user_id == user_id;
     if !sender_is_owner {
@@ -1151,6 +1152,13 @@ pub async fn post_trace_message_route(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
     ) {
+        if !sender_user.allows_ai_features() {
+            return Err(PpdcError::new(
+                403,
+                ErrorType::ApiError,
+                "AI features are disabled for this account".to_string(),
+            ));
+        }
         if !sender_is_owner {
             return Err(PpdcError::new(
                 401,

@@ -808,6 +808,7 @@ INNER JOIN users u
 WHERE la.processing_state = 'PENDING'
   AND la.period_end <= NOW()
   AND l.processing_state != 'FAILED'
+  AND u.ai_features_enabled = TRUE
   AND NOT (
     u.principal_type = 'HUMAN'
     AND u.is_platform_user = TRUE

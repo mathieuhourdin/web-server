@@ -26,6 +26,15 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
     let mut lens = Lens::find_full_lens(lens_id, pool)?;
     if let Some(user_id) = lens.user_id {
         let user = User::find(&user_id, pool)?;
+        if !user.allows_ai_features() {
+            tracing::info!(
+                target: "work_analyzer",
+                "run_lens_skipped_ai_disabled lens_id={} user_id={}",
+                lens.id,
+                user_id
+            );
+            return Ok(lens);
+        }
         if user.principal_type == UserPrincipalType::Human
             && user.is_platform_user
             && user.mentor_id.is_none()

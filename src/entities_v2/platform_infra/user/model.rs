@@ -66,6 +66,7 @@ pub struct User {
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
+    pub ai_features_enabled: bool,
     pub onboarding_version: i32,
 }
 
@@ -122,6 +123,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
+    pub ai_features_enabled: bool,
     pub onboarding_version: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRole>>,
@@ -162,6 +164,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
+            ai_features_enabled: user.ai_features_enabled,
             onboarding_version: user.onboarding_version,
             roles: None,
             display_name: user.display_name(),
@@ -222,6 +225,7 @@ pub struct UserPseudonymizedResponse {
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
+    pub ai_features_enabled: bool,
     pub display_name: String,
 }
 
@@ -256,6 +260,7 @@ impl UserPseudonymizedResponse {
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
+            ai_features_enabled: user.ai_features_enabled,
             display_name: user.display_name(),
         }
     }
@@ -377,6 +382,7 @@ pub struct NewUser {
     pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
     pub received_message_email_mode: Option<EmailNotificationMode>,
     pub mentor_feedback_email_enabled: Option<bool>,
+    pub ai_features_enabled: Option<bool>,
     pub onboarding_version: Option<i32>,
 }
 
@@ -435,6 +441,7 @@ impl NewServiceUserDto {
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
             mentor_feedback_email_enabled: None,
+            ai_features_enabled: None,
             onboarding_version: None,
         }
     }
@@ -470,6 +477,7 @@ impl NewServiceUserDto {
             ),
             received_message_email_mode: Some(existing_user.received_message_email_mode),
             mentor_feedback_email_enabled: Some(existing_user.mentor_feedback_email_enabled),
+            ai_features_enabled: Some(existing_user.ai_features_enabled),
             onboarding_version: Some(existing_user.onboarding_version),
         }
     }
@@ -497,6 +505,9 @@ impl NewUser {
         }
         if payload.mentor_feedback_email_enabled.is_none() {
             payload.mentor_feedback_email_enabled = Some(true);
+        }
+        if payload.ai_features_enabled.is_none() {
+            payload.ai_features_enabled = Some(true);
         }
         payload.onboarding_version = Some(0);
         let email = payload.email.clone();
@@ -606,6 +617,10 @@ impl User {
 
     pub fn requires_personal_lens(&self) -> bool {
         self.principal_type == UserPrincipalType::Human && self.is_platform_user
+    }
+
+    pub fn allows_ai_features(&self) -> bool {
+        self.ai_features_enabled
     }
 
     pub fn hash_password_value(password: &str) -> Result<String, PpdcError> {
@@ -998,6 +1013,7 @@ mod tests {
             shared_journal_activity_email_mode: EmailNotificationMode::Instant,
             received_message_email_mode: EmailNotificationMode::Instant,
             mentor_feedback_email_enabled: true,
+            ai_features_enabled: true,
             onboarding_version: 0,
         }
     }
@@ -1029,6 +1045,7 @@ mod tests {
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
             mentor_feedback_email_enabled: None,
+            ai_features_enabled: None,
             onboarding_version: None,
         };
         user.hash_password().unwrap();

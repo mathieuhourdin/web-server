@@ -69,6 +69,16 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
         .transpose()?;
     let mentor_user = User::find(&reply_message.sender_user_id, pool)?;
     let recipient_user = User::find(&reply_message.recipient_user_id, pool)?;
+    if !recipient_user.allows_ai_features() {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            format!(
+                "AI features are disabled for recipient user {}",
+                recipient_user.id
+            ),
+        ));
+    }
 
     match question_message.message_type {
         MessageType::TarotReadingRequest => {

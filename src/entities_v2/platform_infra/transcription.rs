@@ -1,6 +1,9 @@
+use crate::db::DbPool;
+use crate::entities_v2::session::Session;
+use crate::entities_v2::user::User;
 use crate::openai_handler::whisper_handler::transcribe_audio_with_openai;
 use crate::work_analyzer::observability::format_text_log_field;
-use axum::{extract::Multipart, Json};
+use axum::{extract::{Extension, Multipart}, Json};
 use serde::Serialize;
 use std::path::Path;
 
@@ -13,10 +16,22 @@ pub struct Transcription {
 
 // This route receives audio files via multipart/form-data and transcribes them using OpenAI
 pub async fn post_transcription_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
     mut multipart: Multipart,
 ) -> Result<Json<Transcription>, PpdcError> {
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
+
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let user = User::find(&user_id, &pool)?;
+    if !user.allows_ai_features() {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "AI features are disabled for this account".to_string(),
+        ));
+    }
 
     // Log that the request has been received
     tracing::info!(
