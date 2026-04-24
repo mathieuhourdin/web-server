@@ -194,6 +194,46 @@ fn enqueue_trace_post_finalize_side_effects(trace: &Trace, pool: &DbPool) {
     }
 }
 
+#[allow(dead_code)]
+fn enqueue_trace_qualification(trace: &Trace, pool: DbPool) {
+    let trace_id = trace.id;
+    let trace_content = trace.content.clone();
+    tokio::spawn(async move {
+        match llm_qualify::qualify_trace(trace_content.as_str()).await {
+            Ok(qualified) => match Trace::find_full_trace(trace_id, &pool) {
+                Ok(mut trace) => {
+                    trace.title = qualified.title;
+                    trace.subtitle = qualified.subtitle;
+                    if let Err(err) = trace.update(&pool) {
+                        tracing::warn!(
+                            target: "trace",
+                            "trace_qualification_update_failed trace_id={} message={}",
+                            trace_id,
+                            err.message
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "trace",
+                        "trace_qualification_load_failed trace_id={} message={}",
+                        trace_id,
+                        err.message
+                    );
+                }
+            },
+            Err(err) => {
+                tracing::warn!(
+                    target: "trace",
+                    "trace_qualification_failed trace_id={} message={}",
+                    trace_id,
+                    err.message
+                );
+            }
+        }
+    });
+}
+
 async fn finalize_trace_transition(
     mut trace: Trace,
     pool: &DbPool,
@@ -201,12 +241,6 @@ async fn finalize_trace_transition(
     auto_finalized: bool,
 ) -> Result<Trace, PpdcError> {
     let timeout_at_before = trace.timeout_at;
-
-    if !trace.is_encrypted && !trace.content.trim().is_empty() {
-        let qualified = llm_qualify::qualify_trace(trace.content.as_str()).await?;
-        trace.title = qualified.title;
-        trace.subtitle = qualified.subtitle;
-    }
 
     trace.status = super::enums::TraceStatus::Finalized;
     trace.finalized_at = Some(Utc::now().naive_utc());
@@ -338,8 +372,8 @@ fn ensure_default_draft_post_for_shared_trace(
 
     let post = NewPost {
         source_trace_id: Some(trace.id),
-        title: trace.title.clone(),
-        subtitle: trace.subtitle.clone(),
+        title: String::new(),
+        subtitle: String::new(),
         content: trace.content.clone(),
         image_url: None,
         image_asset_id: trace.image_asset_id,
