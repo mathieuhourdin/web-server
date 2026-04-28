@@ -7,13 +7,15 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus};
 use crate::entities_v2::post::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
-use crate::entities_v2::post_grant::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};
-use crate::entities_v2::relationship::{Relationship, RelationshipStatus};
+use crate::entities_v2::post_grant::{
+    PostGrant, PostGrantAccessLevel, PostGrantScope, PostGrantStatus,
+};
+use crate::entities_v2::relationship::Relationship;
 use crate::entities_v2::shared::MaturingState;
 use crate::entities_v2::trace::model::TraceRow;
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
-use crate::schema::{journal_grants, post_grants, posts, users};
+use crate::schema::{journal_grants, post_grants, posts, traces, users};
 
 use super::enums::{JournalGrantAccessLevel, JournalGrantScope, JournalGrantStatus};
 use super::model::{JournalGrant, NewJournalGrantDto};
@@ -572,88 +574,42 @@ impl JournalGrant {
         if journal.is_encrypted {
             return Ok(false);
         }
-
-        let grants = JournalGrant::find_for_journal(journal.id, pool)?;
-        for grant in grants
-            .into_iter()
-            .filter(|grant| grant.status == JournalGrantStatus::Active)
-        {
-            if grant.grantee_user_id == Some(user_id) {
-                return Ok(true);
-            }
-
-            if grant.grantee_scope == Some(JournalGrantScope::AllAcceptedFollowers)
-                && matches!(
-                    Relationship::find_between(
-                        user_id,
-                        journal.user_id,
-                        crate::entities_v2::relationship::RelationshipType::Follow,
-                        pool,
-                    )?,
-                    Some(Relationship {
-                        status: RelationshipStatus::Accepted,
-                        ..
-                    })
-                )
-            {
-                return Ok(true);
-            }
-
-            if grant.grantee_scope == Some(JournalGrantScope::AllPlatformUsers) {
-                let user = User::find(&user_id, pool)?;
-                if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
-                    return Ok(true);
-                }
-            }
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(user_id, pool)?;
+        if visible_post_ids.is_empty() {
+            return Ok(false);
         }
 
-        Ok(false)
+        let mut conn = pool.get()?;
+        let matching_post_id = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal.id))
+            .filter(posts::id.eq_any(visible_post_ids))
+            .select(posts::id)
+            .first::<Uuid>(&mut conn)
+            .optional()?;
+
+        Ok(matching_post_id.is_some())
     }
 
     pub fn find_shared_journal_ids_for_user(
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Uuid>, PpdcError> {
-        use std::collections::HashSet;
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(user_id, pool)?;
+        if visible_post_ids.is_empty() {
+            return Ok(vec![]);
+        }
 
-        let mut ids = HashSet::new();
         let mut conn = pool.get()?;
-        let direct_ids = journal_grants::table
-            .filter(journal_grants::grantee_user_id.eq(Some(user_id)))
-            .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
-            .select(journal_grants::journal_id)
-            .load::<Uuid>(&mut conn)?;
-        ids.extend(direct_ids);
-
-        let follower_scope_grants = journal_grants::table
-            .filter(
-                journal_grants::grantee_scope
-                    .eq(Some(JournalGrantScope::AllAcceptedFollowers.to_db())),
-            )
-            .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
-            .select((journal_grants::journal_id, journal_grants::owner_user_id))
-            .load::<(Uuid, Uuid)>(&mut conn)?;
-
-        for (journal_id, owner_user_id) in follower_scope_grants {
-            if Relationship::is_follow_accepted(user_id, owner_user_id, pool)? {
-                ids.insert(journal_id);
-            }
-        }
-
-        let platform_scope_journal_ids = journal_grants::table
-            .filter(
-                journal_grants::grantee_scope.eq(Some(JournalGrantScope::AllPlatformUsers.to_db())),
-            )
-            .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
-            .select(journal_grants::journal_id)
+        let ids = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::id.eq_any(visible_post_ids))
+            .filter(traces::journal_id.is_not_null())
+            .select(traces::journal_id.assume_not_null())
+            .distinct()
             .load::<Uuid>(&mut conn)?;
 
-        let user = User::find(&user_id, pool)?;
-        if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
-            ids.extend(platform_scope_journal_ids);
-        }
-
-        Ok(ids.into_iter().collect())
+        Ok(ids)
     }
 
     pub fn find_active_recipient_user_ids_for_journal(
