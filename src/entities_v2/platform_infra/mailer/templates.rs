@@ -157,7 +157,6 @@ pub fn shared_journal_daily_digest_email(
     digest_date_label: &str,
     items: Vec<SharedJournalDigestEmailItem>,
 ) -> EmailTemplate {
-    let post_count = items.len();
     let owners = distinct_owner_display_names(&items);
     let owners_preview = if owners.len() > 2 {
         format!("{}, {}...", owners[0], owners[1])
@@ -165,16 +164,10 @@ pub fn shared_journal_daily_digest_email(
         join_owner_display_names(&owners)
     };
     let owners_sentence = join_owner_display_names(&owners);
-    let subject = if post_count == 1 {
-        format!(
-            "Récap : 1 nouveau post le {} ({})",
-            digest_date_label, owners_preview
-        )
+    let subject = if owners.len() == 1 {
+        format!("{} a écrit dans son journal", owners_preview)
     } else {
-        format!(
-            "Récap : {} nouveaux posts le {} ({})",
-            post_count, digest_date_label, owners_preview
-        )
+        format!("{} ont écrit dans leur journal", owners_preview)
     };
     let intro_line = if owners.len() == 1 {
         format!("{} a écrit dans son journal.", owners_sentence)
