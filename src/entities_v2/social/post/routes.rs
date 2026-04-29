@@ -22,8 +22,8 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use super::model::{
-    legacy_lifecycle_for_status, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType,
-    PostStatus, PostType,
+    legacy_lifecycle_for_status, FeedPostResponse, NewPost, NewPostDto, Post,
+    PostAudienceRole, PostInteractionType, PostStatus, PostType,
 };
 
 #[derive(Deserialize)]
@@ -221,7 +221,7 @@ pub async fn get_feed_posts_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Query(params): Query<FeedPostsQuery>,
-) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<FeedPostResponse>>, PpdcError> {
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.pagination.validate()?;
     let (posts, total) =

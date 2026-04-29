@@ -10,7 +10,9 @@ use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::shared::MaturingState;
 use crate::schema::{journals, posts, traces, user_post_states};
 
-use super::model::{Post, PostAudienceRole, PostInteractionType, PostStatus, PostType};
+use super::model::{
+    FeedPostResponse, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
+};
 
 type PostTuple = (
     Uuid,
@@ -51,6 +53,28 @@ type DigestVisiblePostTuple = (
     NaiveDateTime,
     NaiveDateTime,
     Uuid,
+);
+
+type FeedPostTuple = (
+    Uuid,
+    Uuid,
+    Option<Uuid>,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<Uuid>,
+    String,
+    String,
+    Option<NaiveDateTime>,
+    String,
+    String,
+    String,
+    String,
+    NaiveDateTime,
+    NaiveDateTime,
+    Option<Uuid>,
+    Option<String>,
 );
 
 #[derive(Debug, Clone)]
@@ -191,17 +215,69 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
     }
 }
 
+fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
+    let (
+        id,
+        user_id,
+        source_trace_id,
+        title,
+        subtitle,
+        content,
+        image_url,
+        image_asset_id,
+        interaction_type_raw,
+        post_type_raw,
+        publishing_date,
+        status_raw,
+        audience_role_raw,
+        publishing_state,
+        maturing_state_raw,
+        created_at,
+        updated_at,
+        journal_id,
+        journal_title,
+    ) = row;
+
+    FeedPostResponse {
+        post: Post {
+            id,
+            resource_id: id,
+            source_trace_id,
+            title,
+            subtitle,
+            content,
+            image_url,
+            image_asset_id,
+            interaction_type: PostInteractionType::from_db(&interaction_type_raw),
+            post_type: PostType::from_db(&post_type_raw),
+            user_id,
+            publishing_date,
+            status: PostStatus::from_db(&status_raw),
+            audience_role: PostAudienceRole::from_db(&audience_role_raw),
+            publishing_state,
+            maturing_state: MaturingState::from_code(&maturing_state_raw)
+                .unwrap_or(MaturingState::Draft),
+            created_at,
+            updated_at,
+        },
+        journal_id,
+        journal_title,
+    }
+}
+
 impl Post {
     pub fn find_feed_paginated(
         viewer_user_id: Uuid,
         offset: i64,
         limit: i64,
         pool: &DbPool,
-    ) -> Result<(Vec<Post>, i64), PpdcError> {
+    ) -> Result<(Vec<FeedPostResponse>, i64), PpdcError> {
         let mut conn = pool.get()?;
         let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut query = posts::table
+            .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .left_join(journals::table.on(traces::journal_id.eq(journals::id)))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .into_boxed();
 
@@ -216,15 +292,35 @@ impl Post {
         }
 
         let rows = query
-            .select(select_post_columns())
-            .load::<PostTuple>(&mut conn)?;
+            .select((
+                posts::id,
+                posts::user_id,
+                posts::source_trace_id,
+                posts::title,
+                posts::subtitle,
+                posts::content,
+                posts::image_url,
+                posts::image_asset_id,
+                posts::interaction_type,
+                posts::post_type,
+                posts::publishing_date,
+                posts::status,
+                posts::audience_role,
+                posts::publishing_state,
+                posts::maturing_state,
+                posts::created_at,
+                posts::updated_at,
+                traces::journal_id.nullable(),
+                journals::title.nullable(),
+            ))
+            .load::<FeedPostTuple>(&mut conn)?;
 
         let mut standalone_posts = Vec::new();
-        let mut best_by_trace_id = HashMap::<Uuid, Post>::new();
+        let mut best_by_trace_id = HashMap::<Uuid, FeedPostResponse>::new();
 
         for row in rows {
-            let post = tuple_to_post(row);
-            if let Some(source_trace_id) = post.source_trace_id {
+            let post = tuple_to_feed_post_response(row);
+            if let Some(source_trace_id) = post.post.source_trace_id {
                 let should_replace = best_by_trace_id
                     .get(&source_trace_id)
                     .map(|current| is_better_feed_candidate(&post, current))
@@ -782,18 +878,18 @@ impl Post {
     }
 }
 
-fn feed_published_or_created_at(post: &Post) -> NaiveDateTime {
-    post.publishing_date.unwrap_or(post.created_at)
+fn feed_published_or_created_at(post: &FeedPostResponse) -> NaiveDateTime {
+    post.post.publishing_date.unwrap_or(post.post.created_at)
 }
 
-fn audience_priority_for_feed(post: &Post) -> i32 {
-    match post.audience_role {
+fn audience_priority_for_feed(post: &FeedPostResponse) -> i32 {
+    match post.post.audience_role {
         PostAudienceRole::Restricted => 1,
         PostAudienceRole::Default => 0,
     }
 }
 
-fn is_better_feed_candidate(candidate: &Post, current: &Post) -> bool {
+fn is_better_feed_candidate(candidate: &FeedPostResponse, current: &FeedPostResponse) -> bool {
     let candidate_priority = audience_priority_for_feed(candidate);
     let current_priority = audience_priority_for_feed(current);
     if candidate_priority != current_priority {
@@ -806,9 +902,13 @@ fn is_better_feed_candidate(candidate: &Post, current: &Post) -> bool {
         return candidate_published_at > current_published_at;
     }
 
-    candidate.created_at > current.created_at
+    candidate.post.created_at > current.post.created_at
 }
 
-fn feed_sort_key(post: &Post) -> (NaiveDateTime, NaiveDateTime, Uuid) {
-    (feed_published_or_created_at(post), post.created_at, post.id)
+fn feed_sort_key(post: &FeedPostResponse) -> (NaiveDateTime, NaiveDateTime, Uuid) {
+    (
+        feed_published_or_created_at(post),
+        post.post.created_at,
+        post.post.id,
+    )
 }

@@ -32,6 +32,14 @@ pub struct Post {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FeedPostResponse {
+    #[serde(flatten)]
+    pub post: Post,
+    pub journal_id: Option<Uuid>,
+    pub journal_title: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewPostDto {
     #[serde(default)]
     pub source_trace_id: Option<Uuid>,
