@@ -5,6 +5,7 @@ use crate::entities_v2::{
     session::Session,
 };
 use crate::environment;
+use crate::pagination::PaginatedResponse;
 use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
@@ -66,8 +67,18 @@ fn enqueue_new_user_signup_notification_email(
 pub async fn get_users(
     Query(params): Query<UserListParams>,
     Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserPublicResponse>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<UserPublicResponse>>, PpdcError> {
     let mut conn = pool.get()?;
+    let pagination = params.pagination.validate()?;
+
+    let mut count_query = crate::schema::users::table.into_boxed();
+    if let Some(principal_type) = params.principal_type {
+        count_query = count_query.filter(crate::schema::users::principal_type.eq(principal_type));
+    }
+    if let Some(is_platform_user) = params.is_platform_user {
+        count_query = count_query.filter(crate::schema::users::is_platform_user.eq(is_platform_user));
+    }
+    let total = count_query.count().get_result::<i64>(&mut conn)?;
 
     let mut query = crate::schema::users::table.into_boxed();
     if let Some(principal_type) = params.principal_type {
@@ -78,14 +89,14 @@ pub async fn get_users(
     }
 
     let results: Vec<UserPublicResponse> = query
-        .offset(params.pagination.offset())
-        .limit(params.pagination.limit())
+        .offset(pagination.offset)
+        .limit(pagination.limit)
         .select(User::as_select())
         .load::<User>(&mut conn)?
         .iter()
         .map(UserPublicResponse::from)
         .collect();
-    Ok(Json(results))
+    Ok(Json(PaginatedResponse::new(results, pagination, total)))
 }
 
 #[debug_handler]
