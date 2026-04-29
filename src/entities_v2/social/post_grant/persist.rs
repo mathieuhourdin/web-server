@@ -12,6 +12,48 @@ use super::enums::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};
 use super::model::{NewPostGrantDto, PostGrant};
 
 impl PostGrant {
+    pub fn find_visible_post_ids_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        use std::collections::HashSet;
+
+        let mut conn = pool.get()?;
+        let direct_ids = post_grants::table
+            .filter(post_grants::grantee_user_id.eq(Some(user_id)))
+            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
+            .select(post_grants::post_id)
+            .load::<Uuid>(&mut conn)?;
+        let mut candidate_ids = direct_ids.iter().copied().collect::<HashSet<_>>();
+
+        let follower_scope_grants = post_grants::table
+            .filter(
+                post_grants::grantee_scope.eq(Some(PostGrantScope::AllAcceptedFollowers.to_db())),
+            )
+            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
+            .select((post_grants::post_id, post_grants::owner_user_id))
+            .load::<(Uuid, Uuid)>(&mut conn)?;
+
+        for (post_id, owner_user_id) in follower_scope_grants {
+            if Relationship::is_follow_accepted(user_id, owner_user_id, pool)? {
+                candidate_ids.insert(post_id);
+            }
+        }
+
+        let platform_scope_post_ids = post_grants::table
+            .filter(post_grants::grantee_scope.eq(Some(PostGrantScope::AllPlatformUsers.to_db())))
+            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
+            .select(post_grants::post_id)
+            .load::<Uuid>(&mut conn)?;
+
+        let user = User::find(&user_id, pool)?;
+        if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
+            candidate_ids.extend(platform_scope_post_ids);
+        }
+
+        Ok(candidate_ids.into_iter().collect())
+    }
+
     fn owner_can_use_scope(
         owner_user_id: Uuid,
         grantee_scope: Option<PostGrantScope>,
@@ -271,32 +313,9 @@ impl PostGrant {
             .select(post_grants::post_id)
             .load::<Uuid>(&mut conn)?;
         let direct_ids_set = direct_ids.iter().copied().collect::<HashSet<_>>();
-        let mut candidate_ids = direct_ids_set.clone();
-
-        let follower_scope_grants = post_grants::table
-            .filter(
-                post_grants::grantee_scope.eq(Some(PostGrantScope::AllAcceptedFollowers.to_db())),
-            )
-            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
-            .select((post_grants::post_id, post_grants::owner_user_id))
-            .load::<(Uuid, Uuid)>(&mut conn)?;
-
-        for (post_id, owner_user_id) in follower_scope_grants {
-            if Relationship::is_follow_accepted(user_id, owner_user_id, pool)? {
-                candidate_ids.insert(post_id);
-            }
-        }
-
-        let platform_scope_post_ids = post_grants::table
-            .filter(post_grants::grantee_scope.eq(Some(PostGrantScope::AllPlatformUsers.to_db())))
-            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
-            .select(post_grants::post_id)
-            .load::<Uuid>(&mut conn)?;
-
-        let user = User::find(&user_id, pool)?;
-        if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
-            candidate_ids.extend(platform_scope_post_ids);
-        }
+        let candidate_ids = Self::find_visible_post_ids_for_user(user_id, pool)?
+            .into_iter()
+            .collect::<HashSet<_>>();
 
         if candidate_ids.is_empty() {
             return Ok(vec![]);

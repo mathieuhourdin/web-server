@@ -44,6 +44,12 @@ pub struct UserPostsQuery {
 }
 
 #[derive(Deserialize)]
+pub struct FeedPostsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+#[derive(Deserialize)]
 pub struct JournalPostsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -208,6 +214,19 @@ pub async fn get_post_seen_by_route(
     let owner_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let seen_by = UserPostState::find_seen_by_for_post(owner_user_id, id, &pool)?;
     Ok(Json(seen_by))
+}
+
+#[debug_handler]
+pub async fn get_feed_posts_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<FeedPostsQuery>,
+) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.pagination.validate()?;
+    let (posts, total) =
+        Post::find_feed_paginated(viewer_user_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(posts, pagination, total)))
 }
 
 #[debug_handler]

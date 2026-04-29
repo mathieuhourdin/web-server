@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::not;
 use diesel::prelude::*;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -191,6 +192,65 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
 }
 
 impl Post {
+    pub fn find_feed_paginated(
+        viewer_user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+
+        let mut query = posts::table
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .into_boxed();
+
+        if visible_post_ids.is_empty() {
+            query = query.filter(posts::user_id.eq(viewer_user_id));
+        } else {
+            query = query.filter(
+                posts::user_id
+                    .eq(viewer_user_id)
+                    .or(posts::id.eq_any(visible_post_ids)),
+            );
+        }
+
+        let rows = query
+            .select(select_post_columns())
+            .load::<PostTuple>(&mut conn)?;
+
+        let mut standalone_posts = Vec::new();
+        let mut best_by_trace_id = HashMap::<Uuid, Post>::new();
+
+        for row in rows {
+            let post = tuple_to_post(row);
+            if let Some(source_trace_id) = post.source_trace_id {
+                let should_replace = best_by_trace_id
+                    .get(&source_trace_id)
+                    .map(|current| is_better_feed_candidate(&post, current))
+                    .unwrap_or(true);
+                if should_replace {
+                    best_by_trace_id.insert(source_trace_id, post);
+                }
+            } else {
+                standalone_posts.push(post);
+            }
+        }
+
+        let mut deduplicated_posts = standalone_posts;
+        deduplicated_posts.extend(best_by_trace_id.into_values());
+        deduplicated_posts.sort_by(|a, b| feed_sort_key(b).cmp(&feed_sort_key(a)));
+
+        let total = deduplicated_posts.len() as i64;
+        let items = deduplicated_posts
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect::<Vec<_>>();
+
+        Ok((items, total))
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
@@ -720,4 +780,35 @@ impl Post {
 
         Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
+}
+
+fn feed_published_or_created_at(post: &Post) -> NaiveDateTime {
+    post.publishing_date.unwrap_or(post.created_at)
+}
+
+fn audience_priority_for_feed(post: &Post) -> i32 {
+    match post.audience_role {
+        PostAudienceRole::Restricted => 1,
+        PostAudienceRole::Default => 0,
+    }
+}
+
+fn is_better_feed_candidate(candidate: &Post, current: &Post) -> bool {
+    let candidate_priority = audience_priority_for_feed(candidate);
+    let current_priority = audience_priority_for_feed(current);
+    if candidate_priority != current_priority {
+        return candidate_priority > current_priority;
+    }
+
+    let candidate_published_at = feed_published_or_created_at(candidate);
+    let current_published_at = feed_published_or_created_at(current);
+    if candidate_published_at != current_published_at {
+        return candidate_published_at > current_published_at;
+    }
+
+    candidate.created_at > current.created_at
+}
+
+fn feed_sort_key(post: &Post) -> (NaiveDateTime, NaiveDateTime, Uuid) {
+    (feed_published_or_created_at(post), post.created_at, post.id)
 }

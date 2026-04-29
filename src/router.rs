@@ -114,6 +114,7 @@ pub fn create_router() -> Router {
 
     let posts_router = Router::new()
         .route("/drafts", get(post::get_post_drafts_route))
+        .route("/feed", get(post::get_feed_posts_route))
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
         .route("/:id/attachments", get(post::get_post_attachments_route))
