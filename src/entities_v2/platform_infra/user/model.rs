@@ -266,10 +266,11 @@ impl UserPseudonymizedResponse {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug)]
 pub struct UserSearchParams {
     pub q: String,
-    pub limit: Option<i64>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 #[derive(Deserialize, Debug)]

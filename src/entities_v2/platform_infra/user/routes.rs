@@ -32,6 +32,12 @@ struct SuggestedUserIdRow {
     user_id: Uuid,
 }
 
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    total: i64,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct SuggestedUsersParams {
     pub limit: Option<i64>,
@@ -103,17 +109,34 @@ pub async fn get_users(
 pub async fn get_user_search_route(
     Query(params): Query<UserSearchParams>,
     Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserSearchResult>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<UserSearchResult>>, PpdcError> {
+    let pagination = params.pagination.validate()?;
     let query = params.q.trim();
     if query.is_empty() {
-        return Ok(Json(vec![]));
+        return Ok(Json(PaginatedResponse::new(vec![], pagination, 0)));
     }
 
-    let limit = params.limit.unwrap_or(20).clamp(1, 50);
     let contains_query = format!("%{}%", query);
     let prefix_query = format!("{}%", query);
 
     let mut conn = pool.get()?;
+
+    let total = sql_query(
+        r#"
+        SELECT COUNT(*)::bigint AS total
+        FROM users
+        WHERE principal_type = 'HUMAN'
+          AND (
+            handle ILIKE $1
+            OR first_name ILIKE $1
+            OR last_name ILIKE $1
+            OR CONCAT_WS(' ', first_name, last_name) ILIKE $1
+          )
+        "#,
+    )
+    .bind::<Text, _>(contains_query.clone())
+    .get_result::<CountRow>(&mut conn)?
+    .total;
 
     let rows = sql_query(
         r#"
@@ -145,16 +168,22 @@ pub async fn get_user_search_route(
           END,
           updated_at DESC NULLS LAST,
           created_at DESC
-        LIMIT $4
+        OFFSET $4
+        LIMIT $5
         "#,
     )
     .bind::<Text, _>(contains_query)
     .bind::<Text, _>(query.to_string())
     .bind::<Text, _>(prefix_query)
-    .bind::<BigInt, _>(limit)
+    .bind::<BigInt, _>(pagination.offset)
+    .bind::<BigInt, _>(pagination.limit)
     .load::<UserSearchRow>(&mut conn)?;
 
-    Ok(Json(rows.into_iter().map(UserSearchResult::from).collect()))
+    Ok(Json(PaginatedResponse::new(
+        rows.into_iter().map(UserSearchResult::from).collect(),
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]
@@ -212,20 +241,26 @@ pub async fn get_suggested_users_route(
 pub async fn get_mentors_route(
     Query(params): Query<crate::pagination::PaginationParams>,
     Extension(pool): Extension<DbPool>,
-) -> Result<Json<Vec<UserPseudonymizedResponse>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<UserPseudonymizedResponse>>, PpdcError> {
     let mut conn = pool.get()?;
+    let pagination = params.validate()?;
+
+    let total = crate::schema::users::table
+        .filter(crate::schema::users::principal_type.eq(UserPrincipalType::Service))
+        .count()
+        .get_result::<i64>(&mut conn)?;
 
     let results: Vec<UserPseudonymizedResponse> = crate::schema::users::table
         .filter(crate::schema::users::principal_type.eq(UserPrincipalType::Service))
-        .offset(params.offset())
-        .limit(params.limit())
+        .offset(pagination.offset)
+        .limit(pagination.limit)
         .order(crate::schema::users::created_at.desc())
         .select(User::as_select())
         .load::<User>(&mut conn)?
         .iter()
         .map(UserPseudonymizedResponse::from)
         .collect();
-    Ok(Json(results))
+    Ok(Json(PaginatedResponse::new(results, pagination, total)))
 }
 
 #[debug_handler]
