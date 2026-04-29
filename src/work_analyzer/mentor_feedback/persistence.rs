@@ -16,6 +16,11 @@ pub fn create_mentor_feedback(
     pool: &DbPool,
 ) -> Result<Message, PpdcError> {
     let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, pool)?;
+    if let Some(existing_feedback) =
+        Message::find_latest_feedback_for_analysis(analysis_id, analysis.user_id, pool)?
+    {
+        return Ok(existing_feedback);
+    }
     NewMessage {
         sender_user_id,
         recipient_user_id: analysis.user_id,

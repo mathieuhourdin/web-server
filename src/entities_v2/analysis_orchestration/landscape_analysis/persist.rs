@@ -380,6 +380,13 @@ fn refresh_recap_processing_state(
     pool: &DbPool,
 ) -> Result<LandscapeAnalysis, PpdcError> {
     let analysis = LandscapeAnalysis::find_full_analysis(analysis_id, pool)?;
+    if !matches!(
+        analysis.processing_state,
+        LandscapeProcessingState::Pending | LandscapeProcessingState::BlockedWaitingCoverage
+    ) {
+        return Ok(analysis);
+    }
+
     let next_state = if period_has_uncovered_traces_for_lens(
         lens_id,
         user_id,
