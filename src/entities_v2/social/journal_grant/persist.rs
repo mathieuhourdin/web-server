@@ -584,6 +584,7 @@ impl JournalGrant {
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal.id))
             .filter(posts::id.eq_any(visible_post_ids))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
             .select(posts::id)
             .first::<Uuid>(&mut conn)
             .optional()?;
@@ -604,6 +605,7 @@ impl JournalGrant {
         let ids = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::id.eq_any(visible_post_ids))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(traces::journal_id.is_not_null())
             .select(traces::journal_id.assume_not_null())
             .distinct()

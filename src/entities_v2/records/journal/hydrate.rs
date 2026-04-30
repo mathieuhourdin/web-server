@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::schema::{journals, posts, traces};
 
@@ -224,6 +225,7 @@ impl Journal {
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::id.eq_any(&visible_post_ids))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(journals::is_encrypted.eq(false))
             .filter(journals::status.ne(JournalStatus::Archived.to_db()))
             .select(sql::<BigInt>("COUNT(DISTINCT journals.id)"))
@@ -233,6 +235,7 @@ impl Journal {
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::id.eq_any(visible_post_ids))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(journals::is_encrypted.eq(false))
             .filter(journals::status.ne(JournalStatus::Archived.to_db()))
             .group_by((
