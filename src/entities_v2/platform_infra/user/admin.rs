@@ -10,9 +10,10 @@ use axum::{
     extract::{Extension, Json, Path, Query},
 };
 use chrono::{Duration, NaiveDate, Utc};
+use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Date, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Date, Text, Uuid as SqlUuid};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -144,6 +145,10 @@ fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, P
     Ok(session_user)
 }
 
+fn parse_user_timezone_or_utc(user: &User) -> Tz {
+    user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
+}
+
 #[debug_handler]
 pub async fn get_admin_recent_user_activity_route(
     Extension(pool): Extension<DbPool>,
@@ -179,13 +184,14 @@ pub async fn get_admin_recent_user_activity_route(
     .bind::<BigInt, _>(pagination.limit)
     .load::<UserIdRow>(&mut conn)?;
 
-    let to = Utc::now().date_naive();
-    let from = to - Duration::days(29);
-
     let mut payload = Vec::with_capacity(user_rows.len());
 
     for row in user_rows {
         let user = User::find(&row.user_id, &pool)?;
+        let tz = parse_user_timezone_or_utc(&user);
+        let to = Utc::now().with_timezone(&tz).date_naive();
+        let from = to - Duration::days(29);
+        let timezone = tz.name().to_string();
         let draft_posts_count = sql_query(
             r#"
             SELECT COUNT(*)::bigint AS value
@@ -234,75 +240,75 @@ pub async fn get_admin_recent_user_activity_route(
                     SELECT COUNT(*)::bigint
                     FROM traces t
                     WHERE t.user_id = $1
-                      AND COALESCE(t.interaction_date, t.created_at)::date = d.day
+                      AND timezone($4, COALESCE(t.interaction_date, t.created_at) AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS trace_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM elements e
                     WHERE e.user_id = $1
-                      AND e.created_at::date = d.day
+                      AND timezone($4, e.created_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS element_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM landmarks l
                     WHERE l.user_id = $1
-                      AND l.created_at::date = d.day
+                      AND timezone($4, l.created_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS landmark_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'HOME_VISITED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS home_visited_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'HISTORY_VISITED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS history_visited_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'JOURNAL_OPENED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS journal_opened_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS followed_journal_opened_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'POST_OPENED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS post_opened_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'FEEDBACK_OPENED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS feedback_opened_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM usage_events ue
                     WHERE ue.user_id = $1
                       AND ue.event_type = 'SUMMARY_OPENED'
-                      AND ue.occurred_at::date = d.day
+                      AND timezone($4, ue.occurred_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS summary_opened_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint
                     FROM messages m
                     WHERE m.recipient_user_id = $1
                       AND m.message_type = 'MENTOR_FEEDBACK'
-                      AND m.created_at::date = d.day
+                      AND timezone($4, m.created_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS generated_mentor_feedback_count
             FROM days d
             ORDER BY d.day
@@ -311,6 +317,7 @@ pub async fn get_admin_recent_user_activity_route(
         .bind::<SqlUuid, _>(row.user_id)
         .bind::<Date, _>(from)
         .bind::<Date, _>(to)
+        .bind::<Text, _>(timezone)
         .load::<UserDailyActivityRow>(&mut conn)?;
 
         let heatmap = heatmap_rows
