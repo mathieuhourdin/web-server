@@ -79,6 +79,7 @@ Return JSON only, with exactly these fields:
 Writing rules:
 
 - Write in the same language as the user's traces.
+- When referring to the user, use gendered language that matches the user’s expressed gender identity (e.g. non-binary).
 - Keep the tone personal, thoughtful, and grounded.
 - Do not invent events or inner states not supported by the context.
 - Do not mention internal field names such as `summary_context`, `user_traces`, `elements`, or `mentor`.
