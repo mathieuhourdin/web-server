@@ -149,6 +149,13 @@ fn parse_user_timezone_or_utc(user: &User) -> Tz {
     user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
 }
 
+fn postgres_timezone_name(tz: Tz) -> &'static str {
+    match tz {
+        chrono_tz::Asia::Saigon => "Asia/Ho_Chi_Minh",
+        _ => tz.name(),
+    }
+}
+
 #[debug_handler]
 pub async fn get_admin_recent_user_activity_route(
     Extension(pool): Extension<DbPool>,
@@ -191,7 +198,7 @@ pub async fn get_admin_recent_user_activity_route(
         let tz = parse_user_timezone_or_utc(&user);
         let to = Utc::now().with_timezone(&tz).date_naive();
         let from = to - Duration::days(29);
-        let timezone = tz.name().to_string();
+        let timezone = postgres_timezone_name(tz).to_string();
         let draft_posts_count = sql_query(
             r#"
             SELECT COUNT(*)::bigint AS value
