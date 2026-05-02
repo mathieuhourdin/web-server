@@ -30,6 +30,7 @@ pub enum UsageEventType {
     HomeVisited,
     HistoryVisited,
     FeedVisited,
+    #[serde(rename = "feed_engaged_30s", alias = "feed_engaged30s")]
     FeedEngaged30s,
     JournalOpened,
     FollowedJournalOpened,
