@@ -32,6 +32,8 @@ pub enum UsageEventType {
     FeedVisited,
     #[serde(rename = "feed_engaged_30s", alias = "feed_engaged30s")]
     FeedEngaged30s,
+    SharedJournalLandingVisited,
+    SharedJournalSignupClicked,
     JournalOpened,
     FollowedJournalOpened,
     PostOpened,
@@ -49,6 +51,8 @@ impl UsageEventType {
             UsageEventType::HistoryVisited => "HISTORY_VISITED",
             UsageEventType::FeedVisited => "FEED_VISITED",
             UsageEventType::FeedEngaged30s => "FEED_ENGAGED_30S",
+            UsageEventType::SharedJournalLandingVisited => "SHARED_JOURNAL_LANDING_VISITED",
+            UsageEventType::SharedJournalSignupClicked => "SHARED_JOURNAL_SIGNUP_CLICKED",
             UsageEventType::JournalOpened => "JOURNAL_OPENED",
             UsageEventType::FollowedJournalOpened => "FOLLOWED_JOURNAL_OPENED",
             UsageEventType::PostOpened => "POST_OPENED",
@@ -66,6 +70,12 @@ impl UsageEventType {
             "HISTORY_VISITED" | "history_visited" => Ok(UsageEventType::HistoryVisited),
             "FEED_VISITED" | "feed_visited" => Ok(UsageEventType::FeedVisited),
             "FEED_ENGAGED_30S" | "feed_engaged_30s" => Ok(UsageEventType::FeedEngaged30s),
+            "SHARED_JOURNAL_LANDING_VISITED" | "shared_journal_landing_visited" => {
+                Ok(UsageEventType::SharedJournalLandingVisited)
+            }
+            "SHARED_JOURNAL_SIGNUP_CLICKED" | "shared_journal_signup_clicked" => {
+                Ok(UsageEventType::SharedJournalSignupClicked)
+            }
             "JOURNAL_OPENED" | "journal_opened" => Ok(UsageEventType::JournalOpened),
             "FOLLOWED_JOURNAL_OPENED" | "followed_journal_opened" => {
                 Ok(UsageEventType::FollowedJournalOpened)
@@ -257,7 +267,9 @@ fn validate_usage_event_access(
         UsageEventType::HomeVisited
         | UsageEventType::HistoryVisited
         | UsageEventType::FeedVisited
-        | UsageEventType::FeedEngaged30s => {
+        | UsageEventType::FeedEngaged30s
+        | UsageEventType::SharedJournalLandingVisited
+        | UsageEventType::SharedJournalSignupClicked => {
             if resource_id.is_some() {
                 return Err(PpdcError::new(
                     400,
