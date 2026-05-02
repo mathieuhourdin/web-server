@@ -45,6 +45,12 @@ struct PlatformDailyOverviewRow {
     #[diesel(sql_type = BigInt)]
     followed_journal_opened_count: i64,
     #[diesel(sql_type = BigInt)]
+    feed_visited_count: i64,
+    #[diesel(sql_type = BigInt)]
+    feed_engaged_30s_count: i64,
+    #[diesel(sql_type = BigInt)]
+    post_opened_count: i64,
+    #[diesel(sql_type = BigInt)]
     users_count: i64,
     #[diesel(sql_type = BigInt)]
     users_with_written_trace_last_30_days_count: i64,
@@ -121,6 +127,9 @@ pub struct AdminPlatformDailyOverview {
     pub written_traces_count: i64,
     pub published_posts_count: i64,
     pub followed_journal_opened_count: i64,
+    pub feed_visited_count: i64,
+    pub feed_engaged_30s_count: i64,
+    pub post_opened_count: i64,
     pub users_count: i64,
     pub users_with_written_trace_last_30_days_count: i64,
     pub users_with_followed_journal_open_last_30_days_count: i64,
@@ -408,6 +417,27 @@ pub async fn get_admin_platform_overview_route(
         r#"
         WITH days AS (
             SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
+        ),
+        platform_users AS (
+            SELECT
+                u.id,
+                CASE
+                    WHEN u.timezone = 'Asia/Saigon' THEN 'Asia/Ho_Chi_Minh'
+                    ELSE u.timezone
+                END AS timezone_name
+            FROM users u
+            WHERE u.principal_type = 'HUMAN'
+              AND u.is_platform_user = TRUE
+        ),
+        usage_events_local_days AS (
+            SELECT
+                ue.event_type,
+                timezone(
+                    COALESCE(NULLIF(pu.timezone_name, ''), 'UTC'),
+                    ue.occurred_at AT TIME ZONE 'UTC'
+                )::date AS local_day
+            FROM usage_events ue
+            INNER JOIN platform_users pu ON pu.id = ue.user_id
         )
         SELECT
             d.day AS day,
@@ -430,6 +460,24 @@ pub async fn get_admin_platform_overview_route(
                 WHERE ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
                   AND ue.occurred_at::date = d.day
             ), 0)::bigint AS followed_journal_opened_count,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM usage_events_local_days ueld
+                WHERE ueld.event_type = 'FEED_VISITED'
+                  AND ueld.local_day = d.day
+            ), 0)::bigint AS feed_visited_count,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM usage_events_local_days ueld
+                WHERE ueld.event_type = 'FEED_ENGAGED_30S'
+                  AND ueld.local_day = d.day
+            ), 0)::bigint AS feed_engaged_30s_count,
+            COALESCE((
+                SELECT COUNT(*)::bigint
+                FROM usage_events_local_days ueld
+                WHERE ueld.event_type = 'POST_OPENED'
+                  AND ueld.local_day = d.day
+            ), 0)::bigint AS post_opened_count,
             COALESCE((
                 SELECT COUNT(*)::bigint
                 FROM users u
@@ -473,6 +521,9 @@ pub async fn get_admin_platform_overview_route(
             written_traces_count: row.written_traces_count,
             published_posts_count: row.published_posts_count,
             followed_journal_opened_count: row.followed_journal_opened_count,
+            feed_visited_count: row.feed_visited_count,
+            feed_engaged_30s_count: row.feed_engaged_30s_count,
+            post_opened_count: row.post_opened_count,
             users_count: row.users_count,
             users_with_written_trace_last_30_days_count: row
                 .users_with_written_trace_last_30_days_count,

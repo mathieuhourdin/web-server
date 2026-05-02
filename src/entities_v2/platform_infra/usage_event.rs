@@ -29,6 +29,8 @@ use crate::schema::usage_events;
 pub enum UsageEventType {
     HomeVisited,
     HistoryVisited,
+    FeedVisited,
+    FeedEngaged30s,
     JournalOpened,
     FollowedJournalOpened,
     PostOpened,
@@ -44,6 +46,8 @@ impl UsageEventType {
         match self {
             UsageEventType::HomeVisited => "HOME_VISITED",
             UsageEventType::HistoryVisited => "HISTORY_VISITED",
+            UsageEventType::FeedVisited => "FEED_VISITED",
+            UsageEventType::FeedEngaged30s => "FEED_ENGAGED_30S",
             UsageEventType::JournalOpened => "JOURNAL_OPENED",
             UsageEventType::FollowedJournalOpened => "FOLLOWED_JOURNAL_OPENED",
             UsageEventType::PostOpened => "POST_OPENED",
@@ -59,6 +63,8 @@ impl UsageEventType {
         match value {
             "HOME_VISITED" | "home_visited" => Ok(UsageEventType::HomeVisited),
             "HISTORY_VISITED" | "history_visited" => Ok(UsageEventType::HistoryVisited),
+            "FEED_VISITED" | "feed_visited" => Ok(UsageEventType::FeedVisited),
+            "FEED_ENGAGED_30S" | "feed_engaged_30s" => Ok(UsageEventType::FeedEngaged30s),
             "JOURNAL_OPENED" | "journal_opened" => Ok(UsageEventType::JournalOpened),
             "FOLLOWED_JOURNAL_OPENED" | "followed_journal_opened" => {
                 Ok(UsageEventType::FollowedJournalOpened)
@@ -247,7 +253,10 @@ fn validate_usage_event_access(
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     match event_type {
-        UsageEventType::HomeVisited | UsageEventType::HistoryVisited => {
+        UsageEventType::HomeVisited
+        | UsageEventType::HistoryVisited
+        | UsageEventType::FeedVisited
+        | UsageEventType::FeedEngaged30s => {
             if resource_id.is_some() {
                 return Err(PpdcError::new(
                     400,

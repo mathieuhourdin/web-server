@@ -15,6 +15,7 @@ use crate::entities_v2::{
     post::{Post, PostStatus},
     post_grant::PostGrant,
     session::Session,
+    usage_event::{create_usage_event, UsageEventType},
     user::User,
 };
 use crate::schema::user_post_states;
@@ -173,5 +174,13 @@ pub async fn post_user_post_state_route(
 ) -> Result<Json<UserPostState>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let state = UserPostState::create_or_mark_seen(user_id, payload.post_id, &pool)?;
+    let _ = create_usage_event(
+        user_id,
+        Some(session.id),
+        UsageEventType::PostOpened,
+        Some(payload.post_id),
+        None,
+        &pool,
+    );
     Ok(Json(state))
 }

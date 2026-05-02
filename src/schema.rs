@@ -296,9 +296,9 @@ diesel::table! {
         processing_state -> Text,
         attachment_type -> Nullable<Text>,
         attachment -> Nullable<Jsonb>,
-        metadata -> Nullable<Jsonb>,
         seen_at -> Nullable<Timestamp>,
         post_id -> Nullable<Uuid>,
+        metadata -> Nullable<Jsonb>,
     }
 }
 
@@ -333,12 +333,12 @@ diesel::table! {
         provider_message_id -> Nullable<Text>,
         attempt_count -> Int4,
         last_error -> Nullable<Text>,
-        lock_owner -> Nullable<Uuid>,
-        lock_until -> Nullable<Timestamp>,
         scheduled_at -> Nullable<Timestamp>,
         sent_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        lock_owner -> Nullable<Uuid>,
+        lock_until -> Nullable<Timestamp>,
     }
 }
 
@@ -375,7 +375,6 @@ diesel::table! {
         subtitle -> Text,
         content -> Text,
         image_url -> Nullable<Text>,
-        image_asset_id -> Nullable<Uuid>,
         interaction_type -> Text,
         post_type -> Text,
         publishing_date -> Nullable<Timestamp>,
@@ -386,6 +385,7 @@ diesel::table! {
         source_trace_id -> Nullable<Uuid>,
         status -> Text,
         audience_role -> Text,
+        image_asset_id -> Nullable<Uuid>,
     }
 }
 
@@ -513,11 +513,11 @@ diesel::table! {
         updated_at -> Timestamp,
         is_encrypted -> Bool,
         encryption_metadata -> Nullable<Jsonb>,
-        image_asset_id -> Nullable<Uuid>,
-        timeout_start_at -> Nullable<Timestamptz>,
-        timeout_at -> Nullable<Timestamptz>,
         start_writing_at -> Timestamp,
         finalized_at -> Nullable<Timestamp>,
+        image_asset_id -> Nullable<Uuid>,
+        timeout_at -> Nullable<Timestamptz>,
+        timeout_start_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -582,7 +582,6 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
         profile_picture_url -> Nullable<Text>,
-        profile_asset_id -> Nullable<Uuid>,
         is_platform_user -> Bool,
         biography -> Nullable<Text>,
         pseudonym -> Text,
@@ -597,15 +596,15 @@ diesel::table! {
         mentor_id -> Nullable<Uuid>,
         welcome_message -> Nullable<Text>,
         home_focus_view -> Text,
+        profile_asset_id -> Nullable<Uuid>,
         shared_journal_activity_email_mode -> Text,
         received_message_email_mode -> Text,
         mentor_feedback_email_enabled -> Bool,
-        ai_features_enabled -> Bool,
         onboarding_version -> Int4,
+        ai_features_enabled -> Bool,
     }
 }
 
-diesel::joinable!(assets -> users (owner_user_id));
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
@@ -670,8 +669,8 @@ diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    assets,
     analysis_summaries,
+    assets,
     element_landmarks,
     element_relations,
     elements,
