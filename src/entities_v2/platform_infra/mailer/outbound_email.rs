@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::Uuid as SqlUuid;
@@ -108,6 +108,24 @@ impl OutboundEmail {
             .filter(outbound_emails::id.eq(id))
             .first::<Self>(&mut conn)?;
         Ok(email)
+    }
+
+    pub fn count_recent_sent_for_recipient_and_reason(
+        recipient_user_id: Uuid,
+        reason: &str,
+        lookback_hours: i64,
+        pool: &DbPool,
+    ) -> Result<i64, PpdcError> {
+        let mut conn = pool.get()?;
+        let cutoff = Utc::now().naive_utc() - Duration::hours(lookback_hours.max(0));
+        let count = outbound_emails::table
+            .filter(outbound_emails::recipient_user_id.eq(Some(recipient_user_id)))
+            .filter(outbound_emails::reason.eq(reason))
+            .filter(outbound_emails::status.eq(OutboundEmailStatus::Sent.to_db()))
+            .filter(outbound_emails::sent_at.ge(cutoff))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+        Ok(count)
     }
 
     pub fn list_due_pending(limit: i64, pool: &DbPool) -> Result<Vec<Self>, PpdcError> {

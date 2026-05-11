@@ -9,7 +9,7 @@ use crate::entities_v2::{
     error::PpdcError,
     journal::Journal,
     journal_grant::JournalGrant,
-    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
+    platform_infra::mailer::{self, NewOutboundEmail, OutboundEmail, OutboundEmailProvider},
     post_grant::PostGrant,
     session::Session,
     trace::Trace,
@@ -85,6 +85,9 @@ pub(crate) fn enqueue_post_published_notification_emails(
     post: &Post,
     pool: &DbPool,
 ) -> Result<Vec<Uuid>, PpdcError> {
+    const POST_PUBLISHED_EMAIL_REASON: &str = "POST_PUBLISHED";
+    const POST_PUBLISHED_INSTANT_EMAIL_MAX_PER_24H: i64 = 2;
+
     let Some(trace_id) = post.source_trace_id else {
         return Ok(vec![]);
     };
@@ -118,6 +121,16 @@ pub(crate) fn enqueue_post_published_notification_emails(
             && !recipient.email.trim().is_empty()
             && recipient.allows_instant_shared_journal_activity_email()
     }) {
+        let recent_sent_count = OutboundEmail::count_recent_sent_for_recipient_and_reason(
+            recipient.id,
+            POST_PUBLISHED_EMAIL_REASON,
+            24,
+            pool,
+        )?;
+        if recent_sent_count >= POST_PUBLISHED_INSTANT_EMAIL_MAX_PER_24H {
+            continue;
+        }
+
         let template = mailer::shared_trace_finalized_email(
             &recipient.display_name(),
             &owner_display_name,
@@ -128,7 +141,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
         );
         let email = NewOutboundEmail::new(
             Some(recipient.id),
-            "POST_PUBLISHED".to_string(),
+            POST_PUBLISHED_EMAIL_REASON.to_string(),
             Some("POST".to_string()),
             Some(post.id),
             recipient.email,
