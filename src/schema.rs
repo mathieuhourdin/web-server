@@ -109,6 +109,7 @@ diesel::table! {
         journal_id -> Uuid,
         owner_user_id -> Uuid,
         token_hash -> Text,
+        scoped_post_id -> Nullable<Uuid>,
         expires_at -> Timestamp,
         revoked_at -> Nullable<Timestamp>,
         created_at -> Timestamp,

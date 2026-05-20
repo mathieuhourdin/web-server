@@ -17,8 +17,9 @@ use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
-    post::Post,
+    post::{Post, PostStatus},
     session::Session,
+    trace::Trace,
     user::User,
 };
 use crate::environment;
@@ -45,6 +46,7 @@ pub struct JournalShareLink {
     pub journal_id: Uuid,
     pub owner_user_id: Uuid,
     pub token_hash: String,
+    pub scoped_post_id: Option<Uuid>,
     pub expires_at: NaiveDateTime,
     pub revoked_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
@@ -58,6 +60,7 @@ struct NewJournalShareLink {
     pub journal_id: Uuid,
     pub owner_user_id: Uuid,
     pub token_hash: String,
+    pub scoped_post_id: Option<Uuid>,
     pub expires_at: NaiveDateTime,
     pub revoked_at: Option<NaiveDateTime>,
 }
@@ -65,12 +68,14 @@ struct NewJournalShareLink {
 #[derive(Deserialize)]
 pub struct CreateJournalShareLinkDto {
     pub expires_at: DateTime<Utc>,
+    pub scoped_post_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
 pub struct JournalShareLinkCreationResponse {
     pub id: Uuid,
     pub journal_id: Uuid,
+    pub scoped_post_id: Option<Uuid>,
     pub expires_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub url: String,
@@ -86,6 +91,7 @@ pub struct JournalShareLinkRevocationResponse {
 #[derive(Serialize)]
 pub struct PublicSharedJournalShareLinkResponse {
     pub id: Uuid,
+    pub scoped_post_id: Option<Uuid>,
     pub expires_at: NaiveDateTime,
 }
 
@@ -307,6 +313,7 @@ impl JournalShareLink {
         journal: &Journal,
         owner_user_id: Uuid,
         expires_at: DateTime<Utc>,
+        scoped_post_id: Option<Uuid>,
         pool: &DbPool,
     ) -> Result<JournalShareLinkCreationResponse, PpdcError> {
         if journal.user_id != owner_user_id {
@@ -326,6 +333,9 @@ impl JournalShareLink {
                 "Cannot create a share link for an archived journal".to_string(),
             ));
         }
+        if let Some(scoped_post_id) = scoped_post_id {
+            Self::validate_scoped_post(journal, scoped_post_id, pool)?;
+        }
 
         let expires_at = Self::validate_requested_expiry(expires_at)?;
         let secret = Self::generate_secret();
@@ -338,6 +348,7 @@ impl JournalShareLink {
                 journal_id: journal.id,
                 owner_user_id,
                 token_hash,
+                scoped_post_id,
                 expires_at,
                 revoked_at: None,
             })
@@ -354,6 +365,7 @@ impl JournalShareLink {
         Ok(JournalShareLinkCreationResponse {
             id: link.id,
             journal_id: link.journal_id,
+            scoped_post_id: link.scoped_post_id,
             expires_at: link.expires_at,
             created_at: link.created_at,
             url,
@@ -418,6 +430,83 @@ impl JournalShareLink {
 
         Ok((link, journal))
     }
+
+    fn validate_scoped_post(
+        journal: &Journal,
+        post_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Post, PpdcError> {
+        let post = Post::find_full(post_id, pool)?;
+        if post.user_id != journal.user_id {
+            return Err(PpdcError::unauthorized());
+        }
+        if post.status != PostStatus::Published {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Cannot scope a journal share link to a non-published post".to_string(),
+            ));
+        }
+        let trace_id = post.source_trace_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Scoped post must be linked to a trace".to_string(),
+            )
+        })?;
+        let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.journal_id != Some(journal.id) {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Scoped post must belong to the shared journal".to_string(),
+            ));
+        }
+        Ok(post)
+    }
+
+    fn find_public_posts_for_link(
+        link: &JournalShareLink,
+        journal: &Journal,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Post>, i64), PpdcError> {
+        let Some(scoped_post_id) = link.scoped_post_id else {
+            return Post::find_public_default_for_journal_paginated(
+                journal.id, offset, limit, pool,
+            );
+        };
+
+        let post = match Self::validate_scoped_post(journal, scoped_post_id, pool) {
+            Ok(post) => post,
+            Err(err) if err.status_code == 400 || err.status_code == 404 => {
+                return Ok((vec![], 0));
+            }
+            Err(err) => return Err(err),
+        };
+
+        if offset > 0 || limit <= 0 {
+            return Ok((vec![], 1));
+        }
+        Ok((vec![post], 1))
+    }
+
+    fn public_link_uses_image_asset(
+        link: &JournalShareLink,
+        journal: &Journal,
+        asset_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        if let Some(scoped_post_id) = link.scoped_post_id {
+            let Ok(post) = Self::validate_scoped_post(journal, scoped_post_id, pool) else {
+                return Ok(false);
+            };
+            return Ok(post.image_asset_id == Some(asset_id));
+        }
+
+        Post::public_default_post_uses_image_asset_in_journal(journal.id, asset_id, pool)
+    }
 }
 
 #[debug_handler]
@@ -429,7 +518,13 @@ pub async fn post_journal_share_link_route(
 ) -> Result<Json<JournalShareLinkCreationResponse>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let response = JournalShareLink::create(&journal, user_id, payload.expires_at, &pool)?;
+    let response = JournalShareLink::create(
+        &journal,
+        user_id,
+        payload.expires_at,
+        payload.scoped_post_id,
+        &pool,
+    )?;
     Ok(Json(response))
 }
 
@@ -472,9 +567,9 @@ async fn authorize_shared_journal_asset_redirect(
     token: &str,
     pool: &DbPool,
 ) -> Result<Redirect, PpdcError> {
-    let (_, journal) = JournalShareLink::authorize(share_link_id, token, pool)?;
+    let (link, journal) = JournalShareLink::authorize(share_link_id, token, pool)?;
 
-    if !Post::public_default_post_uses_image_asset_in_journal(journal.id, asset_id, pool)? {
+    if !JournalShareLink::public_link_uses_image_asset(&link, &journal, asset_id, pool)? {
         return Err(PpdcError::new(
             404,
             ErrorType::ApiError,
@@ -499,8 +594,9 @@ pub async fn get_shared_journal_route(
     let pagination = params.pagination.validate()?;
     let (link, journal) = JournalShareLink::authorize(share_link_id, &params.token, &pool)?;
     let owner = User::find(&journal.user_id, &pool)?;
-    let (posts, total) = Post::find_public_default_for_journal_paginated(
-        journal.id,
+    let (posts, total) = JournalShareLink::find_public_posts_for_link(
+        &link,
+        &journal,
         pagination.offset,
         pagination.limit,
         &pool,
@@ -509,6 +605,7 @@ pub async fn get_shared_journal_route(
     Ok(Json(PublicSharedJournalBootstrapResponse {
         share_link: PublicSharedJournalShareLinkResponse {
             id: link.id,
+            scoped_post_id: link.scoped_post_id,
             expires_at: link.expires_at,
         },
         journal: build_public_journal_response(journal, owner),
@@ -532,9 +629,10 @@ pub async fn get_shared_journal_posts_route(
     Query(params): Query<PublicShareLinkQuery>,
 ) -> Result<Json<PaginatedResponse<PublicSharedJournalPostResponse>>, PpdcError> {
     let pagination = params.pagination.validate()?;
-    let (_, journal) = JournalShareLink::authorize(share_link_id, &params.token, &pool)?;
-    let (posts, total) = Post::find_public_default_for_journal_paginated(
-        journal.id,
+    let (link, journal) = JournalShareLink::authorize(share_link_id, &params.token, &pool)?;
+    let (posts, total) = JournalShareLink::find_public_posts_for_link(
+        &link,
+        &journal,
         pagination.offset,
         pagination.limit,
         &pool,
