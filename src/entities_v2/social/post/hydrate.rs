@@ -279,17 +279,13 @@ impl Post {
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .left_join(journals::table.on(traces::journal_id.eq(journals::id)))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::user_id.ne(viewer_user_id))
             .into_boxed();
 
         if visible_post_ids.is_empty() {
-            query = query.filter(posts::user_id.eq(viewer_user_id));
-        } else {
-            query = query.filter(
-                posts::user_id
-                    .eq(viewer_user_id)
-                    .or(posts::id.eq_any(visible_post_ids)),
-            );
+            return Ok((vec![], 0));
         }
+        query = query.filter(posts::id.eq_any(visible_post_ids));
 
         let rows = query
             .select((
