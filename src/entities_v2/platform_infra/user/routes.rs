@@ -202,12 +202,13 @@ pub async fn get_suggested_users_route(
         r#"
         SELECT u.id AS user_id
         FROM users u
-        JOIN posts p ON p.user_id = u.id
+        LEFT JOIN posts p
+          ON p.user_id = u.id
+          AND p.status = 'PUBLISHED'
+          AND COALESCE(p.publishing_date, p.created_at) >= $2
         WHERE u.principal_type = 'HUMAN'
           AND u.is_platform_user = TRUE
           AND u.id <> $1
-          AND p.status = 'PUBLISHED'
-          AND COALESCE(p.publishing_date, p.created_at) >= $2
           AND NOT EXISTS (
             SELECT 1
             FROM relationships r
@@ -220,7 +221,7 @@ pub async fn get_suggested_users_route(
               )
           )
         GROUP BY u.id, u.created_at
-        ORDER BY COUNT(*) DESC, MAX(COALESCE(p.publishing_date, p.created_at)) DESC, u.created_at DESC
+        ORDER BY COUNT(p.id) DESC, COALESCE(MAX(COALESCE(p.publishing_date, p.created_at)), u.created_at) DESC, u.created_at DESC
         LIMIT $3
         "#,
     )
