@@ -2,6 +2,8 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::entities_v2::post::PostAudienceRole;
+
 pub use super::enums::{AlbumCompletionStatus, AlbumOrderingMode, AlbumVisibility};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -29,10 +31,34 @@ pub struct AlbumItem {
 }
 
 #[derive(Serialize, Debug, Clone)]
+pub struct AlbumItemTraceView {
+    pub id: Uuid,
+    pub journal_id: Option<Uuid>,
+    pub title: String,
+    pub subtitle: String,
+    pub content: String,
+    pub image_asset_id: Option<Uuid>,
+    pub interaction_date: NaiveDateTime,
+    pub published_post_id: Option<Uuid>,
+    pub publishing_date: Option<NaiveDateTime>,
+    pub post_audience_role: Option<PostAudienceRole>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct AlbumItemView {
+    pub id: Uuid,
+    pub album_id: Uuid,
+    pub trace_id: Uuid,
+    pub ordering_index: i32,
+    pub created_at: NaiveDateTime,
+    pub trace: AlbumItemTraceView,
+}
+
+#[derive(Serialize, Debug, Clone)]
 pub struct AlbumWithItems {
     #[serde(flatten)]
     pub album: Album,
-    pub items: Vec<AlbumItem>,
+    pub items: Vec<AlbumItemView>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

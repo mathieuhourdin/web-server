@@ -14,7 +14,8 @@ use crate::entities_v2::{
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
-    Album, AlbumItem, AlbumWithItems, NewAlbum, NewAlbumDto, NewAlbumItemDto, UpdateAlbumDto,
+    Album, AlbumItem, AlbumItemView, AlbumWithItems, NewAlbum, NewAlbumDto, NewAlbumItemDto,
+    UpdateAlbumDto,
 };
 
 #[derive(Serialize)]
@@ -143,7 +144,7 @@ pub async fn get_album_items_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(album_id): Path<Uuid>,
-) -> Result<Json<Vec<AlbumItem>>, PpdcError> {
+) -> Result<Json<Vec<AlbumItemView>>, PpdcError> {
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let album = Album::find(album_id, &pool)?;
     if !album.user_can_read(viewer_user_id, &pool)? {

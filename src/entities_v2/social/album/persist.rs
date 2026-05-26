@@ -5,14 +5,15 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
-    post::PostStatus,
+    post::{Post, PostAudienceRole, PostStatus},
     post_grant::PostGrant,
     trace::Trace,
 };
 use crate::schema::{album_items, albums, posts};
 
 use super::model::{
-    Album, AlbumCompletionStatus, AlbumItem, AlbumOrderingMode, AlbumVisibility, NewAlbum,
+    Album, AlbumCompletionStatus, AlbumItem, AlbumItemTraceView, AlbumItemView, AlbumOrderingMode,
+    AlbumVisibility, NewAlbum,
 };
 
 type AlbumTuple = (
@@ -128,6 +129,116 @@ fn validate_cover_asset_owner(
         }
     }
     Ok(())
+}
+
+fn published_or_created_at(post: &Post) -> chrono::NaiveDateTime {
+    post.publishing_date.unwrap_or(post.created_at)
+}
+
+fn audience_priority(post: &Post) -> i32 {
+    match post.audience_role {
+        PostAudienceRole::Restricted => 1,
+        PostAudienceRole::Default => 0,
+    }
+}
+
+fn is_better_album_post_candidate(candidate: &Post, current: &Post) -> bool {
+    let candidate_priority = audience_priority(candidate);
+    let current_priority = audience_priority(current);
+    if candidate_priority != current_priority {
+        return candidate_priority > current_priority;
+    }
+
+    let candidate_published_at = published_or_created_at(candidate);
+    let current_published_at = published_or_created_at(current);
+    if candidate_published_at != current_published_at {
+        return candidate_published_at > current_published_at;
+    }
+
+    candidate.created_at > current.created_at
+}
+
+fn preferred_post_for_trace(
+    trace_id: Uuid,
+    visible_post_ids: Option<&[Uuid]>,
+    pool: &DbPool,
+) -> Result<Option<Post>, PpdcError> {
+    if visible_post_ids
+        .map(|post_ids| post_ids.is_empty())
+        .unwrap_or(false)
+    {
+        return Ok(None);
+    }
+
+    let mut conn = pool.get()?;
+    let mut query = posts::table
+        .filter(posts::source_trace_id.eq(Some(trace_id)))
+        .filter(posts::status.eq(PostStatus::Published.to_db()))
+        .into_boxed();
+    if let Some(visible_post_ids) = visible_post_ids {
+        query = query.filter(posts::id.eq_any(visible_post_ids.to_vec()));
+    }
+
+    let post_ids = query.select(posts::id).load::<Uuid>(&mut conn)?;
+
+    let mut selected_post: Option<Post> = None;
+    for post_id in post_ids {
+        let post = Post::find_full(post_id, pool)?;
+        let should_replace = selected_post
+            .as_ref()
+            .map(|current| is_better_album_post_candidate(&post, current))
+            .unwrap_or(true);
+        if should_replace {
+            selected_post = Some(post);
+        }
+    }
+
+    Ok(selected_post)
+}
+
+fn album_item_view_from_trace_and_post(
+    item: AlbumItem,
+    trace: Trace,
+    selected_post: Option<Post>,
+    viewer_is_owner: bool,
+) -> AlbumItemView {
+    let trace_view = if viewer_is_owner {
+        AlbumItemTraceView {
+            id: trace.id,
+            journal_id: trace.journal_id,
+            title: trace.title,
+            subtitle: trace.subtitle,
+            content: trace.content,
+            image_asset_id: trace.image_asset_id,
+            interaction_date: trace.interaction_date,
+            published_post_id: selected_post.as_ref().map(|post| post.id),
+            publishing_date: selected_post.as_ref().and_then(|post| post.publishing_date),
+            post_audience_role: selected_post.as_ref().map(|post| post.audience_role),
+        }
+    } else {
+        let post = selected_post.expect("non-owner album item views require a visible post");
+        AlbumItemTraceView {
+            id: trace.id,
+            journal_id: trace.journal_id,
+            title: post.title,
+            subtitle: post.subtitle,
+            content: post.content,
+            image_asset_id: post.image_asset_id,
+            interaction_date: trace.interaction_date,
+            published_post_id: Some(post.id),
+            publishing_date: post.publishing_date,
+            post_audience_role: Some(post.audience_role),
+        }
+    };
+
+    AlbumItemView {
+        id: item.id,
+        album_id: item.album_id,
+        trace_id: item.trace_id,
+        ordering_index: item.ordering_index,
+        created_at: item.created_at,
+        trace: trace_view,
+    }
 }
 
 impl Album {
@@ -265,15 +376,21 @@ impl Album {
         &self,
         viewer_user_id: Uuid,
         pool: &DbPool,
-    ) -> Result<Vec<AlbumItem>, PpdcError> {
+    ) -> Result<Vec<AlbumItemView>, PpdcError> {
         let mut conn = pool.get()?;
-        let rows = if self.owner_user_id == viewer_user_id {
+        let viewer_is_owner = self.owner_user_id == viewer_user_id;
+        let visible_post_ids = if viewer_is_owner {
+            vec![]
+        } else {
+            PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?
+        };
+
+        let rows = if viewer_is_owner {
             album_items::table
                 .filter(album_items::album_id.eq(self.id))
                 .select(select_album_item_columns())
                 .load::<AlbumItemTuple>(&mut conn)?
         } else {
-            let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
             if visible_post_ids.is_empty() {
                 return Ok(vec![]);
             }
@@ -282,24 +399,39 @@ impl Album {
                     posts::table.on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
                 )
                 .filter(album_items::album_id.eq(self.id))
-                .filter(posts::id.eq_any(visible_post_ids))
+                .filter(posts::id.eq_any(visible_post_ids.clone()))
                 .filter(posts::status.eq(PostStatus::Published.to_db()))
                 .select(select_album_item_columns())
                 .distinct()
                 .load::<AlbumItemTuple>(&mut conn)?
         };
 
-        let mut items = rows
-            .into_iter()
-            .map(tuple_to_album_item)
-            .collect::<Vec<_>>();
+        let mut items = Vec::new();
+        for row in rows {
+            let item = tuple_to_album_item(row);
+            let trace = Trace::find_full_trace(item.trace_id, pool)?;
+            let selected_post = preferred_post_for_trace(
+                item.trace_id,
+                if viewer_is_owner {
+                    None
+                } else {
+                    Some(&visible_post_ids)
+                },
+                pool,
+            )?;
+            if viewer_is_owner || selected_post.is_some() {
+                items.push(album_item_view_from_trace_and_post(
+                    item,
+                    trace,
+                    selected_post,
+                    viewer_is_owner,
+                ));
+            }
+        }
+
         match self.ordering_mode {
             AlbumOrderingMode::Chronological => {
-                items.sort_by_key(|item| {
-                    Trace::find_full_trace(item.trace_id, pool)
-                        .map(|trace| (trace.interaction_date, item.created_at))
-                        .unwrap_or((item.created_at, item.created_at))
-                });
+                items.sort_by_key(|item| (item.trace.interaction_date, item.created_at));
             }
             AlbumOrderingMode::Manual => {
                 items.sort_by_key(|item| (item.ordering_index, item.created_at));
