@@ -14,7 +14,14 @@ fn is_app_target(target: &str) -> bool {
     !is_work_analyzer_target(target)
 }
 
-fn build_json_layer<S, W>(writer: W) -> tracing_subscriber::fmt::Layer<S, tracing_subscriber::fmt::format::JsonFields, tracing_subscriber::fmt::format::Format<tracing_subscriber::fmt::format::Json>, W>
+fn build_json_layer<S, W>(
+    writer: W,
+) -> tracing_subscriber::fmt::Layer<
+    S,
+    tracing_subscriber::fmt::format::JsonFields,
+    tracing_subscriber::fmt::format::Format<tracing_subscriber::fmt::format::Json>,
+    W,
+>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
     W: for<'writer> tracing_subscriber::fmt::MakeWriter<'writer> + Send + Sync + 'static,
@@ -49,14 +56,13 @@ pub fn init_tracing() {
 
     let stdout_layer = build_json_layer(std::io::stdout);
 
-    let work_analyzer_file_layer = build_json_layer(work_analyzer_non_blocking).with_filter(
-        filter_fn(|metadata| is_work_analyzer_target(metadata.target())),
-    );
-
-    let app_file_layer =
-        build_json_layer(app_non_blocking).with_filter(filter_fn(|metadata| {
-            is_app_target(metadata.target())
+    let work_analyzer_file_layer =
+        build_json_layer(work_analyzer_non_blocking).with_filter(filter_fn(|metadata| {
+            is_work_analyzer_target(metadata.target())
         }));
+
+    let app_file_layer = build_json_layer(app_non_blocking)
+        .with_filter(filter_fn(|metadata| is_app_target(metadata.target())));
 
     let _ = tracing_subscriber::registry()
         .with(filter)

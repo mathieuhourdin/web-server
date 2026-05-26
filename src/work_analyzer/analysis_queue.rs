@@ -239,8 +239,7 @@ async fn run_claim_loop(
                 claimed_analysis_type.to_db(),
                 err
             );
-            if let Err(state_err) = claimed_analysis_for_fail
-                .set_failed(err.message.clone(), pool)
+            if let Err(state_err) = claimed_analysis_for_fail.set_failed(err.message.clone(), pool)
             {
                 tracing::error!(
                     target: "work_analyzer",

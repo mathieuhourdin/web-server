@@ -20,7 +20,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
 };
-use crate::schema::{assets, posts, trace_attachments, traces, users};
+use crate::schema::{album_items, albums, assets, posts, trace_attachments, traces, users};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -215,6 +215,31 @@ impl Asset {
             return Ok(true);
         }
 
+        let album_ids = albums::table
+            .filter(albums::cover_asset_id.eq(Some(asset_id)))
+            .filter(albums::visibility.eq("PUBLISHED"))
+            .select(albums::id)
+            .load::<Uuid>(&mut conn)?;
+        if !album_ids.is_empty() {
+            let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+
+            if !visible_post_ids.is_empty() {
+                let visible_album_item_count = album_items::table
+                    .inner_join(
+                        posts::table
+                            .on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
+                    )
+                    .filter(album_items::album_id.eq_any(album_ids))
+                    .filter(posts::id.eq_any(visible_post_ids))
+                    .filter(posts::status.eq(PostStatus::Published.to_db()))
+                    .count()
+                    .get_result::<i64>(&mut conn)?;
+                if visible_album_item_count > 0 {
+                    return Ok(true);
+                }
+            }
+        }
+
         let linked_attachment_trace_ids = trace_attachments::table
             .filter(trace_attachments::asset_id.eq(asset_id))
             .select(trace_attachments::trace_id)
@@ -361,6 +386,22 @@ fn validate_upload(content_type: &str, size_bytes: usize) -> Result<(), PpdcErro
     Ok(())
 }
 
+fn validate_image_upload(content_type: &str, size_bytes: usize) -> Result<(), PpdcError> {
+    validate_upload(content_type, size_bytes)?;
+    let is_image = matches!(
+        content_type,
+        "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+    );
+    if !is_image {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!("Unsupported album cover content type: {}", content_type),
+        ));
+    }
+    Ok(())
+}
+
 async fn upload_object_to_gcs(
     bucket_name: &str,
     object_key: &str,
@@ -492,6 +533,105 @@ pub async fn upload_asset_for_user_from_multipart(
     })?;
 
     upload_asset_for_user(user_id, pool, file_name, content_type, content_bytes).await
+}
+
+pub async fn upload_image_asset_for_user(
+    user_id: Uuid,
+    pool: &DbPool,
+    file_name: Option<String>,
+    content_type: Option<String>,
+    content_bytes: Vec<u8>,
+) -> Result<AssetUploadResponse, PpdcError> {
+    let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("upload.bin"));
+    if content_bytes.is_empty() {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "No file provided in multipart payload".to_string(),
+        ));
+    }
+    let mime_type = infer_content_type(&original_filename, content_type.as_deref());
+    validate_image_upload(&mime_type, content_bytes.len())?;
+
+    let asset_id = Uuid::new_v4();
+    let bucket = crate::environment::get_gcs_bucket_name();
+    let object_key = format!(
+        "users/{}/original/{}/{}",
+        user_id, asset_id, original_filename
+    );
+
+    upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone()).await?;
+
+    let asset = NewAsset {
+        id: asset_id,
+        owner_user_id: user_id,
+        bucket,
+        object_key,
+        mime_type,
+        original_filename,
+        size_bytes: content_bytes.len() as i64,
+        status: AssetStatus::Ready,
+    }
+    .create(&pool)?;
+
+    let (signed_url, expires_at) = asset
+        .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
+        .await?;
+
+    Ok(AssetUploadResponse {
+        asset,
+        signed_url,
+        expires_at,
+    })
+}
+
+pub async fn upload_image_asset_for_user_from_multipart(
+    user_id: Uuid,
+    pool: &DbPool,
+    mut multipart: Multipart,
+) -> Result<AssetUploadResponse, PpdcError> {
+    let mut file_name: Option<String> = None;
+    let mut content_type: Option<String> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|err| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!("Multipart error: {}", err),
+        )
+    })? {
+        if field.file_name().is_none() {
+            continue;
+        }
+
+        file_name = field.file_name().map(|value| value.to_string());
+        content_type = field.content_type().map(|value| value.to_string());
+        file_bytes = Some(
+            field
+                .bytes()
+                .await
+                .map_err(|err| {
+                    PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        format!("Failed to read multipart field: {}", err),
+                    )
+                })?
+                .to_vec(),
+        );
+        break;
+    }
+
+    let content_bytes = file_bytes.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "No file provided in multipart payload".to_string(),
+        )
+    })?;
+
+    upload_image_asset_for_user(user_id, pool, file_name, content_type, content_bytes).await
 }
 
 #[debug_handler]

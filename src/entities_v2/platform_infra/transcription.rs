@@ -3,7 +3,10 @@ use crate::entities_v2::session::Session;
 use crate::entities_v2::user::User;
 use crate::openai_handler::whisper_handler::transcribe_audio_with_openai;
 use crate::work_analyzer::observability::format_text_log_field;
-use axum::{extract::{Extension, Multipart}, Json};
+use axum::{
+    extract::{Extension, Multipart},
+    Json,
+};
 use serde::Serialize;
 use std::path::Path;
 

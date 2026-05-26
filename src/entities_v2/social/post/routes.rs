@@ -22,8 +22,8 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use super::model::{
-    legacy_lifecycle_for_status, FeedPostResponse, NewPost, NewPostDto, Post,
-    PostAudienceRole, PostInteractionType, PostStatus, PostType,
+    legacy_lifecycle_for_status, FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole,
+    PostInteractionType, PostStatus, PostType,
 };
 
 #[derive(Deserialize)]

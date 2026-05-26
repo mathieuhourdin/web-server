@@ -1,6 +1,32 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    album_items (id) {
+        id -> Uuid,
+        album_id -> Uuid,
+        trace_id -> Uuid,
+        ordering_index -> Int4,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    albums (id) {
+        id -> Uuid,
+        owner_user_id -> Uuid,
+        title -> Text,
+        subtitle -> Text,
+        content -> Text,
+        ordering_mode -> Text,
+        completion_status -> Text,
+        visibility -> Text,
+        cover_asset_id -> Nullable<Uuid>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     analysis_summaries (id) {
         id -> Uuid,
         landscape_analysis_id -> Uuid,
@@ -608,6 +634,10 @@ diesel::table! {
 
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
+diesel::joinable!(album_items -> albums (album_id));
+diesel::joinable!(album_items -> traces (trace_id));
+diesel::joinable!(albums -> assets (cover_asset_id));
+diesel::joinable!(albums -> users (owner_user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
 diesel::joinable!(element_landmarks -> landmarks (landmark_id));
 diesel::joinable!(elements -> landscape_analyses (analysis_id));
@@ -671,6 +701,8 @@ diesel::joinable!(user_secure_actions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     analysis_summaries,
+    album_items,
+    albums,
     assets,
     element_landmarks,
     element_relations,

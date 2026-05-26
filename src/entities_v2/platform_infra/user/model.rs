@@ -1061,9 +1061,8 @@ mod tests {
 
     #[test]
     fn test_validate_onboarding_version_transition_rejects_future_version() {
-        let error =
-            User::validate_onboarding_version_transition(0, CURRENT_ONBOARDING_VERSION + 1)
-                .unwrap_err();
+        let error = User::validate_onboarding_version_transition(0, CURRENT_ONBOARDING_VERSION + 1)
+            .unwrap_err();
         assert_eq!(error.status_code, 400);
     }
 

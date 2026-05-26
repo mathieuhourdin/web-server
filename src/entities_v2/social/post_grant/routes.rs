@@ -5,11 +5,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::{
-    error::PpdcError,
-    post::Post,
-    session::Session,
-};
+use crate::entities_v2::{error::PpdcError, post::Post, session::Session};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{NewPostGrantDto, PostGrant};

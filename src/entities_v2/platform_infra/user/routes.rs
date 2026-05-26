@@ -21,9 +21,8 @@ use super::enums::UserPrincipalType;
 use super::model::{
     create_bio_trace_for_user, create_high_level_projects_definition_trace_for_user,
     ensure_user_has_any_lens, ensure_user_has_meta_journal, NewUser, User, UserListParams,
-    UserPublicResponse, UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse,
-    UserResponse,
-    UserSearchParams, UserSearchResult, UserSearchRow,
+    UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserPublicResponse,
+    UserResponse, UserSearchParams, UserSearchResult, UserSearchRow,
 };
 
 #[derive(QueryableByName)]
@@ -82,7 +81,8 @@ pub async fn get_users(
         count_query = count_query.filter(crate::schema::users::principal_type.eq(principal_type));
     }
     if let Some(is_platform_user) = params.is_platform_user {
-        count_query = count_query.filter(crate::schema::users::is_platform_user.eq(is_platform_user));
+        count_query =
+            count_query.filter(crate::schema::users::is_platform_user.eq(is_platform_user));
     }
     let total = count_query.count().get_result::<i64>(&mut conn)?;
 

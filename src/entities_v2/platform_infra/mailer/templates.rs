@@ -172,10 +172,7 @@ pub fn shared_journal_daily_digest_email(
     let intro_line = if owners.len() == 1 {
         format!("{} a écrit dans son journal.", owners_sentence)
     } else {
-        format!(
-            "{} ont écrit dans leur journal.",
-            owners_sentence
-        )
+        format!("{} ont écrit dans leur journal.", owners_sentence)
     };
     let summary_line = format!(
         "Voici un récapitulatif des traces écrites par vos amis le {}. Bonne lecture !",

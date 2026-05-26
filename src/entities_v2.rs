@@ -13,4 +13,4 @@ pub use platform_infra::{
 };
 pub use records::{journal, journal_import, journal_share_link, trace, trace_attachment};
 pub use shared::MaturingState;
-pub use social::{journal_grant, message, post, post_grant, relationship, user_post_state};
+pub use social::{album, journal_grant, message, post, post_grant, relationship, user_post_state};
