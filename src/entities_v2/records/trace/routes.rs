@@ -41,6 +41,7 @@ use crate::work_analyzer;
 use super::{
     llm_qualify,
     model::{NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
+    enums::TraceSharingSensitivity,
 };
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +49,13 @@ use serde::{Deserialize, Serialize};
 pub struct TraceMessagesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+}
+
+#[derive(Deserialize)]
+pub struct JournalTracesQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub sharing_sensitivity: Option<TraceSharingSensitivity>
 }
 
 #[derive(Deserialize)]
@@ -1343,15 +1351,21 @@ pub async fn get_traces_for_journal_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<JournalTracesQuery>,
 ) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
     if journal.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    let pagination = params.validate()?;
+    let pagination = params.pagination.validate()?;
     let (traces, total) =
-        Trace::get_all_for_journal_paginated(id, pagination.offset, pagination.limit, &pool)?;
+        Trace::get_for_journal_paginated(
+            id, 
+            pagination.offset, 
+            pagination.limit, 
+            params.sharing_sensitivity, 
+            &pool
+            )?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
