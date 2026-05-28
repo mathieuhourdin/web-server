@@ -220,6 +220,6 @@ pub async fn delete_relationship_route(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Relationship>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationship = Relationship::archive_for_requester(id, user_id, &pool)?;
+    let relationship = Relationship::archive_for_actor(id, user_id, &pool)?;
     Ok(Json(relationship))
 }

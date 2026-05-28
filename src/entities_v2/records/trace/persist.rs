@@ -56,6 +56,7 @@ fn sync_draft_trace_version_from_trace(
             subtitle,
             content,
             image_asset_id,
+            sharing_sensitivity,
             interaction_date,
             created_at,
             updated_at,
@@ -70,6 +71,7 @@ fn sync_draft_trace_version_from_trace(
             $4,
             $5,
             $6,
+            $7,
             NOW(),
             NOW(),
             NULL
@@ -80,6 +82,7 @@ fn sync_draft_trace_version_from_trace(
             subtitle = EXCLUDED.subtitle,
             content = EXCLUDED.content,
             image_asset_id = EXCLUDED.image_asset_id,
+            sharing_sensitivity = EXCLUDED.sharing_sensitivity,
             interaction_date = EXCLUDED.interaction_date,
             updated_at = NOW()",
     )
@@ -88,6 +91,7 @@ fn sync_draft_trace_version_from_trace(
     .bind::<Text, _>(&trace.subtitle)
     .bind::<Text, _>(&trace.content)
     .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+    .bind::<Text, _>(trace.sharing_sensitivity.to_db())
     .bind::<Timestamp, _>(trace.interaction_date)
     .execute(conn)?;
 
@@ -129,9 +133,10 @@ fn finalize_draft_trace_version_from_trace(
                 subtitle = $3,
                 content = $4,
                 image_asset_id = $5,
-                interaction_date = $6,
+                sharing_sensitivity = $6,
+                interaction_date = $7,
                 updated_at = NOW(),
-                finalized_at = $7
+                finalized_at = $8
             WHERE id = (
                 SELECT id
                 FROM trace_versions
@@ -151,6 +156,7 @@ fn finalize_draft_trace_version_from_trace(
                 subtitle,
                 content,
                 image_asset_id,
+                sharing_sensitivity,
                 interaction_date,
                 created_at,
                 updated_at,
@@ -166,9 +172,10 @@ fn finalize_draft_trace_version_from_trace(
                 $4,
                 $5,
                 $6,
+                $7,
                 NOW(),
                 NOW(),
-                $7
+                $8
             WHERE NOT EXISTS (SELECT 1 FROM updated_draft)
             RETURNING id
          )
@@ -182,6 +189,7 @@ fn finalize_draft_trace_version_from_trace(
     .bind::<Text, _>(&trace.subtitle)
     .bind::<Text, _>(&trace.content)
     .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+    .bind::<Text, _>(trace.sharing_sensitivity.to_db())
     .bind::<Timestamp, _>(trace.interaction_date)
     .bind::<Timestamp, _>(finalized_at)
     .get_result::<IdRow>(conn)?;
@@ -240,14 +248,15 @@ impl Trace {
                      is_encrypted = $5,
                      encryption_metadata = CAST($6 AS jsonb),
                      image_asset_id = $7,
-                     timeout_start_at = $8,
-                     timeout_at = $9,
-                     interaction_date = $10,
-                     trace_type = $11,
-                     status = $12,
-                     journal_id = $13,
-                     start_writing_at = $14,
-                     finalized_at = $15,
+                     sharing_sensitivity = $8,
+                     timeout_start_at = $9,
+                     timeout_at = $10,
+                     interaction_date = $11,
+                     trace_type = $12,
+                     status = $13,
+                     journal_id = $14,
+                     start_writing_at = $15,
+                     finalized_at = $16,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -262,6 +271,7 @@ impl Trace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
@@ -328,6 +338,7 @@ impl NewTrace {
                     is_encrypted,
                     encryption_metadata,
                     image_asset_id,
+                    sharing_sensitivity,
                     timeout_start_at,
                     timeout_at,
                     interaction_date,
@@ -349,8 +360,9 @@ impl NewTrace {
                     $10,
                     $11,
                     $12,
-                    'DRAFT',
                     $13,
+                    'DRAFT',
+                    $14,
                     NULL
                  )
                  RETURNING id",
@@ -367,6 +379,7 @@ impl NewTrace {
                     .map(|value| value.to_string()),
             )
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
@@ -385,6 +398,7 @@ impl NewTrace {
                     subtitle,
                     content,
                     image_asset_id,
+                    sharing_sensitivity,
                     interaction_date,
                     created_at,
                     updated_at,
@@ -399,6 +413,7 @@ impl NewTrace {
                     $4,
                     $5,
                     $6,
+                    $7,
                     NOW(),
                     NOW(),
                     NULL
@@ -409,6 +424,7 @@ impl NewTrace {
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Timestamp, _>(self.interaction_date)
             .execute(conn)?;
 

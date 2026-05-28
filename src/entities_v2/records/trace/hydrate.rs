@@ -9,7 +9,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::schema::traces;
 
-use super::model::{Trace, TraceStatus, TraceType};
+use super::model::{Trace, TraceSharingSensitivity, TraceStatus, TraceType};
 
 type TraceTuple = (
     Uuid,
@@ -20,6 +20,7 @@ type TraceTuple = (
     bool,
     Option<String>,
     Option<Uuid>,
+    String,
     Option<DateTime<Utc>>,
     Option<DateTime<Utc>>,
     Option<Uuid>,
@@ -42,6 +43,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         is_encrypted,
         encryption_metadata_json,
         image_asset_id,
+        sharing_sensitivity_raw,
         timeout_start_at,
         timeout_at,
         journal_id,
@@ -64,6 +66,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         encryption_metadata: encryption_metadata_json
             .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
         image_asset_id,
+        sharing_sensitivity: TraceSharingSensitivity::from_db(&sharing_sensitivity_raw),
         timeout_start_at,
         timeout_at,
         journal_id,
@@ -92,6 +95,7 @@ impl Trace {
                 traces::is_encrypted,
                 sql::<Nullable<Text>>("encryption_metadata::text"),
                 traces::image_asset_id,
+                traces::sharing_sensitivity,
                 sql::<Nullable<Timestamptz>>("timeout_start_at"),
                 sql::<Nullable<Timestamptz>>("timeout_at"),
                 traces::journal_id.nullable(),

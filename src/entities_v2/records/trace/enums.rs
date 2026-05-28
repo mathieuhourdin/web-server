@@ -57,3 +57,26 @@ impl TraceStatus {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceSharingSensitivity {
+    Normal,
+    Sensitive,
+}
+
+impl TraceSharingSensitivity {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            TraceSharingSensitivity::Normal => "NORMAL",
+            TraceSharingSensitivity::Sensitive => "SENSITIVE",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "SENSITIVE" | "sensitive" => TraceSharingSensitivity::Sensitive,
+            _ => TraceSharingSensitivity::Normal,
+        }
+    }
+}

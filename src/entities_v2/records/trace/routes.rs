@@ -94,6 +94,8 @@ pub struct CreateJournalDraftDto {
     #[serde(default)]
     pub image_asset_id: Option<Uuid>,
     #[serde(default)]
+    pub sharing_sensitivity: Option<super::enums::TraceSharingSensitivity>,
+    #[serde(default)]
     pub timeout_at: Option<DateTime<Utc>>,
 }
 
@@ -510,6 +512,7 @@ async fn create_or_get_journal_draft(
         is_encrypted,
         encryption_metadata,
         image_asset_id,
+        sharing_sensitivity,
         timeout_at,
     } = payload;
 
@@ -526,6 +529,9 @@ async fn create_or_get_journal_draft(
     trace.is_encrypted = is_encrypted.unwrap_or(false);
     trace.encryption_metadata = encryption_metadata;
     trace.image_asset_id = image_asset_id;
+    if let Some(sharing_sensitivity) = sharing_sensitivity {
+        trace.sharing_sensitivity = sharing_sensitivity;
+    }
     trace.timeout_at = timeout_at;
     if trace.is_encrypted && trace.encryption_metadata.is_none() {
         return Err(PpdcError::new(
@@ -623,6 +629,10 @@ pub async fn put_trace_route(
         .image_asset_id
         .map(|image_asset_id| image_asset_id != trace.image_asset_id)
         .unwrap_or(false);
+    let sharing_sensitivity_changed = payload
+        .sharing_sensitivity
+        .map(|sharing_sensitivity| sharing_sensitivity != trace.sharing_sensitivity)
+        .unwrap_or(false);
     let timeout_changed = payload
         .timeout_at
         .map(|timeout_at| timeout_at != trace.timeout_at)
@@ -639,6 +649,9 @@ pub async fn put_trace_route(
             }
             if let Some(image_asset_id) = payload.image_asset_id {
                 trace.image_asset_id = image_asset_id;
+            }
+            if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
+                trace.sharing_sensitivity = sharing_sensitivity;
             }
             if let Some(timeout_at) = payload.timeout_at {
                 trace.timeout_at = timeout_at;
@@ -674,12 +687,16 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Finalized => {
-            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed
+            if content_changed
+                || interaction_date_changed
+                || image_asset_changed
+                || sharing_sensitivity_changed
+                || timeout_changed
             {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date, image_asset_id or timeout_at once trace is finalized".to_string(),
+                    "Cannot update content, interaction_date, image_asset_id, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
                 ));
             }
 
@@ -699,12 +716,16 @@ pub async fn put_trace_route(
             }
         }
         super::enums::TraceStatus::Archived => {
-            if content_changed || interaction_date_changed || image_asset_changed || timeout_changed
+            if content_changed
+                || interaction_date_changed
+                || image_asset_changed
+                || sharing_sensitivity_changed
+                || timeout_changed
             {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date, image_asset_id or timeout_at once trace is archived".to_string(),
+                    "Cannot update content, interaction_date, image_asset_id, sharing_sensitivity or timeout_at once trace is archived".to_string(),
                 ));
             }
 
@@ -789,6 +810,9 @@ pub async fn patch_trace_route(
     }
     if let Some(image_asset_id) = payload.image_asset_id {
         trace.image_asset_id = image_asset_id;
+    }
+    if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
+        trace.sharing_sensitivity = sharing_sensitivity;
     }
     if let Some(timeout_at) = payload.timeout_at {
         trace.timeout_at = timeout_at;

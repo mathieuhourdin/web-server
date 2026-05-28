@@ -224,17 +224,19 @@ impl Relationship {
         Relationship::find(id, pool)
     }
 
-    pub fn archive_for_requester(
+    pub fn archive_for_actor(
         id: Uuid,
         actor_user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Relationship, PpdcError> {
         let relationship = Relationship::find(id, pool)?;
-        if relationship.requester_user_id != actor_user_id {
+        if relationship.requester_user_id != actor_user_id
+            && relationship.target_user_id != actor_user_id
+        {
             return Err(PpdcError::new(
                 403,
                 ErrorType::ApiError,
-                "Only the relationship requester can delete it".to_string(),
+                "Only relationship participants can delete it".to_string(),
             ));
         }
 

@@ -14,7 +14,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     platform_infra::asset::{upload_image_asset_for_user_from_multipart, AssetUploadResponse},
     session::Session,
-    trace::{Trace, TraceStatus},
+    trace::{Trace, TraceSharingSensitivity, TraceStatus},
 };
 use crate::schema::trace_versions;
 
@@ -84,6 +84,7 @@ pub struct TraceVersion {
     pub subtitle: String,
     pub content: String,
     pub image_asset_id: Option<Uuid>,
+    pub sharing_sensitivity: TraceSharingSensitivity,
     pub interaction_date: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -96,6 +97,7 @@ pub struct UpdateTraceVersionDto {
     pub subtitle: Option<String>,
     pub content: Option<String>,
     pub image_asset_id: Option<Option<Uuid>>,
+    pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub interaction_date: Option<NaiveDateTime>,
     pub status: Option<TraceVersionStatus>,
 }
@@ -117,6 +119,7 @@ type TraceVersionTuple = (
     String,
     String,
     Option<Uuid>,
+    String,
     NaiveDateTime,
     NaiveDateTime,
     NaiveDateTime,
@@ -139,10 +142,11 @@ fn tuple_to_trace_version(row: TraceVersionTuple) -> TraceVersion {
         subtitle: row.5,
         content: row.6,
         image_asset_id: row.7,
-        interaction_date: row.8,
-        created_at: row.9,
-        updated_at: row.10,
-        finalized_at: row.11,
+        sharing_sensitivity: TraceSharingSensitivity::from_db(&row.8),
+        interaction_date: row.9,
+        created_at: row.10,
+        updated_at: row.11,
+        finalized_at: row.12,
     }
 }
 
@@ -155,6 +159,7 @@ fn select_trace_version_columns() -> (
     trace_versions::subtitle,
     trace_versions::content,
     trace_versions::image_asset_id,
+    trace_versions::sharing_sensitivity,
     trace_versions::interaction_date,
     trace_versions::created_at,
     trace_versions::updated_at,
@@ -169,6 +174,7 @@ fn select_trace_version_columns() -> (
         trace_versions::subtitle,
         trace_versions::content,
         trace_versions::image_asset_id,
+        trace_versions::sharing_sensitivity,
         trace_versions::interaction_date,
         trace_versions::created_at,
         trace_versions::updated_at,
@@ -235,6 +241,7 @@ impl TraceVersion {
                 subtitle,
                 content,
                 image_asset_id,
+                sharing_sensitivity,
                 interaction_date,
                 created_at,
                 updated_at,
@@ -249,6 +256,7 @@ impl TraceVersion {
                 $4,
                 $5,
                 $6,
+                $7,
                 NOW(),
                 NOW(),
                 NULL
@@ -260,6 +268,7 @@ impl TraceVersion {
         .bind::<Text, _>(&trace.subtitle)
         .bind::<Text, _>(&trace.content)
         .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+        .bind::<Text, _>(trace.sharing_sensitivity.to_db())
         .bind::<Timestamp, _>(trace.interaction_date)
         .get_result::<IdRow>(&mut conn)?;
 
@@ -275,6 +284,7 @@ impl TraceVersion {
                     trace_versions::subtitle.eq(&self.subtitle),
                     trace_versions::content.eq(&self.content),
                     trace_versions::image_asset_id.eq(self.image_asset_id),
+                    trace_versions::sharing_sensitivity.eq(self.sharing_sensitivity.to_db()),
                     trace_versions::interaction_date.eq(self.interaction_date),
                     trace_versions::updated_at.eq(Utc::now().naive_utc()),
                 ))
@@ -286,7 +296,8 @@ impl TraceVersion {
                      subtitle = $3,
                      content = $4,
                      image_asset_id = $5,
-                     interaction_date = $6,
+                     sharing_sensitivity = $6,
+                     interaction_date = $7,
                      updated_at = NOW()
                  WHERE id = $1
                    AND status = 'DRAFT'",
@@ -296,6 +307,7 @@ impl TraceVersion {
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Timestamp, _>(self.interaction_date)
             .execute(conn)?;
 
@@ -355,6 +367,7 @@ impl TraceVersion {
                     trace_versions::subtitle.eq(&self.subtitle),
                     trace_versions::content.eq(&self.content),
                     trace_versions::image_asset_id.eq(self.image_asset_id),
+                    trace_versions::sharing_sensitivity.eq(self.sharing_sensitivity.to_db()),
                     trace_versions::interaction_date.eq(self.interaction_date),
                     trace_versions::updated_at.eq(finalized_at),
                     trace_versions::finalized_at.eq(Some(finalized_at)),
@@ -367,11 +380,12 @@ impl TraceVersion {
                      subtitle = $3,
                      content = $4,
                      image_asset_id = $5,
-                     interaction_date = $6,
+                     sharing_sensitivity = $6,
+                     interaction_date = $7,
                      status = 'FINALIZED',
-                     finalized_at = $7,
+                     finalized_at = $8,
                      timeout_at = NULL,
-                     current_version_id = $8,
+                     current_version_id = $9,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -380,6 +394,7 @@ impl TraceVersion {
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
             .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Timestamp, _>(finalized_at)
             .bind::<SqlUuid, _>(version_id)
@@ -432,6 +447,9 @@ impl TraceVersion {
         }
         if let Some(image_asset_id) = payload.image_asset_id {
             self.image_asset_id = image_asset_id;
+        }
+        if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
+            self.sharing_sensitivity = sharing_sensitivity;
         }
         if let Some(interaction_date) = payload.interaction_date {
             self.interaction_date = interaction_date;
