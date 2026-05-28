@@ -2,9 +2,9 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, TimeZone, U
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::Bool;
 use diesel::sql_types::Timestamp as SqlTimestamp;
 use diesel::sql_types::Uuid as SqlUuid;
+use diesel::sql_types::{Bool, Nullable};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -36,6 +36,26 @@ struct BoolRow {
     value: bool,
 }
 
+#[derive(diesel::QueryableByName)]
+struct OptionalTraceVersionIdRow {
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    id: Option<Uuid>,
+}
+
+fn current_trace_version_id_for_trace_with_conn(
+    trace_id: Uuid,
+    conn: &mut diesel::PgConnection,
+) -> Result<Option<Uuid>, diesel::result::Error> {
+    let row = diesel::sql_query(
+        "SELECT current_version_id AS id
+         FROM traces
+         WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(trace_id)
+    .get_result::<OptionalTraceVersionIdRow>(conn)?;
+    Ok(row.id)
+}
+
 impl LandscapeAnalysis {
     /// Persists all mutable fields of an analysis row after a worker or route has changed its state.
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
@@ -55,6 +75,7 @@ impl LandscapeAnalysis {
                 landscape_analyses::parent_id.eq(self.parent_analysis_id),
                 landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
                 landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
+                landscape_analyses::trace_version_id.eq(self.trace_version_id),
                 landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
             ))
             .execute(&mut conn)?;
@@ -98,6 +119,13 @@ impl NewLandscapeAnalysis {
     /// Inserts a standalone pending analysis without attaching it to a specific lens scope.
     pub fn create(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool.get()?;
+        let trace_version_id = match (self.trace_version_id, self.analyzed_trace_id) {
+            (Some(trace_version_id), _) => Some(trace_version_id),
+            (None, Some(trace_id)) => {
+                current_trace_version_id_for_trace_with_conn(trace_id, &mut conn)?
+            }
+            (None, None) => None,
+        };
 
         let id: Uuid = diesel::insert_into(landscape_analyses::table)
             .values((
@@ -114,6 +142,7 @@ impl NewLandscapeAnalysis {
                 landscape_analyses::failure_reason.eq::<Option<String>>(None),
                 landscape_analyses::parent_id.eq(self.parent_analysis_id),
                 landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
+                landscape_analyses::trace_version_id.eq(trace_version_id),
                 landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
                 landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
             ))
@@ -130,6 +159,13 @@ impl NewLandscapeAnalysis {
         pool: &DbPool,
     ) -> Result<LandscapeAnalysis, PpdcError> {
         let mut conn = pool.get()?;
+        let trace_version_id = match (self.trace_version_id, self.analyzed_trace_id) {
+            (Some(trace_version_id), _) => Some(trace_version_id),
+            (None, Some(trace_id)) => {
+                current_trace_version_id_for_trace_with_conn(trace_id, &mut conn)?
+            }
+            (None, None) => None,
+        };
 
         let analysis_id: Uuid = conn.transaction::<Uuid, diesel::result::Error, _>(|conn| {
             let id: Uuid = diesel::insert_into(landscape_analyses::table)
@@ -149,6 +185,7 @@ impl NewLandscapeAnalysis {
                     landscape_analyses::failure_reason.eq::<Option<String>>(None),
                     landscape_analyses::parent_id.eq(self.parent_analysis_id),
                     landscape_analyses::analyzed_trace_id.eq(self.analyzed_trace_id),
+                    landscape_analyses::trace_version_id.eq(trace_version_id),
                     landscape_analyses::replayed_from_id.eq(self.replayed_from_id),
                     landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
                 ))

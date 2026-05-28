@@ -1,0 +1,3 @@
+-- This migration repairs databases that applied an earlier trace_versions shape.
+-- It is intentionally not reversible because the repaired columns may either
+-- come from the original migration or from this migration depending on the DB.

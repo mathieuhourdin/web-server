@@ -212,3 +212,14 @@ pub async fn put_relationship_route(
     let relationship = Relationship::update_status(id, user_id, payload.status, &pool)?;
     Ok(Json(relationship))
 }
+
+#[debug_handler]
+pub async fn delete_relationship_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Relationship>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let relationship = Relationship::archive_for_requester(id, user_id, &pool)?;
+    Ok(Json(relationship))
+}

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
-    error::PpdcError,
+    error::{ErrorType, PpdcError},
     journal::Journal,
     journal_grant::JournalGrant,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmail, OutboundEmailProvider},
@@ -14,6 +14,7 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
     trace_attachment::TraceAttachment,
+    trace_version::{TraceVersion, TraceVersionStatus},
     user::{User, UserPrincipalType},
     user_post_state::{PostSeenByUser, UserPostState},
 };
@@ -23,7 +24,7 @@ use serde::Deserialize;
 
 use super::model::{
     legacy_lifecycle_for_status, FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole,
-    PostInteractionType, PostStatus, PostType,
+    PostContentSource, PostInteractionType, PostStatus, PostType,
 };
 
 #[derive(Deserialize)]
@@ -77,6 +78,23 @@ pub struct NewTracePostDto {
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<chrono::NaiveDateTime>,
+    pub status: Option<PostStatus>,
+    pub audience_role: Option<PostAudienceRole>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdatePostDto {
+    pub source_trace_id: Option<Option<Uuid>>,
+    pub trace_version_id: Option<Option<Uuid>>,
+    pub content_source: Option<PostContentSource>,
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub content: Option<String>,
+    pub image_url: Option<Option<String>>,
+    pub image_asset_id: Option<Option<Uuid>>,
+    pub post_type: Option<PostType>,
+    pub interaction_type: Option<PostInteractionType>,
+    pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
     pub status: Option<PostStatus>,
     pub audience_role: Option<PostAudienceRole>,
 }
@@ -336,8 +354,18 @@ pub async fn post_trace_post_route(
         return Err(PpdcError::unauthorized());
     }
 
+    let trace_version_id = Trace::current_version_id(trace_id, &pool)?;
+    if trace_version_id.is_none() {
+        return Err(PpdcError::new(
+            400,
+            crate::entities_v2::error::ErrorType::ApiError,
+            "Trace must have a finalized version before it can be published".to_string(),
+        ));
+    }
     let payload = NewPostDto {
         source_trace_id: Some(trace_id),
+        trace_version_id,
+        content_source: Some(PostContentSource::TraceVersion),
         title: payload.title.unwrap_or_else(|| trace.title.clone()),
         subtitle: payload.subtitle.or_else(|| Some(trace.subtitle.clone())),
         content: payload.content.unwrap_or_else(|| trace.content.clone()),
@@ -409,21 +437,112 @@ pub async fn put_post_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<NewPostDto>,
+    Json(payload): Json<UpdatePostDto>,
 ) -> Result<Json<Post>, PpdcError> {
     let mut post = Post::find_full(id, &pool)?;
-    if post.user_id != session.user_id.unwrap() {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if post.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
     let previous_status = post.status;
 
-    post.title = payload.title;
-    post.source_trace_id = payload.source_trace_id;
-    post.subtitle = payload.subtitle.unwrap_or_default();
-    post.content = payload.content;
-    post.image_url = payload.image_url;
-    post.image_asset_id = payload.image_asset_id;
-    post.publishing_date = payload.publishing_date;
+    let source_trace_id = payload.source_trace_id.unwrap_or(post.source_trace_id);
+    let trace_version_id = if source_trace_id.is_some() {
+        payload.trace_version_id.unwrap_or(post.trace_version_id)
+    } else {
+        None
+    };
+
+    let payload_changes_content = payload.content.is_some()
+        || payload.image_url.is_some()
+        || payload.image_asset_id.is_some();
+
+    let content_source = payload.content_source.unwrap_or_else(|| {
+        if payload.trace_version_id.is_some()
+            || (post.content_source == PostContentSource::TraceVersion
+                && source_trace_id.is_some()
+                && trace_version_id.is_some()
+                && !payload_changes_content)
+        {
+            PostContentSource::TraceVersion
+        } else if source_trace_id.is_none() || payload_changes_content {
+            PostContentSource::Custom
+        } else {
+            post.content_source
+        }
+    });
+
+    post.source_trace_id = source_trace_id;
+    post.trace_version_id = trace_version_id;
+    post.content_source = content_source;
+
+    if post.content_source == PostContentSource::TraceVersion {
+        let source_trace_id = post.source_trace_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Trace-based posts require source_trace_id".to_string(),
+            )
+        })?;
+        let trace_version_id = post.trace_version_id.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Trace-based posts require trace_version_id".to_string(),
+            )
+        })?;
+
+        let trace = Trace::find_full_trace(source_trace_id, &pool)?;
+        if trace.user_id != user_id {
+            return Err(PpdcError::unauthorized());
+        }
+
+        let trace_version = TraceVersion::find(trace_version_id, &pool)?;
+        if trace_version.trace_id != source_trace_id {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "trace_version_id does not belong to source_trace_id".to_string(),
+            ));
+        }
+        if trace_version.status != TraceVersionStatus::Finalized {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Posts can only use finalized trace versions".to_string(),
+            ));
+        }
+
+        if let Some(title) = payload.title {
+            post.title = title;
+        }
+        if let Some(subtitle) = payload.subtitle {
+            post.subtitle = subtitle;
+        }
+        post.content = trace_version.content;
+        post.image_url = None;
+        post.image_asset_id = trace_version.image_asset_id;
+    } else {
+        if let Some(title) = payload.title {
+            post.title = title;
+        }
+        if let Some(subtitle) = payload.subtitle {
+            post.subtitle = subtitle;
+        }
+        if let Some(content) = payload.content {
+            post.content = content;
+        }
+        if let Some(image_url) = payload.image_url {
+            post.image_url = image_url;
+        }
+        if let Some(image_asset_id) = payload.image_asset_id {
+            post.image_asset_id = image_asset_id;
+        }
+    }
+
+    if let Some(publishing_date) = payload.publishing_date {
+        post.publishing_date = publishing_date;
+    }
     if let Some(interaction_type) = payload.interaction_type {
         post.interaction_type = interaction_type;
     }

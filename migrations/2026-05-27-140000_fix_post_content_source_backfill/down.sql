@@ -1,0 +1,2 @@
+-- Irreversible data correction: once a post is identified as custom, we do not
+-- infer that it should become trace-based again on rollback.

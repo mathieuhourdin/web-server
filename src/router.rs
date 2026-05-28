@@ -14,8 +14,8 @@ use crate::entities_v2::{
     album, analysis_summary, asset, element,
     error::{ErrorType, PpdcError},
     journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
-    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, transcription,
-    usage_event, user, user_post_state, user_secure_action,
+    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, trace_version,
+    transcription, usage_event, user, user_post_state, user_secure_action,
 };
 use crate::sessions_service;
 
@@ -93,6 +93,10 @@ pub fn create_router() -> Router {
             post(trace::post_trace_extend_timeout_route),
         )
         .route(
+            "/:id/draft_version",
+            post(trace_version::post_trace_draft_version_route),
+        )
+        .route(
             "/:id/assets",
             post(trace::post_trace_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
@@ -110,6 +114,20 @@ pub fn create_router() -> Router {
         .route(
             "/:id/messages",
             get(trace::get_trace_messages_route).post(trace::post_trace_message_route),
+        )
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let trace_versions_router = Router::new()
+        .route(
+            "/:id",
+            get(trace_version::get_trace_version_route)
+                .put(trace_version::put_trace_version_route)
+                .delete(trace_version::delete_trace_version_route),
+        )
+        .route(
+            "/:id/assets",
+            post(trace_version::post_trace_version_asset_route)
+                .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
@@ -216,7 +234,11 @@ pub fn create_router() -> Router {
             "/",
             get(relationship::get_relationships_route).post(relationship::post_relationship_route),
         )
-        .route("/:id", put(relationship::put_relationship_route))
+        .route(
+            "/:id",
+            put(relationship::put_relationship_route)
+                .delete(relationship::delete_relationship_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let transcriptions_router = Router::new()
@@ -381,6 +403,7 @@ pub fn create_router() -> Router {
         .nest("/mentors", mentors_router)
         .nest("/admin", admin_router)
         .nest("/traces", traces_router)
+        .nest("/trace_versions", trace_versions_router)
         .nest("/posts", posts_router)
         .nest("/albums", albums_router)
         .nest("/assets", assets_router)

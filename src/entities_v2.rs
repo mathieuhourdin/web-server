@@ -11,6 +11,8 @@ pub use derived_context::{analysis_summary, element, landmark, reference, trace_
 pub use platform_infra::{
     asset, error, llm_call, mailer, session, transcription, usage_event, user, user_secure_action,
 };
-pub use records::{journal, journal_import, journal_share_link, trace, trace_attachment};
+pub use records::{
+    journal, journal_import, journal_share_link, trace, trace_attachment, trace_version,
+};
 pub use shared::MaturingState;
 pub use social::{album, journal_grant, message, post, post_grant, relationship, user_post_state};

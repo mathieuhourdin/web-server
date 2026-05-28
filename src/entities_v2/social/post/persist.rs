@@ -13,6 +13,8 @@ impl Post {
         diesel::update(posts::table.filter(posts::id.eq(self.id)))
             .set((
                 posts::source_trace_id.eq(self.source_trace_id),
+                posts::trace_version_id.eq(self.trace_version_id),
+                posts::content_source.eq(self.content_source.to_db()),
                 posts::title.eq(self.title),
                 posts::subtitle.eq(self.subtitle),
                 posts::content.eq(self.content),
@@ -38,6 +40,8 @@ impl NewPost {
         let id: Uuid = diesel::insert_into(posts::table)
             .values((
                 posts::source_trace_id.eq(self.source_trace_id),
+                posts::trace_version_id.eq(self.trace_version_id),
+                posts::content_source.eq(self.content_source.to_db()),
                 posts::title.eq(self.title),
                 posts::subtitle.eq(self.subtitle),
                 posts::content.eq(self.content),

@@ -194,6 +194,13 @@ fn enqueue_trace_post_finalize_side_effects(trace: &Trace, pool: &DbPool) {
     }
 }
 
+pub(crate) fn enqueue_trace_finalized_side_effects(trace: &Trace, pool: &DbPool) {
+    if !trace.is_encrypted {
+        enqueue_autoplay_lens_runs_for_trace(trace.user_id, trace.id, pool.clone());
+        enqueue_trace_post_finalize_side_effects(trace, pool);
+    }
+}
+
 #[allow(dead_code)]
 fn enqueue_trace_qualification(trace: &Trace, pool: DbPool) {
     let trace_id = trace.id;
@@ -248,10 +255,7 @@ async fn finalize_trace_transition(
 
     let trace = trace.update(pool)?;
 
-    if !trace.is_encrypted {
-        enqueue_autoplay_lens_runs_for_trace(trace.user_id, trace.id, pool.clone());
-        enqueue_trace_post_finalize_side_effects(&trace, pool);
-    }
+    enqueue_trace_finalized_side_effects(&trace, pool);
 
     if auto_finalized {
         let _ = create_usage_event(
@@ -372,6 +376,8 @@ fn ensure_default_draft_post_for_shared_trace(
 
     let post = NewPost {
         source_trace_id: Some(trace.id),
+        trace_version_id: Trace::current_version_id(trace.id, pool)?,
+        content_source: crate::entities_v2::post::PostContentSource::TraceVersion,
         title: String::new(),
         subtitle: String::new(),
         content: trace.content.clone(),

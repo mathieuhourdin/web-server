@@ -28,6 +28,7 @@ pub enum RelationshipStatus {
     Accepted,
     Rejected,
     Blocked,
+    Archived,
 }
 
 impl RelationshipStatus {
@@ -37,6 +38,7 @@ impl RelationshipStatus {
             RelationshipStatus::Accepted => "ACCEPTED",
             RelationshipStatus::Rejected => "REJECTED",
             RelationshipStatus::Blocked => "BLOCKED",
+            RelationshipStatus::Archived => "ARCHIVED",
         }
     }
 
@@ -45,6 +47,7 @@ impl RelationshipStatus {
             "ACCEPTED" => RelationshipStatus::Accepted,
             "REJECTED" => RelationshipStatus::Rejected,
             "BLOCKED" => RelationshipStatus::Blocked,
+            "ARCHIVED" => RelationshipStatus::Archived,
             _ => RelationshipStatus::Pending,
         }
     }

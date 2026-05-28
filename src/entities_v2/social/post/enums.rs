@@ -2,6 +2,61 @@ use serde::de::Deserializer;
 use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostContentSource {
+    TraceVersion,
+    Custom,
+}
+
+impl PostContentSource {
+    pub fn to_code(self) -> &'static str {
+        match self {
+            PostContentSource::TraceVersion => "trace_version",
+            PostContentSource::Custom => "custom",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "custom" | "CUSTOM" | "Custom" => PostContentSource::Custom,
+            _ => PostContentSource::TraceVersion,
+        }
+    }
+
+    pub fn to_db(self) -> &'static str {
+        match self {
+            PostContentSource::TraceVersion => "TRACE_VERSION",
+            PostContentSource::Custom => "CUSTOM",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "CUSTOM" | "custom" => PostContentSource::Custom,
+            _ => PostContentSource::TraceVersion,
+        }
+    }
+}
+
+impl Serialize for PostContentSource {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_code())
+    }
+}
+
+impl<'de> Deserialize<'de> for PostContentSource {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(PostContentSource::from_code(&value))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostAudienceRole {
     Default,
     Restricted,

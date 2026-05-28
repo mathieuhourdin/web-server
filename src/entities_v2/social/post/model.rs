@@ -4,7 +4,9 @@ use uuid::Uuid;
 
 use crate::entities_v2::shared::MaturingState;
 
-pub use super::enums::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
+pub use super::enums::{
+    PostAudienceRole, PostContentSource, PostInteractionType, PostStatus, PostType,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Post {
@@ -12,6 +14,8 @@ pub struct Post {
     #[serde(skip_serializing, skip_deserializing)]
     pub resource_id: Uuid,
     pub source_trace_id: Option<Uuid>,
+    pub trace_version_id: Option<Uuid>,
+    pub content_source: PostContentSource,
     pub title: String,
     pub subtitle: String,
     pub content: String,
@@ -43,6 +47,10 @@ pub struct FeedPostResponse {
 pub struct NewPostDto {
     #[serde(default)]
     pub source_trace_id: Option<Uuid>,
+    #[serde(default)]
+    pub trace_version_id: Option<Uuid>,
+    #[serde(default)]
+    pub content_source: Option<PostContentSource>,
     pub title: String,
     pub subtitle: Option<String>,
     pub content: String,
@@ -58,6 +66,8 @@ pub struct NewPostDto {
 #[derive(Debug, Clone)]
 pub struct NewPost {
     pub source_trace_id: Option<Uuid>,
+    pub trace_version_id: Option<Uuid>,
+    pub content_source: PostContentSource,
     pub title: String,
     pub subtitle: String,
     pub content: String,
@@ -97,8 +107,17 @@ impl NewPost {
     pub fn new(payload: NewPostDto, user_id: Uuid) -> Self {
         let status = payload.status.unwrap_or(PostStatus::Draft);
         let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
+        let content_source = payload.content_source.unwrap_or_else(|| {
+            if payload.source_trace_id.is_some() && payload.trace_version_id.is_some() {
+                PostContentSource::TraceVersion
+            } else {
+                PostContentSource::Custom
+            }
+        });
         Self {
             source_trace_id: payload.source_trace_id,
+            trace_version_id: payload.trace_version_id,
+            content_source,
             title: payload.title,
             subtitle: payload.subtitle.unwrap_or_default(),
             content: payload.content,

@@ -13,6 +13,12 @@ struct IdRow {
     id: uuid::Uuid,
 }
 
+#[derive(QueryableByName)]
+struct OptionalIdRow {
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    id: Option<uuid::Uuid>,
+}
+
 fn recalculate_journal_last_trace_at(
     conn: &mut diesel::PgConnection,
     journal_id: uuid::Uuid,
@@ -32,6 +38,166 @@ fn recalculate_journal_last_trace_at(
     Ok(())
 }
 
+fn sync_draft_trace_version_from_trace(
+    conn: &mut diesel::PgConnection,
+    trace: &Trace,
+) -> Result<(), diesel::result::Error> {
+    if trace.status != TraceStatus::Draft {
+        return Ok(());
+    }
+
+    diesel::sql_query(
+        "INSERT INTO trace_versions (
+            id,
+            trace_id,
+            version_number,
+            status,
+            title,
+            subtitle,
+            content,
+            image_asset_id,
+            interaction_date,
+            created_at,
+            updated_at,
+            finalized_at
+         ) VALUES (
+            uuid_generate_v4(),
+            $1,
+            NULL,
+            'DRAFT',
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            NOW(),
+            NOW(),
+            NULL
+         )
+         ON CONFLICT (trace_id) WHERE status = 'DRAFT'
+         DO UPDATE SET
+            title = EXCLUDED.title,
+            subtitle = EXCLUDED.subtitle,
+            content = EXCLUDED.content,
+            image_asset_id = EXCLUDED.image_asset_id,
+            interaction_date = EXCLUDED.interaction_date,
+            updated_at = NOW()",
+    )
+    .bind::<SqlUuid, _>(trace.id)
+    .bind::<Text, _>(&trace.title)
+    .bind::<Text, _>(&trace.subtitle)
+    .bind::<Text, _>(&trace.content)
+    .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+    .bind::<Timestamp, _>(trace.interaction_date)
+    .execute(conn)?;
+
+    Ok(())
+}
+
+fn finalize_draft_trace_version_from_trace(
+    conn: &mut diesel::PgConnection,
+    trace: &Trace,
+) -> Result<(), diesel::result::Error> {
+    if trace.status != TraceStatus::Finalized {
+        return Ok(());
+    }
+
+    let current = diesel::sql_query(
+        "SELECT current_version_id AS id
+         FROM traces
+         WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(trace.id)
+    .get_result::<OptionalIdRow>(conn)?;
+    if current.id.is_some() {
+        return Ok(());
+    }
+
+    let finalized_at = trace.finalized_at.unwrap_or_else(|| Utc::now().naive_utc());
+    let finalized = diesel::sql_query(
+        "WITH next_version AS (
+            SELECT COALESCE(MAX(version_number), 0) + 1 AS version_number
+            FROM trace_versions
+            WHERE trace_id = $1
+              AND status = 'FINALIZED'
+         ),
+         updated_draft AS (
+            UPDATE trace_versions
+            SET status = 'FINALIZED',
+                version_number = (SELECT version_number FROM next_version),
+                title = $2,
+                subtitle = $3,
+                content = $4,
+                image_asset_id = $5,
+                interaction_date = $6,
+                updated_at = NOW(),
+                finalized_at = $7
+            WHERE id = (
+                SELECT id
+                FROM trace_versions
+                WHERE trace_id = $1
+                  AND status = 'DRAFT'
+                LIMIT 1
+            )
+            RETURNING id
+         ),
+         inserted_version AS (
+            INSERT INTO trace_versions (
+                id,
+                trace_id,
+                version_number,
+                status,
+                title,
+                subtitle,
+                content,
+                image_asset_id,
+                interaction_date,
+                created_at,
+                updated_at,
+                finalized_at
+            )
+            SELECT
+                uuid_generate_v4(),
+                $1,
+                (SELECT version_number FROM next_version),
+                'FINALIZED',
+                $2,
+                $3,
+                $4,
+                $5,
+                $6,
+                NOW(),
+                NOW(),
+                $7
+            WHERE NOT EXISTS (SELECT 1 FROM updated_draft)
+            RETURNING id
+         )
+         SELECT id FROM updated_draft
+         UNION ALL
+         SELECT id FROM inserted_version
+         LIMIT 1",
+    )
+    .bind::<SqlUuid, _>(trace.id)
+    .bind::<Text, _>(&trace.title)
+    .bind::<Text, _>(&trace.subtitle)
+    .bind::<Text, _>(&trace.content)
+    .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+    .bind::<Timestamp, _>(trace.interaction_date)
+    .bind::<Timestamp, _>(finalized_at)
+    .get_result::<IdRow>(conn)?;
+
+    diesel::sql_query(
+        "UPDATE traces
+         SET current_version_id = $2
+         WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(trace.id)
+    .bind::<SqlUuid, _>(finalized.id)
+    .execute(conn)?;
+
+    Ok(())
+}
+
 fn sync_trace_image_asset_to_related_posts(
     conn: &mut diesel::PgConnection,
     trace_id: uuid::Uuid,
@@ -41,7 +207,9 @@ fn sync_trace_image_asset_to_related_posts(
         "UPDATE posts
          SET image_asset_id = $2,
              updated_at = NOW()
-         WHERE source_trace_id = $1",
+         WHERE source_trace_id = $1
+           AND status = 'DRAFT'
+           AND content_source = 'TRACE_VERSION'",
     )
     .bind::<SqlUuid, _>(trace_id)
     .bind::<Nullable<SqlUuid>, _>(image_asset_id)
@@ -105,6 +273,8 @@ impl Trace {
             .execute(conn)?;
 
             sync_trace_image_asset_to_related_posts(conn, self.id, self.image_asset_id)?;
+            sync_draft_trace_version_from_trace(conn, &self)?;
+            finalize_draft_trace_version_from_trace(conn, &self)?;
 
             if let Some(journal_id) = self.journal_id {
                 recalculate_journal_last_trace_at(conn, journal_id)?;
@@ -205,6 +375,42 @@ impl NewTrace {
             .get_result::<IdRow>(conn)?;
 
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
+            diesel::sql_query(
+                "INSERT INTO trace_versions (
+                    id,
+                    trace_id,
+                    version_number,
+                    status,
+                    title,
+                    subtitle,
+                    content,
+                    image_asset_id,
+                    interaction_date,
+                    created_at,
+                    updated_at,
+                    finalized_at
+                 ) VALUES (
+                    uuid_generate_v4(),
+                    $1,
+                    NULL,
+                    'DRAFT',
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    NOW(),
+                    NOW(),
+                    NULL
+                 )",
+            )
+            .bind::<SqlUuid, _>(inserted.id)
+            .bind::<Text, _>(&self.title)
+            .bind::<Text, _>(&self.subtitle)
+            .bind::<Text, _>(&self.content)
+            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Timestamp, _>(self.interaction_date)
+            .execute(conn)?;
 
             Ok(inserted)
         })?;

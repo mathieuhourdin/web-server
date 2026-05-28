@@ -11,7 +11,8 @@ use crate::entities_v2::shared::MaturingState;
 use crate::schema::{journals, posts, traces, user_post_states};
 
 use super::model::{
-    FeedPostResponse, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
+    FeedPostResponse, Post, PostAudienceRole, PostContentSource, PostInteractionType, PostStatus,
+    PostType,
 };
 
 type PostTuple = (
@@ -32,6 +33,8 @@ type PostTuple = (
     String,
     NaiveDateTime,
     NaiveDateTime,
+    Option<Uuid>,
+    String,
 );
 
 type DigestVisiblePostTuple = (
@@ -53,6 +56,8 @@ type DigestVisiblePostTuple = (
     NaiveDateTime,
     NaiveDateTime,
     Uuid,
+    Option<Uuid>,
+    String,
 );
 
 type FeedPostTuple = (
@@ -75,6 +80,8 @@ type FeedPostTuple = (
     NaiveDateTime,
     Option<Uuid>,
     Option<String>,
+    Option<Uuid>,
+    String,
 );
 
 #[derive(Debug, Clone)]
@@ -102,12 +109,16 @@ fn tuple_to_post(row: PostTuple) -> Post {
         maturing_state_raw,
         created_at,
         updated_at,
+        trace_version_id,
+        content_source_raw,
     ) = row;
 
     Post {
         id,
         resource_id: id,
         source_trace_id,
+        trace_version_id,
+        content_source: PostContentSource::from_db(&content_source_raw),
         title,
         subtitle,
         content,
@@ -145,6 +156,8 @@ fn select_post_columns() -> (
     posts::maturing_state,
     posts::created_at,
     posts::updated_at,
+    posts::trace_version_id,
+    posts::content_source,
 ) {
     (
         posts::id,
@@ -164,6 +177,8 @@ fn select_post_columns() -> (
         posts::maturing_state,
         posts::created_at,
         posts::updated_at,
+        posts::trace_version_id,
+        posts::content_source,
     )
 }
 
@@ -187,6 +202,8 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         created_at,
         updated_at,
         journal_id,
+        trace_version_id,
+        content_source_raw,
     ) = row;
 
     DigestVisiblePost {
@@ -194,6 +211,8 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             id,
             resource_id: id,
             source_trace_id,
+            trace_version_id,
+            content_source: PostContentSource::from_db(&content_source_raw),
             title,
             subtitle,
             content,
@@ -236,6 +255,8 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         updated_at,
         journal_id,
         journal_title,
+        trace_version_id,
+        content_source_raw,
     ) = row;
 
     FeedPostResponse {
@@ -243,6 +264,8 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             id,
             resource_id: id,
             source_trace_id,
+            trace_version_id,
+            content_source: PostContentSource::from_db(&content_source_raw),
             title,
             subtitle,
             content,
@@ -308,6 +331,8 @@ impl Post {
                 posts::updated_at,
                 traces::journal_id.nullable(),
                 journals::title.nullable(),
+                posts::trace_version_id,
+                posts::content_source,
             ))
             .load::<FeedPostTuple>(&mut conn)?;
 
@@ -500,6 +525,8 @@ impl Post {
                 posts::created_at,
                 posts::updated_at,
                 journals::id,
+                posts::trace_version_id,
+                posts::content_source,
             ))
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())

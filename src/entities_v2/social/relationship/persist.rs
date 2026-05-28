@@ -69,7 +69,9 @@ impl Relationship {
             Some(existing) => match existing.status {
                 RelationshipStatus::Accepted => Ok(()),
                 RelationshipStatus::Blocked => Ok(()),
-                RelationshipStatus::Pending | RelationshipStatus::Rejected => {
+                RelationshipStatus::Pending
+                | RelationshipStatus::Rejected
+                | RelationshipStatus::Archived => {
                     diesel::update(relationships::table.filter(relationships::id.eq(existing.id)))
                         .set((
                             relationships::status.eq(RelationshipStatus::Accepted.to_db()),
@@ -135,7 +137,7 @@ impl Relationship {
                         "Relationship request is blocked".to_string(),
                     ))
                 }
-                RelationshipStatus::Rejected => {
+                RelationshipStatus::Rejected | RelationshipStatus::Archived => {
                     let mut conn = pool.get()?;
                     diesel::update(relationships::table.filter(relationships::id.eq(existing.id)))
                         .set((
@@ -219,6 +221,36 @@ impl Relationship {
             }
             Ok(())
         })?;
+        Relationship::find(id, pool)
+    }
+
+    pub fn archive_for_requester(
+        id: Uuid,
+        actor_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Relationship, PpdcError> {
+        let relationship = Relationship::find(id, pool)?;
+        if relationship.requester_user_id != actor_user_id {
+            return Err(PpdcError::new(
+                403,
+                ErrorType::ApiError,
+                "Only the relationship requester can delete it".to_string(),
+            ));
+        }
+
+        if relationship.status == RelationshipStatus::Archived {
+            return Ok(relationship);
+        }
+
+        let mut conn = pool.get()?;
+        diesel::update(relationships::table.filter(relationships::id.eq(id)))
+            .set((
+                relationships::status.eq(RelationshipStatus::Archived.to_db()),
+                relationships::accepted_at.eq::<Option<chrono::NaiveDateTime>>(None),
+                relationships::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(&mut conn)?;
+
         Relationship::find(id, pool)
     }
 }
