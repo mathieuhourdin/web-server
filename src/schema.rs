@@ -156,6 +156,7 @@ diesel::table! {
         updated_at -> Timestamp,
         is_encrypted -> Bool,
         last_trace_at -> Nullable<Timestamp>,
+        sharing_mode -> Text,
     }
 }
 
@@ -537,12 +538,12 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        sharing_sensitivity -> Text,
         image_asset_id -> Nullable<Uuid>,
         interaction_date -> Timestamp,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         finalized_at -> Nullable<Timestamp>,
+        sharing_sensitivity -> Text,
     }
 }
 
@@ -554,7 +555,6 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        sharing_sensitivity -> Text,
         interaction_date -> Timestamp,
         trace_type -> Text,
         status -> Text,
@@ -568,6 +568,7 @@ diesel::table! {
         timeout_at -> Nullable<Timestamptz>,
         timeout_start_at -> Nullable<Timestamptz>,
         current_version_id -> Nullable<Uuid>,
+        sharing_sensitivity -> Text,
     }
 }
 

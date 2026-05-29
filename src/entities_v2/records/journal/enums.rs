@@ -98,3 +98,29 @@ impl JournalStatus {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum JournalSharingMode {
+    Shared,
+    SemiShared,
+    Private,
+}
+
+impl JournalSharingMode {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            JournalSharingMode::Shared => "SHARED",
+            JournalSharingMode::SemiShared => "SEMI_SHARED",
+            JournalSharingMode::Private => "PRIVATE",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "PRIVATE" => JournalSharingMode::Private,
+            "SEMI_SHARED" => JournalSharingMode::SemiShared,
+            _ => JournalSharingMode::Shared,
+        }
+    }
+}

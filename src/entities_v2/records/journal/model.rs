@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub use super::enums::{JournalExportFormat, JournalStatus, JournalType};
+pub use super::enums::{JournalExportFormat, JournalStatus, JournalType, JournalSharingMode};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Journal {
@@ -15,6 +15,7 @@ pub struct Journal {
     pub user_id: Uuid,
     pub status: JournalStatus,
     pub journal_type: JournalType,
+    pub sharing_mode : JournalSharingMode,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

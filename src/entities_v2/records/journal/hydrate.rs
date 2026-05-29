@@ -11,7 +11,7 @@ use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::schema::{journals, posts, traces};
 
-use super::model::{Journal, JournalStatus, JournalType};
+use super::model::{Journal, JournalStatus, JournalType, JournalSharingMode};
 
 type JournalTuple = (
     Uuid,
@@ -21,6 +21,7 @@ type JournalTuple = (
     String,
     bool,
     Option<NaiveDateTime>,
+    String,
     String,
     String,
     NaiveDateTime,
@@ -39,6 +40,7 @@ impl From<JournalTuple> for Journal {
             last_trace_at,
             journal_type,
             status,
+            sharing_mode,
             created_at,
             updated_at,
         ) = row;
@@ -52,6 +54,7 @@ impl From<JournalTuple> for Journal {
             user_id,
             status: JournalStatus::from_db(&status),
             journal_type: JournalType::from_db(&journal_type),
+            sharing_mode: JournalSharingMode::from_db(&sharing_mode),
             created_at,
             updated_at,
         }
@@ -74,6 +77,7 @@ impl Journal {
                 journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
+                journals::sharing_mode,
                 journals::created_at,
                 journals::updated_at,
             ))
@@ -127,6 +131,7 @@ impl Journal {
                 journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
+                journals::sharing_mode,
                 journals::created_at,
                 journals::updated_at,
             ))
@@ -194,6 +199,7 @@ impl Journal {
                 journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
+                journals::sharing_mode,
                 journals::created_at,
                 journals::updated_at,
             ))
@@ -248,6 +254,7 @@ impl Journal {
                 journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
+                journals::sharing_mode,
                 journals::created_at,
                 journals::updated_at,
             ))
@@ -261,6 +268,7 @@ impl Journal {
                 journals::last_trace_at,
                 journals::journal_type,
                 journals::status,
+                journals::sharing_mode,
                 journals::created_at,
                 journals::updated_at,
             ))
