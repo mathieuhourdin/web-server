@@ -48,6 +48,10 @@ pub fn create_router() -> Router {
         .route("/:id/traces", get(trace::get_all_traces_for_user_route))
         .route("/:id/journals", get(journal::get_user_journals_route))
         .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
+        .route(
+            "/:id/closest_followers",
+            get(user::get_closest_followers_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let mentors_router = Router::new()

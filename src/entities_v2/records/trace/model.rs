@@ -426,19 +426,21 @@ impl Trace {
 
         let filter_string;
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
-            filter_string = format!("AND status <> 'DRAFT' AND sharing_sensitivity = '{}'", sharing_sensitivity_filter.to_db());
+            filter_string = format!(
+                "AND status <> 'DRAFT' AND sharing_sensitivity = '{}'",
+                sharing_sensitivity_filter.to_db()
+            );
         } else {
             filter_string = String::from("AND status <> 'DRAFT'");
         }
 
-        let total = diesel::sql_query(
-            format!(
-                "SELECT COUNT(*)::bigint AS count
+        let total = diesel::sql_query(format!(
+            "SELECT COUNT(*)::bigint AS count
                  FROM traces
                  WHERE journal_id = $1
-                   {}", 
-                filter_string)
-        )
+                   {}",
+            filter_string
+        ))
         .bind::<SqlUuid, _>(journal_id)
         .get_result::<CountRow>(&mut conn)?
         .count;
@@ -452,7 +454,7 @@ impl Trace {
                  ORDER BY interaction_date DESC NULLS LAST, created_at DESC
                  OFFSET $2
                  LIMIT $3",
-                filter_string) 
+                filter_string)
         )
         .bind::<SqlUuid, _>(journal_id)
         .bind::<diesel::sql_types::BigInt, _>(offset)

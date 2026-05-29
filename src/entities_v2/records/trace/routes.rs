@@ -39,9 +39,9 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::{
+    enums::TraceSharingSensitivity,
     llm_qualify,
     model::{NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
-    enums::TraceSharingSensitivity,
 };
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +55,7 @@ pub struct TraceMessagesQuery {
 pub struct JournalTracesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
-    pub sharing_sensitivity: Option<TraceSharingSensitivity>
+    pub sharing_sensitivity: Option<TraceSharingSensitivity>,
 }
 
 #[derive(Deserialize)]
@@ -1359,13 +1359,12 @@ pub async fn get_traces_for_journal_route(
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.pagination.validate()?;
-    let (traces, total) =
-        Trace::get_for_journal_paginated(
-            id, 
-            pagination.offset, 
-            pagination.limit, 
-            params.sharing_sensitivity, 
-            &pool
-            )?;
+    let (traces, total) = Trace::get_for_journal_paginated(
+        id,
+        pagination.offset,
+        pagination.limit,
+        params.sharing_sensitivity,
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

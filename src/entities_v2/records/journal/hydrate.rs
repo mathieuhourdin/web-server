@@ -11,7 +11,7 @@ use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::schema::{journals, posts, traces};
 
-use super::model::{Journal, JournalStatus, JournalType, JournalSharingMode};
+use super::model::{Journal, JournalSharingMode, JournalStatus, JournalType};
 
 type JournalTuple = (
     Uuid,

@@ -32,9 +32,31 @@ struct SuggestedUserIdRow {
 }
 
 #[derive(QueryableByName)]
+struct RankedFollowerUserIdRow {
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+}
+
+#[derive(QueryableByName)]
 struct CountRow {
     #[diesel(sql_type = BigInt)]
     total: i64,
+}
+
+fn hydrate_user_search_results(
+    ids: Vec<Uuid>,
+    pool: &DbPool,
+) -> Result<Vec<UserSearchResult>, PpdcError> {
+    let users = User::find_many(&ids, pool)?;
+    let users_by_id = users
+        .into_iter()
+        .map(|user| (user.id, user))
+        .collect::<std::collections::HashMap<Uuid, User>>();
+
+    Ok(ids
+        .into_iter()
+        .filter_map(|id| users_by_id.get(&id).map(UserSearchResult::from))
+        .collect())
 }
 
 #[derive(Deserialize, Debug)]
@@ -236,6 +258,104 @@ pub async fn get_suggested_users_route(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Json(results))
+}
+
+#[debug_handler]
+pub async fn get_closest_followers_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(user_id): Path<Uuid>,
+    Query(params): Query<crate::pagination::PaginationParams>,
+) -> Result<Json<PaginatedResponse<UserSearchResult>>, PpdcError> {
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if session_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let pagination = params.validate()?;
+    let mut conn = pool.get()?;
+
+    let total = sql_query(
+        r#"
+        SELECT COUNT(*)::bigint AS total
+        FROM relationships r
+        WHERE r.target_user_id = $1
+          AND r.relationship_type = 'FOLLOW'
+          AND r.status = 'ACCEPTED'
+        "#,
+    )
+    .bind::<SqlUuid, _>(user_id)
+    .get_result::<CountRow>(&mut conn)?
+    .total;
+
+    let ranked_user_ids = sql_query(
+        r#"
+        WITH follower_candidates AS (
+            SELECT
+                r.requester_user_id AS follower_user_id,
+                r.accepted_at
+            FROM relationships r
+            WHERE r.target_user_id = $1
+              AND r.relationship_type = 'FOLLOW'
+              AND r.status = 'ACCEPTED'
+        ),
+        message_stats AS (
+            SELECT
+                fc.follower_user_id,
+                COUNT(*) FILTER (
+                    WHERE m.created_at >= NOW() - INTERVAL '30 days'
+                ) AS recent_messages_count
+            FROM follower_candidates fc
+            LEFT JOIN messages m
+                ON (
+                    (m.sender_user_id = $1 AND m.recipient_user_id = fc.follower_user_id)
+                    OR
+                    (m.sender_user_id = fc.follower_user_id AND m.recipient_user_id = $1)
+                )
+            GROUP BY fc.follower_user_id
+        ),
+        post_open_stats AS (
+            SELECT
+                fc.follower_user_id,
+                COUNT(*) FILTER (
+                    WHERE ue.occurred_at >= NOW() - INTERVAL '30 days'
+                ) AS recent_post_open_count
+            FROM follower_candidates fc
+            LEFT JOIN posts p
+                ON p.user_id = fc.follower_user_id
+               AND p.status = 'PUBLISHED'
+            LEFT JOIN usage_events ue
+                ON ue.resource_id = p.id
+               AND ue.user_id = $1
+               AND ue.event_type = 'POST_OPENED'
+            GROUP BY fc.follower_user_id
+        )
+        SELECT fc.follower_user_id AS user_id
+        FROM follower_candidates fc
+        LEFT JOIN message_stats ms
+            ON ms.follower_user_id = fc.follower_user_id
+        LEFT JOIN post_open_stats pos
+            ON pos.follower_user_id = fc.follower_user_id
+        ORDER BY
+            (
+                5 * COALESCE(ms.recent_messages_count, 0)
+                + 4 * COALESCE(pos.recent_post_open_count, 0)
+            ) DESC,
+            fc.accepted_at ASC NULLS LAST,
+            fc.follower_user_id ASC
+        OFFSET $2
+        LIMIT $3
+        "#,
+    )
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<BigInt, _>(pagination.offset)
+    .bind::<BigInt, _>(pagination.limit)
+    .load::<RankedFollowerUserIdRow>(&mut conn)?;
+
+    let ids = ranked_user_ids.into_iter().map(|row| row.user_id).collect();
+    let results = hydrate_user_search_results(ids, &pool)?;
+
+    Ok(Json(PaginatedResponse::new(results, pagination, total)))
 }
 
 #[debug_handler]
