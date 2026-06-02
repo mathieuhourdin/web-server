@@ -12,6 +12,6 @@ pub use model::{
 pub use routes::{
     get_feed_posts_route, get_journal_posts_route, get_post_attachments_route,
     get_post_drafts_route, get_post_route, get_post_seen_by_route, get_posts_route,
-    get_trace_posts_route, get_user_posts_route, post_post_route, post_trace_post_route,
-    put_post_route,
+    get_trace_post_route, get_user_posts_route, post_post_route, put_post_route,
+    put_trace_post_route,
 };

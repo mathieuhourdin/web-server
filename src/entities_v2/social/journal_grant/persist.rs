@@ -158,7 +158,7 @@ impl JournalGrant {
         conn: &mut PgConnection,
     ) -> Result<Vec<Trace>, PpdcError> {
         let rows = diesel::sql_query(
-            "SELECT id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE journal_id = $1
                AND trace_type = 'USER_TRACE'
@@ -171,15 +171,13 @@ impl JournalGrant {
         Ok(rows.into_iter().map(Trace::from).collect())
     }
 
-    fn find_default_post_for_trace_with_conn(
+    fn find_post_for_trace_with_conn(
         trace_id: Uuid,
         conn: &mut PgConnection,
     ) -> Result<Option<(Uuid, PostStatus)>, PpdcError> {
         let row = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
-            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
             .select((posts::id, posts::status))
-            .order(posts::created_at.desc())
             .first::<(Uuid, String)>(conn)
             .optional()?;
 
@@ -367,7 +365,7 @@ impl JournalGrant {
         let traces = Self::find_finalized_user_traces_for_journal_with_conn(journal.id, conn)?;
 
         for trace in traces {
-            match Self::find_default_post_for_trace_with_conn(trace.id, conn)? {
+            match Self::find_post_for_trace_with_conn(trace.id, conn)? {
                 Some((_, PostStatus::Archived)) => {}
                 Some((post_id, _)) => {
                     Self::create_or_update_synced_post_grant_with_conn(
@@ -402,7 +400,7 @@ impl JournalGrant {
 
         for trace in traces {
             if let Some((post_id, status)) =
-                Self::find_default_post_for_trace_with_conn(trace.id, conn)?
+                Self::find_post_for_trace_with_conn(trace.id, conn)?
             {
                 if status == PostStatus::Archived {
                     continue;

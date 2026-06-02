@@ -1,7 +1,6 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::not;
 use diesel::prelude::*;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -334,32 +333,17 @@ impl Post {
                 posts::trace_version_id,
                 posts::content_source,
             ))
+            .order(posts::publishing_date.desc().nulls_last())
+            .then_order_by(posts::created_at.desc())
             .load::<FeedPostTuple>(&mut conn)?;
 
-        let mut standalone_posts = Vec::new();
-        let mut best_by_trace_id = HashMap::<Uuid, FeedPostResponse>::new();
+        let posts = rows
+            .into_iter()
+            .map(tuple_to_feed_post_response)
+            .collect::<Vec<_>>();
 
-        for row in rows {
-            let post = tuple_to_feed_post_response(row);
-            if let Some(source_trace_id) = post.post.source_trace_id {
-                let should_replace = best_by_trace_id
-                    .get(&source_trace_id)
-                    .map(|current| is_better_feed_candidate(&post, current))
-                    .unwrap_or(true);
-                if should_replace {
-                    best_by_trace_id.insert(source_trace_id, post);
-                }
-            } else {
-                standalone_posts.push(post);
-            }
-        }
-
-        let mut deduplicated_posts = standalone_posts;
-        deduplicated_posts.extend(best_by_trace_id.into_values());
-        deduplicated_posts.sort_by(|a, b| feed_sort_key(b).cmp(&feed_sort_key(a)));
-
-        let total = deduplicated_posts.len() as i64;
-        let items = deduplicated_posts
+        let total = posts.len() as i64;
+        let items = posts
             .into_iter()
             .skip(offset as usize)
             .take(limit as usize)
@@ -543,42 +527,11 @@ impl Post {
         Ok(visible_posts)
     }
 
-    pub fn find_for_trace_paginated(
-        trace_id: Uuid,
-        offset: i64,
-        limit: i64,
-        pool: &DbPool,
-    ) -> Result<(Vec<Post>, i64), PpdcError> {
+    pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool.get()?;
-
-        let total = posts::table
-            .filter(posts::source_trace_id.eq(Some(trace_id)))
-            .count()
-            .get_result::<i64>(&mut conn)?;
-
-        let rows = posts::table
-            .filter(posts::source_trace_id.eq(Some(trace_id)))
-            .select(select_post_columns())
-            .order(posts::publishing_date.desc().nulls_last())
-            .then_order_by(posts::created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .load::<PostTuple>(&mut conn)?;
-
-        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
-    }
-
-    pub fn find_default_for_trace(
-        trace_id: Uuid,
-        pool: &DbPool,
-    ) -> Result<Option<Post>, PpdcError> {
-        let mut conn = pool.get()?;
-
         let row = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
-            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
             .select(select_post_columns())
-            .order(posts::created_at.desc())
             .first::<PostTuple>(&mut conn)
             .optional()?;
 
@@ -899,39 +852,4 @@ impl Post {
 
         Ok((rows.into_iter().map(tuple_to_post).collect(), total))
     }
-}
-
-fn feed_published_or_created_at(post: &FeedPostResponse) -> NaiveDateTime {
-    post.post.publishing_date.unwrap_or(post.post.created_at)
-}
-
-fn audience_priority_for_feed(post: &FeedPostResponse) -> i32 {
-    match post.post.audience_role {
-        PostAudienceRole::Restricted => 1,
-        PostAudienceRole::Default => 0,
-    }
-}
-
-fn is_better_feed_candidate(candidate: &FeedPostResponse, current: &FeedPostResponse) -> bool {
-    let candidate_priority = audience_priority_for_feed(candidate);
-    let current_priority = audience_priority_for_feed(current);
-    if candidate_priority != current_priority {
-        return candidate_priority > current_priority;
-    }
-
-    let candidate_published_at = feed_published_or_created_at(candidate);
-    let current_published_at = feed_published_or_created_at(current);
-    if candidate_published_at != current_published_at {
-        return candidate_published_at > current_published_at;
-    }
-
-    candidate.post.created_at > current.post.created_at
-}
-
-fn feed_sort_key(post: &FeedPostResponse) -> (NaiveDateTime, NaiveDateTime, Uuid) {
-    (
-        feed_published_or_created_at(post),
-        post.post.created_at,
-        post.post.id,
-    )
 }

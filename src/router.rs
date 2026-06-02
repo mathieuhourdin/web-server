@@ -88,10 +88,7 @@ pub fn create_router() -> Router {
                 .put(trace::put_trace_route)
                 .patch(trace::patch_trace_route),
         )
-        .route(
-            "/:id/posts",
-            get(post::get_trace_posts_route).post(post::post_trace_post_route),
-        )
+        .route("/:id/post", get(post::get_trace_post_route).put(post::put_trace_post_route))
         .route(
             "/:id/extend_timeout",
             post(trace::post_trace_extend_timeout_route),

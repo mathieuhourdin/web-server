@@ -552,7 +552,6 @@ diesel::table! {
         id -> Uuid,
         user_id -> Uuid,
         journal_id -> Uuid,
-        derived_from_trace_id -> Nullable<Uuid>,
         title -> Text,
         subtitle -> Text,
         content -> Text,
@@ -570,6 +569,7 @@ diesel::table! {
         timeout_start_at -> Nullable<Timestamptz>,
         current_version_id -> Nullable<Uuid>,
         sharing_sensitivity -> Text,
+        derived_from_trace_id -> Nullable<Uuid>,
     }
 }
 

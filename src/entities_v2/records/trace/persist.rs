@@ -364,8 +364,9 @@ impl NewTrace {
                     $11,
                     $12,
                     $13,
-                    'DRAFT',
                     $14,
+                    'DRAFT',
+                    $15,
                     NULL
                  )
                  RETURNING id",

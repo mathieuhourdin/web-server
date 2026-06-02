@@ -382,7 +382,7 @@ fn ensure_default_draft_post_for_shared_trace(
         return Ok(None);
     }
 
-    if let Some(existing_post) = Post::find_default_for_trace(trace.id, pool)? {
+    if let Some(existing_post) = Post::find_for_trace(trace.id, pool)? {
         return Ok(Some(existing_post.id));
     }
 
@@ -438,11 +438,11 @@ fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option
         return Ok(None);
     };
 
-    let mut post = Post::find_default_for_trace(trace.id, pool)?.ok_or_else(|| {
+    let mut post = Post::find_for_trace(trace.id, pool)?.ok_or_else(|| {
         PpdcError::new(
             409,
             ErrorType::ApiError,
-            "Default post could not be found for this trace".to_string(),
+            "Trace post could not be found for this trace".to_string(),
         )
     })?;
 
@@ -450,7 +450,7 @@ fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option
         return Err(PpdcError::new(
             409,
             ErrorType::ApiError,
-            "Default post is archived and cannot be auto-published".to_string(),
+            "Trace post is archived and cannot be auto-published".to_string(),
         ));
     }
 
