@@ -114,6 +114,7 @@ pub struct PublicSharedJournalResponse {
 #[derive(Serialize)]
 pub struct PublicSharedJournalPostResponse {
     pub id: Uuid,
+    pub title: String,
     pub content: String,
     pub image_url: Option<String>,
     pub image_asset_id: Option<Uuid>,
@@ -164,6 +165,7 @@ impl PublicSharedJournalPostResponse {
 
         Self {
             id: post.id,
+            title: post.title,
             content: post.content,
             image_url,
             image_asset_id: post.image_asset_id,

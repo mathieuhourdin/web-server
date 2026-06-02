@@ -5,8 +5,8 @@ pub mod persist;
 pub mod routes;
 
 pub use model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalStatus,
-    JournalType, NewJournalDto, UpdateJournalDto,
+    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalSharingMode,
+    JournalStatus, JournalType, NewJournalDto, UpdateJournalDto,
 };
 pub use routes::{
     get_journal_route, get_recent_shared_journals_route, get_shared_journals_route,

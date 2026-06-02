@@ -31,6 +31,8 @@ pub struct NewJournalDto {
     pub is_encrypted: Option<bool>,
     #[serde(default)]
     pub journal_type: Option<JournalType>,
+    #[serde(default)]
+    pub sharing_mode: Option<JournalSharingMode>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -41,6 +43,7 @@ pub struct UpdateJournalDto {
     #[serde(default, alias = "is_ecrypted")]
     pub is_encrypted: Option<bool>,
     pub journal_type: Option<JournalType>,
+    pub sharing_mode: Option<JournalSharingMode>,
     pub status: Option<JournalStatus>,
 }
 

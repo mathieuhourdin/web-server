@@ -20,9 +20,10 @@ use uuid::Uuid;
 use super::enums::UserPrincipalType;
 use super::model::{
     create_bio_trace_for_user, create_high_level_projects_definition_trace_for_user,
-    ensure_user_has_any_lens, ensure_user_has_meta_journal, NewUser, User, UserListParams,
-    UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserPublicResponse,
-    UserResponse, UserSearchParams, UserSearchResult, UserSearchRow,
+    ensure_user_has_any_lens, ensure_user_has_default_journals, ensure_user_has_meta_journal,
+    NewUser, User, UserListParams, UserPseudonymizedAuthentifiedResponse,
+    UserPseudonymizedResponse, UserPublicResponse, UserResponse, UserSearchParams,
+    UserSearchResult, UserSearchRow,
 };
 
 #[derive(QueryableByName)]
@@ -391,6 +392,15 @@ pub async fn post_user(
 ) -> Result<Json<User>, PpdcError> {
     payload.hash_password().unwrap();
     let created_user = payload.create(&pool)?;
+    if let Err(err) = ensure_user_has_default_journals(created_user.id, &pool) {
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::delete(
+                crate::schema::users::table.filter(crate::schema::users::id.eq(created_user.id)),
+            )
+            .execute(&mut conn);
+        }
+        return Err(err);
+    }
     if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
         if let Ok(mut conn) = pool.get() {
             let _ = diesel::delete(

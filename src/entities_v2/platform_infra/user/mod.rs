@@ -14,10 +14,10 @@ pub use enums::{
     WeekAnalysisWeekday,
 };
 pub use model::{
-    ensure_user_has_any_lens, ensure_user_has_meta_journal, find_similar_users, NewServiceUserDto,
-    NewUser, User, UserListParams, UserMatch, UserPseudonymizedAuthentifiedResponse,
-    UserPseudonymizedResponse, UserPublicResponse, UserResponse, UserRoleAssignment,
-    UserSearchParams, UserSearchResult,
+    ensure_user_has_any_lens, ensure_user_has_default_journals, ensure_user_has_meta_journal,
+    find_similar_users, NewServiceUserDto, NewUser, User, UserListParams, UserMatch,
+    UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserPublicResponse,
+    UserResponse, UserRoleAssignment, UserSearchParams, UserSearchResult,
 };
 pub use routes::{
     get_closest_followers_route, get_mentors_route, get_suggested_users_route, get_user_route,

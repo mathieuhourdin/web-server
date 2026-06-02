@@ -15,6 +15,7 @@ use crate::entities_v2::{
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
     trace::Trace,
+    user::{ensure_user_has_default_journals, ensure_user_has_meta_journal},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
@@ -34,6 +35,8 @@ pub async fn get_user_journals_route(
     if session_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    ensure_user_has_default_journals(user_id, &pool)?;
+    ensure_user_has_meta_journal(user_id, &pool)?;
     let pagination = params.validate()?;
     let (journals, total) =
         Journal::find_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
@@ -130,6 +133,9 @@ pub async fn put_journal_route(
     }
     if let Some(journal_type) = payload.journal_type {
         journal.journal_type = journal_type;
+    }
+    if let Some(sharing_mode) = payload.sharing_mode {
+        journal.sharing_mode = sharing_mode;
     }
     if let Some(status) = payload.status {
         journal.status = status;

@@ -1,7 +1,8 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    journal::{Journal, JournalType, NewJournalDto},
+    journal::{Journal, JournalSharingMode, JournalType, NewJournalDto},
+    journal_grant::{JournalGrant, JournalGrantScope, NewJournalGrantDto},
     lens::{LensProcessingState, NewLens},
     trace::{NewTrace, TraceType},
 };
@@ -761,6 +762,70 @@ pub fn ensure_user_has_meta_journal(user_id: Uuid, pool: &DbPool) -> Result<(), 
             content: Some(String::new()),
             is_encrypted: Some(false),
             journal_type: Some(JournalType::MetaJournal),
+            sharing_mode: Some(JournalSharingMode::Private),
+        },
+        user_id,
+        pool,
+    )?;
+
+    Ok(())
+}
+
+pub fn ensure_user_has_default_journals(user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    let user = User::find(&user_id, pool)?;
+    if user.principal_type != UserPrincipalType::Human || !user.is_platform_user {
+        return Ok(());
+    }
+
+    if Journal::count_for_user(user_id, pool)? > 0 {
+        return Ok(());
+    }
+
+    let shared_journal = Journal::create(
+        NewJournalDto {
+            title: "Journal partagé".to_string(),
+            subtitle: Some(String::new()),
+            content: Some(String::new()),
+            is_encrypted: Some(false),
+            journal_type: Some(JournalType::WorkLogJournal),
+            sharing_mode: Some(JournalSharingMode::Shared),
+        },
+        user_id,
+        pool,
+    )?;
+
+    JournalGrant::create_or_update(
+        &shared_journal,
+        user_id,
+        NewJournalGrantDto {
+            grantee_user_id: None,
+            grantee_scope: Some(JournalGrantScope::AllAcceptedFollowers),
+            access_level: None,
+        },
+        pool,
+    )?;
+
+    Journal::create(
+        NewJournalDto {
+            title: "Carnet de bord".to_string(),
+            subtitle: Some(String::new()),
+            content: Some(String::new()),
+            is_encrypted: Some(false),
+            journal_type: Some(JournalType::WorkLogJournal),
+            sharing_mode: Some(JournalSharingMode::SemiShared),
+        },
+        user_id,
+        pool,
+    )?;
+
+    Journal::create(
+        NewJournalDto {
+            title: "Journal intime".to_string(),
+            subtitle: Some(String::new()),
+            content: Some(String::new()),
+            is_encrypted: Some(false),
+            journal_type: Some(JournalType::WorkLogJournal),
+            sharing_mode: Some(JournalSharingMode::Private),
         },
         user_id,
         pool,
