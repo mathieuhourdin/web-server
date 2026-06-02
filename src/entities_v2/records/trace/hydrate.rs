@@ -13,6 +13,7 @@ use super::model::{Trace, TraceSharingSensitivity, TraceStatus, TraceType};
 
 type TraceTuple = (
     Uuid,
+    Option<Uuid>,
     String,
     String,
     NaiveDateTime,
@@ -36,6 +37,7 @@ type TraceTuple = (
 fn tuple_to_trace(row: TraceTuple) -> Trace {
     let (
         id,
+        derived_from_trace_id,
         title,
         subtitle,
         interaction_date,
@@ -58,6 +60,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
 
     Trace {
         id,
+        derived_from_trace_id,
         title,
         subtitle,
         interaction_date,
@@ -88,6 +91,7 @@ impl Trace {
             .filter(traces::id.eq(id))
             .select((
                 traces::id,
+                traces::derived_from_trace_id,
                 traces::title,
                 traces::subtitle,
                 traces::interaction_date,

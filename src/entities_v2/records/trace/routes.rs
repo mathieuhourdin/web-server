@@ -94,6 +94,8 @@ pub struct CreateJournalDraftDto {
     #[serde(default)]
     pub content: String,
     #[serde(default)]
+    pub derived_from_trace_id: Option<Uuid>,
+    #[serde(default)]
     pub interaction_date: Option<chrono::NaiveDateTime>,
     #[serde(default, alias = "is_ecrypted")]
     pub is_encrypted: Option<bool>,
@@ -516,6 +518,7 @@ async fn create_or_get_journal_draft(
 
     let CreateJournalDraftDto {
         content,
+        derived_from_trace_id,
         interaction_date,
         is_encrypted,
         encryption_metadata,
@@ -534,6 +537,7 @@ async fn create_or_get_journal_draft(
         user_id,
         journal.id,
     );
+    trace.derived_from_trace_id = derived_from_trace_id;
     trace.is_encrypted = is_encrypted.unwrap_or(false);
     trace.encryption_metadata = encryption_metadata;
     trace.image_asset_id = image_asset_id;
@@ -651,6 +655,9 @@ pub async fn put_trace_route(
         super::enums::TraceStatus::Draft => {
             if let Some(content) = payload.content {
                 trace.content = content;
+            }
+            if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
+                trace.derived_from_trace_id = derived_from_trace_id;
             }
             if let Some(interaction_date) = payload.interaction_date {
                 trace.interaction_date = interaction_date;
@@ -812,6 +819,9 @@ pub async fn patch_trace_route(
 
     if let Some(content) = payload.content {
         trace.content = content;
+    }
+    if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
+        trace.derived_from_trace_id = derived_from_trace_id;
     }
     if let Some(interaction_date) = payload.interaction_date {
         trace.interaction_date = interaction_date;

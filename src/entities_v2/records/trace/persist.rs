@@ -245,18 +245,19 @@ impl Trace {
                  SET title = $2,
                      subtitle = $3,
                      content = $4,
-                     is_encrypted = $5,
-                     encryption_metadata = CAST($6 AS jsonb),
-                     image_asset_id = $7,
-                     sharing_sensitivity = $8,
-                     timeout_start_at = $9,
-                     timeout_at = $10,
-                     interaction_date = $11,
-                     trace_type = $12,
-                     status = $13,
-                     journal_id = $14,
-                     start_writing_at = $15,
-                     finalized_at = $16,
+                     derived_from_trace_id = $5,
+                     is_encrypted = $6,
+                     encryption_metadata = CAST($7 AS jsonb),
+                     image_asset_id = $8,
+                     sharing_sensitivity = $9,
+                     timeout_start_at = $10,
+                     timeout_at = $11,
+                     interaction_date = $12,
+                     trace_type = $13,
+                     status = $14,
+                     journal_id = $15,
+                     start_writing_at = $16,
+                     finalized_at = $17,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -264,6 +265,7 @@ impl Trace {
             .bind::<Text, _>(&self.title)
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
+            .bind::<Nullable<SqlUuid>, _>(self.derived_from_trace_id)
             .bind::<Bool, _>(self.is_encrypted)
             .bind::<Nullable<Text>, _>(
                 self.encryption_metadata
@@ -332,6 +334,7 @@ impl NewTrace {
                     id,
                     user_id,
                     journal_id,
+                    derived_from_trace_id,
                     title,
                     subtitle,
                     content,
@@ -354,8 +357,8 @@ impl NewTrace {
                     $4,
                     $5,
                     $6,
-                    CAST($7 AS jsonb),
-                    $8,
+                    $7,
+                    CAST($8 AS jsonb),
                     $9,
                     $10,
                     $11,
@@ -369,6 +372,7 @@ impl NewTrace {
             )
             .bind::<SqlUuid, _>(self.user_id)
             .bind::<SqlUuid, _>(self.journal_id)
+            .bind::<Nullable<SqlUuid>, _>(self.derived_from_trace_id)
             .bind::<Text, _>(&self.title)
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)

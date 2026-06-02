@@ -552,6 +552,7 @@ diesel::table! {
         id -> Uuid,
         user_id -> Uuid,
         journal_id -> Uuid,
+        derived_from_trace_id -> Nullable<Uuid>,
         title -> Text,
         subtitle -> Text,
         content -> Text,
