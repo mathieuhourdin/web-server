@@ -18,6 +18,8 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{JournalGrant, NewJournalGrantDto};
 
+const JOURNAL_ACCESS_GRANTED_EMAILS_ENABLED: bool = false;
+
 fn enqueue_journal_access_granted_email(
     journal: &Journal,
     grant: &JournalGrant,
@@ -98,7 +100,7 @@ pub async fn post_journal_grant_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
     let (grant, should_notify) = JournalGrant::create_or_update(&journal, user_id, payload, &pool)?;
-    if should_notify {
+    if JOURNAL_ACCESS_GRANTED_EMAILS_ENABLED && should_notify {
         if let Some(email_id) = enqueue_journal_access_granted_email(&journal, &grant, &pool)? {
             let pool_for_task = pool.clone();
             tokio::spawn(async move {
