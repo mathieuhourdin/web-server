@@ -11,7 +11,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     landscape_analysis::LandscapeAnalysis,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
-    post::Post,
+    post::{Post, PostStatus},
     post_grant::PostGrant,
     session::Session,
     trace::Trace,
@@ -172,6 +172,16 @@ pub(crate) fn enqueue_received_message_notification_email(
     Ok(Some(email.id))
 }
 
+fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
+    let Some(post) = Post::find_for_trace(trace_id, pool)? else {
+        return Ok(None);
+    };
+    if post.status != PostStatus::Published {
+        return Ok(None);
+    }
+    Ok(Some(post))
+}
+
 #[debug_handler]
 pub async fn get_messages_route(
     Extension(pool): Extension<DbPool>,
@@ -320,13 +330,69 @@ pub async fn post_message_route(
         }
     }
 
-    if let Some(trace_id) = payload.trace_id {
+    let mut normalized_trace_id = payload.trace_id;
+    let mut normalized_post_id = payload.post_id;
+
+    if let Some(trace_id) = normalized_trace_id {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
-        if trace.user_id != payload.recipient_user_id && trace.user_id != sender_user_id {
+        let sender_is_owner = trace.user_id == sender_user_id;
+        if recipient_is_service_mentor
+            || matches!(
+                message_type,
+                MessageType::Question | MessageType::TarotReadingRequest
+            )
+        {
+            if !sender_is_owner {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Linked trace must belong to the sender for mentor requests".to_string(),
+                ));
+            }
+        } else if sender_is_owner {
+            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Recipient must currently have access to a published shared trace post"
+                        .to_string(),
+                ));
+            };
+            if !PostGrant::user_can_read_post(&shared_post, payload.recipient_user_id, &pool)? {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Recipient must currently have access to the shared trace".to_string(),
+                ));
+            }
+            if normalized_post_id.is_none() {
+                normalized_post_id = Some(shared_post.id);
+            }
+        } else if trace.user_id == payload.recipient_user_id {
+            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Sender must currently have access to a published shared trace post"
+                        .to_string(),
+                ));
+            };
+            if !PostGrant::user_can_read_post(&shared_post, sender_user_id, &pool)? {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Sender must currently have access to the shared trace".to_string(),
+                ));
+            }
+            if normalized_post_id.is_none() {
+                normalized_post_id = Some(shared_post.id);
+            }
+        } else {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Linked trace must belong to sender or recipient".to_string(),
+                "Linked trace must involve the owner and a current shared-trace reader"
+                    .to_string(),
             ));
         }
     }
@@ -341,6 +407,9 @@ pub async fn post_message_route(
                 ErrorType::ApiError,
                 "Sender and recipient must currently have access to the linked post".to_string(),
             ));
+        }
+        if normalized_trace_id.is_none() {
+            normalized_trace_id = post.source_trace_id;
         }
     }
     if matches!(
@@ -383,8 +452,8 @@ pub async fn post_message_route(
             sender_user_id,
             recipient_user_id: payload.recipient_user_id,
             landscape_analysis_id: payload.landscape_analysis_id,
-            trace_id: payload.trace_id,
-            post_id: payload.post_id,
+            trace_id: normalized_trace_id,
+            post_id: normalized_post_id,
             reply_to_message_id: None,
             message_type,
             processing_state: MessageProcessingState::Processed,
@@ -423,7 +492,22 @@ pub async fn post_message_route(
         }));
     }
 
-    let message = NewMessage::new(payload, sender_user_id).create(&pool)?;
+    let message = NewMessage {
+        sender_user_id,
+        recipient_user_id: payload.recipient_user_id,
+        landscape_analysis_id: payload.landscape_analysis_id,
+        trace_id: normalized_trace_id,
+        post_id: normalized_post_id,
+        reply_to_message_id: None,
+        message_type,
+        processing_state: MessageProcessingState::Processed,
+        title: payload.title.unwrap_or_default(),
+        content: payload.content,
+        attachment_type: payload.attachment_type,
+        attachment: payload.attachment,
+        metadata: None,
+    }
+    .create(&pool)?;
     if let Some(email_id) = enqueue_received_message_notification_email(&message, &pool)? {
         let pool_for_task = pool.clone();
         tokio::spawn(async move {
@@ -480,7 +564,7 @@ pub async fn post_post_message_route(
         sender_user_id,
         recipient_user_id,
         landscape_analysis_id: None,
-        trace_id: None,
+        trace_id: post.source_trace_id,
         post_id: Some(post_id),
         reply_to_message_id: None,
         message_type: MessageType::General,
@@ -518,6 +602,8 @@ pub async fn put_message_route(
     if message.sender_user_id != sender_user_id {
         return Err(PpdcError::unauthorized());
     }
+    let recipient = User::find(&payload.recipient_user_id, &pool)?;
+    let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
 
     if payload.post_id.is_some() && payload.trace_id.is_some() {
         return Err(PpdcError::new(
@@ -538,13 +624,70 @@ pub async fn put_message_route(
         }
     }
 
-    if let Some(trace_id) = payload.trace_id {
+    let mut normalized_trace_id = payload.trace_id;
+    let mut normalized_post_id = payload.post_id;
+
+    if let Some(trace_id) = normalized_trace_id {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
-        if trace.user_id != payload.recipient_user_id && trace.user_id != sender_user_id {
+        let sender_is_owner = trace.user_id == sender_user_id;
+        let effective_message_type = payload.message_type.unwrap_or(message.message_type);
+        if recipient_is_service_mentor
+            || matches!(
+                effective_message_type,
+                MessageType::Question | MessageType::TarotReadingRequest
+            )
+        {
+            if !sender_is_owner {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Linked trace must belong to the sender for mentor requests".to_string(),
+                ));
+            }
+        } else if sender_is_owner {
+            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Recipient must currently have access to a published shared trace post"
+                        .to_string(),
+                ));
+            };
+            if !PostGrant::user_can_read_post(&shared_post, payload.recipient_user_id, &pool)? {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Recipient must currently have access to the shared trace".to_string(),
+                ));
+            }
+            if normalized_post_id.is_none() {
+                normalized_post_id = Some(shared_post.id);
+            }
+        } else if trace.user_id == payload.recipient_user_id {
+            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Sender must currently have access to a published shared trace post"
+                        .to_string(),
+                ));
+            };
+            if !PostGrant::user_can_read_post(&shared_post, sender_user_id, &pool)? {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Sender must currently have access to the shared trace".to_string(),
+                ));
+            }
+            if normalized_post_id.is_none() {
+                normalized_post_id = Some(shared_post.id);
+            }
+        } else {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Linked trace must belong to sender or recipient".to_string(),
+                "Linked trace must involve the owner and a current shared-trace reader"
+                    .to_string(),
             ));
         }
     }
@@ -560,12 +703,15 @@ pub async fn put_message_route(
                 "Sender and recipient must currently have access to the linked post".to_string(),
             ));
         }
+        if normalized_trace_id.is_none() {
+            normalized_trace_id = post.source_trace_id;
+        }
     }
 
     message.recipient_user_id = payload.recipient_user_id;
     message.landscape_analysis_id = payload.landscape_analysis_id;
-    message.trace_id = payload.trace_id;
-    message.post_id = payload.post_id;
+    message.trace_id = normalized_trace_id;
+    message.post_id = normalized_post_id;
     message.message_type = payload.message_type.unwrap_or(message.message_type);
     message.title = payload.title.unwrap_or_default();
     message.content = payload.content;

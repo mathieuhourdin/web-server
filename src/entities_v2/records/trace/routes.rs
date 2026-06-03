@@ -27,9 +27,9 @@ use crate::entities_v2::{
     },
     post::{
         model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType,
-        PostType,
+        PostStatus, PostType,
     },
-    post_grant::{NewPostGrantDto, PostGrantScope},
+    post_grant::{NewPostGrantDto, PostGrant, PostGrantScope},
     session::Session,
     shared::MaturingState,
     trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
@@ -41,7 +41,7 @@ use crate::work_analyzer;
 use super::{
     enums::TraceSharingSensitivity,
     llm_qualify,
-    model::{NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
+    model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
 };
 use serde::{Deserialize, Serialize};
 
@@ -307,6 +307,16 @@ async fn finalize_expired_drafts_for_user(
         let _ = finalize_trace_transition(trace, pool, session_id, true).await?;
     }
     Ok(())
+}
+
+fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
+    let Some(post) = Post::find_for_trace(trace_id, pool)? else {
+        return Ok(None);
+    };
+    if post.status != PostStatus::Published {
+        return Ok(None);
+    }
+    Ok(Some(post))
 }
 
 async fn parse_trace_attachment_multipart(
@@ -1153,7 +1163,14 @@ pub async fn get_trace_messages_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
+        let shared_post = find_published_trace_post(trace_id, &pool)?;
+        let can_read_shared_trace = match shared_post {
+            Some(post) => PostGrant::user_can_read_post(&post, user_id, &pool)?,
+            None => false,
+        };
+        if !can_read_shared_trace {
+            return Err(PpdcError::unauthorized());
+        }
     }
 
     let pagination = params.pagination.validate()?;
@@ -1178,8 +1195,15 @@ pub async fn post_trace_message_route(
     let sender_user = User::find(&user_id, &pool)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     let sender_is_owner = trace.user_id == user_id;
+    let shared_post = find_published_trace_post(trace_id, &pool)?;
     if !sender_is_owner {
-        return Err(PpdcError::unauthorized());
+        let can_read_shared_trace = match shared_post.as_ref() {
+            Some(post) => PostGrant::user_can_read_post(post, user_id, &pool)?,
+            None => false,
+        };
+        if !can_read_shared_trace {
+            return Err(PpdcError::unauthorized());
+        }
     }
     let recipient = payload
         .recipient_user_id
@@ -1293,9 +1317,6 @@ pub async fn post_trace_message_route(
         }));
     }
 
-    let journal_id = trace.journal_id.ok_or_else(PpdcError::unauthorized)?;
-    let journal = Journal::find_full(journal_id, &pool)?;
-
     let recipient_user_id = if sender_is_owner {
         let recipient_user_id = payload.recipient_user_id.ok_or_else(|| {
             PpdcError::new(
@@ -1312,17 +1333,31 @@ pub async fn post_trace_message_route(
                 "Cannot send a trace message to yourself".to_string(),
             ));
         }
-        if !JournalGrant::user_can_read_journal(&journal, recipient_user_id, &pool)? {
+        let Some(shared_post) = shared_post.as_ref() else {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Recipient must currently have access to the trace journal".to_string(),
+                "Recipient must currently have access to a published shared trace post"
+                    .to_string(),
+            ));
+        };
+        if !PostGrant::user_can_read_post(shared_post, recipient_user_id, &pool)? {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Recipient must currently have access to the shared trace".to_string(),
             ));
         }
         recipient_user_id
     } else {
-        if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
-            return Err(PpdcError::unauthorized());
+        if let Some(recipient_user_id) = payload.recipient_user_id {
+            if recipient_user_id != trace.user_id {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Non-owners can only send trace messages to the trace owner".to_string(),
+                ));
+            }
         }
         trace.user_id
     };
@@ -1332,7 +1367,7 @@ pub async fn post_trace_message_route(
         recipient_user_id,
         landscape_analysis_id: None,
         trace_id: Some(trace_id),
-        post_id: None,
+        post_id: shared_post.as_ref().map(|post| post.id),
         reply_to_message_id: None,
         message_type,
         processing_state: MessageProcessingState::Processed,
@@ -1362,19 +1397,44 @@ pub async fn get_traces_for_journal_route(
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Query(params): Query<JournalTracesQuery>,
-) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<JournalTraceView>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
-    if journal.user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
     let pagination = params.pagination.validate()?;
-    let (traces, total) = Trace::get_for_journal_paginated(
+
+    if journal.user_id == user_id {
+        let (traces, total) = Trace::get_for_journal_paginated(
+            id,
+            pagination.offset,
+            pagination.limit,
+            params.sharing_sensitivity,
+            &pool,
+        )?;
+        let items = traces
+            .into_iter()
+            .map(|trace| JournalTraceView {
+                id: trace.id,
+                journal_id: id,
+                title: trace.title,
+                content: trace.content,
+                image_asset_id: trace.image_asset_id,
+                interaction_date: trace.interaction_date,
+                created_at: trace.created_at,
+                updated_at: trace.updated_at,
+            })
+            .collect();
+        return Ok(Json(PaginatedResponse::new(items, pagination, total)));
+    }
+
+    let (traces, total) = Trace::get_shared_for_journal_paginated(
+        user_id,
         id,
         pagination.offset,
         pagination.limit,
-        params.sharing_sensitivity,
         &pool,
     )?;
+    if total == 0 {
+        return Err(PpdcError::unauthorized());
+    }
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

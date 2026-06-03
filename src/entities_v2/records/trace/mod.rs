@@ -8,8 +8,8 @@ pub mod routes;
 
 pub use heatmap::get_user_heatmap_route;
 pub use model::{
-    NewTrace, NewTraceDto, PatchTraceDto, Trace, TraceSharingSensitivity, TraceStatus, TraceType,
-    UpdateTraceDto,
+    JournalTraceView, NewTrace, NewTraceDto, PatchTraceDto, Trace, TraceSharingSensitivity,
+    TraceStatus, TraceType, UpdateTraceDto,
 };
 pub use routes::{
     delete_trace_attachment_route, get_all_traces_for_user_route, get_journal_draft_route,

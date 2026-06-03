@@ -7,6 +7,9 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::post::PostStatus;
+use crate::entities_v2::post_grant::PostGrant;
+use crate::schema::{posts, traces};
 
 pub use super::enums::{TraceSharingSensitivity, TraceStatus, TraceType};
 
@@ -73,6 +76,18 @@ pub struct Trace {
     pub status: TraceStatus,
     pub start_writing_at: NaiveDateTime,
     pub finalized_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct JournalTraceView {
+    pub id: Uuid,
+    pub journal_id: Uuid,
+    pub title: String,
+    pub content: String,
+    pub image_asset_id: Option<Uuid>,
+    pub interaction_date: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -470,6 +485,86 @@ impl Trace {
         .load::<TraceRow>(&mut conn)?;
 
         Ok((rows.into_iter().map(Trace::from).collect(), total))
+    }
+
+    pub fn get_shared_for_journal_paginated(
+        viewer_user_id: Uuid,
+        journal_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<JournalTraceView>, i64), PpdcError> {
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
+        if visible_post_ids.is_empty() {
+            return Ok((vec![], 0));
+        }
+
+        let mut conn = pool.get()?;
+
+        let total = traces::table
+            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::id.eq_any(visible_post_ids.clone()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        let rows = traces::table
+            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::id.eq_any(visible_post_ids))
+            .select((
+                traces::id,
+                traces::journal_id,
+                traces::title,
+                traces::content,
+                traces::image_asset_id,
+                traces::interaction_date,
+                traces::created_at,
+                traces::updated_at,
+            ))
+            .order(traces::interaction_date.desc())
+            .then_order_by(traces::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<(
+                Uuid,
+                Uuid,
+                String,
+                String,
+                Option<Uuid>,
+                NaiveDateTime,
+                NaiveDateTime,
+                NaiveDateTime,
+            )>(&mut conn)?;
+
+        let traces = rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    journal_id,
+                    title,
+                    content,
+                    image_asset_id,
+                    interaction_date,
+                    created_at,
+                    updated_at,
+                )| JournalTraceView {
+                    id,
+                    journal_id,
+                    title,
+                    content,
+                    image_asset_id,
+                    interaction_date,
+                    created_at,
+                    updated_at,
+                },
+            )
+            .collect();
+
+        Ok((traces, total))
     }
 
     pub fn get_non_empty_drafts_for_user_paginated(
