@@ -1,21 +1,18 @@
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
-use diesel::sql_types::Uuid as SqlUuid;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus};
-use crate::entities_v2::post::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
+use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::{
     PostGrant, PostGrantAccessLevel, PostGrantScope, PostGrantStatus,
 };
 use crate::entities_v2::relationship::Relationship;
-use crate::entities_v2::shared::MaturingState;
-use crate::entities_v2::trace::model::TraceRow;
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
-use crate::schema::{journal_grants, post_grants, posts, traces, users};
+use crate::schema::{journal_grants, post_grants, posts, relationships, traces, users};
 
 use super::enums::{JournalGrantAccessLevel, JournalGrantScope, JournalGrantStatus};
 use super::model::{JournalGrant, NewJournalGrantDto};
@@ -23,11 +20,9 @@ use super::model::{JournalGrant, NewJournalGrantDto};
 impl JournalGrant {
     fn to_post_grant_scope(grantee_scope: Option<JournalGrantScope>) -> Option<PostGrantScope> {
         match grantee_scope {
-            Some(JournalGrantScope::AllAcceptedFollowers) => {
-                Some(PostGrantScope::AllAcceptedFollowers)
-            }
             Some(JournalGrantScope::AllPlatformUsers) => Some(PostGrantScope::AllPlatformUsers),
             None => None,
+            Some(JournalGrantScope::AllAcceptedFollowers) => None,
         }
     }
 
@@ -153,35 +148,50 @@ impl JournalGrant {
         }
     }
 
-    fn find_finalized_user_traces_for_journal_with_conn(
-        journal_id: Uuid,
+    fn find_accepted_follower_ids_for_user_with_conn(
+        user_id: Uuid,
         conn: &mut PgConnection,
-    ) -> Result<Vec<Trace>, PpdcError> {
-        let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
-             FROM traces
-             WHERE journal_id = $1
-               AND trace_type = 'USER_TRACE'
-               AND status = 'FINALIZED'
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC",
-        )
-        .bind::<SqlUuid, _>(journal_id)
-        .load::<TraceRow>(conn)?;
-
-        Ok(rows.into_iter().map(Trace::from).collect())
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        Ok(relationships::table
+            .filter(relationships::target_user_id.eq(user_id))
+            .filter(relationships::relationship_type.eq("FOLLOW"))
+            .filter(relationships::status.eq("ACCEPTED"))
+            .select(relationships::requester_user_id)
+            .load::<Uuid>(conn)?)
     }
 
-    fn find_post_for_trace_with_conn(
-        trace_id: Uuid,
+    fn is_follow_accepted_with_conn(
+        follower_user_id: Uuid,
+        target_user_id: Uuid,
         conn: &mut PgConnection,
-    ) -> Result<Option<(Uuid, PostStatus)>, PpdcError> {
-        let row = posts::table
-            .filter(posts::source_trace_id.eq(Some(trace_id)))
-            .select((posts::id, posts::status))
-            .first::<(Uuid, String)>(conn)
+    ) -> Result<bool, PpdcError> {
+        let relationship_id = relationships::table
+            .filter(relationships::requester_user_id.eq(follower_user_id))
+            .filter(relationships::target_user_id.eq(target_user_id))
+            .filter(relationships::relationship_type.eq("FOLLOW"))
+            .filter(relationships::status.eq("ACCEPTED"))
+            .select(relationships::id)
+            .first::<Uuid>(conn)
             .optional()?;
+        Ok(relationship_id.is_some())
+    }
 
-        Ok(row.map(|(post_id, status_raw)| (post_id, PostStatus::from_db(&status_raw))))
+    fn find_auto_propagatable_post_ids_for_journal_with_conn(
+        journal_id: Uuid,
+        conn: &mut PgConnection,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        let query = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::trace_type.eq("USER_TRACE"))
+            .filter(traces::status.eq("FINALIZED"))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(traces::sharing_sensitivity.eq("NORMAL"))
+            .select(posts::id)
+            .distinct()
+            .into_boxed();
+
+        Ok(query.load::<Uuid>(conn)?)
     }
 
     fn find_matching_post_grant_id_with_conn(
@@ -213,6 +223,10 @@ impl JournalGrant {
         conn: &mut PgConnection,
     ) -> Result<(), PpdcError> {
         let grantee_scope = Self::to_post_grant_scope(grant.grantee_scope);
+
+        if grant.grantee_user_id.is_none() && grantee_scope.is_none() {
+            return Ok(());
+        }
 
         if let Some(existing_id) = Self::find_matching_post_grant_id_with_conn(
             post_id,
@@ -273,39 +287,11 @@ impl JournalGrant {
         Ok(())
     }
 
-    fn create_default_published_post_for_trace_with_conn(
-        trace: &Trace,
-        conn: &mut PgConnection,
-    ) -> Result<Uuid, PpdcError> {
-        let publishing_date = trace.finalized_at.or(Some(trace.created_at));
-
-        let post_id = diesel::insert_into(posts::table)
-            .values((
-                posts::source_trace_id.eq(Some(trace.id)),
-                posts::title.eq(trace.title.clone()),
-                posts::subtitle.eq(trace.subtitle.clone()),
-                posts::content.eq(trace.content.clone()),
-                posts::image_url.eq(None::<String>),
-                posts::image_asset_id.eq(trace.image_asset_id),
-                posts::interaction_type.eq(PostInteractionType::Output.to_db()),
-                posts::post_type.eq(PostType::Idea.to_db()),
-                posts::user_id.eq(trace.user_id),
-                posts::publishing_date.eq(publishing_date),
-                posts::status.eq(PostStatus::Published.to_db()),
-                posts::audience_role.eq(PostAudienceRole::Default.to_db()),
-                posts::publishing_state.eq("pbsh"),
-                posts::maturing_state.eq(MaturingState::Finished.to_code()),
-            ))
-            .returning(posts::id)
-            .get_result::<Uuid>(conn)?;
-
-        Ok(post_id)
-    }
-
     fn sync_all_active_journal_grants_to_post_with_conn(
         journal_id: Uuid,
         owner_user_id: Uuid,
         post_id: Uuid,
+        trace_is_sensitive: bool,
         conn: &mut PgConnection,
     ) -> Result<(), PpdcError> {
         let grant_rows = journal_grants::table
@@ -346,12 +332,46 @@ impl JournalGrant {
                 created_at: row.7,
                 updated_at: row.8,
             };
-            Self::create_or_update_synced_post_grant_with_conn(
-                post_id,
-                owner_user_id,
-                &grant,
-                conn,
-            )?;
+            match (grant.grantee_user_id, grant.grantee_scope) {
+                (Some(grantee_user_id), _) => {
+                    if trace_is_sensitive {
+                        continue;
+                    }
+                    if !Self::is_follow_accepted_with_conn(grantee_user_id, owner_user_id, conn)? {
+                        continue;
+                    }
+                    PostGrant::upsert_direct_grants_for_posts_with_conn(
+                        &[post_id],
+                        owner_user_id,
+                        grantee_user_id,
+                        conn,
+                    )?;
+                }
+                (None, Some(JournalGrantScope::AllAcceptedFollowers)) => {
+                    if trace_is_sensitive {
+                        continue;
+                    }
+                    let visible_follower_ids =
+                        Self::find_accepted_follower_ids_for_user_with_conn(owner_user_id, conn)?;
+                    for follower_user_id in visible_follower_ids {
+                        PostGrant::upsert_direct_grants_for_posts_with_conn(
+                            &[post_id],
+                            owner_user_id,
+                            follower_user_id,
+                            conn,
+                        )?;
+                    }
+                }
+                (None, Some(JournalGrantScope::AllPlatformUsers)) => {
+                    Self::create_or_update_synced_post_grant_with_conn(
+                        post_id,
+                        owner_user_id,
+                        &grant,
+                        conn,
+                    )?;
+                }
+                (None, None) => {}
+            }
         }
 
         Ok(())
@@ -362,12 +382,33 @@ impl JournalGrant {
         grant: &JournalGrant,
         conn: &mut PgConnection,
     ) -> Result<(), PpdcError> {
-        let traces = Self::find_finalized_user_traces_for_journal_with_conn(journal.id, conn)?;
+        let post_ids = Self::find_auto_propagatable_post_ids_for_journal_with_conn(journal.id, conn)?;
 
-        for trace in traces {
-            match Self::find_post_for_trace_with_conn(trace.id, conn)? {
-                Some((_, PostStatus::Archived)) => {}
-                Some((post_id, _)) => {
+        match (grant.grantee_user_id, grant.grantee_scope) {
+            (Some(grantee_user_id), _) => {
+                if Self::is_follow_accepted_with_conn(grantee_user_id, journal.user_id, conn)? {
+                    PostGrant::upsert_direct_grants_for_posts_with_conn(
+                        &post_ids,
+                        journal.user_id,
+                        grantee_user_id,
+                        conn,
+                    )?;
+                }
+            }
+            (None, Some(JournalGrantScope::AllAcceptedFollowers)) => {
+                let follower_ids =
+                    Self::find_accepted_follower_ids_for_user_with_conn(journal.user_id, conn)?;
+                for follower_user_id in follower_ids {
+                    PostGrant::upsert_direct_grants_for_posts_with_conn(
+                        &post_ids,
+                        journal.user_id,
+                        follower_user_id,
+                        conn,
+                    )?;
+                }
+            }
+            (None, Some(JournalGrantScope::AllPlatformUsers)) => {
+                for post_id in post_ids {
                     Self::create_or_update_synced_post_grant_with_conn(
                         post_id,
                         journal.user_id,
@@ -375,17 +416,8 @@ impl JournalGrant {
                         conn,
                     )?;
                 }
-                None => {
-                    let post_id =
-                        Self::create_default_published_post_for_trace_with_conn(&trace, conn)?;
-                    Self::sync_all_active_journal_grants_to_post_with_conn(
-                        journal.id,
-                        journal.user_id,
-                        post_id,
-                        conn,
-                    )?;
-                }
             }
+            (None, None) => {}
         }
 
         Ok(())
@@ -396,16 +428,127 @@ impl JournalGrant {
         grant: &JournalGrant,
         conn: &mut PgConnection,
     ) -> Result<(), PpdcError> {
-        let traces = Self::find_finalized_user_traces_for_journal_with_conn(journal_id, conn)?;
+        let post_ids =
+            Self::find_auto_propagatable_post_ids_for_journal_with_conn(journal_id, conn)?;
 
-        for trace in traces {
-            if let Some((post_id, status)) = Self::find_post_for_trace_with_conn(trace.id, conn)? {
-                if status == PostStatus::Archived {
-                    continue;
-                }
-                Self::revoke_synced_post_grant_with_conn(post_id, grant, conn)?;
+        match (grant.grantee_user_id, grant.grantee_scope) {
+            (Some(grantee_user_id), _) => {
+                PostGrant::revoke_direct_grants_for_posts_with_conn(
+                    &post_ids,
+                    grant.owner_user_id,
+                    grantee_user_id,
+                    conn,
+                )?;
             }
+            (None, Some(JournalGrantScope::AllAcceptedFollowers)) => {
+                let follower_ids =
+                    Self::find_accepted_follower_ids_for_user_with_conn(grant.owner_user_id, conn)?;
+                for follower_user_id in follower_ids {
+                    PostGrant::revoke_direct_grants_for_posts_with_conn(
+                        &post_ids,
+                        grant.owner_user_id,
+                        follower_user_id,
+                        conn,
+                    )?;
+                }
+            }
+            (None, Some(JournalGrantScope::AllPlatformUsers)) => {
+                for post_id in post_ids {
+                    Self::revoke_synced_post_grant_with_conn(post_id, grant, conn)?;
+                }
+            }
+            (None, None) => {}
         }
+
+        Ok(())
+    }
+
+    pub(crate) fn sync_effective_post_grants_for_post(
+        post: &crate::entities_v2::post::Post,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        if post.status != PostStatus::Published {
+            return Ok(());
+        }
+
+        let Some(trace_id) = post.source_trace_id else {
+            return Ok(());
+        };
+
+        let trace = Trace::find_full_trace(trace_id, pool)?;
+        let Some(journal_id) = trace.journal_id else {
+            return Ok(());
+        };
+
+        let mut conn = pool.get()?;
+        conn.transaction::<(), PpdcError, _>(|conn| {
+            Self::sync_all_active_journal_grants_to_post_with_conn(
+                journal_id,
+                post.user_id,
+                post.id,
+                trace.sharing_sensitivity
+                    != crate::entities_v2::trace::TraceSharingSensitivity::Normal,
+                conn,
+            )
+        })?;
+
+        Ok(())
+    }
+
+    pub(crate) fn propagate_follower_default_grants_for_pair_with_conn(
+        owner_user_id: Uuid,
+        follower_user_id: Uuid,
+        conn: &mut PgConnection,
+    ) -> Result<(), PpdcError> {
+        let direct_journal_ids = journal_grants::table
+            .filter(journal_grants::owner_user_id.eq(owner_user_id))
+            .filter(journal_grants::grantee_user_id.eq(Some(follower_user_id)))
+            .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
+            .select(journal_grants::journal_id)
+            .distinct()
+            .load::<Uuid>(conn)?;
+
+        let follower_scope_journal_ids = journal_grants::table
+            .filter(journal_grants::owner_user_id.eq(owner_user_id))
+            .filter(
+                journal_grants::grantee_scope
+                    .eq(Some(JournalGrantScope::AllAcceptedFollowers.to_db())),
+            )
+            .filter(journal_grants::status.eq(JournalGrantStatus::Active.to_db()))
+            .select(journal_grants::journal_id)
+            .distinct()
+            .load::<Uuid>(conn)?;
+
+        let mut direct_post_ids = Vec::new();
+        for journal_id in direct_journal_ids {
+            direct_post_ids.extend(Self::find_auto_propagatable_post_ids_for_journal_with_conn(
+                journal_id, conn,
+            )?);
+        }
+        direct_post_ids.sort_unstable();
+        direct_post_ids.dedup();
+        PostGrant::upsert_direct_grants_for_posts_with_conn(
+            &direct_post_ids,
+            owner_user_id,
+            follower_user_id,
+            conn,
+        )?;
+
+        let mut follower_scope_post_ids = Vec::new();
+        for journal_id in follower_scope_journal_ids {
+            follower_scope_post_ids.extend(
+                Self::find_auto_propagatable_post_ids_for_journal_with_conn(journal_id, conn)?,
+            );
+        }
+        follower_scope_post_ids.sort_unstable();
+        follower_scope_post_ids.dedup();
+
+        PostGrant::upsert_direct_grants_for_posts_with_conn(
+            &follower_scope_post_ids,
+            owner_user_id,
+            follower_user_id,
+            conn,
+        )?;
 
         Ok(())
     }

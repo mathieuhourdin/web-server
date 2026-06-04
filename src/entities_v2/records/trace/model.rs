@@ -436,7 +436,14 @@ impl Trace {
     }
 
     pub fn get_all_for_journal(journal_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
-        let (items, _) = Self::get_for_journal_paginated(journal_id, 0, i64::MAX / 4, None, pool)?;
+        let (items, _) = Self::get_for_journal_paginated(
+            journal_id,
+            0,
+            i64::MAX / 4,
+            None,
+            TraceStatus::Finalized,
+            pool,
+        )?;
         Ok(items)
     }
 
@@ -445,6 +452,7 @@ impl Trace {
         offset: i64,
         limit: i64,
         sharing_sensitivity: Option<TraceSharingSensitivity>,
+        status: TraceStatus,
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
         let mut conn = pool.get()?;
@@ -452,11 +460,12 @@ impl Trace {
         let filter_string;
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
             filter_string = format!(
-                "AND status = 'FINALIZED' AND sharing_sensitivity = '{}'",
-                sharing_sensitivity_filter.to_db()
+                "AND status = '{}' AND sharing_sensitivity = '{}'",
+                status.to_db(),
+                sharing_sensitivity_filter.to_db(),
             );
         } else {
-            filter_string = String::from("AND status = 'FINALIZED'");
+            filter_string = format!("AND status = '{}'", status.to_db());
         }
 
         let total = diesel::sql_query(format!(

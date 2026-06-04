@@ -3,6 +3,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::journal_grant::JournalGrant;
+use crate::entities_v2::post_grant::PostGrant;
 use crate::schema::relationships;
 
 use super::enums::{RelationshipStatus, RelationshipType};
@@ -210,6 +212,18 @@ impl Relationship {
                         conn,
                     )
                     .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                    JournalGrant::propagate_follower_default_grants_for_pair_with_conn(
+                        actor_user_id,
+                        relationship.requester_user_id,
+                        conn,
+                    )
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                    JournalGrant::propagate_follower_default_grants_for_pair_with_conn(
+                        relationship.requester_user_id,
+                        actor_user_id,
+                        conn,
+                    )
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
                 }
             } else {
                 diesel::update(relationships::table.filter(relationships::id.eq(id)))
@@ -245,13 +259,43 @@ impl Relationship {
         }
 
         let mut conn = pool.get()?;
-        diesel::update(relationships::table.filter(relationships::id.eq(id)))
-            .set((
-                relationships::status.eq(RelationshipStatus::Archived.to_db()),
-                relationships::accepted_at.eq::<Option<chrono::NaiveDateTime>>(None),
-                relationships::updated_at.eq(diesel::dsl::now),
-            ))
-            .execute(&mut conn)?;
+        conn.transaction::<(), PpdcError, _>(|conn| {
+            diesel::update(relationships::table.filter(relationships::id.eq(id)))
+                .set((
+                    relationships::status.eq(RelationshipStatus::Archived.to_db()),
+                    relationships::accepted_at.eq::<Option<chrono::NaiveDateTime>>(None),
+                    relationships::updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+
+            if relationship.relationship_type == RelationshipType::Follow {
+                if let Some(reverse) = Self::find_between_with_conn(
+                    relationship.target_user_id,
+                    relationship.requester_user_id,
+                    RelationshipType::Follow,
+                    conn,
+                )? {
+                    if reverse.status != RelationshipStatus::Archived {
+                        diesel::update(
+                            relationships::table.filter(relationships::id.eq(reverse.id)),
+                        )
+                        .set((
+                            relationships::status.eq(RelationshipStatus::Archived.to_db()),
+                            relationships::accepted_at.eq::<Option<chrono::NaiveDateTime>>(None),
+                            relationships::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(conn)?;
+                    }
+                }
+
+                PostGrant::revoke_all_direct_between_users_with_conn(
+                    relationship.requester_user_id,
+                    relationship.target_user_id,
+                    conn,
+                )?;
+            }
+            Ok(())
+        })?;
 
         Relationship::find(id, pool)
     }

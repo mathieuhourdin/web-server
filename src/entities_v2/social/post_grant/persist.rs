@@ -1,3 +1,4 @@
+use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use uuid::Uuid;
 
@@ -16,29 +17,12 @@ impl PostGrant {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<Uuid>, PpdcError> {
-        use std::collections::HashSet;
-
         let mut conn = pool.get()?;
-        let direct_ids = post_grants::table
+        let mut candidate_ids = post_grants::table
             .filter(post_grants::grantee_user_id.eq(Some(user_id)))
             .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
             .select(post_grants::post_id)
             .load::<Uuid>(&mut conn)?;
-        let mut candidate_ids = direct_ids.iter().copied().collect::<HashSet<_>>();
-
-        let follower_scope_grants = post_grants::table
-            .filter(
-                post_grants::grantee_scope.eq(Some(PostGrantScope::AllAcceptedFollowers.to_db())),
-            )
-            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
-            .select((post_grants::post_id, post_grants::owner_user_id))
-            .load::<(Uuid, Uuid)>(&mut conn)?;
-
-        for (post_id, owner_user_id) in follower_scope_grants {
-            if Relationship::is_follow_accepted(user_id, owner_user_id, pool)? {
-                candidate_ids.insert(post_id);
-            }
-        }
 
         let platform_scope_post_ids = post_grants::table
             .filter(post_grants::grantee_scope.eq(Some(PostGrantScope::AllPlatformUsers.to_db())))
@@ -51,7 +35,9 @@ impl PostGrant {
             candidate_ids.extend(platform_scope_post_ids);
         }
 
-        Ok(candidate_ids.into_iter().collect())
+        candidate_ids.sort_unstable();
+        candidate_ids.dedup();
+        Ok(candidate_ids)
     }
 
     fn owner_can_use_scope(
@@ -59,6 +45,14 @@ impl PostGrant {
         grantee_scope: Option<PostGrantScope>,
         pool: &DbPool,
     ) -> Result<(), PpdcError> {
+        if grantee_scope == Some(PostGrantScope::AllAcceptedFollowers) {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "ALL_ACCEPTED_FOLLOWERS post grants are no longer supported; use journal grants or direct user grants".to_string(),
+            ));
+        }
+
         if grantee_scope != Some(PostGrantScope::AllPlatformUsers) {
             return Ok(());
         }
@@ -166,6 +160,118 @@ impl PostGrant {
         .transpose()
     }
 
+    pub(crate) fn upsert_direct_grants_for_posts_with_conn(
+        post_ids: &[Uuid],
+        owner_user_id: Uuid,
+        grantee_user_id: Uuid,
+        conn: &mut PgConnection,
+    ) -> Result<(), PpdcError> {
+        use std::collections::HashSet;
+
+        if post_ids.is_empty() {
+            return Ok(());
+        }
+
+        let existing_rows = post_grants::table
+            .filter(post_grants::post_id.eq_any(post_ids))
+            .filter(post_grants::owner_user_id.eq(owner_user_id))
+            .filter(post_grants::grantee_user_id.eq(Some(grantee_user_id)))
+            .filter(post_grants::grantee_scope.is_null())
+            .select((post_grants::id, post_grants::post_id))
+            .load::<(Uuid, Uuid)>(conn)?;
+
+        let existing_ids = existing_rows.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+        let existing_post_ids = existing_rows
+            .into_iter()
+            .map(|(_, post_id)| post_id)
+            .collect::<HashSet<_>>();
+
+        if !existing_ids.is_empty() {
+            diesel::update(post_grants::table.filter(post_grants::id.eq_any(existing_ids)))
+                .set((
+                    post_grants::access_level.eq(PostGrantAccessLevel::Read.to_db()),
+                    post_grants::status.eq(PostGrantStatus::Active.to_db()),
+                    post_grants::updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+        }
+
+        let new_values = post_ids
+            .iter()
+            .filter(|post_id| !existing_post_ids.contains(post_id))
+            .map(|post_id| {
+                (
+                    post_grants::id.eq(Uuid::new_v4()),
+                    post_grants::post_id.eq(*post_id),
+                    post_grants::owner_user_id.eq(owner_user_id),
+                    post_grants::grantee_user_id.eq(Some(grantee_user_id)),
+                    post_grants::grantee_scope.eq::<Option<String>>(None),
+                    post_grants::access_level.eq(PostGrantAccessLevel::Read.to_db()),
+                    post_grants::status.eq(PostGrantStatus::Active.to_db()),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        if !new_values.is_empty() {
+            diesel::insert_into(post_grants::table)
+                .values(new_values)
+                .execute(conn)?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn revoke_direct_grants_for_posts_with_conn(
+        post_ids: &[Uuid],
+        owner_user_id: Uuid,
+        grantee_user_id: Uuid,
+        conn: &mut PgConnection,
+    ) -> Result<(), PpdcError> {
+        if post_ids.is_empty() {
+            return Ok(());
+        }
+
+        diesel::update(
+            post_grants::table
+                .filter(post_grants::post_id.eq_any(post_ids))
+                .filter(post_grants::owner_user_id.eq(owner_user_id))
+                .filter(post_grants::grantee_user_id.eq(Some(grantee_user_id)))
+                .filter(post_grants::grantee_scope.is_null()),
+        )
+        .set((
+            post_grants::status.eq(PostGrantStatus::Revoked.to_db()),
+            post_grants::updated_at.eq(diesel::dsl::now),
+        ))
+        .execute(conn)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn revoke_all_direct_between_users_with_conn(
+        user_a_id: Uuid,
+        user_b_id: Uuid,
+        conn: &mut PgConnection,
+    ) -> Result<(), PpdcError> {
+        diesel::update(
+            post_grants::table.filter(
+                post_grants::owner_user_id
+                    .eq(user_a_id)
+                    .and(post_grants::grantee_user_id.eq(Some(user_b_id)))
+                    .or(post_grants::owner_user_id
+                        .eq(user_b_id)
+                        .and(post_grants::grantee_user_id.eq(Some(user_a_id))))
+                    .and(post_grants::grantee_scope.is_null()),
+            ),
+        )
+        .set((
+            post_grants::status.eq(PostGrantStatus::Revoked.to_db()),
+            post_grants::updated_at.eq(diesel::dsl::now),
+        ))
+        .execute(conn)?;
+
+        Ok(())
+    }
+
     pub fn create_or_update(
         post: &Post,
         owner_user_id: Uuid,
@@ -271,12 +377,6 @@ impl PostGrant {
             .filter(|grant| grant.status == PostGrantStatus::Active)
         {
             if grant.grantee_user_id == Some(user_id) {
-                return Ok(true);
-            }
-
-            if grant.grantee_scope == Some(PostGrantScope::AllAcceptedFollowers)
-                && Relationship::is_follow_accepted(user_id, post.user_id, pool)?
-            {
                 return Ok(true);
             }
 
@@ -391,12 +491,6 @@ impl PostGrant {
         {
             if let Some(grantee_user_id) = grant.grantee_user_id {
                 ids.insert(grantee_user_id);
-            }
-
-            if grant.grantee_scope == Some(PostGrantScope::AllAcceptedFollowers) {
-                for relationship in Relationship::find_followers_for_user(post.user_id, pool)? {
-                    ids.insert(relationship.requester_user_id);
-                }
             }
 
             if grant.grantee_scope == Some(PostGrantScope::AllPlatformUsers) {

@@ -504,6 +504,7 @@ pub async fn put_trace_post_route(
 
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
+        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
         dispatch_post_published_notification_emails(&post, &pool);
     }
     Ok(Json(post))
@@ -676,6 +677,7 @@ pub async fn put_post_route(
     let post = post.update(&pool)?;
 
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
+        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
         dispatch_post_published_notification_emails(&post, &pool);
     }
 

@@ -12,7 +12,7 @@ use crate::entities_v2::post::routes::enqueue_post_published_notification_emails
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
-    journal_grant::{JournalGrant, JournalGrantScope, JournalGrantStatus},
+    journal_grant::JournalGrant,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
@@ -29,7 +29,7 @@ use crate::entities_v2::{
         model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType,
         PostStatus, PostType,
     },
-    post_grant::{NewPostGrantDto, PostGrant, PostGrantScope},
+    post_grant::PostGrant,
     session::Session,
     shared::MaturingState,
     trace_attachment::{
@@ -42,7 +42,7 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::{
-    enums::TraceSharingSensitivity,
+    enums::{TraceSharingSensitivity, TraceStatus},
     llm_qualify,
     model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
 };
@@ -59,6 +59,7 @@ pub struct JournalTracesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
+    pub status: Option<TraceStatus>,
 }
 
 #[derive(Deserialize)]
@@ -447,30 +448,6 @@ fn ensure_default_draft_post_for_shared_trace(
     }
     .create(pool)?;
 
-    let journal_grants = JournalGrant::find_for_journal(journal.id, pool)?;
-    for grant in journal_grants
-        .into_iter()
-        .filter(|grant| grant.status == JournalGrantStatus::Active)
-    {
-        let payload = NewPostGrantDto {
-            grantee_user_id: grant.grantee_user_id,
-            grantee_scope: match grant.grantee_scope {
-                Some(JournalGrantScope::AllAcceptedFollowers) => {
-                    Some(PostGrantScope::AllAcceptedFollowers)
-                }
-                Some(JournalGrantScope::AllPlatformUsers) => Some(PostGrantScope::AllPlatformUsers),
-                None => None,
-            },
-            access_level: None,
-        };
-        let _ = crate::entities_v2::post_grant::PostGrant::create_or_update(
-            &post,
-            trace.user_id,
-            payload,
-            pool,
-        )?;
-    }
-
     Ok(Some(post.id))
 }
 
@@ -507,6 +484,7 @@ fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option
     post.publishing_state = publishing_state;
     post.maturing_state = maturing_state;
     let post = post.update(pool)?;
+    JournalGrant::sync_effective_post_grants_for_post(&post, pool)?;
 
     match enqueue_post_published_notification_emails(&post, pool) {
         Ok(email_ids) if !email_ids.is_empty() => {
@@ -798,11 +776,8 @@ pub async fn put_trace_route(
                     ));
                 }
                 Some(super::enums::TraceStatus::Finalized) => {
-                    return Err(PpdcError::new(
-                        400,
-                        ErrorType::ApiError,
-                        "Cannot finalize an archived trace".to_string(),
-                    ));
+                    trace.status = super::enums::TraceStatus::Finalized;
+                    trace.timeout_at = None;
                 }
             }
         }
@@ -1475,6 +1450,16 @@ pub async fn get_traces_for_journal_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
     let pagination = params.pagination.validate()?;
+    let requested_status = params.status.unwrap_or(TraceStatus::Finalized);
+
+    if requested_status == TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "GET /journals/:id/traces only supports status=finalized or status=archived"
+                .to_string(),
+        ));
+    }
 
     if journal.user_id == user_id {
         let (traces, total) = Trace::get_for_journal_paginated(
@@ -1482,6 +1467,7 @@ pub async fn get_traces_for_journal_route(
             pagination.offset,
             pagination.limit,
             params.sharing_sensitivity,
+            requested_status,
             &pool,
         )?;
         let items = traces
@@ -1501,6 +1487,10 @@ pub async fn get_traces_for_journal_route(
             .collect::<Vec<_>>();
         let items = attach_seen_state_to_journal_trace_views(user_id, items, &pool)?;
         return Ok(Json(PaginatedResponse::new(items, pagination, total)));
+    }
+
+    if requested_status == TraceStatus::Archived {
+        return Err(PpdcError::unauthorized());
     }
 
     let (traces, total) = Trace::get_shared_for_journal_paginated(
