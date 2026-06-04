@@ -102,6 +102,26 @@ fn validate_document_storage(
     Ok(())
 }
 
+fn validate_document_cover(
+    owner_user_id: Uuid,
+    cover_image_asset_id: &Option<Uuid>,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    if let Some(asset_id) = cover_image_asset_id {
+        let asset = Asset::find(*asset_id, pool)?;
+        if asset.owner_user_id != owner_user_id {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "cover_image_asset_id must reference an asset owned by the document owner"
+                    .to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(QueryableByName)]
 struct IdRow {
     #[diesel(sql_type = SqlUuid)]
@@ -124,6 +144,8 @@ impl Document {
         };
         let asset_id = payload.asset_id;
         let external_content_url = normalize_optional_text(payload.external_content_url);
+        let cover_image_asset_id = payload.cover_image_asset_id;
+        let cover_image_external_url = normalize_optional_text(payload.cover_image_external_url);
 
         validate_document_storage(
             owner_user_id,
@@ -133,6 +155,7 @@ impl Document {
             &external_content_url,
             pool,
         )?;
+        validate_document_cover(owner_user_id, &cover_image_asset_id, pool)?;
 
         let mut conn = pool.get()?;
         let inserted = diesel::sql_query(
@@ -148,11 +171,13 @@ impl Document {
                 author_name,
                 content,
                 asset_id,
-                external_content_url
+                external_content_url,
+                cover_image_asset_id,
+                cover_image_external_url
             )
             VALUES (
                 uuid_generate_v4(),
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
             )
             RETURNING id",
         )
@@ -167,6 +192,8 @@ impl Document {
         .bind::<Nullable<Text>, _>(content)
         .bind::<Nullable<SqlUuid>, _>(asset_id)
         .bind::<Nullable<Text>, _>(external_content_url)
+        .bind::<Nullable<SqlUuid>, _>(cover_image_asset_id)
+        .bind::<Nullable<Text>, _>(cover_image_external_url)
         .get_result::<IdRow>(&mut conn)?;
 
         Document::find_full(inserted.id, pool)
@@ -181,6 +208,7 @@ impl Document {
             &self.external_content_url,
             pool,
         )?;
+        validate_document_cover(self.owner_user_id, &self.cover_image_asset_id, pool)?;
 
         let mut conn = pool.get()?;
         let _ = diesel::sql_query(
@@ -195,6 +223,8 @@ impl Document {
                  content = $9,
                  asset_id = $10,
                  external_content_url = $11,
+                 cover_image_asset_id = $12,
+                 cover_image_external_url = $13,
                  updated_at = NOW()
              WHERE id = $1",
         )
@@ -209,6 +239,8 @@ impl Document {
         .bind::<Nullable<Text>, _>(self.content)
         .bind::<Nullable<SqlUuid>, _>(self.asset_id)
         .bind::<Nullable<Text>, _>(normalize_optional_text(self.external_content_url))
+        .bind::<Nullable<SqlUuid>, _>(self.cover_image_asset_id)
+        .bind::<Nullable<Text>, _>(normalize_optional_text(self.cover_image_external_url))
         .execute(&mut conn)?;
 
         Document::find_full(self.id, pool)

@@ -72,6 +72,8 @@ diesel::table! {
         content -> Nullable<Text>,
         asset_id -> Nullable<Uuid>,
         external_content_url -> Nullable<Text>,
+        cover_image_asset_id -> Nullable<Uuid>,
+        cover_image_external_url -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

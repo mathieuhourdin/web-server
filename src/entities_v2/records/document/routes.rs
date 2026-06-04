@@ -96,6 +96,12 @@ pub async fn put_document_route(
     if let Some(external_content_url) = payload.external_content_url {
         document.external_content_url = external_content_url;
     }
+    if let Some(cover_image_asset_id) = payload.cover_image_asset_id {
+        document.cover_image_asset_id = cover_image_asset_id;
+    }
+    if let Some(cover_image_external_url) = payload.cover_image_external_url {
+        document.cover_image_external_url = cover_image_external_url;
+    }
 
     let document = document.update(&pool)?;
     Ok(Json(document))

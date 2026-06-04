@@ -21,6 +21,8 @@ type DocumentTuple = (
     Option<String>,
     Option<Uuid>,
     Option<String>,
+    Option<Uuid>,
+    Option<String>,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -40,6 +42,8 @@ impl From<DocumentTuple> for Document {
             content,
             asset_id,
             external_content_url,
+            cover_image_asset_id,
+            cover_image_external_url,
             created_at,
             updated_at,
         ) = row;
@@ -57,6 +61,8 @@ impl From<DocumentTuple> for Document {
             content,
             asset_id,
             external_content_url,
+            cover_image_asset_id,
+            cover_image_external_url,
             created_at,
             updated_at,
         }
@@ -81,6 +87,8 @@ impl Document {
                 documents::content,
                 documents::asset_id,
                 documents::external_content_url,
+                documents::cover_image_asset_id,
+                documents::cover_image_external_url,
                 documents::created_at,
                 documents::updated_at,
             ))
@@ -120,6 +128,8 @@ impl Document {
                 documents::content,
                 documents::asset_id,
                 documents::external_content_url,
+                documents::cover_image_asset_id,
+                documents::cover_image_external_url,
                 documents::created_at,
                 documents::updated_at,
             ))

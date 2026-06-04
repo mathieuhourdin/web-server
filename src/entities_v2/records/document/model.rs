@@ -19,6 +19,8 @@ pub struct Document {
     pub content: Option<String>,
     pub asset_id: Option<Uuid>,
     pub external_content_url: Option<String>,
+    pub cover_image_asset_id: Option<Uuid>,
+    pub cover_image_external_url: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -43,6 +45,10 @@ pub struct NewDocumentDto {
     pub asset_id: Option<Uuid>,
     #[serde(default)]
     pub external_content_url: Option<String>,
+    #[serde(default)]
+    pub cover_image_asset_id: Option<Uuid>,
+    #[serde(default)]
+    pub cover_image_external_url: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -57,4 +63,6 @@ pub struct UpdateDocumentDto {
     pub content: Option<Option<String>>,
     pub asset_id: Option<Option<Uuid>>,
     pub external_content_url: Option<Option<String>>,
+    pub cover_image_asset_id: Option<Option<Uuid>>,
+    pub cover_image_external_url: Option<Option<String>>,
 }
