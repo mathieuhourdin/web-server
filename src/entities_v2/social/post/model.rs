@@ -14,6 +14,7 @@ pub struct Post {
     #[serde(skip_serializing, skip_deserializing)]
     pub resource_id: Uuid,
     pub source_trace_id: Option<Uuid>,
+    pub source_document_id: Option<Uuid>,
     pub trace_version_id: Option<Uuid>,
     pub content_source: PostContentSource,
     pub title: String,
@@ -48,6 +49,8 @@ pub struct NewPostDto {
     #[serde(default)]
     pub source_trace_id: Option<Uuid>,
     #[serde(default)]
+    pub source_document_id: Option<Uuid>,
+    #[serde(default)]
     pub trace_version_id: Option<Uuid>,
     #[serde(default)]
     pub content_source: Option<PostContentSource>,
@@ -66,6 +69,7 @@ pub struct NewPostDto {
 #[derive(Debug, Clone)]
 pub struct NewPost {
     pub source_trace_id: Option<Uuid>,
+    pub source_document_id: Option<Uuid>,
     pub trace_version_id: Option<Uuid>,
     pub content_source: PostContentSource,
     pub title: String,
@@ -116,6 +120,7 @@ impl NewPost {
         });
         Self {
             source_trace_id: payload.source_trace_id,
+            source_document_id: payload.source_document_id,
             trace_version_id: payload.trace_version_id,
             content_source,
             title: payload.title,

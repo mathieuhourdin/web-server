@@ -436,6 +436,7 @@ diesel::table! {
         image_asset_id -> Nullable<Uuid>,
         trace_version_id -> Nullable<Uuid>,
         content_source -> Text,
+        source_document_id -> Nullable<Uuid>,
     }
 }
 
@@ -724,6 +725,7 @@ diesel::joinable!(notification_digests -> users (recipient_user_id));
 diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(post_grants -> posts (post_id));
 diesel::joinable!(posts -> assets (image_asset_id));
+diesel::joinable!(posts -> documents (source_document_id));
 diesel::joinable!(posts -> trace_versions (trace_version_id));
 diesel::joinable!(posts -> traces (source_trace_id));
 diesel::joinable!(posts -> users (user_id));
