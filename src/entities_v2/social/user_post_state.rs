@@ -7,6 +7,7 @@ use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::Uuid as SqlUuid;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -18,7 +19,7 @@ use crate::entities_v2::{
     usage_event::{create_usage_event, UsageEventType},
     user::User,
 };
-use crate::schema::user_post_states;
+use crate::schema::{posts, user_post_states};
 
 #[derive(Serialize, Debug, Clone)]
 pub struct UserPostState {
@@ -129,6 +130,32 @@ impl UserPostState {
         .execute(&mut conn)?;
 
         Self::find_by_user_and_post(user_id, post_id, pool)
+    }
+
+    pub fn find_last_seen_at_by_user_and_trace_ids(
+        user_id: Uuid,
+        trace_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, NaiveDateTime>, PpdcError> {
+        if trace_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut conn = pool.get()?;
+        let rows = posts::table
+            .inner_join(user_post_states::table.on(user_post_states::post_id.eq(posts::id)))
+            .filter(user_post_states::user_id.eq(user_id))
+            .filter(posts::source_trace_id.eq_any(trace_ids))
+            .select((posts::source_trace_id, user_post_states::last_seen_at))
+            .load::<(Option<Uuid>, NaiveDateTime)>(&mut conn)?;
+
+        let mut out = HashMap::with_capacity(rows.len());
+        for (trace_id, last_seen_at) in rows {
+            if let Some(trace_id) = trace_id {
+                out.insert(trace_id, last_seen_at);
+            }
+        }
+        Ok(out)
     }
 
     pub fn find_seen_by_for_post(

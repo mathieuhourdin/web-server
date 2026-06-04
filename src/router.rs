@@ -93,6 +93,7 @@ pub fn create_router() -> Router {
             "/:id/extend_timeout",
             post(trace::post_trace_extend_timeout_route),
         )
+        .route("/:id/seen", put(trace::put_trace_seen_route))
         .route(
             "/:id/draft_version",
             post(trace_version::post_trace_draft_version_route),

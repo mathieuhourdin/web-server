@@ -35,6 +35,7 @@ use crate::entities_v2::{
     trace_attachment::{
         NewTraceAttachment, TraceAttachment, TraceAttachmentReadableView, TraceAttachmentWithAsset,
     },
+    user_post_state::UserPostState,
     user::{ensure_user_has_any_lens, User},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -89,6 +90,14 @@ pub struct TraceAttachmentUploadResponse {
     pub attachment: TraceAttachmentWithAsset,
     pub signed_url: String,
     pub expires_at: chrono::NaiveDateTime,
+}
+
+#[derive(Serialize)]
+pub struct TraceSeenStateResponse {
+    pub trace_id: Uuid,
+    pub post_id: Uuid,
+    pub first_seen_at: chrono::NaiveDateTime,
+    pub last_seen_at: chrono::NaiveDateTime,
 }
 
 #[derive(Deserialize)]
@@ -319,6 +328,25 @@ fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Pos
         return Ok(None);
     }
     Ok(Some(post))
+}
+
+fn attach_seen_state_to_journal_trace_views(
+    user_id: Uuid,
+    items: Vec<JournalTraceView>,
+    pool: &DbPool,
+) -> Result<Vec<JournalTraceView>, PpdcError> {
+    let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let last_seen_at_by_trace_id =
+        UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
+
+    Ok(items
+        .into_iter()
+        .map(|mut item| {
+            item.last_seen_at = last_seen_at_by_trace_id.get(&item.id).copied();
+            item.seen = item.last_seen_at.is_some();
+            item
+        })
+        .collect())
 }
 
 async fn parse_trace_attachment_multipart(
@@ -929,6 +957,43 @@ pub async fn get_trace_attachments_route(
 }
 
 #[debug_handler]
+pub async fn put_trace_seen_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TraceSeenStateResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let _trace = Trace::find_full_trace(id, &pool)?;
+    let post = find_published_trace_post(id, &pool)?.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Trace cannot be marked seen without a published post".to_string(),
+        )
+    })?;
+    if !PostGrant::user_can_read_post(&post, user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let state = UserPostState::create_or_mark_seen(user_id, post.id, &pool)?;
+    let _ = create_usage_event(
+        user_id,
+        Some(session.id),
+        UsageEventType::PostOpened,
+        Some(post.id),
+        None,
+        &pool,
+    );
+
+    Ok(Json(TraceSeenStateResponse {
+        trace_id: id,
+        post_id: post.id,
+        first_seen_at: state.first_seen_at,
+        last_seen_at: state.last_seen_at,
+    }))
+}
+
+#[debug_handler]
 pub async fn post_trace_attachment_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -1427,11 +1492,14 @@ pub async fn get_traces_for_journal_route(
                 title: trace.title,
                 content: trace.content,
                 image_asset_id: trace.image_asset_id,
+                seen: false,
+                last_seen_at: None,
                 interaction_date: trace.interaction_date,
                 created_at: trace.created_at,
                 updated_at: trace.updated_at,
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let items = attach_seen_state_to_journal_trace_views(user_id, items, &pool)?;
         return Ok(Json(PaginatedResponse::new(items, pagination, total)));
     }
 
@@ -1445,5 +1513,6 @@ pub async fn get_traces_for_journal_route(
     if total == 0 {
         return Err(PpdcError::unauthorized());
     }
+    let traces = attach_seen_state_to_journal_trace_views(user_id, traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
