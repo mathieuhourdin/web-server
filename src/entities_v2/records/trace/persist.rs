@@ -225,6 +225,24 @@ fn sync_trace_image_asset_to_related_posts(
     Ok(())
 }
 
+fn archive_related_posts_for_trace(
+    conn: &mut diesel::PgConnection,
+    trace_id: uuid::Uuid,
+) -> Result<(), diesel::result::Error> {
+    diesel::sql_query(
+        "UPDATE posts
+         SET status = 'ARCHIVED',
+             publishing_state = 'pbsh',
+             maturing_state = 'trsh',
+             updated_at = NOW()
+         WHERE source_trace_id = $1
+           AND status <> 'ARCHIVED'",
+    )
+    .bind::<SqlUuid, _>(trace_id)
+    .execute(conn)?;
+    Ok(())
+}
+
 impl Trace {
     pub fn update(mut self, pool: &DbPool) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
@@ -285,6 +303,9 @@ impl Trace {
             .execute(conn)?;
 
             sync_trace_image_asset_to_related_posts(conn, self.id, self.image_asset_id)?;
+            if self.status == TraceStatus::Archived {
+                archive_related_posts_for_trace(conn, self.id)?;
+            }
             sync_draft_trace_version_from_trace(conn, &self)?;
             finalize_draft_trace_version_from_trace(conn, &self)?;
 
