@@ -35,8 +35,8 @@ use crate::entities_v2::{
     trace_attachment::{
         NewTraceAttachment, TraceAttachment, TraceAttachmentReadableView, TraceAttachmentWithAsset,
     },
-    user_post_state::UserPostState,
     user::{ensure_user_has_any_lens, User},
+    user_post_state::UserPostState,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -1411,8 +1411,7 @@ pub async fn post_trace_message_route(
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Recipient must currently have access to a published shared trace post"
-                    .to_string(),
+                "Recipient must currently have access to a published shared trace post".to_string(),
             ));
         };
         if !PostGrant::user_can_read_post(shared_post, recipient_user_id, &pool)? {

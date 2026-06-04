@@ -399,9 +399,7 @@ impl JournalGrant {
         let traces = Self::find_finalized_user_traces_for_journal_with_conn(journal_id, conn)?;
 
         for trace in traces {
-            if let Some((post_id, status)) =
-                Self::find_post_for_trace_with_conn(trace.id, conn)?
-            {
+            if let Some((post_id, status)) = Self::find_post_for_trace_with_conn(trace.id, conn)? {
                 if status == PostStatus::Archived {
                     continue;
                 }

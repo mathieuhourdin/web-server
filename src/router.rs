@@ -11,7 +11,7 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
-    album, analysis_summary, asset, element,
+    album, analysis_summary, asset, document, element,
     error::{ErrorType, PpdcError},
     journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
     mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, trace_version,
@@ -38,6 +38,7 @@ pub fn create_router() -> Router {
         .route("/search", get(user::get_user_search_route))
         .route("/:id", get(user::get_user_route).put(user::put_user_route))
         .route("/:id/albums", get(album::get_user_albums_route))
+        .route("/:id/documents", get(document::get_user_documents_route))
         .route("/:id/posts", get(post::get_user_posts_route))
         .route(
             "/:id/analysis",
@@ -88,7 +89,10 @@ pub fn create_router() -> Router {
                 .put(trace::put_trace_route)
                 .patch(trace::patch_trace_route),
         )
-        .route("/:id/post", get(post::get_trace_post_route).put(post::put_trace_post_route))
+        .route(
+            "/:id/post",
+            get(post::get_trace_post_route).put(post::put_trace_post_route),
+        )
         .route(
             "/:id/extend_timeout",
             post(trace::post_trace_extend_timeout_route),
@@ -181,6 +185,14 @@ pub fn create_router() -> Router {
             post(asset::post_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .route("/:id/url", get(asset::get_asset_signed_url_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let documents_router = Router::new()
+        .route("/", post(document::post_document_route))
+        .route(
+            "/:id",
+            get(document::get_document_route).put(document::put_document_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()
@@ -409,6 +421,7 @@ pub fn create_router() -> Router {
         .nest("/posts", posts_router)
         .nest("/albums", albums_router)
         .nest("/assets", assets_router)
+        .nest("/documents", documents_router)
         .nest("/journals", journals_router)
         .nest("/transcriptions", transcriptions_router)
         .nest("/sessions", sessions_router)

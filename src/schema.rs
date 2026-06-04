@@ -59,6 +59,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    documents (id) {
+        id -> Uuid,
+        owner_user_id -> Uuid,
+        document_role -> Text,
+        document_type -> Nullable<Text>,
+        content_source -> Text,
+        title -> Text,
+        subtitle -> Text,
+        description -> Text,
+        author_name -> Nullable<Text>,
+        content -> Nullable<Text>,
+        asset_id -> Nullable<Uuid>,
+        external_content_url -> Nullable<Text>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     element_landmarks (id) {
         id -> Uuid,
         element_id -> Uuid,
@@ -663,6 +682,8 @@ diesel::joinable!(albums -> assets (cover_asset_id));
 diesel::joinable!(albums -> users (owner_user_id));
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
+diesel::joinable!(documents -> assets (asset_id));
+diesel::joinable!(documents -> users (owner_user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
 diesel::joinable!(element_landmarks -> landmarks (landmark_id));
 diesel::joinable!(elements -> landscape_analyses (analysis_id));
@@ -733,6 +754,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     albums,
     analysis_summaries,
     assets,
+    documents,
     element_landmarks,
     element_relations,
     elements,

@@ -391,8 +391,7 @@ pub async fn post_message_route(
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Linked trace must involve the owner and a current shared-trace reader"
-                    .to_string(),
+                "Linked trace must involve the owner and a current shared-trace reader".to_string(),
             ));
         }
     }
@@ -686,8 +685,7 @@ pub async fn put_message_route(
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Linked trace must involve the owner and a current shared-trace reader"
-                    .to_string(),
+                "Linked trace must involve the owner and a current shared-trace reader".to_string(),
             ));
         }
     }

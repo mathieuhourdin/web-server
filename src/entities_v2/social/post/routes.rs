@@ -245,10 +245,8 @@ pub async fn get_post_attachments_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-) -> Result<
-    Json<Vec<crate::entities_v2::trace_attachment::TraceAttachmentReadableView>>,
-    PpdcError,
-> {
+) -> Result<Json<Vec<crate::entities_v2::trace_attachment::TraceAttachmentReadableView>>, PpdcError>
+{
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let post = Post::find_full(id, &pool)?;
     let attachments = TraceAttachment::find_visible_for_post(&post, viewer_user_id, &pool)?;
