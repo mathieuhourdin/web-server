@@ -62,6 +62,7 @@ diesel::table! {
     documents (id) {
         id -> Uuid,
         owner_user_id -> Uuid,
+        status -> Text,
         document_role -> Text,
         document_type -> Nullable<Text>,
         content_source -> Text,
@@ -70,6 +71,7 @@ diesel::table! {
         description -> Text,
         author_name -> Nullable<Text>,
         content -> Nullable<Text>,
+        content_format -> Nullable<Text>,
         asset_id -> Nullable<Uuid>,
         external_content_url -> Nullable<Text>,
         cover_image_asset_id -> Nullable<Uuid>,

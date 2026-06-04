@@ -2,29 +2,51 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{error::PpdcError, session::Session};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
-use super::model::{Document, NewDocumentDto, UpdateDocumentDto};
+use super::model::{
+    Document, DocumentContentSource, DocumentRole, DocumentStatus, NewDocumentDto, PostType,
+    UpdateDocumentDto,
+};
+
+#[derive(Deserialize, Debug)]
+pub struct UserDocumentsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub document_role: Option<DocumentRole>,
+    pub document_type: Option<PostType>,
+    pub content_source: Option<DocumentContentSource>,
+    pub status: Option<DocumentStatus>,
+}
 
 #[debug_handler]
 pub async fn get_user_documents_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<UserDocumentsQuery>,
 ) -> Result<Json<PaginatedResponse<Document>>, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     if session_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
 
-    let pagination = params.validate()?;
-    let (items, total) =
-        Document::find_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    let pagination = params.pagination.validate()?;
+    let (items, total) = Document::find_for_user_filtered_paginated(
+        user_id,
+        params.document_role,
+        params.document_type,
+        params.content_source,
+        params.status,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
 
@@ -69,6 +91,9 @@ pub async fn put_document_route(
     if let Some(document_role) = payload.document_role {
         document.document_role = document_role;
     }
+    if let Some(status) = payload.status {
+        document.status = status;
+    }
     if let Some(document_type) = payload.document_type {
         document.document_type = document_type;
     }
@@ -89,6 +114,9 @@ pub async fn put_document_route(
     }
     if let Some(content) = payload.content {
         document.content = content;
+    }
+    if let Some(content_format) = payload.content_format {
+        document.content_format = content_format;
     }
     if let Some(asset_id) = payload.asset_id {
         document.asset_id = asset_id;

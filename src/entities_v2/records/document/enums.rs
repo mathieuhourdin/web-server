@@ -51,3 +51,52 @@ impl DocumentContentSource {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentContentFormat {
+    PlainText,
+    Markdown,
+    Internal,
+}
+
+impl DocumentContentFormat {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            DocumentContentFormat::PlainText => "PLAIN_TEXT",
+            DocumentContentFormat::Markdown => "MARKDOWN",
+            DocumentContentFormat::Internal => "INTERNAL",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "MARKDOWN" | "markdown" => DocumentContentFormat::Markdown,
+            "INTERNAL" | "internal" => DocumentContentFormat::Internal,
+            _ => DocumentContentFormat::PlainText,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentStatus {
+    Active,
+    Archived,
+}
+
+impl DocumentStatus {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            DocumentStatus::Active => "ACTIVE",
+            DocumentStatus::Archived => "ARCHIVED",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "ARCHIVED" | "archived" => DocumentStatus::Archived,
+            _ => DocumentStatus::Active,
+        }
+    }
+}

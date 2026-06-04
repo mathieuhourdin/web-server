@@ -6,17 +6,21 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::schema::documents;
 
-use super::model::{Document, DocumentContentSource, DocumentRole, PostType};
+use super::model::{
+    Document, DocumentContentFormat, DocumentContentSource, DocumentRole, DocumentStatus, PostType,
+};
 
 type DocumentTuple = (
     Uuid,
     Uuid,
+    String,
     String,
     Option<String>,
     String,
     String,
     String,
     String,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<Uuid>,
@@ -32,6 +36,7 @@ impl From<DocumentTuple> for Document {
         let (
             id,
             owner_user_id,
+            status,
             document_role,
             document_type,
             content_source,
@@ -40,6 +45,7 @@ impl From<DocumentTuple> for Document {
             description,
             author_name,
             content,
+            content_format,
             asset_id,
             external_content_url,
             cover_image_asset_id,
@@ -51,6 +57,7 @@ impl From<DocumentTuple> for Document {
         Self {
             id,
             owner_user_id,
+            status: DocumentStatus::from_db(&status),
             document_role: DocumentRole::from_db(&document_role),
             document_type: document_type.as_deref().map(PostType::from_db),
             content_source: DocumentContentSource::from_db(&content_source),
@@ -59,6 +66,9 @@ impl From<DocumentTuple> for Document {
             description,
             author_name,
             content,
+            content_format: content_format
+                .as_deref()
+                .map(DocumentContentFormat::from_db),
             asset_id,
             external_content_url,
             cover_image_asset_id,
@@ -77,6 +87,7 @@ impl Document {
             .select((
                 documents::id,
                 documents::owner_user_id,
+                documents::status,
                 documents::document_role,
                 documents::document_type,
                 documents::content_source,
@@ -85,6 +96,7 @@ impl Document {
                 documents::description,
                 documents::author_name,
                 documents::content,
+                documents::content_format,
                 documents::asset_id,
                 documents::external_content_url,
                 documents::cover_image_asset_id,
@@ -106,18 +118,60 @@ impl Document {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Document>, i64), PpdcError> {
+        Self::find_for_user_filtered_paginated(
+            owner_user_id,
+            None,
+            None,
+            None,
+            Some(DocumentStatus::Active),
+            offset,
+            limit,
+            pool,
+        )
+    }
+
+    pub fn find_for_user_filtered_paginated(
+        owner_user_id: Uuid,
+        document_role: Option<DocumentRole>,
+        document_type: Option<PostType>,
+        content_source: Option<DocumentContentSource>,
+        status: Option<DocumentStatus>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Document>, i64), PpdcError> {
         let mut conn = pool.get()?;
 
-        let total = documents::table
+        let mut count_query = documents::table
             .filter(documents::owner_user_id.eq(owner_user_id))
-            .count()
-            .get_result::<i64>(&mut conn)?;
+            .into_boxed();
+        let mut query = documents::table
+            .filter(documents::owner_user_id.eq(owner_user_id))
+            .into_boxed();
+        let status = status.unwrap_or(DocumentStatus::Active);
 
-        let rows = documents::table
-            .filter(documents::owner_user_id.eq(owner_user_id))
+        if let Some(document_role) = document_role {
+            count_query = count_query.filter(documents::document_role.eq(document_role.to_db()));
+            query = query.filter(documents::document_role.eq(document_role.to_db()));
+        }
+        if let Some(document_type) = document_type {
+            count_query = count_query.filter(documents::document_type.eq(document_type.to_db()));
+            query = query.filter(documents::document_type.eq(document_type.to_db()));
+        }
+        if let Some(content_source) = content_source {
+            count_query = count_query.filter(documents::content_source.eq(content_source.to_db()));
+            query = query.filter(documents::content_source.eq(content_source.to_db()));
+        }
+        count_query = count_query.filter(documents::status.eq(status.to_db()));
+        query = query.filter(documents::status.eq(status.to_db()));
+
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
+        let rows = query
             .select((
                 documents::id,
                 documents::owner_user_id,
+                documents::status,
                 documents::document_role,
                 documents::document_type,
                 documents::content_source,
@@ -126,6 +180,7 @@ impl Document {
                 documents::description,
                 documents::author_name,
                 documents::content,
+                documents::content_format,
                 documents::asset_id,
                 documents::external_content_url,
                 documents::cover_image_asset_id,
