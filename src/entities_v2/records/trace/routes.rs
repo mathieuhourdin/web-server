@@ -32,7 +32,9 @@ use crate::entities_v2::{
     post_grant::{NewPostGrantDto, PostGrant, PostGrantScope},
     session::Session,
     shared::MaturingState,
-    trace_attachment::{NewTraceAttachment, TraceAttachment, TraceAttachmentWithAsset},
+    trace_attachment::{
+        NewTraceAttachment, TraceAttachment, TraceAttachmentReadableView, TraceAttachmentWithAsset,
+    },
     user::{ensure_user_has_any_lens, User},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -908,14 +910,21 @@ pub async fn get_trace_attachments_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Vec<TraceAttachmentWithAsset>>, PpdcError> {
+) -> Result<Json<Vec<TraceAttachmentReadableView>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
+        let shared_post = find_published_trace_post(id, &pool)?;
+        let can_read_shared_trace = match shared_post {
+            Some(post) => PostGrant::user_can_read_post(&post, user_id, &pool)?,
+            None => false,
+        };
+        if !can_read_shared_trace {
+            return Err(PpdcError::unauthorized());
+        }
     }
 
-    let attachments = TraceAttachment::find_with_assets_for_trace(id, &pool)?;
+    let attachments = TraceAttachment::find_readable_for_trace(id, &pool)?;
     Ok(Json(attachments))
 }
 

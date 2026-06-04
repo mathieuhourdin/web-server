@@ -32,6 +32,26 @@ pub struct TraceAttachmentWithAsset {
     pub asset: Asset,
 }
 
+#[derive(Serialize, Debug, Clone)]
+pub struct ReadableAssetSummary {
+    pub id: Uuid,
+    pub mime_type: String,
+    pub original_filename: String,
+    pub size_bytes: i64,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct TraceAttachmentReadableView {
+    pub id: Uuid,
+    pub trace_id: Uuid,
+    pub asset_id: Uuid,
+    pub attachment_name: String,
+    pub created_at: NaiveDateTime,
+    pub asset: ReadableAssetSummary,
+}
+
 type TraceAttachmentTuple = (Uuid, Uuid, Uuid, String, NaiveDateTime);
 
 #[derive(Debug, Clone)]
@@ -42,6 +62,24 @@ pub struct NewTraceAttachment {
 }
 
 impl TraceAttachment {
+    fn to_readable_view(attachment: TraceAttachment, asset: Asset) -> TraceAttachmentReadableView {
+        TraceAttachmentReadableView {
+            id: attachment.id,
+            trace_id: attachment.trace_id,
+            asset_id: attachment.asset_id,
+            attachment_name: attachment.attachment_name,
+            created_at: attachment.created_at,
+            asset: ReadableAssetSummary {
+                id: asset.id,
+                mime_type: asset.mime_type,
+                original_filename: asset.original_filename,
+                size_bytes: asset.size_bytes,
+                created_at: asset.created_at,
+                updated_at: asset.updated_at,
+            },
+        }
+    }
+
     fn from_tuple(row: TraceAttachmentTuple) -> Self {
         let (id, trace_id, asset_id, attachment_name, created_at) = row;
         Self {
@@ -121,7 +159,7 @@ impl TraceAttachment {
         post: &Post,
         viewer_user_id: Uuid,
         pool: &DbPool,
-    ) -> Result<Vec<TraceAttachmentWithAsset>, PpdcError> {
+    ) -> Result<Vec<TraceAttachmentReadableView>, PpdcError> {
         if post.user_id != viewer_user_id {
             if post.status != PostStatus::Published
                 || !PostGrant::user_can_read_post(post, viewer_user_id, pool)?
@@ -134,7 +172,21 @@ impl TraceAttachment {
             return Ok(vec![]);
         };
 
-        Self::find_with_assets_for_trace(trace_id, pool)
+        Self::find_readable_for_trace(trace_id, pool)
+    }
+
+    pub fn find_readable_for_trace(
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<TraceAttachmentReadableView>, PpdcError> {
+        let attachments = Self::find_for_trace(trace_id, pool)?;
+        attachments
+            .into_iter()
+            .map(|attachment| {
+                let asset = Asset::find(attachment.asset_id, pool)?;
+                Ok(Self::to_readable_view(attachment, asset))
+            })
+            .collect()
     }
 
     pub fn delete(id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
