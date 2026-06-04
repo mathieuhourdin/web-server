@@ -452,11 +452,11 @@ impl Trace {
         let filter_string;
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
             filter_string = format!(
-                "AND status <> 'DRAFT' AND sharing_sensitivity = '{}'",
+                "AND status = 'FINALIZED' AND sharing_sensitivity = '{}'",
                 sharing_sensitivity_filter.to_db()
             );
         } else {
-            filter_string = String::from("AND status <> 'DRAFT'");
+            filter_string = String::from("AND status = 'FINALIZED'");
         }
 
         let total = diesel::sql_query(format!(
@@ -506,6 +506,7 @@ impl Trace {
         let total = traces::table
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::id.eq_any(visible_post_ids.clone()))
             .count()
@@ -514,6 +515,7 @@ impl Trace {
         let rows = traces::table
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::id.eq_any(visible_post_ids))
             .select((
