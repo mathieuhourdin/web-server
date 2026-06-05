@@ -597,6 +597,7 @@ impl Post {
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
+            .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
             .count()
             .get_result::<i64>(&mut conn)?;
 
@@ -606,6 +607,7 @@ impl Post {
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
+            .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
             .select(select_post_columns())
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
@@ -631,6 +633,7 @@ impl Post {
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
+            .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
             .filter(traces::content_image_asset_id.eq(Some(asset_id)))
             .select(posts::id)
             .first::<Uuid>(&mut conn)

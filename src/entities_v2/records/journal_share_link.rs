@@ -112,12 +112,16 @@ pub struct PublicSharedJournalResponse {
 }
 
 #[derive(Serialize)]
-pub struct PublicSharedJournalPostResponse {
+pub struct PublicSharedJournalTraceResponse {
     pub id: Uuid,
+    pub journal_id: Uuid,
     pub title: String,
+    pub subtitle: String,
     pub content: String,
     pub image_url: Option<String>,
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
+    pub interaction_date: NaiveDateTime,
+    pub finalized_at: Option<NaiveDateTime>,
     pub publishing_date: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -127,7 +131,7 @@ pub struct PublicSharedJournalPostResponse {
 pub struct PublicSharedJournalBootstrapResponse {
     pub share_link: PublicSharedJournalShareLinkResponse,
     pub journal: PublicSharedJournalResponse,
-    pub posts: PaginatedResponse<PublicSharedJournalPostResponse>,
+    pub traces: PaginatedResponse<PublicSharedJournalTraceResponse>,
 }
 
 #[derive(Deserialize)]
@@ -152,30 +156,31 @@ fn build_shared_journal_asset_url(share_link_id: Uuid, asset_id: Uuid, token: &s
     )
 }
 
-impl PublicSharedJournalPostResponse {
-    fn from_post(
-        post: Post,
+impl PublicSharedJournalTraceResponse {
+    fn from_trace(
+        trace: Trace,
+        publishing_date: Option<NaiveDateTime>,
         share_link_id: Uuid,
         token: &str,
-        pool: &DbPool,
-    ) -> Result<Self, PpdcError> {
-        let image_asset_id = match post.source_trace_id {
-            Some(trace_id) => Trace::find_full_trace(trace_id, pool)?.content_image_asset_id,
-            None => None,
-        };
-        let image_url = image_asset_id
+    ) -> Self {
+        let image_url = trace
+            .content_image_asset_id
             .map(|asset_id| build_shared_journal_asset_url(share_link_id, asset_id, token));
 
-        Ok(Self {
-            id: post.id,
-            title: post.title,
-            content: post.content,
+        Self {
+            id: trace.id,
+            journal_id: trace.journal_id.unwrap_or_default(),
+            title: trace.title,
+            subtitle: trace.subtitle,
+            content: trace.content,
             image_url,
-            image_asset_id,
-            publishing_date: post.publishing_date,
-            created_at: post.created_at,
-            updated_at: post.updated_at,
-        })
+            content_image_asset_id: trace.content_image_asset_id,
+            interaction_date: trace.interaction_date,
+            finalized_at: trace.finalized_at,
+            publishing_date,
+            created_at: trace.created_at,
+            updated_at: trace.updated_at,
+        }
     }
 }
 
@@ -481,20 +486,36 @@ impl JournalShareLink {
                 "Cannot scope a journal share link to a sensitive trace".to_string(),
             ));
         }
+        if trace.status != crate::entities_v2::trace::TraceStatus::Finalized {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Cannot scope a journal share link to a non-finalized trace".to_string(),
+            ));
+        }
         Ok(post)
     }
 
-    fn find_public_posts_for_link(
+    fn find_public_traces_for_link(
         link: &JournalShareLink,
         journal: &Journal,
         offset: i64,
         limit: i64,
         pool: &DbPool,
-    ) -> Result<(Vec<Post>, i64), PpdcError> {
+    ) -> Result<(Vec<(Trace, Option<NaiveDateTime>)>, i64), PpdcError> {
         let Some(scoped_post_id) = link.scoped_post_id else {
-            return Post::find_public_default_for_journal_paginated(
-                journal.id, offset, limit, pool,
-            );
+            let (posts, total) =
+                Post::find_public_default_for_journal_paginated(journal.id, offset, limit, pool)?;
+            let traces = posts
+                .into_iter()
+                .filter_map(|post| {
+                    post.source_trace_id.map(|trace_id| {
+                        Trace::find_full_trace(trace_id, pool)
+                            .map(|trace| (trace, post.publishing_date))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok((traces, total));
         };
 
         let post = match Self::validate_scoped_post(journal, scoped_post_id, pool) {
@@ -508,7 +529,8 @@ impl JournalShareLink {
         if offset > 0 || limit <= 0 {
             return Ok((vec![], 1));
         }
-        Ok((vec![post], 1))
+        let trace = Trace::find_full_trace(post.source_trace_id.unwrap_or_default(), pool)?;
+        Ok((vec![(trace, post.publishing_date)], 1))
     }
 
     fn public_link_uses_image_asset(
@@ -618,7 +640,7 @@ pub async fn get_shared_journal_route(
     let pagination = params.pagination.validate()?;
     let (link, journal) = JournalShareLink::authorize(share_link_id, &params.token, &pool)?;
     let owner = User::find(&journal.user_id, &pool)?;
-    let (posts, total) = JournalShareLink::find_public_posts_for_link(
+    let (traces, total) = JournalShareLink::find_public_traces_for_link(
         &link,
         &journal,
         pagination.offset,
@@ -633,13 +655,18 @@ pub async fn get_shared_journal_route(
             expires_at: link.expires_at,
         },
         journal: build_public_journal_response(journal, owner),
-        posts: PaginatedResponse::new(
-            posts
+        traces: PaginatedResponse::new(
+            traces
                 .into_iter()
-                .map(|post| {
-                    PublicSharedJournalPostResponse::from_post(post, link.id, &params.token, &pool)
+                .map(|(trace, publishing_date)| {
+                    PublicSharedJournalTraceResponse::from_trace(
+                        trace,
+                        publishing_date,
+                        link.id,
+                        &params.token,
+                    )
                 })
-                .collect::<Result<Vec<_>, _>>()?,
+                .collect::<Vec<_>>(),
             pagination,
             total,
         ),
@@ -651,10 +678,10 @@ pub async fn get_shared_journal_posts_route(
     Extension(pool): Extension<DbPool>,
     Path(share_link_id): Path<Uuid>,
     Query(params): Query<PublicShareLinkQuery>,
-) -> Result<Json<PaginatedResponse<PublicSharedJournalPostResponse>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<PublicSharedJournalTraceResponse>>, PpdcError> {
     let pagination = params.pagination.validate()?;
     let (link, journal) = JournalShareLink::authorize(share_link_id, &params.token, &pool)?;
-    let (posts, total) = JournalShareLink::find_public_posts_for_link(
+    let (traces, total) = JournalShareLink::find_public_traces_for_link(
         &link,
         &journal,
         pagination.offset,
@@ -663,20 +690,29 @@ pub async fn get_shared_journal_posts_route(
     )?;
 
     Ok(Json(PaginatedResponse::new(
-        posts
+        traces
             .into_iter()
-            .map(|post| {
-                PublicSharedJournalPostResponse::from_post(
-                    post,
+            .map(|(trace, publishing_date)| {
+                PublicSharedJournalTraceResponse::from_trace(
+                    trace,
+                    publishing_date,
                     share_link_id,
                     &params.token,
-                    &pool,
                 )
             })
-            .collect::<Result<Vec<_>, _>>()?,
+            .collect::<Vec<_>>(),
         pagination,
         total,
     )))
+}
+
+#[debug_handler]
+pub async fn get_shared_journal_traces_route(
+    Extension(pool): Extension<DbPool>,
+    Path(share_link_id): Path<Uuid>,
+    Query(params): Query<PublicShareLinkQuery>,
+) -> Result<Json<PaginatedResponse<PublicSharedJournalTraceResponse>>, PpdcError> {
+    get_shared_journal_posts_route(Extension(pool), Path(share_link_id), Query(params)).await
 }
 
 #[debug_handler]

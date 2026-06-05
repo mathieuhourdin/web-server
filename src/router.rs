@@ -417,6 +417,10 @@ pub fn create_router() -> Router {
         .route(
             "/journals/:id/posts",
             get(journal_share_link::get_shared_journal_posts_route),
+        )
+        .route(
+            "/journals/:id/traces",
+            get(journal_share_link::get_shared_journal_traces_route),
         );
     let feed_router = Router::new()
         .route("/", get(feed::get_feed_route))
