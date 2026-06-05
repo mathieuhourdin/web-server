@@ -695,6 +695,34 @@ impl Post {
         }
     }
 
+    pub fn find_for_document(document_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
+        let mut conn = pool.get()?;
+        let row = posts::table
+            .filter(posts::source_document_id.eq(Some(document_id)))
+            .select(select_post_columns())
+            .first::<PostTuple>(&mut conn)
+            .optional()?;
+
+        match row.map(tuple_to_post) {
+            Some(post) => Ok(Some(hydrate_trace_text_for_post(post, pool)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn find_for_album(album_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
+        let mut conn = pool.get()?;
+        let row = posts::table
+            .filter(posts::source_album_id.eq(Some(album_id)))
+            .select(select_post_columns())
+            .first::<PostTuple>(&mut conn)
+            .optional()?;
+
+        match row.map(tuple_to_post) {
+            Some(post) => Ok(Some(hydrate_trace_text_for_post(post, pool)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn find_for_user(
         viewer_user_id: Uuid,
         user_id: Uuid,

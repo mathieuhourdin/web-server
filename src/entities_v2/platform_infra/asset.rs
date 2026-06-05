@@ -18,6 +18,8 @@ use crate::entities_v2::{
     album::Album,
     document::Document,
     error::{ErrorType, PpdcError},
+    post::{Post, PostStatus},
+    post_grant::PostGrant,
     session::Session,
     trace::Trace,
 };
@@ -251,13 +253,44 @@ impl Asset {
             AssetUsage::DocumentCover { document_id }
             | AssetUsage::DocumentContentAsset { document_id } => {
                 let document = Document::find_full(document_id, pool)?;
-                Ok(document.user_can_read(viewer_user_id))
+                if document.user_can_read(viewer_user_id) {
+                    return Ok(true);
+                }
+                Self::can_user_read_via_published_post(
+                    Post::find_for_document(document_id, pool)?,
+                    viewer_user_id,
+                    pool,
+                )
             }
             AssetUsage::AlbumCover { album_id } => {
                 let album = Album::find(album_id, pool)?;
-                album.user_can_read(viewer_user_id, pool)
+                if album.owner_user_id == viewer_user_id {
+                    return Ok(true);
+                }
+                Self::can_user_read_via_published_post(
+                    Post::find_for_album(album_id, pool)?,
+                    viewer_user_id,
+                    pool,
+                )
             }
         }
+    }
+
+    fn can_user_read_via_published_post(
+        post: Option<Post>,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let Some(post) = post else {
+            return Ok(false);
+        };
+        if post.user_id == viewer_user_id {
+            return Ok(true);
+        }
+        if post.status != PostStatus::Published {
+            return Ok(false);
+        }
+        PostGrant::user_can_read_post(&post, viewer_user_id, pool)
     }
 
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Asset, PpdcError> {
