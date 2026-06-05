@@ -1,4 +1,5 @@
 use chrono::NaiveDateTime;
+use diesel::dsl::not;
 use diesel::prelude::*;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -12,7 +13,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     trace::TraceStatus,
 };
-use crate::schema::{albums, documents, posts, traces};
+use crate::schema::{albums, documents, posts, traces, user_post_states};
 
 use super::model::{FeedItem, FeedSourceKind};
 
@@ -188,6 +189,7 @@ fn load_source_projection_map(
 
 pub fn find_feed_items_paginated(
     viewer_user_id: Uuid,
+    seen: Option<bool>,
     offset: i64,
     limit: i64,
     pool: &DbPool,
@@ -198,10 +200,33 @@ pub fn find_feed_items_paginated(
     }
 
     let mut conn = pool.get()?;
-    let rows = posts::table
+    let seen_post_ids = if seen.is_some() {
+        user_post_states::table
+            .filter(user_post_states::user_id.eq(viewer_user_id))
+            .select(user_post_states::post_id)
+            .load::<Uuid>(&mut conn)?
+    } else {
+        vec![]
+    };
+
+    let mut query = posts::table
         .filter(posts::status.eq(PostStatus::Published.to_db()))
         .filter(posts::user_id.ne(viewer_user_id))
         .filter(posts::id.eq_any(visible_post_ids))
+        .into_boxed();
+
+    if let Some(seen) = seen {
+        if seen {
+            if seen_post_ids.is_empty() {
+                return Ok((vec![], 0));
+            }
+            query = query.filter(posts::id.eq_any(seen_post_ids));
+        } else if !seen_post_ids.is_empty() {
+            query = query.filter(not(posts::id.eq_any(seen_post_ids)));
+        }
+    }
+
+    let rows = query
         .select((
             posts::id,
             posts::user_id,

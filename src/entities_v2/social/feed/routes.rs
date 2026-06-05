@@ -14,6 +14,7 @@ use super::{hydrate::find_feed_items_paginated, model::FeedItem};
 pub struct FeedQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+    pub seen: Option<bool>,
 }
 
 #[debug_handler]
@@ -24,7 +25,12 @@ pub async fn get_feed_route(
 ) -> Result<Json<PaginatedResponse<FeedItem>>, PpdcError> {
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.pagination.validate()?;
-    let (items, total) =
-        find_feed_items_paginated(viewer_user_id, pagination.offset, pagination.limit, &pool)?;
+    let (items, total) = find_feed_items_paginated(
+        viewer_user_id,
+        params.seen,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
