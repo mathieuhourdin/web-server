@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::not;
 use diesel::prelude::*;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -298,6 +299,123 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
     }
 }
 
+type TraceTextMap = HashMap<Uuid, (String, String, String)>;
+
+fn load_trace_text_map(
+    trace_ids: &[Uuid],
+    conn: &mut PgConnection,
+) -> Result<TraceTextMap, PpdcError> {
+    if trace_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = traces::table
+        .filter(traces::id.eq_any(trace_ids))
+        .select((traces::id, traces::title, traces::subtitle, traces::content))
+        .load::<(Uuid, String, String, String)>(conn)?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, title, subtitle, content)| (id, (title, subtitle, content)))
+        .collect())
+}
+
+fn apply_trace_text_to_post(post: &mut Post, trace_text_by_id: &TraceTextMap) {
+    let Some(trace_id) = post.source_trace_id else {
+        return;
+    };
+    let Some((title, subtitle, content)) = trace_text_by_id.get(&trace_id) else {
+        return;
+    };
+
+    post.title = title.clone();
+    post.subtitle = subtitle.clone();
+    post.content = content.clone();
+}
+
+fn hydrate_trace_text_for_posts(posts: Vec<Post>, pool: &DbPool) -> Result<Vec<Post>, PpdcError> {
+    let mut trace_ids = posts
+        .iter()
+        .filter_map(|post| post.source_trace_id)
+        .collect::<Vec<_>>();
+    if trace_ids.is_empty() {
+        return Ok(posts);
+    }
+
+    trace_ids.sort_unstable();
+    trace_ids.dedup();
+
+    let mut conn = pool.get()?;
+    let trace_text_by_id = load_trace_text_map(&trace_ids, &mut conn)?;
+
+    Ok(posts
+        .into_iter()
+        .map(|mut post| {
+            apply_trace_text_to_post(&mut post, &trace_text_by_id);
+            post
+        })
+        .collect())
+}
+
+fn hydrate_trace_text_for_post(post: Post, pool: &DbPool) -> Result<Post, PpdcError> {
+    let mut posts = hydrate_trace_text_for_posts(vec![post], pool)?;
+    Ok(posts.remove(0))
+}
+
+fn hydrate_trace_text_for_feed_posts(
+    items: Vec<FeedPostResponse>,
+    pool: &DbPool,
+) -> Result<Vec<FeedPostResponse>, PpdcError> {
+    let mut trace_ids = items
+        .iter()
+        .filter_map(|item| item.post.source_trace_id)
+        .collect::<Vec<_>>();
+    if trace_ids.is_empty() {
+        return Ok(items);
+    }
+
+    trace_ids.sort_unstable();
+    trace_ids.dedup();
+
+    let mut conn = pool.get()?;
+    let trace_text_by_id = load_trace_text_map(&trace_ids, &mut conn)?;
+
+    Ok(items
+        .into_iter()
+        .map(|mut item| {
+            apply_trace_text_to_post(&mut item.post, &trace_text_by_id);
+            item
+        })
+        .collect())
+}
+
+fn hydrate_trace_text_for_digest_visible_posts(
+    items: Vec<DigestVisiblePost>,
+    pool: &DbPool,
+) -> Result<Vec<DigestVisiblePost>, PpdcError> {
+    let mut trace_ids = items
+        .iter()
+        .filter_map(|item| item.post.source_trace_id)
+        .collect::<Vec<_>>();
+    if trace_ids.is_empty() {
+        return Ok(items);
+    }
+
+    trace_ids.sort_unstable();
+    trace_ids.dedup();
+
+    let mut conn = pool.get()?;
+    let trace_text_by_id = load_trace_text_map(&trace_ids, &mut conn)?;
+
+    Ok(items
+        .into_iter()
+        .map(|mut item| {
+            apply_trace_text_to_post(&mut item.post, &trace_text_by_id);
+            item
+        })
+        .collect())
+}
+
 impl Post {
     pub fn find_feed_paginated(
         viewer_user_id: Uuid,
@@ -353,6 +471,7 @@ impl Post {
             .into_iter()
             .map(tuple_to_feed_post_response)
             .collect::<Vec<_>>();
+        let posts = hydrate_trace_text_for_feed_posts(posts, pool)?;
 
         let total = posts.len() as i64;
         let items = posts
@@ -371,8 +490,10 @@ impl Post {
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
             .optional()?;
-        row.map(tuple_to_post)
-            .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string()))
+        let post = row
+            .map(tuple_to_post)
+            .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string()))?;
+        hydrate_trace_text_for_post(post, pool)
     }
 
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
@@ -431,7 +552,9 @@ impl Post {
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
 
-        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+        let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
+        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        Ok((posts, total))
     }
 
     pub fn find_public_default_for_journal_paginated(
@@ -447,6 +570,7 @@ impl Post {
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .count()
             .get_result::<i64>(&mut conn)?;
 
@@ -455,6 +579,7 @@ impl Post {
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .select(select_post_columns())
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
@@ -462,7 +587,9 @@ impl Post {
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
 
-        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+        let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
+        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        Ok((posts, total))
     }
 
     pub fn public_default_post_uses_image_asset_in_journal(
@@ -477,6 +604,7 @@ impl Post {
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .filter(posts::image_asset_id.eq(Some(asset_id)))
             .select(posts::id)
             .first::<Uuid>(&mut conn)
@@ -537,7 +665,7 @@ impl Post {
             }
         }
 
-        Ok(visible_posts)
+        hydrate_trace_text_for_digest_visible_posts(visible_posts, pool)
     }
 
     pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
@@ -548,7 +676,10 @@ impl Post {
             .first::<PostTuple>(&mut conn)
             .optional()?;
 
-        Ok(row.map(tuple_to_post))
+        match row.map(tuple_to_post) {
+            Some(post) => Ok(Some(hydrate_trace_text_for_post(post, pool)?)),
+            None => Ok(None),
+        }
     }
 
     pub fn find_for_user(
@@ -653,7 +784,9 @@ impl Post {
             .offset(offset)
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+        let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
+        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        Ok((posts, total))
     }
 
     pub fn find_filtered(
@@ -836,7 +969,9 @@ impl Post {
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
 
-        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+        let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
+        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        Ok((posts, total))
     }
 
     pub fn find_drafts_for_user_paginated(
@@ -863,6 +998,8 @@ impl Post {
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
 
-        Ok((rows.into_iter().map(tuple_to_post).collect(), total))
+        let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
+        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        Ok((posts, total))
     }
 }

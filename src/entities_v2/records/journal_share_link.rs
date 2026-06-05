@@ -17,9 +17,9 @@ use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
-    post::{Post, PostStatus},
+    post::{Post, PostAudienceRole, PostStatus},
     session::Session,
-    trace::Trace,
+    trace::{Trace, TraceSharingSensitivity},
     user::User,
 };
 use crate::environment;
@@ -449,6 +449,13 @@ impl JournalShareLink {
                 "Cannot scope a journal share link to a non-published post".to_string(),
             ));
         }
+        if post.audience_role != PostAudienceRole::Default {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Cannot scope a journal share link to a restricted post".to_string(),
+            ));
+        }
         let trace_id = post.source_trace_id.ok_or_else(|| {
             PpdcError::new(
                 400,
@@ -462,6 +469,13 @@ impl JournalShareLink {
                 400,
                 ErrorType::ApiError,
                 "Scoped post must belong to the shared journal".to_string(),
+            ));
+        }
+        if trace.sharing_sensitivity != TraceSharingSensitivity::Normal {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Cannot scope a journal share link to a sensitive trace".to_string(),
             ));
         }
         Ok(post)

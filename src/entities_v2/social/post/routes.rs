@@ -152,7 +152,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
             &journal.title,
             &journal_url,
             trace.interaction_date,
-            &post.content,
+            &trace.content,
         );
         let email = NewOutboundEmail::new(
             Some(recipient.id),
