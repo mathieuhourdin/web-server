@@ -430,6 +430,7 @@ fn ensure_default_draft_post_for_shared_trace(
     let post = NewPost {
         source_trace_id: Some(trace.id),
         source_document_id: None,
+        source_album_id: None,
         trace_version_id: Trace::current_version_id(trace.id, pool)?,
         content_source: crate::entities_v2::post::PostContentSource::TraceVersion,
         title: trace.title.clone(),

@@ -15,6 +15,7 @@ pub struct Post {
     pub resource_id: Uuid,
     pub source_trace_id: Option<Uuid>,
     pub source_document_id: Option<Uuid>,
+    pub source_album_id: Option<Uuid>,
     pub trace_version_id: Option<Uuid>,
     pub content_source: PostContentSource,
     pub title: String,
@@ -44,12 +45,21 @@ pub struct FeedPostResponse {
     pub journal_title: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostSourceRef {
+    Trace(Uuid),
+    Document(Uuid),
+    Album(Uuid),
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewPostDto {
     #[serde(default)]
     pub source_trace_id: Option<Uuid>,
     #[serde(default)]
     pub source_document_id: Option<Uuid>,
+    #[serde(default)]
+    pub source_album_id: Option<Uuid>,
     #[serde(default)]
     pub trace_version_id: Option<Uuid>,
     #[serde(default)]
@@ -70,6 +80,7 @@ pub struct NewPostDto {
 pub struct NewPost {
     pub source_trace_id: Option<Uuid>,
     pub source_document_id: Option<Uuid>,
+    pub source_album_id: Option<Uuid>,
     pub trace_version_id: Option<Uuid>,
     pub content_source: PostContentSource,
     pub title: String,
@@ -121,6 +132,7 @@ impl NewPost {
         Self {
             source_trace_id: payload.source_trace_id,
             source_document_id: payload.source_document_id,
+            source_album_id: payload.source_album_id,
             trace_version_id: payload.trace_version_id,
             content_source,
             title: payload.title,
@@ -140,6 +152,18 @@ impl NewPost {
                 .unwrap_or_else(default_post_audience_role),
             publishing_state,
             maturing_state,
+        }
+    }
+}
+
+impl Post {
+    pub fn source_ref(&self) -> Option<PostSourceRef> {
+        if let Some(trace_id) = self.source_trace_id {
+            Some(PostSourceRef::Trace(trace_id))
+        } else if let Some(document_id) = self.source_document_id {
+            Some(PostSourceRef::Document(document_id))
+        } else {
+            self.source_album_id.map(PostSourceRef::Album)
         }
     }
 }

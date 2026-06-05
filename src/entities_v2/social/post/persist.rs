@@ -14,6 +14,7 @@ impl Post {
             .set((
                 posts::source_trace_id.eq(self.source_trace_id),
                 posts::source_document_id.eq(self.source_document_id),
+                posts::source_album_id.eq(self.source_album_id),
                 posts::trace_version_id.eq(self.trace_version_id),
                 posts::content_source.eq(self.content_source.to_db()),
                 posts::title.eq(self.title),
@@ -42,6 +43,7 @@ impl NewPost {
             .values((
                 posts::source_trace_id.eq(self.source_trace_id),
                 posts::source_document_id.eq(self.source_document_id),
+                posts::source_album_id.eq(self.source_album_id),
                 posts::trace_version_id.eq(self.trace_version_id),
                 posts::content_source.eq(self.content_source.to_db()),
                 posts::title.eq(self.title),

@@ -7,7 +7,7 @@ pub mod routes;
 pub use hydrate::DigestVisiblePost;
 pub use model::{
     NewPost, NewPostDto, Post, PostAudienceRole, PostContentSource, PostInteractionType,
-    PostStatus, PostType,
+    PostSourceRef, PostStatus, PostType,
 };
 pub use routes::{
     get_feed_posts_route, get_journal_posts_route, get_post_attachments_route,

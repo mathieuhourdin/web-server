@@ -82,6 +82,7 @@ pub struct PutTracePostDto {
 pub struct UpdatePostDto {
     pub source_trace_id: Option<Option<Uuid>>,
     pub source_document_id: Option<Option<Uuid>>,
+    pub source_album_id: Option<Option<Uuid>>,
     pub trace_version_id: Option<Option<Uuid>>,
     pub content_source: Option<PostContentSource>,
     pub title: Option<String>,
@@ -383,6 +384,7 @@ pub async fn put_trace_post_route(
         NewPost {
             source_trace_id: Some(trace_id),
             source_document_id: None,
+            source_album_id: None,
             trace_version_id,
             content_source: PostContentSource::TraceVersion,
             title: trace.title.clone(),
@@ -424,6 +426,7 @@ pub async fn put_trace_post_route(
 
     post.source_trace_id = Some(trace_id);
     post.source_document_id = None;
+    post.source_album_id = None;
     post.trace_version_id = next_trace_version_id;
     post.content_source = content_source;
 
@@ -518,13 +521,14 @@ pub async fn post_post_route(
 ) -> Result<Json<Post>, PpdcError> {
     if payload.source_trace_id.is_some()
         || payload.source_document_id.is_some()
+        || payload.source_album_id.is_some()
         || payload.trace_version_id.is_some()
         || payload.content_source == Some(PostContentSource::TraceVersion)
     {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "POST /posts only supports custom posts without trace or document linkage".to_string(),
+            "POST /posts only supports custom posts without trace, document or album linkage".to_string(),
         ));
     }
     let new_post = NewPost::new(payload, session.user_id.unwrap());
@@ -547,11 +551,14 @@ pub async fn put_post_route(
     if post.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    if payload.source_trace_id.is_some() || payload.source_document_id.is_some() {
+    if payload.source_trace_id.is_some()
+        || payload.source_document_id.is_some()
+        || payload.source_album_id.is_some()
+    {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Use dedicated source routes to manage trace or document linkage".to_string(),
+            "Use dedicated source routes to manage trace, document or album linkage".to_string(),
         ));
     }
     let previous_status = post.status;
