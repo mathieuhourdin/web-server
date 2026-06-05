@@ -55,7 +55,7 @@ fn sync_draft_trace_version_from_trace(
             title,
             subtitle,
             content,
-            image_asset_id,
+            content_image_asset_id,
             sharing_sensitivity,
             interaction_date,
             created_at,
@@ -81,7 +81,7 @@ fn sync_draft_trace_version_from_trace(
             title = EXCLUDED.title,
             subtitle = EXCLUDED.subtitle,
             content = EXCLUDED.content,
-            image_asset_id = EXCLUDED.image_asset_id,
+            content_image_asset_id = EXCLUDED.content_image_asset_id,
             sharing_sensitivity = EXCLUDED.sharing_sensitivity,
             interaction_date = EXCLUDED.interaction_date,
             updated_at = NOW()",
@@ -90,7 +90,7 @@ fn sync_draft_trace_version_from_trace(
     .bind::<Text, _>(&trace.title)
     .bind::<Text, _>(&trace.subtitle)
     .bind::<Text, _>(&trace.content)
-    .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+    .bind::<Nullable<SqlUuid>, _>(trace.content_image_asset_id)
     .bind::<Text, _>(trace.sharing_sensitivity.to_db())
     .bind::<Timestamp, _>(trace.interaction_date)
     .execute(conn)?;
@@ -132,7 +132,7 @@ fn finalize_draft_trace_version_from_trace(
                 title = $2,
                 subtitle = $3,
                 content = $4,
-                image_asset_id = $5,
+                content_image_asset_id = $5,
                 sharing_sensitivity = $6,
                 interaction_date = $7,
                 updated_at = NOW(),
@@ -155,7 +155,7 @@ fn finalize_draft_trace_version_from_trace(
                 title,
                 subtitle,
                 content,
-                image_asset_id,
+                content_image_asset_id,
                 sharing_sensitivity,
                 interaction_date,
                 created_at,
@@ -188,7 +188,7 @@ fn finalize_draft_trace_version_from_trace(
     .bind::<Text, _>(&trace.title)
     .bind::<Text, _>(&trace.subtitle)
     .bind::<Text, _>(&trace.content)
-    .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+    .bind::<Nullable<SqlUuid>, _>(trace.content_image_asset_id)
     .bind::<Text, _>(trace.sharing_sensitivity.to_db())
     .bind::<Timestamp, _>(trace.interaction_date)
     .bind::<Timestamp, _>(finalized_at)
@@ -206,25 +206,6 @@ fn finalize_draft_trace_version_from_trace(
     Ok(())
 }
 
-fn sync_trace_image_asset_to_related_posts(
-    conn: &mut diesel::PgConnection,
-    trace_id: uuid::Uuid,
-    image_asset_id: Option<uuid::Uuid>,
-) -> Result<(), diesel::result::Error> {
-    diesel::sql_query(
-        "UPDATE posts
-         SET image_asset_id = $2,
-             updated_at = NOW()
-         WHERE source_trace_id = $1
-           AND status = 'DRAFT'
-           AND content_source = 'TRACE_VERSION'",
-    )
-    .bind::<SqlUuid, _>(trace_id)
-    .bind::<Nullable<SqlUuid>, _>(image_asset_id)
-    .execute(conn)?;
-    Ok(())
-}
-
 fn archive_related_posts_for_trace(
     conn: &mut diesel::PgConnection,
     trace_id: uuid::Uuid,
@@ -232,8 +213,6 @@ fn archive_related_posts_for_trace(
     diesel::sql_query(
         "UPDATE posts
          SET status = 'ARCHIVED',
-             publishing_state = 'pbsh',
-             maturing_state = 'trsh',
              updated_at = NOW()
          WHERE source_trace_id = $1
            AND status <> 'ARCHIVED'",
@@ -266,7 +245,7 @@ impl Trace {
                      derived_from_trace_id = $5,
                      is_encrypted = $6,
                      encryption_metadata = CAST($7 AS jsonb),
-                     image_asset_id = $8,
+                     content_image_asset_id = $8,
                      sharing_sensitivity = $9,
                      timeout_start_at = $10,
                      timeout_at = $11,
@@ -290,7 +269,7 @@ impl Trace {
                     .as_ref()
                     .map(|value| value.to_string()),
             )
-            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
             .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
@@ -302,7 +281,6 @@ impl Trace {
             .bind::<Nullable<Timestamp>, _>(self.finalized_at)
             .execute(conn)?;
 
-            sync_trace_image_asset_to_related_posts(conn, self.id, self.image_asset_id)?;
             if self.status == TraceStatus::Archived {
                 archive_related_posts_for_trace(conn, self.id)?;
             }
@@ -361,7 +339,7 @@ impl NewTrace {
                     content,
                     is_encrypted,
                     encryption_metadata,
-                    image_asset_id,
+                    content_image_asset_id,
                     sharing_sensitivity,
                     timeout_start_at,
                     timeout_at,
@@ -404,7 +382,7 @@ impl NewTrace {
                     .as_ref()
                     .map(|value| value.to_string()),
             )
-            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
             .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
@@ -423,7 +401,7 @@ impl NewTrace {
                     title,
                     subtitle,
                     content,
-                    image_asset_id,
+                    content_image_asset_id,
                     sharing_sensitivity,
                     interaction_date,
                     created_at,
@@ -449,7 +427,7 @@ impl NewTrace {
             .bind::<Text, _>(&self.title)
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
-            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
             .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Timestamp, _>(self.interaction_date)
             .execute(conn)?;

@@ -102,8 +102,8 @@ pub async fn put_album_route(
     if let Some(visibility) = payload.visibility {
         album.visibility = visibility;
     }
-    if let Some(cover_asset_id) = payload.cover_asset_id {
-        album.cover_asset_id = cover_asset_id;
+    if let Some(cover_image_asset_id) = payload.cover_image_asset_id {
+        album.cover_image_asset_id = cover_image_asset_id;
     }
 
     Ok(Json(album.update(&pool)?))
@@ -128,7 +128,7 @@ pub async fn post_album_asset_route(
         expires_at,
     } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
-    album.cover_asset_id = Some(asset.id);
+    album.cover_image_asset_id = Some(asset.id);
     let album = album.update(&pool)?;
 
     Ok(Json(AlbumAssetUploadResponse {

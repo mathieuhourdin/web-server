@@ -166,6 +166,10 @@ pub fn create_router() -> Router {
             get(album::get_album_route).put(album::put_album_route),
         )
         .route(
+            "/:id/post",
+            get(post::get_album_post_route).put(post::put_album_post_route),
+        )
+        .route(
             "/:id/assets",
             post(album::post_album_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
@@ -192,6 +196,10 @@ pub fn create_router() -> Router {
         .route(
             "/:id",
             get(document::get_document_route).put(document::put_document_route),
+        )
+        .route(
+            "/:id/post",
+            get(post::get_document_post_route).put(post::put_document_post_route),
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 

@@ -83,7 +83,7 @@ pub struct TraceVersion {
     pub title: String,
     pub subtitle: String,
     pub content: String,
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
     pub sharing_sensitivity: TraceSharingSensitivity,
     pub interaction_date: NaiveDateTime,
     pub created_at: NaiveDateTime,
@@ -96,7 +96,8 @@ pub struct UpdateTraceVersionDto {
     pub title: Option<String>,
     pub subtitle: Option<String>,
     pub content: Option<String>,
-    pub image_asset_id: Option<Option<Uuid>>,
+    #[serde(alias = "image_asset_id")]
+    pub content_image_asset_id: Option<Option<Uuid>>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub interaction_date: Option<NaiveDateTime>,
     pub status: Option<TraceVersionStatus>,
@@ -141,7 +142,7 @@ fn tuple_to_trace_version(row: TraceVersionTuple) -> TraceVersion {
         title: row.4,
         subtitle: row.5,
         content: row.6,
-        image_asset_id: row.7,
+        content_image_asset_id: row.7,
         sharing_sensitivity: TraceSharingSensitivity::from_db(&row.8),
         interaction_date: row.9,
         created_at: row.10,
@@ -158,7 +159,7 @@ fn select_trace_version_columns() -> (
     trace_versions::title,
     trace_versions::subtitle,
     trace_versions::content,
-    trace_versions::image_asset_id,
+    trace_versions::content_image_asset_id,
     trace_versions::sharing_sensitivity,
     trace_versions::interaction_date,
     trace_versions::created_at,
@@ -173,7 +174,7 @@ fn select_trace_version_columns() -> (
         trace_versions::title,
         trace_versions::subtitle,
         trace_versions::content,
-        trace_versions::image_asset_id,
+        trace_versions::content_image_asset_id,
         trace_versions::sharing_sensitivity,
         trace_versions::interaction_date,
         trace_versions::created_at,
@@ -240,7 +241,7 @@ impl TraceVersion {
                 title,
                 subtitle,
                 content,
-                image_asset_id,
+                content_image_asset_id,
                 sharing_sensitivity,
                 interaction_date,
                 created_at,
@@ -267,7 +268,7 @@ impl TraceVersion {
         .bind::<Text, _>(&trace.title)
         .bind::<Text, _>(&trace.subtitle)
         .bind::<Text, _>(&trace.content)
-        .bind::<Nullable<SqlUuid>, _>(trace.image_asset_id)
+        .bind::<Nullable<SqlUuid>, _>(trace.content_image_asset_id)
         .bind::<Text, _>(trace.sharing_sensitivity.to_db())
         .bind::<Timestamp, _>(trace.interaction_date)
         .get_result::<IdRow>(&mut conn)?;
@@ -283,7 +284,7 @@ impl TraceVersion {
                     trace_versions::title.eq(&self.title),
                     trace_versions::subtitle.eq(&self.subtitle),
                     trace_versions::content.eq(&self.content),
-                    trace_versions::image_asset_id.eq(self.image_asset_id),
+                    trace_versions::content_image_asset_id.eq(self.content_image_asset_id),
                     trace_versions::sharing_sensitivity.eq(self.sharing_sensitivity.to_db()),
                     trace_versions::interaction_date.eq(self.interaction_date),
                     trace_versions::updated_at.eq(Utc::now().naive_utc()),
@@ -295,7 +296,7 @@ impl TraceVersion {
                  SET title = $2,
                      subtitle = $3,
                      content = $4,
-                     image_asset_id = $5,
+                     content_image_asset_id = $5,
                      sharing_sensitivity = $6,
                      interaction_date = $7,
                      updated_at = NOW()
@@ -306,7 +307,7 @@ impl TraceVersion {
             .bind::<Text, _>(&self.title)
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
-            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
             .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Timestamp, _>(self.interaction_date)
             .execute(conn)?;
@@ -366,7 +367,7 @@ impl TraceVersion {
                     trace_versions::title.eq(&self.title),
                     trace_versions::subtitle.eq(&self.subtitle),
                     trace_versions::content.eq(&self.content),
-                    trace_versions::image_asset_id.eq(self.image_asset_id),
+                    trace_versions::content_image_asset_id.eq(self.content_image_asset_id),
                     trace_versions::sharing_sensitivity.eq(self.sharing_sensitivity.to_db()),
                     trace_versions::interaction_date.eq(self.interaction_date),
                     trace_versions::updated_at.eq(finalized_at),
@@ -379,7 +380,7 @@ impl TraceVersion {
                  SET title = $2,
                      subtitle = $3,
                      content = $4,
-                     image_asset_id = $5,
+                     content_image_asset_id = $5,
                      sharing_sensitivity = $6,
                      interaction_date = $7,
                      status = 'FINALIZED',
@@ -393,7 +394,7 @@ impl TraceVersion {
             .bind::<Text, _>(&self.title)
             .bind::<Text, _>(&self.subtitle)
             .bind::<Text, _>(&self.content)
-            .bind::<Nullable<SqlUuid>, _>(self.image_asset_id)
+            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
             .bind::<Text, _>(self.sharing_sensitivity.to_db())
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Timestamp, _>(finalized_at)
@@ -445,8 +446,8 @@ impl TraceVersion {
         if let Some(content) = payload.content {
             self.content = content;
         }
-        if let Some(image_asset_id) = payload.image_asset_id {
-            self.image_asset_id = image_asset_id;
+        if let Some(content_image_asset_id) = payload.content_image_asset_id {
+            self.content_image_asset_id = content_image_asset_id;
         }
         if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
             self.sharing_sensitivity = sharing_sensitivity;
@@ -555,7 +556,7 @@ pub async fn post_trace_version_asset_route(
         expires_at,
     } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
-    version.image_asset_id = Some(asset.id);
+    version.content_image_asset_id = Some(asset.id);
     let trace_version = version.save_draft(&pool)?;
 
     Ok(Json(TraceVersionAssetUploadResponse {

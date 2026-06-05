@@ -382,7 +382,8 @@ impl JournalGrant {
         grant: &JournalGrant,
         conn: &mut PgConnection,
     ) -> Result<(), PpdcError> {
-        let post_ids = Self::find_auto_propagatable_post_ids_for_journal_with_conn(journal.id, conn)?;
+        let post_ids =
+            Self::find_auto_propagatable_post_ids_for_journal_with_conn(journal.id, conn)?;
 
         match (grant.grantee_user_id, grant.grantee_scope) {
             (Some(grantee_user_id), _) => {

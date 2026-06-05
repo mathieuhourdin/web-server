@@ -42,7 +42,7 @@ fn tuple_to_album(row: AlbumTuple) -> Album {
         ordering_mode: AlbumOrderingMode::from_db(&row.5),
         completion_status: AlbumCompletionStatus::from_db(&row.6),
         visibility: AlbumVisibility::from_db(&row.7),
-        cover_asset_id: row.8,
+        cover_image_asset_id: row.8,
         created_at: row.9,
         updated_at: row.10,
     }
@@ -67,7 +67,7 @@ fn select_album_columns() -> (
     albums::ordering_mode,
     albums::completion_status,
     albums::visibility,
-    albums::cover_asset_id,
+    albums::cover_image_asset_id,
     albums::created_at,
     albums::updated_at,
 ) {
@@ -80,7 +80,7 @@ fn select_album_columns() -> (
         albums::ordering_mode,
         albums::completion_status,
         albums::visibility,
-        albums::cover_asset_id,
+        albums::cover_image_asset_id,
         albums::created_at,
         albums::updated_at,
     )
@@ -104,10 +104,10 @@ fn select_album_item_columns() -> (
 
 fn validate_cover_asset_owner(
     owner_user_id: Uuid,
-    cover_asset_id: Option<Uuid>,
+    cover_image_asset_id: Option<Uuid>,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    if let Some(asset_id) = cover_asset_id {
+    if let Some(asset_id) = cover_image_asset_id {
         let asset = Asset::find(asset_id, pool)?;
         if asset.owner_user_id != owner_user_id {
             return Err(PpdcError::new(
@@ -209,7 +209,7 @@ fn album_item_view_from_trace_and_post(
             title: trace.title,
             subtitle: trace.subtitle,
             content: trace.content,
-            image_asset_id: trace.image_asset_id,
+            content_image_asset_id: trace.content_image_asset_id,
             interaction_date: trace.interaction_date,
             published_post_id: selected_post.as_ref().map(|post| post.id),
             publishing_date: selected_post.as_ref().and_then(|post| post.publishing_date),
@@ -223,7 +223,7 @@ fn album_item_view_from_trace_and_post(
             title: trace.title,
             subtitle: trace.subtitle,
             content: trace.content,
-            image_asset_id: trace.image_asset_id,
+            content_image_asset_id: trace.content_image_asset_id,
             interaction_date: trace.interaction_date,
             published_post_id: Some(post.id),
             publishing_date: post.publishing_date,
@@ -255,7 +255,7 @@ impl Album {
     }
 
     pub fn create(payload: NewAlbum, pool: &DbPool) -> Result<Album, PpdcError> {
-        validate_cover_asset_owner(payload.owner_user_id, payload.cover_asset_id, pool)?;
+        validate_cover_asset_owner(payload.owner_user_id, payload.cover_image_asset_id, pool)?;
         let mut conn = pool.get()?;
         let id = diesel::insert_into(albums::table)
             .values((
@@ -266,7 +266,7 @@ impl Album {
                 albums::ordering_mode.eq(payload.ordering_mode.to_db()),
                 albums::completion_status.eq(payload.completion_status.to_db()),
                 albums::visibility.eq(payload.visibility.to_db()),
-                albums::cover_asset_id.eq(payload.cover_asset_id),
+                albums::cover_image_asset_id.eq(payload.cover_image_asset_id),
             ))
             .returning(albums::id)
             .get_result::<Uuid>(&mut conn)?;
@@ -274,7 +274,7 @@ impl Album {
     }
 
     pub fn update(self, pool: &DbPool) -> Result<Album, PpdcError> {
-        validate_cover_asset_owner(self.owner_user_id, self.cover_asset_id, pool)?;
+        validate_cover_asset_owner(self.owner_user_id, self.cover_image_asset_id, pool)?;
         let mut conn = pool.get()?;
         diesel::update(albums::table.filter(albums::id.eq(self.id)))
             .set((
@@ -284,7 +284,7 @@ impl Album {
                 albums::ordering_mode.eq(self.ordering_mode.to_db()),
                 albums::completion_status.eq(self.completion_status.to_db()),
                 albums::visibility.eq(self.visibility.to_db()),
-                albums::cover_asset_id.eq(self.cover_asset_id),
+                albums::cover_image_asset_id.eq(self.cover_image_asset_id),
             ))
             .execute(&mut conn)?;
         Album::find(self.id, pool)

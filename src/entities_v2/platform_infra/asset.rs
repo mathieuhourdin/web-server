@@ -187,7 +187,7 @@ impl Asset {
         }
 
         let trace_image_ids = traces::table
-            .filter(traces::image_asset_id.eq(Some(asset_id)))
+            .filter(traces::content_image_asset_id.eq(Some(asset_id)))
             .select(traces::id)
             .load::<Uuid>(conn)?;
         usages.extend(
@@ -227,7 +227,7 @@ impl Asset {
         );
 
         let album_cover_ids = albums::table
-            .filter(albums::cover_asset_id.eq(Some(asset_id)))
+            .filter(albums::cover_image_asset_id.eq(Some(asset_id)))
             .select(albums::id)
             .load::<Uuid>(conn)?;
         usages.extend(

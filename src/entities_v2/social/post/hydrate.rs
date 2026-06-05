@@ -7,11 +7,10 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post_grant::PostGrant;
-use crate::entities_v2::shared::MaturingState;
-use crate::schema::{journals, posts, traces, user_post_states};
+use crate::schema::{albums, documents, journals, posts, traces, user_post_states};
 
 use super::model::{
-    FeedPostResponse, Post, PostAudienceRole, PostContentSource, PostInteractionType, PostStatus,
+    FeedPostResponse, Post, PostAudienceRole, PostInteractionType, PostSourceRef, PostStatus,
     PostType,
 };
 
@@ -24,19 +23,14 @@ type PostTuple = (
     String,
     String,
     String,
-    Option<String>,
-    Option<Uuid>,
     String,
     String,
     Option<NaiveDateTime>,
     String,
     String,
-    String,
-    String,
     NaiveDateTime,
     NaiveDateTime,
     Option<Uuid>,
-    String,
 );
 
 type DigestVisiblePostTuple = (
@@ -48,20 +42,15 @@ type DigestVisiblePostTuple = (
     String,
     String,
     String,
-    Option<String>,
-    Option<Uuid>,
     String,
     String,
     Option<NaiveDateTime>,
-    String,
-    String,
     String,
     String,
     NaiveDateTime,
     NaiveDateTime,
     Uuid,
     Option<Uuid>,
-    String,
 );
 
 type FeedPostTuple = (
@@ -73,21 +62,16 @@ type FeedPostTuple = (
     String,
     String,
     String,
-    Option<String>,
-    Option<Uuid>,
     String,
     String,
     Option<NaiveDateTime>,
     String,
     String,
-    String,
-    String,
     NaiveDateTime,
     NaiveDateTime,
     Option<Uuid>,
     Option<String>,
     Option<Uuid>,
-    String,
 );
 
 #[derive(Debug, Clone)]
@@ -106,19 +90,14 @@ fn tuple_to_post(row: PostTuple) -> Post {
         title,
         subtitle,
         content,
-        image_url,
-        image_asset_id,
         interaction_type_raw,
         post_type_raw,
         publishing_date,
         status_raw,
         audience_role_raw,
-        publishing_state,
-        maturing_state_raw,
         created_at,
         updated_at,
         trace_version_id,
-        content_source_raw,
     ) = row;
 
     Post {
@@ -128,21 +107,15 @@ fn tuple_to_post(row: PostTuple) -> Post {
         source_document_id,
         source_album_id,
         trace_version_id,
-        content_source: PostContentSource::from_db(&content_source_raw),
         title,
         subtitle,
         content,
-        image_url,
-        image_asset_id,
         interaction_type: PostInteractionType::from_db(&interaction_type_raw),
         post_type: PostType::from_db(&post_type_raw),
         user_id,
         publishing_date,
         status: PostStatus::from_db(&status_raw),
         audience_role: PostAudienceRole::from_db(&audience_role_raw),
-        publishing_state,
-        maturing_state: MaturingState::from_code(&maturing_state_raw)
-            .unwrap_or(MaturingState::Draft),
         created_at,
         updated_at,
     }
@@ -157,19 +130,14 @@ fn select_post_columns() -> (
     posts::title,
     posts::subtitle,
     posts::content,
-    posts::image_url,
-    posts::image_asset_id,
     posts::interaction_type,
     posts::post_type,
     posts::publishing_date,
     posts::status,
     posts::audience_role,
-    posts::publishing_state,
-    posts::maturing_state,
     posts::created_at,
     posts::updated_at,
     posts::trace_version_id,
-    posts::content_source,
 ) {
     (
         posts::id,
@@ -180,19 +148,14 @@ fn select_post_columns() -> (
         posts::title,
         posts::subtitle,
         posts::content,
-        posts::image_url,
-        posts::image_asset_id,
         posts::interaction_type,
         posts::post_type,
         posts::publishing_date,
         posts::status,
         posts::audience_role,
-        posts::publishing_state,
-        posts::maturing_state,
         posts::created_at,
         posts::updated_at,
         posts::trace_version_id,
-        posts::content_source,
     )
 }
 
@@ -206,20 +169,15 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         title,
         subtitle,
         content,
-        image_url,
-        image_asset_id,
         interaction_type_raw,
         post_type_raw,
         publishing_date,
         status_raw,
         audience_role_raw,
-        publishing_state,
-        maturing_state_raw,
         created_at,
         updated_at,
         journal_id,
         trace_version_id,
-        content_source_raw,
     ) = row;
 
     DigestVisiblePost {
@@ -230,21 +188,15 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             source_document_id,
             source_album_id,
             trace_version_id,
-            content_source: PostContentSource::from_db(&content_source_raw),
             title,
             subtitle,
             content,
-            image_url,
-            image_asset_id,
             interaction_type: PostInteractionType::from_db(&interaction_type_raw),
             post_type: PostType::from_db(&post_type_raw),
             user_id,
             publishing_date,
             status: PostStatus::from_db(&status_raw),
             audience_role: PostAudienceRole::from_db(&audience_role_raw),
-            publishing_state,
-            maturing_state: MaturingState::from_code(&maturing_state_raw)
-                .unwrap_or(MaturingState::Draft),
             created_at,
             updated_at,
         },
@@ -262,21 +214,16 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         title,
         subtitle,
         content,
-        image_url,
-        image_asset_id,
         interaction_type_raw,
         post_type_raw,
         publishing_date,
         status_raw,
         audience_role_raw,
-        publishing_state,
-        maturing_state_raw,
         created_at,
         updated_at,
         journal_id,
         journal_title,
         trace_version_id,
-        content_source_raw,
     ) = row;
 
     FeedPostResponse {
@@ -287,21 +234,15 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             source_document_id,
             source_album_id,
             trace_version_id,
-            content_source: PostContentSource::from_db(&content_source_raw),
             title,
             subtitle,
             content,
-            image_url,
-            image_asset_id,
             interaction_type: PostInteractionType::from_db(&interaction_type_raw),
             post_type: PostType::from_db(&post_type_raw),
             user_id,
             publishing_date,
             status: PostStatus::from_db(&status_raw),
             audience_role: PostAudienceRole::from_db(&audience_role_raw),
-            publishing_state,
-            maturing_state: MaturingState::from_code(&maturing_state_raw)
-                .unwrap_or(MaturingState::Draft),
             created_at,
             updated_at,
         },
@@ -310,118 +251,208 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
     }
 }
 
-type TraceTextMap = HashMap<Uuid, (String, String, String)>;
+#[derive(Debug, Clone)]
+struct SourceProjection {
+    title: String,
+    subtitle: String,
+    content: String,
+}
 
-fn load_trace_text_map(
-    trace_ids: &[Uuid],
+type SourceProjectionMap = HashMap<PostSourceRef, SourceProjection>;
+
+fn load_source_projection_map(
+    posts: &[Post],
     conn: &mut PgConnection,
-) -> Result<TraceTextMap, PpdcError> {
-    if trace_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let rows = traces::table
-        .filter(traces::id.eq_any(trace_ids))
-        .select((traces::id, traces::title, traces::subtitle, traces::content))
-        .load::<(Uuid, String, String, String)>(conn)?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(id, title, subtitle, content)| (id, (title, subtitle, content)))
-        .collect())
-}
-
-fn apply_trace_text_to_post(post: &mut Post, trace_text_by_id: &TraceTextMap) {
-    let Some(trace_id) = post.source_trace_id else {
-        return;
-    };
-    let Some((title, subtitle, content)) = trace_text_by_id.get(&trace_id) else {
-        return;
-    };
-
-    post.title = title.clone();
-    post.subtitle = subtitle.clone();
-    post.content = content.clone();
-}
-
-fn hydrate_trace_text_for_posts(posts: Vec<Post>, pool: &DbPool) -> Result<Vec<Post>, PpdcError> {
+) -> Result<SourceProjectionMap, PpdcError> {
     let mut trace_ids = posts
         .iter()
         .filter_map(|post| post.source_trace_id)
         .collect::<Vec<_>>();
-    if trace_ids.is_empty() {
-        return Ok(posts);
-    }
+    let mut document_ids = posts
+        .iter()
+        .filter_map(|post| post.source_document_id)
+        .collect::<Vec<_>>();
+    let mut album_ids = posts
+        .iter()
+        .filter_map(|post| post.source_album_id)
+        .collect::<Vec<_>>();
 
     trace_ids.sort_unstable();
     trace_ids.dedup();
+    document_ids.sort_unstable();
+    document_ids.dedup();
+    album_ids.sort_unstable();
+    album_ids.dedup();
+
+    let mut projections = HashMap::new();
+
+    if !trace_ids.is_empty() {
+        let rows = traces::table
+            .filter(traces::id.eq_any(trace_ids))
+            .select((
+                traces::id,
+                traces::title,
+                traces::subtitle,
+                traces::content,
+                traces::content_image_asset_id,
+            ))
+            .load::<(Uuid, String, String, String, Option<Uuid>)>(conn)?;
+
+        projections.extend(rows.into_iter().map(
+            |(id, title, subtitle, content, _content_image_asset_id)| {
+                (
+                    PostSourceRef::Trace(id),
+                    SourceProjection {
+                        title,
+                        subtitle,
+                        content,
+                    },
+                )
+            },
+        ));
+    }
+
+    if !document_ids.is_empty() {
+        let rows = documents::table
+            .filter(documents::id.eq_any(document_ids))
+            .select((
+                documents::id,
+                documents::title,
+                documents::subtitle,
+                documents::description,
+                documents::content,
+            ))
+            .load::<(
+                Uuid,
+                String,
+                String,
+                String,
+                Option<String>,
+            )>(conn)?;
+
+        projections.extend(rows.into_iter().map(
+            |(id, title, subtitle, description, content)| {
+                (
+                    PostSourceRef::Document(id),
+                    SourceProjection {
+                        title,
+                        subtitle,
+                        content: content.unwrap_or(description),
+                    },
+                )
+            },
+        ));
+    }
+
+    if !album_ids.is_empty() {
+        let rows = albums::table
+            .filter(albums::id.eq_any(album_ids))
+            .select((
+                albums::id,
+                albums::title,
+                albums::subtitle,
+                albums::content,
+            ))
+            .load::<(Uuid, String, String, String)>(conn)?;
+
+        projections.extend(rows.into_iter().map(
+            |(id, title, subtitle, content)| {
+                (
+                    PostSourceRef::Album(id),
+                    SourceProjection {
+                        title,
+                        subtitle,
+                        content,
+                    },
+                )
+            },
+        ));
+    }
+
+    Ok(projections)
+}
+
+fn apply_source_projection_to_post(post: &mut Post, projections: &SourceProjectionMap) {
+    let Some(source_ref) = post.source_ref() else {
+        return;
+    };
+    let Some(projection) = projections.get(&source_ref) else {
+        return;
+    };
+
+    post.title = projection.title.clone();
+    post.subtitle = projection.subtitle.clone();
+    post.content = projection.content.clone();
+}
+
+fn hydrate_source_projection_for_posts(
+    posts: Vec<Post>,
+    pool: &DbPool,
+) -> Result<Vec<Post>, PpdcError> {
+    if posts.is_empty() {
+        return Ok(posts);
+    }
 
     let mut conn = pool.get()?;
-    let trace_text_by_id = load_trace_text_map(&trace_ids, &mut conn)?;
+    let projections = load_source_projection_map(&posts, &mut conn)?;
 
     Ok(posts
         .into_iter()
         .map(|mut post| {
-            apply_trace_text_to_post(&mut post, &trace_text_by_id);
+            apply_source_projection_to_post(&mut post, &projections);
             post
         })
         .collect())
 }
 
-fn hydrate_trace_text_for_post(post: Post, pool: &DbPool) -> Result<Post, PpdcError> {
-    let mut posts = hydrate_trace_text_for_posts(vec![post], pool)?;
+fn hydrate_source_projection_for_post(post: Post, pool: &DbPool) -> Result<Post, PpdcError> {
+    let mut posts = hydrate_source_projection_for_posts(vec![post], pool)?;
     Ok(posts.remove(0))
 }
 
-fn hydrate_trace_text_for_feed_posts(
+fn hydrate_source_projection_for_feed_posts(
     items: Vec<FeedPostResponse>,
     pool: &DbPool,
 ) -> Result<Vec<FeedPostResponse>, PpdcError> {
-    let mut trace_ids = items
-        .iter()
-        .filter_map(|item| item.post.source_trace_id)
-        .collect::<Vec<_>>();
-    if trace_ids.is_empty() {
+    if items.is_empty() {
         return Ok(items);
     }
 
-    trace_ids.sort_unstable();
-    trace_ids.dedup();
-
     let mut conn = pool.get()?;
-    let trace_text_by_id = load_trace_text_map(&trace_ids, &mut conn)?;
+    let posts = items
+        .iter()
+        .map(|item| item.post.clone())
+        .collect::<Vec<_>>();
+    let projections = load_source_projection_map(&posts, &mut conn)?;
 
     Ok(items
         .into_iter()
         .map(|mut item| {
-            apply_trace_text_to_post(&mut item.post, &trace_text_by_id);
+            apply_source_projection_to_post(&mut item.post, &projections);
             item
         })
         .collect())
 }
 
-fn hydrate_trace_text_for_digest_visible_posts(
+fn hydrate_source_projection_for_digest_visible_posts(
     items: Vec<DigestVisiblePost>,
     pool: &DbPool,
 ) -> Result<Vec<DigestVisiblePost>, PpdcError> {
-    let mut trace_ids = items
-        .iter()
-        .filter_map(|item| item.post.source_trace_id)
-        .collect::<Vec<_>>();
-    if trace_ids.is_empty() {
+    if items.is_empty() {
         return Ok(items);
     }
 
-    trace_ids.sort_unstable();
-    trace_ids.dedup();
-
     let mut conn = pool.get()?;
-    let trace_text_by_id = load_trace_text_map(&trace_ids, &mut conn)?;
+    let posts = items
+        .iter()
+        .map(|item| item.post.clone())
+        .collect::<Vec<_>>();
+    let projections = load_source_projection_map(&posts, &mut conn)?;
 
     Ok(items
         .into_iter()
         .map(|mut item| {
-            apply_trace_text_to_post(&mut item.post, &trace_text_by_id);
+            apply_source_projection_to_post(&mut item.post, &projections);
             item
         })
         .collect())
@@ -459,21 +490,16 @@ impl Post {
                 posts::title,
                 posts::subtitle,
                 posts::content,
-                posts::image_url,
-                posts::image_asset_id,
                 posts::interaction_type,
                 posts::post_type,
                 posts::publishing_date,
                 posts::status,
                 posts::audience_role,
-                posts::publishing_state,
-                posts::maturing_state,
                 posts::created_at,
                 posts::updated_at,
                 traces::journal_id.nullable(),
                 journals::title.nullable(),
                 posts::trace_version_id,
-                posts::content_source,
             ))
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
@@ -483,7 +509,7 @@ impl Post {
             .into_iter()
             .map(tuple_to_feed_post_response)
             .collect::<Vec<_>>();
-        let posts = hydrate_trace_text_for_feed_posts(posts, pool)?;
+        let posts = hydrate_source_projection_for_feed_posts(posts, pool)?;
 
         let total = posts.len() as i64;
         let items = posts
@@ -502,10 +528,10 @@ impl Post {
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
             .optional()?;
-        let post = row
-            .map(tuple_to_post)
-            .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string()))?;
-        hydrate_trace_text_for_post(post, pool)
+        let post = row.map(tuple_to_post).ok_or_else(|| {
+            PpdcError::new(404, ErrorType::ApiError, "Post not found".to_string())
+        })?;
+        hydrate_source_projection_for_post(post, pool)
     }
 
     pub fn find_full(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
@@ -565,7 +591,7 @@ impl Post {
             .load::<PostTuple>(&mut conn)?;
 
         let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
-        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        let posts = hydrate_source_projection_for_posts(posts, pool)?;
         Ok((posts, total))
     }
 
@@ -600,7 +626,7 @@ impl Post {
             .load::<PostTuple>(&mut conn)?;
 
         let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
-        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        let posts = hydrate_source_projection_for_posts(posts, pool)?;
         Ok((posts, total))
     }
 
@@ -617,7 +643,7 @@ impl Post {
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
-            .filter(posts::image_asset_id.eq(Some(asset_id)))
+            .filter(traces::content_image_asset_id.eq(Some(asset_id)))
             .select(posts::id)
             .first::<Uuid>(&mut conn)
             .optional()?;
@@ -651,20 +677,15 @@ impl Post {
                 posts::title,
                 posts::subtitle,
                 posts::content,
-                posts::image_url,
-                posts::image_asset_id,
                 posts::interaction_type,
                 posts::post_type,
                 posts::publishing_date,
                 posts::status,
                 posts::audience_role,
-                posts::publishing_state,
-                posts::maturing_state,
                 posts::created_at,
                 posts::updated_at,
                 journals::id,
                 posts::trace_version_id,
-                posts::content_source,
             ))
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
@@ -678,7 +699,7 @@ impl Post {
             }
         }
 
-        hydrate_trace_text_for_digest_visible_posts(visible_posts, pool)
+        hydrate_source_projection_for_digest_visible_posts(visible_posts, pool)
     }
 
     pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
@@ -690,7 +711,7 @@ impl Post {
             .optional()?;
 
         match row.map(tuple_to_post) {
-            Some(post) => Ok(Some(hydrate_trace_text_for_post(post, pool)?)),
+            Some(post) => Ok(Some(hydrate_source_projection_for_post(post, pool)?)),
             None => Ok(None),
         }
     }
@@ -704,7 +725,7 @@ impl Post {
             .optional()?;
 
         match row.map(tuple_to_post) {
-            Some(post) => Ok(Some(hydrate_trace_text_for_post(post, pool)?)),
+            Some(post) => Ok(Some(hydrate_source_projection_for_post(post, pool)?)),
             None => Ok(None),
         }
     }
@@ -718,7 +739,7 @@ impl Post {
             .optional()?;
 
         match row.map(tuple_to_post) {
-            Some(post) => Ok(Some(hydrate_trace_text_for_post(post, pool)?)),
+            Some(post) => Ok(Some(hydrate_source_projection_for_post(post, pool)?)),
             None => Ok(None),
         }
     }
@@ -826,7 +847,7 @@ impl Post {
             .limit(limit)
             .load::<PostTuple>(&mut conn)?;
         let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
-        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        let posts = hydrate_source_projection_for_posts(posts, pool)?;
         Ok((posts, total))
     }
 
@@ -1011,7 +1032,7 @@ impl Post {
             .load::<PostTuple>(&mut conn)?;
 
         let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
-        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        let posts = hydrate_source_projection_for_posts(posts, pool)?;
         Ok((posts, total))
     }
 
@@ -1040,7 +1061,7 @@ impl Post {
             .load::<PostTuple>(&mut conn)?;
 
         let posts = rows.into_iter().map(tuple_to_post).collect::<Vec<_>>();
-        let posts = hydrate_trace_text_for_posts(posts, pool)?;
+        let posts = hydrate_source_projection_for_posts(posts, pool)?;
         Ok((posts, total))
     }
 }

@@ -26,12 +26,10 @@ use crate::entities_v2::{
         usage_event::{create_usage_event, UsageEventType},
     },
     post::{
-        model::legacy_lifecycle_for_status, NewPost, Post, PostAudienceRole, PostInteractionType,
-        PostStatus, PostType,
+        NewPost, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
     },
     post_grant::PostGrant,
     session::Session,
-    shared::MaturingState,
     trace_attachment::{
         NewTraceAttachment, TraceAttachment, TraceAttachmentReadableView, TraceAttachmentWithAsset,
     },
@@ -114,7 +112,8 @@ pub struct CreateJournalDraftDto {
     #[serde(default)]
     pub encryption_metadata: Option<serde_json::Value>,
     #[serde(default)]
-    pub image_asset_id: Option<Uuid>,
+    #[serde(alias = "image_asset_id")]
+    pub content_image_asset_id: Option<Uuid>,
     #[serde(default)]
     pub sharing_sensitivity: Option<super::enums::TraceSharingSensitivity>,
     #[serde(default)]
@@ -432,20 +431,15 @@ fn ensure_default_draft_post_for_shared_trace(
         source_document_id: None,
         source_album_id: None,
         trace_version_id: Trace::current_version_id(trace.id, pool)?,
-        content_source: crate::entities_v2::post::PostContentSource::TraceVersion,
         title: trace.title.clone(),
         subtitle: trace.subtitle.clone(),
         content: trace.content.clone(),
-        image_url: None,
-        image_asset_id: trace.image_asset_id,
         post_type: PostType::Idea,
         interaction_type: PostInteractionType::Output,
         user_id: trace.user_id,
         publishing_date: None,
         status: crate::entities_v2::post::PostStatus::Draft,
         audience_role: PostAudienceRole::Default,
-        publishing_state: "pbsh".to_string(),
-        maturing_state: MaturingState::Draft,
     }
     .create(pool)?;
 
@@ -481,9 +475,6 @@ fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option
     if post.publishing_date.is_none() {
         post.publishing_date = Some(Utc::now().naive_utc());
     }
-    let (publishing_state, maturing_state) = legacy_lifecycle_for_status(post.status);
-    post.publishing_state = publishing_state;
-    post.maturing_state = maturing_state;
     let post = post.update(pool)?;
     JournalGrant::sync_effective_post_grants_for_post(&post, pool)?;
 
@@ -542,7 +533,7 @@ async fn create_or_get_journal_draft(
         interaction_date,
         is_encrypted,
         encryption_metadata,
-        image_asset_id,
+        content_image_asset_id,
         sharing_sensitivity,
         timeout_at,
     } = payload;
@@ -560,7 +551,7 @@ async fn create_or_get_journal_draft(
     trace.derived_from_trace_id = derived_from_trace_id;
     trace.is_encrypted = is_encrypted.unwrap_or(false);
     trace.encryption_metadata = encryption_metadata;
-    trace.image_asset_id = image_asset_id;
+    trace.content_image_asset_id = content_image_asset_id;
     if let Some(sharing_sensitivity) = sharing_sensitivity {
         trace.sharing_sensitivity = sharing_sensitivity;
     }
@@ -658,8 +649,8 @@ pub async fn put_trace_route(
         .map(|interaction_date| interaction_date != trace.interaction_date)
         .unwrap_or(false);
     let image_asset_changed = payload
-        .image_asset_id
-        .map(|image_asset_id| image_asset_id != trace.image_asset_id)
+        .content_image_asset_id
+        .map(|content_image_asset_id| content_image_asset_id != trace.content_image_asset_id)
         .unwrap_or(false);
     let sharing_sensitivity_changed = payload
         .sharing_sensitivity
@@ -682,8 +673,8 @@ pub async fn put_trace_route(
             if let Some(interaction_date) = payload.interaction_date {
                 trace.interaction_date = interaction_date;
             }
-            if let Some(image_asset_id) = payload.image_asset_id {
-                trace.image_asset_id = image_asset_id;
+            if let Some(content_image_asset_id) = payload.content_image_asset_id {
+                trace.content_image_asset_id = content_image_asset_id;
             }
             if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
                 trace.sharing_sensitivity = sharing_sensitivity;
@@ -731,7 +722,7 @@ pub async fn put_trace_route(
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date, image_asset_id, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
+                    "Cannot update content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
                 ));
             }
 
@@ -760,7 +751,7 @@ pub async fn put_trace_route(
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date, image_asset_id, sharing_sensitivity or timeout_at once trace is archived".to_string(),
+                    "Cannot update content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is archived".to_string(),
                 ));
             }
 
@@ -843,8 +834,8 @@ pub async fn patch_trace_route(
     if let Some(interaction_date) = payload.interaction_date {
         trace.interaction_date = interaction_date;
     }
-    if let Some(image_asset_id) = payload.image_asset_id {
-        trace.image_asset_id = image_asset_id;
+    if let Some(content_image_asset_id) = payload.content_image_asset_id {
+        trace.content_image_asset_id = content_image_asset_id;
     }
     if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
         trace.sharing_sensitivity = sharing_sensitivity;
@@ -899,7 +890,7 @@ pub async fn post_trace_asset_route(
         expires_at,
     } = upload_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
-    trace.image_asset_id = Some(asset.id);
+    trace.content_image_asset_id = Some(asset.id);
     let trace = trace.update(&pool)?;
 
     Ok(Json(TraceAssetUploadResponse {
@@ -1482,7 +1473,7 @@ pub async fn get_traces_for_journal_route(
                 derived_from_trace_id: trace.derived_from_trace_id,
                 is_encrypted: Some(trace.is_encrypted),
                 encryption_metadata: trace.encryption_metadata,
-                image_asset_id: trace.image_asset_id,
+                content_image_asset_id: trace.content_image_asset_id,
                 sharing_sensitivity: Some(trace.sharing_sensitivity),
                 timeout_start_at: trace.timeout_start_at,
                 timeout_at: trace.timeout_at,

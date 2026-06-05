@@ -6,6 +6,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    album::Album,
+    document::{Document, DocumentStatus},
     error::{ErrorType, PpdcError},
     journal::Journal,
     journal_grant::JournalGrant,
@@ -23,8 +25,8 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use super::model::{
-    legacy_lifecycle_for_status, FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole,
-    PostContentSource, PostInteractionType, PostStatus, PostType,
+    FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType,
+    PostStatus, PostType,
 };
 
 #[derive(Deserialize)]
@@ -65,12 +67,6 @@ pub struct DraftPostsQuery {
 #[derive(Deserialize)]
 pub struct PutTracePostDto {
     pub trace_version_id: Option<Option<Uuid>>,
-    pub content_source: Option<PostContentSource>,
-    pub title: Option<String>,
-    pub subtitle: Option<String>,
-    pub content: Option<String>,
-    pub image_url: Option<Option<String>>,
-    pub image_asset_id: Option<Option<Uuid>>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
@@ -79,17 +75,22 @@ pub struct PutTracePostDto {
 }
 
 #[derive(Deserialize)]
+pub struct PutSourceRecordPostDto {
+    pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
+    pub status: Option<PostStatus>,
+    pub audience_role: Option<PostAudienceRole>,
+    pub post_type: Option<PostType>,
+    pub interaction_type: Option<PostInteractionType>,
+}
+
+#[derive(Deserialize)]
 pub struct UpdatePostDto {
     pub source_trace_id: Option<Option<Uuid>>,
     pub source_document_id: Option<Option<Uuid>>,
     pub source_album_id: Option<Option<Uuid>>,
-    pub trace_version_id: Option<Option<Uuid>>,
-    pub content_source: Option<PostContentSource>,
     pub title: Option<String>,
     pub subtitle: Option<String>,
     pub content: Option<String>,
-    pub image_url: Option<Option<String>>,
-    pub image_asset_id: Option<Option<Uuid>>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
@@ -192,6 +193,43 @@ fn dispatch_post_published_notification_emails(post: &Post, pool: &DbPool) {
                 err.message
             );
         }
+    }
+}
+
+struct SourceBackedPostProjection {
+    title: String,
+    subtitle: String,
+    content: String,
+    default_post_type: PostType,
+}
+
+fn document_post_projection(document: &Document) -> SourceBackedPostProjection {
+    SourceBackedPostProjection {
+        title: document.title.clone(),
+        subtitle: document.subtitle.clone(),
+        content: document
+            .content
+            .clone()
+            .unwrap_or_else(|| document.description.clone()),
+        default_post_type: document.document_type.unwrap_or(PostType::Idea),
+    }
+}
+
+fn album_post_projection(album: &Album) -> SourceBackedPostProjection {
+    SourceBackedPostProjection {
+        title: album.title.clone(),
+        subtitle: album.subtitle.clone(),
+        content: album.content.clone(),
+        default_post_type: PostType::ResourceList,
+    }
+}
+
+fn apply_source_backed_projection(post: &mut Post, projection: SourceBackedPostProjection) {
+    post.title = projection.title;
+    post.subtitle = projection.subtitle;
+    post.content = projection.content;
+    if matches!(post.post_type, PostType::Idea) {
+        post.post_type = projection.default_post_type;
     }
 }
 
@@ -344,6 +382,36 @@ pub async fn get_trace_post_route(
 }
 
 #[debug_handler]
+pub async fn get_document_post_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(document_id): Path<Uuid>,
+) -> Result<Json<Option<Post>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let document = Document::find_full(document_id, &pool)?;
+    if document.owner_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    Ok(Json(Post::find_for_document(document_id, &pool)?))
+}
+
+#[debug_handler]
+pub async fn get_album_post_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(album_id): Path<Uuid>,
+) -> Result<Json<Option<Post>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let album = Album::find(album_id, &pool)?;
+    if album.owner_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    Ok(Json(Post::find_for_album(album_id, &pool)?))
+}
+
+#[debug_handler]
 pub async fn get_post_drafts_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -386,99 +454,54 @@ pub async fn put_trace_post_route(
             source_document_id: None,
             source_album_id: None,
             trace_version_id,
-            content_source: PostContentSource::TraceVersion,
             title: trace.title.clone(),
             subtitle: trace.subtitle.clone(),
             content: trace.content.clone(),
-            image_url: None,
-            image_asset_id: trace.image_asset_id,
             post_type: PostType::Idea,
             interaction_type: PostInteractionType::Output,
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
             audience_role: PostAudienceRole::Default,
-            publishing_state: "pbsh".to_string(),
-            maturing_state: crate::entities_v2::shared::MaturingState::Draft,
         }
         .create(&pool)?
     };
 
     let previous_status = post.status;
-    let next_trace_version_id = payload.trace_version_id.unwrap_or(post.trace_version_id);
-    let payload_changes_content = payload.content.is_some()
-        || payload.image_url.is_some()
-        || payload.image_asset_id.is_some();
-
-    let content_source = payload.content_source.unwrap_or_else(|| {
-        if payload.trace_version_id.is_some()
-            || (post.content_source == PostContentSource::TraceVersion
-                && next_trace_version_id.is_some()
-                && !payload_changes_content)
-        {
-            PostContentSource::TraceVersion
-        } else if payload_changes_content {
-            PostContentSource::Custom
-        } else {
-            post.content_source
-        }
-    });
+    let next_trace_version_id =
+        payload
+            .trace_version_id
+            .unwrap_or(post.trace_version_id.or(trace_version_id));
+    let trace_version_id = next_trace_version_id.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Trace-based posts require trace_version_id".to_string(),
+        )
+    })?;
+    let trace_version = TraceVersion::find(trace_version_id, &pool)?;
+    if trace_version.trace_id != trace_id {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "trace_version_id does not belong to the trace".to_string(),
+        ));
+    }
+    if trace_version.status != TraceVersionStatus::Finalized {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Posts can only use finalized trace versions".to_string(),
+        ));
+    }
 
     post.source_trace_id = Some(trace_id);
     post.source_document_id = None;
     post.source_album_id = None;
-    post.trace_version_id = next_trace_version_id;
-    post.content_source = content_source;
-
-    if post.content_source == PostContentSource::TraceVersion {
-        let trace_version_id = post.trace_version_id.ok_or_else(|| {
-            PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Trace-based posts require trace_version_id".to_string(),
-            )
-        })?;
-        let trace_version = TraceVersion::find(trace_version_id, &pool)?;
-        if trace_version.trace_id != trace_id {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "trace_version_id does not belong to the trace".to_string(),
-            ));
-        }
-        if trace_version.status != TraceVersionStatus::Finalized {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Posts can only use finalized trace versions".to_string(),
-            ));
-        }
-        if let Some(title) = payload.title {
-            post.title = title;
-        }
-        if let Some(subtitle) = payload.subtitle {
-            post.subtitle = subtitle;
-        }
-        post.content = trace_version.content;
-        post.image_url = None;
-        post.image_asset_id = trace_version.image_asset_id;
-    } else {
-        if let Some(title) = payload.title {
-            post.title = title;
-        }
-        if let Some(subtitle) = payload.subtitle {
-            post.subtitle = subtitle;
-        }
-        if let Some(content) = payload.content {
-            post.content = content;
-        }
-        if let Some(image_url) = payload.image_url {
-            post.image_url = image_url;
-        }
-        if let Some(image_asset_id) = payload.image_asset_id {
-            post.image_asset_id = image_asset_id;
-        }
-    }
+    post.trace_version_id = Some(trace_version_id);
+    post.title = trace_version.title;
+    post.subtitle = trace_version.subtitle;
+    post.content = trace_version.content;
 
     if let Some(publishing_date) = payload.publishing_date {
         post.publishing_date = publishing_date;
@@ -491,9 +514,6 @@ pub async fn put_trace_post_route(
     }
     if let Some(status) = payload.status {
         post.status = status;
-        let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
-        post.publishing_state = publishing_state;
-        post.maturing_state = maturing_state;
     }
     if let Some(audience_role) = payload.audience_role {
         post.audience_role = audience_role;
@@ -523,12 +543,12 @@ pub async fn post_post_route(
         || payload.source_document_id.is_some()
         || payload.source_album_id.is_some()
         || payload.trace_version_id.is_some()
-        || payload.content_source == Some(PostContentSource::TraceVersion)
     {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "POST /posts only supports custom posts without trace, document or album linkage".to_string(),
+            "POST /posts only supports custom posts without trace, document or album linkage"
+                .to_string(),
         ));
     }
     let new_post = NewPost::new(payload, session.user_id.unwrap());
@@ -561,100 +581,26 @@ pub async fn put_post_route(
             "Use dedicated source routes to manage trace, document or album linkage".to_string(),
         ));
     }
+    if post.source_trace_id.is_some()
+        || post.source_document_id.is_some()
+        || post.source_album_id.is_some()
+    {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Use dedicated source routes to update trace-backed, document-backed or album-backed posts"
+                .to_string(),
+        ));
+    }
     let previous_status = post.status;
-
-    let source_trace_id = post.source_trace_id;
-    let trace_version_id = if source_trace_id.is_some() {
-        payload.trace_version_id.unwrap_or(post.trace_version_id)
-    } else {
-        None
-    };
-
-    let payload_changes_content = payload.content.is_some()
-        || payload.image_url.is_some()
-        || payload.image_asset_id.is_some();
-
-    let content_source = payload.content_source.unwrap_or_else(|| {
-        if payload.trace_version_id.is_some()
-            || (post.content_source == PostContentSource::TraceVersion
-                && source_trace_id.is_some()
-                && trace_version_id.is_some()
-                && !payload_changes_content)
-        {
-            PostContentSource::TraceVersion
-        } else if source_trace_id.is_none() || payload_changes_content {
-            PostContentSource::Custom
-        } else {
-            post.content_source
-        }
-    });
-
-    post.source_trace_id = source_trace_id;
-    post.trace_version_id = trace_version_id;
-    post.content_source = content_source;
-
-    if post.content_source == PostContentSource::TraceVersion {
-        let source_trace_id = post.source_trace_id.ok_or_else(|| {
-            PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Trace-based posts require source_trace_id".to_string(),
-            )
-        })?;
-        let trace_version_id = post.trace_version_id.ok_or_else(|| {
-            PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Trace-based posts require trace_version_id".to_string(),
-            )
-        })?;
-
-        let trace = Trace::find_full_trace(source_trace_id, &pool)?;
-        if trace.user_id != user_id {
-            return Err(PpdcError::unauthorized());
-        }
-
-        let trace_version = TraceVersion::find(trace_version_id, &pool)?;
-        if trace_version.trace_id != source_trace_id {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "trace_version_id does not belong to source_trace_id".to_string(),
-            ));
-        }
-        if trace_version.status != TraceVersionStatus::Finalized {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Posts can only use finalized trace versions".to_string(),
-            ));
-        }
-
-        if let Some(title) = payload.title {
-            post.title = title;
-        }
-        if let Some(subtitle) = payload.subtitle {
-            post.subtitle = subtitle;
-        }
-        post.content = trace_version.content;
-        post.image_url = None;
-        post.image_asset_id = trace_version.image_asset_id;
-    } else {
-        if let Some(title) = payload.title {
-            post.title = title;
-        }
-        if let Some(subtitle) = payload.subtitle {
-            post.subtitle = subtitle;
-        }
-        if let Some(content) = payload.content {
-            post.content = content;
-        }
-        if let Some(image_url) = payload.image_url {
-            post.image_url = image_url;
-        }
-        if let Some(image_asset_id) = payload.image_asset_id {
-            post.image_asset_id = image_asset_id;
-        }
+    if let Some(title) = payload.title {
+        post.title = title;
+    }
+    if let Some(subtitle) = payload.subtitle {
+        post.subtitle = subtitle;
+    }
+    if let Some(content) = payload.content {
+        post.content = content;
     }
 
     if let Some(publishing_date) = payload.publishing_date {
@@ -668,9 +614,6 @@ pub async fn put_post_route(
     }
     if let Some(status) = payload.status {
         post.status = status;
-        let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
-        post.publishing_state = publishing_state;
-        post.maturing_state = maturing_state;
     }
     if let Some(audience_role) = payload.audience_role {
         post.audience_role = audience_role;
@@ -688,5 +631,162 @@ pub async fn put_post_route(
         dispatch_post_published_notification_emails(&post, &pool);
     }
 
+    Ok(Json(post))
+}
+
+#[debug_handler]
+pub async fn put_document_post_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(document_id): Path<Uuid>,
+    Json(payload): Json<PutSourceRecordPostDto>,
+) -> Result<Json<Post>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let document = Document::find_full(document_id, &pool)?;
+    if document.owner_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if document.status == DocumentStatus::Archived {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Archived documents cannot be published".to_string(),
+        ));
+    }
+
+    let mut post = if let Some(existing_post) = Post::find_for_document(document_id, &pool)? {
+        existing_post
+    } else {
+        let projection = document_post_projection(&document);
+        NewPost {
+            source_trace_id: None,
+            source_document_id: Some(document_id),
+            source_album_id: None,
+            trace_version_id: None,
+            title: projection.title,
+            subtitle: projection.subtitle,
+            content: projection.content,
+            post_type: projection.default_post_type,
+            interaction_type: PostInteractionType::Output,
+            user_id,
+            publishing_date: None,
+            status: PostStatus::Draft,
+            audience_role: PostAudienceRole::Default,
+        }
+        .create(&pool)?
+    };
+    if post.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let previous_status = post.status;
+    post.source_trace_id = None;
+    post.source_document_id = Some(document_id);
+    post.source_album_id = None;
+    post.trace_version_id = None;
+    apply_source_backed_projection(&mut post, document_post_projection(&document));
+
+    if let Some(publishing_date) = payload.publishing_date {
+        post.publishing_date = publishing_date;
+    }
+    if let Some(interaction_type) = payload.interaction_type {
+        post.interaction_type = interaction_type;
+    }
+    if let Some(post_type) = payload.post_type {
+        post.post_type = post_type;
+    }
+    if let Some(status) = payload.status {
+        post.status = status;
+    }
+    if let Some(audience_role) = payload.audience_role {
+        post.audience_role = audience_role;
+    }
+    if previous_status != PostStatus::Published
+        && post.status == PostStatus::Published
+        && post.publishing_date.is_none()
+    {
+        post.publishing_date = Some(Utc::now().naive_utc());
+    }
+
+    let post = post.update(&pool)?;
+    if previous_status != PostStatus::Published && post.status == PostStatus::Published {
+        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
+        dispatch_post_published_notification_emails(&post, &pool);
+    }
+    Ok(Json(post))
+}
+
+#[debug_handler]
+pub async fn put_album_post_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(album_id): Path<Uuid>,
+    Json(payload): Json<PutSourceRecordPostDto>,
+) -> Result<Json<Post>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let album = Album::find(album_id, &pool)?;
+    if album.owner_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let mut post = if let Some(existing_post) = Post::find_for_album(album_id, &pool)? {
+        existing_post
+    } else {
+        let projection = album_post_projection(&album);
+        NewPost {
+            source_trace_id: None,
+            source_document_id: None,
+            source_album_id: Some(album_id),
+            trace_version_id: None,
+            title: projection.title,
+            subtitle: projection.subtitle,
+            content: projection.content,
+            post_type: projection.default_post_type,
+            interaction_type: PostInteractionType::Output,
+            user_id,
+            publishing_date: None,
+            status: PostStatus::Draft,
+            audience_role: PostAudienceRole::Default,
+        }
+        .create(&pool)?
+    };
+    if post.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let previous_status = post.status;
+    post.source_trace_id = None;
+    post.source_document_id = None;
+    post.source_album_id = Some(album_id);
+    post.trace_version_id = None;
+    apply_source_backed_projection(&mut post, album_post_projection(&album));
+
+    if let Some(publishing_date) = payload.publishing_date {
+        post.publishing_date = publishing_date;
+    }
+    if let Some(interaction_type) = payload.interaction_type {
+        post.interaction_type = interaction_type;
+    }
+    if let Some(post_type) = payload.post_type {
+        post.post_type = post_type;
+    }
+    if let Some(status) = payload.status {
+        post.status = status;
+    }
+    if let Some(audience_role) = payload.audience_role {
+        post.audience_role = audience_role;
+    }
+    if previous_status != PostStatus::Published
+        && post.status == PostStatus::Published
+        && post.publishing_date.is_none()
+    {
+        post.publishing_date = Some(Utc::now().naive_utc());
+    }
+
+    let post = post.update(&pool)?;
+    if previous_status != PostStatus::Published && post.status == PostStatus::Published {
+        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
+        dispatch_post_published_notification_emails(&post, &pool);
+    }
     Ok(Json(post))
 }

@@ -2,11 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities_v2::shared::MaturingState;
-
-pub use super::enums::{
-    PostAudienceRole, PostContentSource, PostInteractionType, PostStatus, PostType,
-};
+pub use super::enums::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Post {
@@ -17,22 +13,15 @@ pub struct Post {
     pub source_document_id: Option<Uuid>,
     pub source_album_id: Option<Uuid>,
     pub trace_version_id: Option<Uuid>,
-    pub content_source: PostContentSource,
     pub title: String,
     pub subtitle: String,
     pub content: String,
-    pub image_url: Option<String>,
-    pub image_asset_id: Option<Uuid>,
     pub interaction_type: PostInteractionType,
     pub post_type: PostType,
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
     pub audience_role: PostAudienceRole,
-    #[serde(skip_serializing, default = "default_post_publishing_state")]
-    pub publishing_state: String,
-    #[serde(skip_serializing, default = "default_post_maturing_state")]
-    pub maturing_state: MaturingState,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -45,7 +34,7 @@ pub struct FeedPostResponse {
     pub journal_title: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PostSourceRef {
     Trace(Uuid),
     Document(Uuid),
@@ -62,13 +51,9 @@ pub struct NewPostDto {
     pub source_album_id: Option<Uuid>,
     #[serde(default)]
     pub trace_version_id: Option<Uuid>,
-    #[serde(default)]
-    pub content_source: Option<PostContentSource>,
     pub title: String,
     pub subtitle: Option<String>,
     pub content: String,
-    pub image_url: Option<String>,
-    pub image_asset_id: Option<Uuid>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
@@ -82,64 +67,32 @@ pub struct NewPost {
     pub source_document_id: Option<Uuid>,
     pub source_album_id: Option<Uuid>,
     pub trace_version_id: Option<Uuid>,
-    pub content_source: PostContentSource,
     pub title: String,
     pub subtitle: String,
     pub content: String,
-    pub image_url: Option<String>,
-    pub image_asset_id: Option<Uuid>,
     pub post_type: PostType,
     pub interaction_type: PostInteractionType,
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
     pub audience_role: PostAudienceRole,
-    pub publishing_state: String,
-    pub maturing_state: MaturingState,
-}
-
-fn default_post_publishing_state() -> String {
-    "pbsh".to_string()
-}
-
-fn default_post_maturing_state() -> MaturingState {
-    MaturingState::Draft
 }
 
 fn default_post_audience_role() -> PostAudienceRole {
     PostAudienceRole::Default
 }
 
-pub fn legacy_lifecycle_for_status(status: PostStatus) -> (String, MaturingState) {
-    match status {
-        PostStatus::Draft => ("pbsh".to_string(), MaturingState::Draft),
-        PostStatus::Published => ("pbsh".to_string(), MaturingState::Finished),
-        PostStatus::Archived => ("pbsh".to_string(), MaturingState::Trashed),
-    }
-}
-
 impl NewPost {
     pub fn new(payload: NewPostDto, user_id: Uuid) -> Self {
         let status = payload.status.unwrap_or(PostStatus::Draft);
-        let (publishing_state, maturing_state) = legacy_lifecycle_for_status(status);
-        let content_source = payload.content_source.unwrap_or_else(|| {
-            if payload.source_trace_id.is_some() && payload.trace_version_id.is_some() {
-                PostContentSource::TraceVersion
-            } else {
-                PostContentSource::Custom
-            }
-        });
         Self {
             source_trace_id: payload.source_trace_id,
             source_document_id: payload.source_document_id,
             source_album_id: payload.source_album_id,
             trace_version_id: payload.trace_version_id,
-            content_source,
             title: payload.title,
             subtitle: payload.subtitle.unwrap_or_default(),
             content: payload.content,
-            image_url: payload.image_url,
-            image_asset_id: payload.image_asset_id,
             post_type: payload.post_type.unwrap_or(PostType::Idea),
             interaction_type: payload
                 .interaction_type
@@ -150,8 +103,6 @@ impl NewPost {
             audience_role: payload
                 .audience_role
                 .unwrap_or_else(default_post_audience_role),
-            publishing_state,
-            maturing_state,
         }
     }
 }

@@ -27,7 +27,8 @@ pub struct NewTraceDto {
     #[serde(default)]
     pub encryption_metadata: Option<Value>,
     #[serde(default)]
-    pub image_asset_id: Option<Uuid>,
+    #[serde(alias = "image_asset_id")]
+    pub content_image_asset_id: Option<Uuid>,
     #[serde(default)]
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     #[serde(default)]
@@ -40,7 +41,8 @@ pub struct UpdateTraceDto {
     pub derived_from_trace_id: Option<Option<Uuid>>,
     pub interaction_date: Option<NaiveDateTime>,
     pub status: Option<TraceStatus>,
-    pub image_asset_id: Option<Option<Uuid>>,
+    #[serde(alias = "image_asset_id")]
+    pub content_image_asset_id: Option<Option<Uuid>>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub timeout_at: Option<Option<DateTime<Utc>>>,
     pub publish_default_post: Option<bool>,
@@ -51,7 +53,8 @@ pub struct PatchTraceDto {
     pub content: Option<String>,
     pub derived_from_trace_id: Option<Option<Uuid>>,
     pub interaction_date: Option<NaiveDateTime>,
-    pub image_asset_id: Option<Option<Uuid>>,
+    #[serde(alias = "image_asset_id")]
+    pub content_image_asset_id: Option<Option<Uuid>>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub timeout_at: Option<Option<DateTime<Utc>>>,
 }
@@ -66,7 +69,7 @@ pub struct Trace {
     pub content: String,
     pub is_encrypted: bool,
     pub encryption_metadata: Option<Value>,
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
     pub sharing_sensitivity: TraceSharingSensitivity,
     pub timeout_start_at: Option<DateTime<Utc>>,
     pub timeout_at: Option<DateTime<Utc>>,
@@ -90,7 +93,7 @@ pub struct JournalTraceView {
     pub derived_from_trace_id: Option<Uuid>,
     pub is_encrypted: Option<bool>,
     pub encryption_metadata: Option<Value>,
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub timeout_start_at: Option<DateTime<Utc>>,
     pub timeout_at: Option<DateTime<Utc>>,
@@ -125,7 +128,7 @@ pub(crate) struct TraceRow {
     #[diesel(sql_type = Nullable<Text>)]
     pub encryption_metadata: Option<String>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
     #[diesel(sql_type = Text)]
     pub sharing_sensitivity: String,
     #[diesel(sql_type = Nullable<Timestamptz>)]
@@ -169,7 +172,7 @@ impl From<TraceRow> for Trace {
             encryption_metadata: row
                 .encryption_metadata
                 .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
-            image_asset_id: row.image_asset_id,
+            content_image_asset_id: row.content_image_asset_id,
             sharing_sensitivity: TraceSharingSensitivity::from_db(&row.sharing_sensitivity),
             timeout_start_at: row.timeout_start_at,
             timeout_at: row.timeout_at,
@@ -225,7 +228,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE journal_id = $1
                AND trace_type = 'USER_TRACE'
@@ -247,7 +250,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -268,7 +271,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
@@ -296,7 +299,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND interaction_date BETWEEN $2 AND $3
@@ -321,7 +324,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND interaction_date <= $2
@@ -338,7 +341,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let latest_hlp = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'HIGH_LEVEL_PROJECTS_DEFINITION'
@@ -354,7 +357,7 @@ impl Trace {
         }
 
         let latest_bio = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'BIO_TRACE'
@@ -383,7 +386,7 @@ impl Trace {
             let mut conn = pool.get()?;
 
             let latest_bio = diesel::sql_query(
-                "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+                "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
                  FROM traces
                  WHERE user_id = $1
                    AND trace_type = 'BIO_TRACE'
@@ -409,7 +412,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let next = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -448,7 +451,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
@@ -509,7 +512,7 @@ impl Trace {
 
         let rows = diesel::sql_query(
             format!(
-                "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+                "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
                  FROM traces
                  WHERE journal_id = $1
                    {} 
@@ -560,7 +563,7 @@ impl Trace {
                 traces::journal_id,
                 traces::title,
                 traces::content,
-                traces::image_asset_id,
+                traces::content_image_asset_id,
                 traces::finalized_at,
                 traces::interaction_date,
                 traces::created_at,
@@ -590,7 +593,7 @@ impl Trace {
                     journal_id,
                     title,
                     content,
-                    image_asset_id,
+                    content_image_asset_id,
                     finalized_at,
                     interaction_date,
                     created_at,
@@ -604,7 +607,7 @@ impl Trace {
                     derived_from_trace_id: None,
                     is_encrypted: None,
                     encryption_metadata: None,
-                    image_asset_id,
+                    content_image_asset_id,
                     sharing_sensitivity: None,
                     timeout_start_at: None,
                     timeout_at: None,
@@ -646,7 +649,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -671,7 +674,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -701,7 +704,7 @@ pub struct NewTrace {
     pub derived_from_trace_id: Option<Uuid>,
     pub is_encrypted: bool,
     pub encryption_metadata: Option<Value>,
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
     pub sharing_sensitivity: TraceSharingSensitivity,
     pub timeout_start_at: Option<DateTime<Utc>>,
     pub timeout_at: Option<DateTime<Utc>>,
@@ -728,7 +731,7 @@ impl NewTrace {
             derived_from_trace_id: None,
             is_encrypted: false,
             encryption_metadata: None,
-            image_asset_id: None,
+            content_image_asset_id: None,
             sharing_sensitivity: TraceSharingSensitivity::Normal,
             timeout_start_at: None,
             timeout_at: None,

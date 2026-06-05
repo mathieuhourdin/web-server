@@ -16,7 +16,7 @@ pub struct Album {
     pub ordering_mode: AlbumOrderingMode,
     pub completion_status: AlbumCompletionStatus,
     pub visibility: AlbumVisibility,
-    pub cover_asset_id: Option<Uuid>,
+    pub cover_image_asset_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -37,7 +37,7 @@ pub struct AlbumItemTraceView {
     pub title: String,
     pub subtitle: String,
     pub content: String,
-    pub image_asset_id: Option<Uuid>,
+    pub content_image_asset_id: Option<Uuid>,
     pub interaction_date: NaiveDateTime,
     pub published_post_id: Option<Uuid>,
     pub publishing_date: Option<NaiveDateTime>,
@@ -75,7 +75,8 @@ pub struct NewAlbumDto {
     #[serde(default)]
     pub visibility: Option<AlbumVisibility>,
     #[serde(default)]
-    pub cover_asset_id: Option<Uuid>,
+    #[serde(alias = "cover_asset_id")]
+    pub cover_image_asset_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -86,7 +87,8 @@ pub struct UpdateAlbumDto {
     pub ordering_mode: Option<AlbumOrderingMode>,
     pub completion_status: Option<AlbumCompletionStatus>,
     pub visibility: Option<AlbumVisibility>,
-    pub cover_asset_id: Option<Option<Uuid>>,
+    #[serde(alias = "cover_asset_id")]
+    pub cover_image_asset_id: Option<Option<Uuid>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -104,7 +106,7 @@ pub struct NewAlbum {
     pub ordering_mode: AlbumOrderingMode,
     pub completion_status: AlbumCompletionStatus,
     pub visibility: AlbumVisibility,
-    pub cover_asset_id: Option<Uuid>,
+    pub cover_image_asset_id: Option<Uuid>,
 }
 
 impl NewAlbum {
@@ -121,7 +123,7 @@ impl NewAlbum {
                 .completion_status
                 .unwrap_or(AlbumCompletionStatus::InProgress),
             visibility: payload.visibility.unwrap_or(AlbumVisibility::Private),
-            cover_asset_id: payload.cover_asset_id,
+            cover_image_asset_id: payload.cover_image_asset_id,
         }
     }
 }

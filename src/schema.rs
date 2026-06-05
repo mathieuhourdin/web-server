@@ -20,7 +20,7 @@ diesel::table! {
         ordering_mode -> Text,
         completion_status -> Text,
         visibility -> Text,
-        cover_asset_id -> Nullable<Uuid>,
+        cover_image_asset_id -> Nullable<Uuid>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -426,20 +426,15 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        image_url -> Nullable<Text>,
         interaction_type -> Text,
         post_type -> Text,
         publishing_date -> Nullable<Timestamp>,
-        publishing_state -> Text,
-        maturing_state -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         source_trace_id -> Nullable<Uuid>,
         status -> Text,
         audience_role -> Text,
-        image_asset_id -> Nullable<Uuid>,
         trace_version_id -> Nullable<Uuid>,
-        content_source -> Text,
         source_document_id -> Nullable<Uuid>,
         source_album_id -> Nullable<Uuid>,
     }
@@ -563,7 +558,7 @@ diesel::table! {
         title -> Text,
         subtitle -> Text,
         content -> Text,
-        image_asset_id -> Nullable<Uuid>,
+        content_image_asset_id -> Nullable<Uuid>,
         interaction_date -> Timestamp,
         created_at -> Timestamp,
         updated_at -> Timestamp,
@@ -589,7 +584,7 @@ diesel::table! {
         encryption_metadata -> Nullable<Jsonb>,
         start_writing_at -> Timestamp,
         finalized_at -> Nullable<Timestamp>,
-        image_asset_id -> Nullable<Uuid>,
+        content_image_asset_id -> Nullable<Uuid>,
         timeout_at -> Nullable<Timestamptz>,
         timeout_start_at -> Nullable<Timestamptz>,
         current_version_id -> Nullable<Uuid>,
@@ -684,7 +679,7 @@ diesel::table! {
 
 diesel::joinable!(album_items -> albums (album_id));
 diesel::joinable!(album_items -> traces (trace_id));
-diesel::joinable!(albums -> assets (cover_asset_id));
+diesel::joinable!(albums -> assets (cover_image_asset_id));
 diesel::joinable!(albums -> users (owner_user_id));
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
@@ -729,7 +724,6 @@ diesel::joinable!(notification_digests -> outbound_emails (outbound_email_id));
 diesel::joinable!(notification_digests -> users (recipient_user_id));
 diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(post_grants -> posts (post_id));
-diesel::joinable!(posts -> assets (image_asset_id));
 diesel::joinable!(posts -> albums (source_album_id));
 diesel::joinable!(posts -> documents (source_document_id));
 diesel::joinable!(posts -> trace_versions (trace_version_id));
@@ -746,8 +740,8 @@ diesel::joinable!(trace_attachments -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
-diesel::joinable!(trace_versions -> assets (image_asset_id));
-diesel::joinable!(traces -> assets (image_asset_id));
+diesel::joinable!(trace_versions -> assets (content_image_asset_id));
+diesel::joinable!(traces -> assets (content_image_asset_id));
 diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(usage_events -> sessions (session_id));
