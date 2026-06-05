@@ -153,14 +153,18 @@ fn build_shared_journal_asset_url(share_link_id: Uuid, asset_id: Uuid, token: &s
 }
 
 impl PublicSharedJournalPostResponse {
-    fn from_post(post: Post, share_link_id: Uuid, token: &str, pool: &DbPool) -> Result<Self, PpdcError> {
+    fn from_post(
+        post: Post,
+        share_link_id: Uuid,
+        token: &str,
+        pool: &DbPool,
+    ) -> Result<Self, PpdcError> {
         let image_asset_id = match post.source_trace_id {
             Some(trace_id) => Trace::find_full_trace(trace_id, pool)?.content_image_asset_id,
             None => None,
         };
-        let image_url = image_asset_id.map(|asset_id| {
-            build_shared_journal_asset_url(share_link_id, asset_id, token)
-        });
+        let image_url = image_asset_id
+            .map(|asset_id| build_shared_journal_asset_url(share_link_id, asset_id, token));
 
         Ok(Self {
             id: post.id,
@@ -520,7 +524,9 @@ impl JournalShareLink {
             let Some(trace_id) = post.source_trace_id else {
                 return Ok(false);
             };
-            return Ok(Trace::find_full_trace(trace_id, pool)?.content_image_asset_id == Some(asset_id));
+            return Ok(
+                Trace::find_full_trace(trace_id, pool)?.content_image_asset_id == Some(asset_id),
+            );
         }
 
         Post::public_default_post_uses_image_asset_in_journal(journal.id, asset_id, pool)
@@ -660,7 +666,12 @@ pub async fn get_shared_journal_posts_route(
         posts
             .into_iter()
             .map(|post| {
-                PublicSharedJournalPostResponse::from_post(post, share_link_id, &params.token, &pool)
+                PublicSharedJournalPostResponse::from_post(
+                    post,
+                    share_link_id,
+                    &params.token,
+                    &pool,
+                )
             })
             .collect::<Result<Vec<_>, _>>()?,
         pagination,

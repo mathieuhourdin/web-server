@@ -25,8 +25,8 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use super::model::{
-    FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType,
-    PostStatus, PostType,
+    FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType, PostStatus,
+    PostType,
 };
 
 #[derive(Deserialize)]
@@ -468,10 +468,9 @@ pub async fn put_trace_post_route(
     };
 
     let previous_status = post.status;
-    let next_trace_version_id =
-        payload
-            .trace_version_id
-            .unwrap_or(post.trace_version_id.or(trace_version_id));
+    let next_trace_version_id = payload
+        .trace_version_id
+        .unwrap_or(post.trace_version_id.or(trace_version_id));
     let trace_version_id = next_trace_version_id.ok_or_else(|| {
         PpdcError::new(
             400,

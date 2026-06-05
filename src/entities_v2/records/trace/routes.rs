@@ -25,9 +25,7 @@ use crate::entities_v2::{
         mailer,
         usage_event::{create_usage_event, UsageEventType},
     },
-    post::{
-        NewPost, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
-    },
+    post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType},
     post_grant::PostGrant,
     session::Session,
     trace_attachment::{

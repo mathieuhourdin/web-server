@@ -15,4 +15,6 @@ pub use records::{
     document, journal, journal_import, journal_share_link, trace, trace_attachment, trace_version,
 };
 pub use shared::MaturingState;
-pub use social::{album, journal_grant, message, post, post_grant, relationship, user_post_state};
+pub use social::{
+    album, feed, journal_grant, message, post, post_grant, relationship, user_post_state,
+};

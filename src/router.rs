@@ -13,7 +13,7 @@ use tower_http::{
 use crate::entities_v2::{
     album, analysis_summary, asset, document, element,
     error::{ErrorType, PpdcError},
-    journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
+    feed, journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
     mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, trace_version,
     transcription, usage_event, user, user_post_state, user_secure_action,
 };
@@ -139,7 +139,7 @@ pub fn create_router() -> Router {
 
     let posts_router = Router::new()
         .route("/drafts", get(post::get_post_drafts_route))
-        .route("/feed", get(post::get_feed_posts_route))
+        .route("/feed", get(feed::get_feed_route))
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
         .route("/:id/attachments", get(post::get_post_attachments_route))

@@ -322,51 +322,39 @@ fn load_source_projection_map(
                 documents::description,
                 documents::content,
             ))
-            .load::<(
-                Uuid,
-                String,
-                String,
-                String,
-                Option<String>,
-            )>(conn)?;
+            .load::<(Uuid, String, String, String, Option<String>)>(conn)?;
 
-        projections.extend(rows.into_iter().map(
-            |(id, title, subtitle, description, content)| {
-                (
-                    PostSourceRef::Document(id),
-                    SourceProjection {
-                        title,
-                        subtitle,
-                        content: content.unwrap_or(description),
-                    },
-                )
-            },
-        ));
+        projections.extend(
+            rows.into_iter()
+                .map(|(id, title, subtitle, description, content)| {
+                    (
+                        PostSourceRef::Document(id),
+                        SourceProjection {
+                            title,
+                            subtitle,
+                            content: content.unwrap_or(description),
+                        },
+                    )
+                }),
+        );
     }
 
     if !album_ids.is_empty() {
         let rows = albums::table
             .filter(albums::id.eq_any(album_ids))
-            .select((
-                albums::id,
-                albums::title,
-                albums::subtitle,
-                albums::content,
-            ))
+            .select((albums::id, albums::title, albums::subtitle, albums::content))
             .load::<(Uuid, String, String, String)>(conn)?;
 
-        projections.extend(rows.into_iter().map(
-            |(id, title, subtitle, content)| {
-                (
-                    PostSourceRef::Album(id),
-                    SourceProjection {
-                        title,
-                        subtitle,
-                        content,
-                    },
-                )
-            },
-        ));
+        projections.extend(rows.into_iter().map(|(id, title, subtitle, content)| {
+            (
+                PostSourceRef::Album(id),
+                SourceProjection {
+                    title,
+                    subtitle,
+                    content,
+                },
+            )
+        }));
     }
 
     Ok(projections)
