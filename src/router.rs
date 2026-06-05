@@ -418,6 +418,9 @@ pub fn create_router() -> Router {
             "/journals/:id/posts",
             get(journal_share_link::get_shared_journal_posts_route),
         );
+    let feed_router = Router::new()
+        .route("/", get(feed::get_feed_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
         .route("/users", post(user::post_user))
@@ -446,6 +449,7 @@ pub fn create_router() -> Router {
         .nest("/landmarks", landmarks_router)
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)
+        .nest("/feed", feed_router)
         .nest("/shared", shared_router)
         .fallback(fallback_handler)
         .route("/", get(root_handler))
