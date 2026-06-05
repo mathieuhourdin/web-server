@@ -109,6 +109,32 @@ pub struct JournalTraceView {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TraceReadableView {
+    pub id: Uuid,
+    pub journal_id: Option<Uuid>,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub content: String,
+    pub derived_from_trace_id: Option<Uuid>,
+    pub is_encrypted: Option<bool>,
+    pub encryption_metadata: Option<Value>,
+    pub content_image_asset_id: Option<Uuid>,
+    pub sharing_sensitivity: Option<TraceSharingSensitivity>,
+    pub timeout_start_at: Option<DateTime<Utc>>,
+    pub timeout_at: Option<DateTime<Utc>>,
+    pub user_id: Option<Uuid>,
+    pub trace_type: Option<TraceType>,
+    pub status: Option<TraceStatus>,
+    pub start_writing_at: Option<NaiveDateTime>,
+    pub finalized_at: Option<NaiveDateTime>,
+    pub seen: bool,
+    pub last_seen_at: Option<NaiveDateTime>,
+    pub interaction_date: NaiveDateTime,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
 #[derive(QueryableByName, Debug)]
 pub(crate) struct TraceRow {
     #[diesel(sql_type = SqlUuid)]

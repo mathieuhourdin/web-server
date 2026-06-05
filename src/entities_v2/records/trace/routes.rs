@@ -40,7 +40,7 @@ use crate::work_analyzer;
 use super::{
     enums::{TraceSharingSensitivity, TraceStatus},
     llm_qualify,
-    model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, UpdateTraceDto},
+    model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, TraceReadableView, UpdateTraceDto},
 };
 use serde::{Deserialize, Serialize};
 
@@ -345,6 +345,92 @@ fn attach_seen_state_to_journal_trace_views(
             item
         })
         .collect())
+}
+
+fn attach_seen_state_to_trace_readable_views(
+    user_id: Uuid,
+    items: Vec<TraceReadableView>,
+    pool: &DbPool,
+) -> Result<Vec<TraceReadableView>, PpdcError> {
+    let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let last_seen_at_by_trace_id =
+        UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
+
+    Ok(items
+        .into_iter()
+        .map(|mut item| {
+            item.last_seen_at = last_seen_at_by_trace_id.get(&item.id).copied();
+            item.seen = item.last_seen_at.is_some();
+            item
+        })
+        .collect())
+}
+
+fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceReadableView {
+    TraceReadableView {
+        id: trace.id,
+        journal_id: trace.journal_id,
+        title: trace.title,
+        subtitle: Some(trace.subtitle),
+        content: trace.content,
+        derived_from_trace_id: if include_owner_fields {
+            trace.derived_from_trace_id
+        } else {
+            None
+        },
+        is_encrypted: if include_owner_fields {
+            Some(trace.is_encrypted)
+        } else {
+            None
+        },
+        encryption_metadata: if include_owner_fields {
+            trace.encryption_metadata
+        } else {
+            None
+        },
+        content_image_asset_id: trace.content_image_asset_id,
+        sharing_sensitivity: if include_owner_fields {
+            Some(trace.sharing_sensitivity)
+        } else {
+            None
+        },
+        timeout_start_at: if include_owner_fields {
+            trace.timeout_start_at
+        } else {
+            None
+        },
+        timeout_at: if include_owner_fields {
+            trace.timeout_at
+        } else {
+            None
+        },
+        user_id: if include_owner_fields {
+            Some(trace.user_id)
+        } else {
+            None
+        },
+        trace_type: if include_owner_fields {
+            Some(trace.trace_type)
+        } else {
+            None
+        },
+        status: if include_owner_fields {
+            Some(trace.status)
+        } else {
+            None
+        },
+        start_writing_at: if include_owner_fields {
+            Some(trace.start_writing_at)
+        } else {
+            None
+        },
+        finalized_at: trace.finalized_at,
+        seen: false,
+        last_seen_at: None,
+        interaction_date: trace.interaction_date,
+        created_at: trace.created_at,
+        updated_at: trace.updated_at,
+    }
 }
 
 async fn parse_trace_attachment_multipart(
@@ -1144,14 +1230,17 @@ pub async fn get_trace_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Trace>, PpdcError> {
+) -> Result<Json<TraceReadableView>, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
-    if trace.user_id != session_user_id {
+    let is_owner = trace.user_id == session_user_id;
+    if !is_owner && !trace.user_can_read(session_user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     let trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
-    Ok(Json(trace))
+    let view = trace_to_readable_view(trace, is_owner);
+    let mut items = attach_seen_state_to_trace_readable_views(session_user_id, vec![view], &pool)?;
+    Ok(Json(items.remove(0)))
 }
 
 #[debug_handler]
