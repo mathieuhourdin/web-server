@@ -80,6 +80,10 @@ impl From<DocumentTuple> for Document {
 }
 
 impl Document {
+    pub fn user_can_read(&self, viewer_user_id: Uuid) -> bool {
+        self.owner_user_id == viewer_user_id
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Document, PpdcError> {
         let mut conn = pool.get()?;
         let row = documents::table

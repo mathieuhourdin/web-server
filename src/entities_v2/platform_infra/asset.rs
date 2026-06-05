@@ -15,12 +15,23 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    album::Album,
+    document::Document,
     error::{ErrorType, PpdcError},
-    post::{Post, PostStatus},
-    post_grant::PostGrant,
     session::Session,
+    trace::Trace,
 };
-use crate::schema::{album_items, albums, assets, posts, trace_attachments, traces, users};
+use crate::schema::{albums, assets, documents, trace_attachments, traces, users};
+
+#[derive(Debug, Clone, Copy)]
+enum AssetUsage {
+    UserProfile,
+    TraceImage { trace_id: Uuid },
+    TraceAttachment { trace_id: Uuid },
+    DocumentCover { document_id: Uuid },
+    DocumentContentAsset { document_id: Uuid },
+    AlbumCover { album_id: Uuid },
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -159,6 +170,96 @@ fn select_asset_columns() -> (
 }
 
 impl Asset {
+    fn find_usages_with_conn(
+        asset_id: Uuid,
+        conn: &mut PgConnection,
+    ) -> Result<Vec<AssetUsage>, PpdcError> {
+        let mut usages = Vec::new();
+
+        let profile_owner_ids = users::table
+            .filter(users::profile_asset_id.eq(Some(asset_id)))
+            .select(users::id)
+            .load::<Uuid>(conn)?;
+        if !profile_owner_ids.is_empty() {
+            usages.push(AssetUsage::UserProfile);
+        }
+
+        let trace_image_ids = traces::table
+            .filter(traces::image_asset_id.eq(Some(asset_id)))
+            .select(traces::id)
+            .load::<Uuid>(conn)?;
+        usages.extend(
+            trace_image_ids
+                .into_iter()
+                .map(|trace_id| AssetUsage::TraceImage { trace_id }),
+        );
+
+        let trace_attachment_ids = trace_attachments::table
+            .filter(trace_attachments::asset_id.eq(asset_id))
+            .select(trace_attachments::trace_id)
+            .load::<Uuid>(conn)?;
+        usages.extend(
+            trace_attachment_ids
+                .into_iter()
+                .map(|trace_id| AssetUsage::TraceAttachment { trace_id }),
+        );
+
+        let document_cover_ids = documents::table
+            .filter(documents::cover_image_asset_id.eq(Some(asset_id)))
+            .select(documents::id)
+            .load::<Uuid>(conn)?;
+        usages.extend(
+            document_cover_ids
+                .into_iter()
+                .map(|document_id| AssetUsage::DocumentCover { document_id }),
+        );
+
+        let document_asset_ids = documents::table
+            .filter(documents::asset_id.eq(Some(asset_id)))
+            .select(documents::id)
+            .load::<Uuid>(conn)?;
+        usages.extend(
+            document_asset_ids
+                .into_iter()
+                .map(|document_id| AssetUsage::DocumentContentAsset { document_id }),
+        );
+
+        let album_cover_ids = albums::table
+            .filter(albums::cover_asset_id.eq(Some(asset_id)))
+            .select(albums::id)
+            .load::<Uuid>(conn)?;
+        usages.extend(
+            album_cover_ids
+                .into_iter()
+                .map(|album_id| AssetUsage::AlbumCover { album_id }),
+        );
+
+        Ok(usages)
+    }
+
+    fn usage_can_user_read(
+        usage: AssetUsage,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        match usage {
+            AssetUsage::UserProfile => Ok(true),
+            AssetUsage::TraceImage { trace_id } | AssetUsage::TraceAttachment { trace_id } => {
+                let trace = Trace::find_full_trace(trace_id, pool)?;
+                trace.user_can_read(viewer_user_id, pool)
+            }
+            AssetUsage::DocumentCover { document_id }
+            | AssetUsage::DocumentContentAsset { document_id } => {
+                let document = Document::find_full(document_id, pool)?;
+                Ok(document.user_can_read(viewer_user_id))
+            }
+            AssetUsage::AlbumCover { album_id } => {
+                let album = Album::find(album_id, pool)?;
+                album.user_can_read(viewer_user_id, pool)
+            }
+        }
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Asset, PpdcError> {
         let mut conn = pool.get()?;
         let row = assets::table
@@ -183,80 +284,10 @@ impl Asset {
 
         let mut conn = pool.get()?;
 
-        let profile_owner_ids = users::table
-            .filter(users::profile_asset_id.eq(Some(asset_id)))
-            .select(users::id)
-            .load::<Uuid>(&mut conn)?;
-        if !profile_owner_ids.is_empty() {
-            return Ok(true);
-        }
-
-        let linked_posts = posts::table
-            .filter(posts::image_asset_id.eq(Some(asset_id)))
-            .select(posts::id)
-            .load::<Uuid>(&mut conn)?;
-        for post_id in linked_posts {
-            let post = Post::find_full(post_id, pool)?;
-            if post.user_id == viewer_user_id
-                || (post.status == PostStatus::Published
-                    && PostGrant::user_can_read_post(&post, viewer_user_id, pool)?)
-            {
+        let usages = Self::find_usages_with_conn(asset_id, &mut conn)?;
+        for usage in usages {
+            if Self::usage_can_user_read(usage, viewer_user_id, pool)? {
                 return Ok(true);
-            }
-        }
-
-        let trace_owner_count = traces::table
-            .filter(traces::image_asset_id.eq(Some(asset_id)))
-            .filter(traces::user_id.eq(viewer_user_id))
-            .count()
-            .get_result::<i64>(&mut conn)?;
-
-        if trace_owner_count > 0 {
-            return Ok(true);
-        }
-
-        let album_ids = albums::table
-            .filter(albums::cover_asset_id.eq(Some(asset_id)))
-            .filter(albums::visibility.eq("PUBLISHED"))
-            .select(albums::id)
-            .load::<Uuid>(&mut conn)?;
-        if !album_ids.is_empty() {
-            let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
-
-            if !visible_post_ids.is_empty() {
-                let visible_album_item_count = album_items::table
-                    .inner_join(
-                        posts::table
-                            .on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
-                    )
-                    .filter(album_items::album_id.eq_any(album_ids))
-                    .filter(posts::id.eq_any(visible_post_ids))
-                    .filter(posts::status.eq(PostStatus::Published.to_db()))
-                    .count()
-                    .get_result::<i64>(&mut conn)?;
-                if visible_album_item_count > 0 {
-                    return Ok(true);
-                }
-            }
-        }
-
-        let linked_attachment_trace_ids = trace_attachments::table
-            .filter(trace_attachments::asset_id.eq(asset_id))
-            .select(trace_attachments::trace_id)
-            .load::<Uuid>(&mut conn)?;
-        for trace_id in linked_attachment_trace_ids {
-            let linked_posts = posts::table
-                .filter(posts::source_trace_id.eq(Some(trace_id)))
-                .select(posts::id)
-                .load::<Uuid>(&mut conn)?;
-            for post_id in linked_posts {
-                let post = Post::find_full(post_id, pool)?;
-                if post.user_id == viewer_user_id
-                    || (post.status == PostStatus::Published
-                        && PostGrant::user_can_read_post(&post, viewer_user_id, pool)?)
-                {
-                    return Ok(true);
-                }
             }
         }
 

@@ -186,6 +186,22 @@ impl From<TraceRow> for Trace {
 }
 
 impl Trace {
+    pub fn user_can_read(&self, viewer_user_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+        if self.user_id == viewer_user_id {
+            return Ok(true);
+        }
+        if self.status != TraceStatus::Finalized {
+            return Ok(false);
+        }
+        let Some(post) = crate::entities_v2::post::Post::find_for_trace(self.id, pool)? else {
+            return Ok(false);
+        };
+        if post.status != PostStatus::Published {
+            return Ok(false);
+        }
+        PostGrant::user_can_read_post(&post, viewer_user_id, pool)
+    }
+
     pub fn current_version_id(trace_id: Uuid, pool: &DbPool) -> Result<Option<Uuid>, PpdcError> {
         let mut conn = pool.get()?;
         let row = diesel::sql_query(
