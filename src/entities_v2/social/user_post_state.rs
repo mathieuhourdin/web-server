@@ -158,6 +158,20 @@ impl UserPostState {
         Ok(out)
     }
 
+    pub fn find_seen_trace_ids_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        let mut conn = pool.get()?;
+        let rows = posts::table
+            .inner_join(user_post_states::table.on(user_post_states::post_id.eq(posts::id)))
+            .filter(user_post_states::user_id.eq(user_id))
+            .select(posts::source_trace_id)
+            .load::<Option<Uuid>>(&mut conn)?;
+
+        Ok(rows.into_iter().flatten().collect())
+    }
+
     pub fn find_seen_by_for_post(
         owner_user_id: Uuid,
         post_id: Uuid,

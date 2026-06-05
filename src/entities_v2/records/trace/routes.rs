@@ -56,6 +56,7 @@ pub struct JournalTracesQuery {
     pub pagination: PaginationParams,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub status: Option<TraceStatus>,
+    pub seen: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -1543,10 +1544,12 @@ pub async fn get_traces_for_journal_route(
     if journal.user_id == user_id {
         let (traces, total) = Trace::get_for_journal_paginated(
             id,
+            user_id,
             pagination.offset,
             pagination.limit,
             params.sharing_sensitivity,
             requested_status,
+            params.seen,
             &pool,
         )?;
         let items = traces
@@ -1589,6 +1592,7 @@ pub async fn get_traces_for_journal_route(
         id,
         pagination.offset,
         pagination.limit,
+        params.seen,
         &pool,
     )?;
     if total == 0 {

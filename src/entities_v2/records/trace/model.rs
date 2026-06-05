@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
+use diesel::dsl::{not, sql};
 use diesel::prelude::*;
 use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
@@ -495,10 +496,12 @@ impl Trace {
     pub fn get_all_for_journal(journal_id: Uuid, pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
         let (items, _) = Self::get_for_journal_paginated(
             journal_id,
+            Uuid::nil(),
             0,
             i64::MAX / 4,
             None,
             TraceStatus::Finalized,
+            None,
             pool,
         )?;
         Ok(items)
@@ -506,53 +509,165 @@ impl Trace {
 
     pub fn get_for_journal_paginated(
         journal_id: Uuid,
+        viewer_user_id: Uuid,
         offset: i64,
         limit: i64,
         sharing_sensitivity: Option<TraceSharingSensitivity>,
         status: TraceStatus,
+        seen: Option<bool>,
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
-        let mut conn = pool.get()?;
+        type TraceTuple = (
+            Uuid,
+            Option<Uuid>,
+            String,
+            String,
+            NaiveDateTime,
+            String,
+            bool,
+            Option<String>,
+            Option<Uuid>,
+            String,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+            Option<Uuid>,
+            Uuid,
+            String,
+            String,
+            NaiveDateTime,
+            Option<NaiveDateTime>,
+            NaiveDateTime,
+            NaiveDateTime,
+        );
 
-        let filter_string;
-        if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
-            filter_string = format!(
-                "AND status = '{}' AND sharing_sensitivity = '{}'",
-                status.to_db(),
-                sharing_sensitivity_filter.to_db(),
-            );
+        let mut conn = pool.get()?;
+        let seen_trace_ids = if seen.is_some() {
+            crate::entities_v2::user_post_state::UserPostState::find_seen_trace_ids_for_user(
+                viewer_user_id,
+                pool,
+            )?
         } else {
-            filter_string = format!("AND status = '{}'", status.to_db());
+            vec![]
+        };
+
+        let mut count_query = traces::table
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::status.eq(status.to_db()))
+            .into_boxed();
+        if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
+            count_query =
+                count_query.filter(traces::sharing_sensitivity.eq(sharing_sensitivity_filter.to_db()));
+        }
+        if let Some(seen) = seen {
+            if seen {
+                if seen_trace_ids.is_empty() {
+                    return Ok((vec![], 0));
+                }
+                count_query = count_query.filter(traces::id.eq_any(seen_trace_ids.clone()));
+            } else if !seen_trace_ids.is_empty() {
+                count_query = count_query.filter(not(traces::id.eq_any(seen_trace_ids.clone())));
+            }
+        }
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
+        let mut query = traces::table
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::status.eq(status.to_db()))
+            .into_boxed();
+        if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
+            query =
+                query.filter(traces::sharing_sensitivity.eq(sharing_sensitivity_filter.to_db()));
+        }
+        if let Some(seen) = seen {
+            if seen {
+                query = query.filter(traces::id.eq_any(seen_trace_ids));
+            } else if !seen_trace_ids.is_empty() {
+                query = query.filter(not(traces::id.eq_any(seen_trace_ids)));
+            }
         }
 
-        let total = diesel::sql_query(format!(
-            "SELECT COUNT(*)::bigint AS count
-                 FROM traces
-                 WHERE journal_id = $1
-                   {}",
-            filter_string
+        let rows = query
+            .select((
+                traces::id,
+                traces::derived_from_trace_id,
+                traces::title,
+                traces::subtitle,
+                traces::interaction_date,
+                traces::content,
+                traces::is_encrypted,
+                sql::<Nullable<Text>>("encryption_metadata::text"),
+                traces::content_image_asset_id,
+                traces::sharing_sensitivity,
+                sql::<Nullable<Timestamptz>>("timeout_start_at"),
+                sql::<Nullable<Timestamptz>>("timeout_at"),
+                traces::journal_id.nullable(),
+                traces::user_id,
+                traces::trace_type,
+                traces::status,
+                traces::start_writing_at,
+                traces::finalized_at,
+                traces::created_at,
+                traces::updated_at,
+            ))
+            .order(traces::interaction_date.desc().nulls_last())
+            .then_order_by(traces::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<TraceTuple>(&mut conn)?;
+
+        Ok((
+            rows.into_iter()
+                .map(
+                    |(
+                        id,
+                        derived_from_trace_id,
+                        title,
+                        subtitle,
+                        interaction_date,
+                        content,
+                        is_encrypted,
+                        encryption_metadata,
+                        content_image_asset_id,
+                        sharing_sensitivity_raw,
+                        timeout_start_at,
+                        timeout_at,
+                        journal_id,
+                        user_id,
+                        trace_type_raw,
+                        status_raw,
+                        start_writing_at,
+                        finalized_at,
+                        created_at,
+                        updated_at,
+                    )| Trace {
+                        id,
+                        derived_from_trace_id,
+                        title,
+                        subtitle,
+                        interaction_date,
+                        content,
+                        is_encrypted,
+                        encryption_metadata: encryption_metadata
+                            .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
+                        content_image_asset_id,
+                        sharing_sensitivity: TraceSharingSensitivity::from_db(
+                            &sharing_sensitivity_raw,
+                        ),
+                        timeout_start_at,
+                        timeout_at,
+                        journal_id,
+                        user_id,
+                        trace_type: TraceType::from_db(&trace_type_raw),
+                        status: TraceStatus::from_db(&status_raw),
+                        start_writing_at,
+                        finalized_at,
+                        created_at,
+                        updated_at,
+                    },
+                )
+                .collect(),
+            total,
         ))
-        .bind::<SqlUuid, _>(journal_id)
-        .get_result::<CountRow>(&mut conn)?
-        .count;
-
-        let rows = diesel::sql_query(
-            format!(
-                "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, start_writing_at, finalized_at, created_at, updated_at
-                 FROM traces
-                 WHERE journal_id = $1
-                   {} 
-                 ORDER BY interaction_date DESC NULLS LAST, created_at DESC
-                 OFFSET $2
-                 LIMIT $3",
-                filter_string)
-        )
-        .bind::<SqlUuid, _>(journal_id)
-        .bind::<diesel::sql_types::BigInt, _>(offset)
-        .bind::<diesel::sql_types::BigInt, _>(limit)
-        .load::<TraceRow>(&mut conn)?;
-
-        Ok((rows.into_iter().map(Trace::from).collect(), total))
     }
 
     pub fn get_shared_for_journal_paginated(
@@ -560,6 +675,7 @@ impl Trace {
         journal_id: Uuid,
         offset: i64,
         limit: i64,
+        seen: Option<bool>,
         pool: &DbPool,
     ) -> Result<(Vec<JournalTraceView>, i64), PpdcError> {
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
@@ -568,22 +684,50 @@ impl Trace {
         }
 
         let mut conn = pool.get()?;
+        let seen_trace_ids = if seen.is_some() {
+            crate::entities_v2::user_post_state::UserPostState::find_seen_trace_ids_for_user(
+                viewer_user_id,
+                pool,
+            )?
+        } else {
+            vec![]
+        };
 
-        let total = traces::table
+        let mut count_query = traces::table
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::id.eq_any(visible_post_ids.clone()))
-            .count()
-            .get_result::<i64>(&mut conn)?;
+            .into_boxed();
+        if let Some(seen) = seen {
+            if seen {
+                if seen_trace_ids.is_empty() {
+                    return Ok((vec![], 0));
+                }
+                count_query = count_query.filter(traces::id.eq_any(seen_trace_ids.clone()));
+            } else if !seen_trace_ids.is_empty() {
+                count_query = count_query.filter(not(traces::id.eq_any(seen_trace_ids.clone())));
+            }
+        }
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let rows = traces::table
+        let mut query = traces::table
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::id.eq_any(visible_post_ids))
+            .into_boxed();
+        if let Some(seen) = seen {
+            if seen {
+                query = query.filter(traces::id.eq_any(seen_trace_ids));
+            } else if !seen_trace_ids.is_empty() {
+                query = query.filter(not(traces::id.eq_any(seen_trace_ids)));
+            }
+        }
+
+        let rows = query
             .select((
                 traces::id,
                 traces::journal_id,
