@@ -1,17 +1,18 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::not;
 use diesel::prelude::*;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post_grant::PostGrant;
-use crate::schema::{albums, documents, journals, posts, traces, user_post_states};
+use crate::entities_v2::source_projection::{
+    apply_source_projection_to_post, collect_post_source_refs, load_source_projection_map,
+};
+use crate::schema::{journals, posts, traces, user_post_states};
 
 use super::model::{
-    FeedPostResponse, Post, PostAudienceRole, PostInteractionType, PostSourceRef, PostStatus,
-    PostType,
+    FeedPostResponse, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
 };
 
 type PostTuple = (
@@ -251,128 +252,6 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
     }
 }
 
-#[derive(Debug, Clone)]
-struct SourceProjection {
-    title: String,
-    subtitle: String,
-    content: String,
-}
-
-type SourceProjectionMap = HashMap<PostSourceRef, SourceProjection>;
-
-fn load_source_projection_map(
-    posts: &[Post],
-    conn: &mut PgConnection,
-) -> Result<SourceProjectionMap, PpdcError> {
-    let mut trace_ids = posts
-        .iter()
-        .filter_map(|post| post.source_trace_id)
-        .collect::<Vec<_>>();
-    let mut document_ids = posts
-        .iter()
-        .filter_map(|post| post.source_document_id)
-        .collect::<Vec<_>>();
-    let mut album_ids = posts
-        .iter()
-        .filter_map(|post| post.source_album_id)
-        .collect::<Vec<_>>();
-
-    trace_ids.sort_unstable();
-    trace_ids.dedup();
-    document_ids.sort_unstable();
-    document_ids.dedup();
-    album_ids.sort_unstable();
-    album_ids.dedup();
-
-    let mut projections = HashMap::new();
-
-    if !trace_ids.is_empty() {
-        let rows = traces::table
-            .filter(traces::id.eq_any(trace_ids))
-            .select((
-                traces::id,
-                traces::title,
-                traces::subtitle,
-                traces::content,
-                traces::content_image_asset_id,
-            ))
-            .load::<(Uuid, String, String, String, Option<Uuid>)>(conn)?;
-
-        projections.extend(rows.into_iter().map(
-            |(id, title, subtitle, content, _content_image_asset_id)| {
-                (
-                    PostSourceRef::Trace(id),
-                    SourceProjection {
-                        title,
-                        subtitle,
-                        content,
-                    },
-                )
-            },
-        ));
-    }
-
-    if !document_ids.is_empty() {
-        let rows = documents::table
-            .filter(documents::id.eq_any(document_ids))
-            .select((
-                documents::id,
-                documents::title,
-                documents::subtitle,
-                documents::description,
-                documents::content,
-            ))
-            .load::<(Uuid, String, String, String, Option<String>)>(conn)?;
-
-        projections.extend(
-            rows.into_iter()
-                .map(|(id, title, subtitle, description, content)| {
-                    (
-                        PostSourceRef::Document(id),
-                        SourceProjection {
-                            title,
-                            subtitle,
-                            content: content.unwrap_or(description),
-                        },
-                    )
-                }),
-        );
-    }
-
-    if !album_ids.is_empty() {
-        let rows = albums::table
-            .filter(albums::id.eq_any(album_ids))
-            .select((albums::id, albums::title, albums::subtitle, albums::content))
-            .load::<(Uuid, String, String, String)>(conn)?;
-
-        projections.extend(rows.into_iter().map(|(id, title, subtitle, content)| {
-            (
-                PostSourceRef::Album(id),
-                SourceProjection {
-                    title,
-                    subtitle,
-                    content,
-                },
-            )
-        }));
-    }
-
-    Ok(projections)
-}
-
-fn apply_source_projection_to_post(post: &mut Post, projections: &SourceProjectionMap) {
-    let Some(source_ref) = post.source_ref() else {
-        return;
-    };
-    let Some(projection) = projections.get(&source_ref) else {
-        return;
-    };
-
-    post.title = projection.title.clone();
-    post.subtitle = projection.subtitle.clone();
-    post.content = projection.content.clone();
-}
-
 fn hydrate_source_projection_for_posts(
     posts: Vec<Post>,
     pool: &DbPool,
@@ -382,7 +261,8 @@ fn hydrate_source_projection_for_posts(
     }
 
     let mut conn = pool.get()?;
-    let projections = load_source_projection_map(&posts, &mut conn)?;
+    let source_refs = collect_post_source_refs(&posts);
+    let projections = load_source_projection_map(&source_refs, &mut conn)?;
 
     Ok(posts
         .into_iter()
@@ -411,7 +291,8 @@ fn hydrate_source_projection_for_feed_posts(
         .iter()
         .map(|item| item.post.clone())
         .collect::<Vec<_>>();
-    let projections = load_source_projection_map(&posts, &mut conn)?;
+    let source_refs = collect_post_source_refs(&posts);
+    let projections = load_source_projection_map(&source_refs, &mut conn)?;
 
     Ok(items
         .into_iter()
@@ -435,7 +316,8 @@ fn hydrate_source_projection_for_digest_visible_posts(
         .iter()
         .map(|item| item.post.clone())
         .collect::<Vec<_>>();
-    let projections = load_source_projection_map(&posts, &mut conn)?;
+    let source_refs = collect_post_source_refs(&posts);
+    let projections = load_source_projection_map(&source_refs, &mut conn)?;
 
     Ok(items
         .into_iter()

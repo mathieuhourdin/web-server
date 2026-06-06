@@ -16,5 +16,6 @@ pub use records::{
 };
 pub use shared::MaturingState;
 pub use social::{
-    album, feed, journal_grant, message, post, post_grant, relationship, user_post_state,
+    album, feed, journal_grant, message, post, post_grant, relationship, source_projection,
+    user_post_state,
 };

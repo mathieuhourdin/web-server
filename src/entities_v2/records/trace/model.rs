@@ -555,8 +555,8 @@ impl Trace {
             .filter(traces::status.eq(status.to_db()))
             .into_boxed();
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
-            count_query =
-                count_query.filter(traces::sharing_sensitivity.eq(sharing_sensitivity_filter.to_db()));
+            count_query = count_query
+                .filter(traces::sharing_sensitivity.eq(sharing_sensitivity_filter.to_db()));
         }
         if let Some(seen) = seen {
             if seen {

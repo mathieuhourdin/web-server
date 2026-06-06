@@ -1,19 +1,16 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::not;
 use diesel::prelude::*;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
-    album::AlbumCompletionStatus,
-    document::DocumentStatus,
     error::PpdcError,
     post::{PostSourceRef, PostStatus},
     post_grant::PostGrant,
-    trace::TraceStatus,
+    source_projection::{load_source_projection_map, SourceProjectionKind},
 };
-use crate::schema::{albums, documents, posts, traces, user_post_states};
+use crate::schema::{posts, user_post_states};
 
 use super::model::{FeedItem, FeedSourceKind};
 
@@ -28,164 +25,6 @@ type FeedPostRow = (
     NaiveDateTime,
     NaiveDateTime,
 );
-
-#[derive(Debug, Clone)]
-struct SourceProjection {
-    source_kind: FeedSourceKind,
-    source_id: Uuid,
-    journal_id: Option<Uuid>,
-    title: String,
-    subtitle: String,
-    content: String,
-    cover_image_asset_id: Option<Uuid>,
-}
-
-fn load_source_projection_map(
-    rows: &[FeedPostRow],
-    conn: &mut PgConnection,
-) -> Result<HashMap<PostSourceRef, SourceProjection>, diesel::result::Error> {
-    let mut trace_ids = Vec::new();
-    let mut document_ids = Vec::new();
-    let mut album_ids = Vec::new();
-
-    for row in rows {
-        if let Some(trace_id) = row.2 {
-            trace_ids.push(trace_id);
-        }
-        if let Some(document_id) = row.3 {
-            document_ids.push(document_id);
-        }
-        if let Some(album_id) = row.4 {
-            album_ids.push(album_id);
-        }
-    }
-
-    let mut projections = HashMap::new();
-
-    if !trace_ids.is_empty() {
-        let rows = traces::table
-            .filter(traces::id.eq_any(trace_ids))
-            .select((
-                traces::id,
-                traces::journal_id,
-                traces::title,
-                traces::subtitle,
-                traces::content,
-                traces::content_image_asset_id,
-                traces::status,
-            ))
-            .load::<(Uuid, Uuid, String, String, String, Option<Uuid>, String)>(conn)?;
-
-        projections.extend(rows.into_iter().filter_map(
-            |(trace_id, journal_id, title, subtitle, content, cover_image_asset_id, status_raw)| {
-                if TraceStatus::from_db(&status_raw) != TraceStatus::Finalized {
-                    return None;
-                }
-                Some((
-                    PostSourceRef::Trace(trace_id),
-                    SourceProjection {
-                        source_kind: FeedSourceKind::Trace,
-                        source_id: trace_id,
-                        journal_id: Some(journal_id),
-                        title,
-                        subtitle,
-                        content,
-                        cover_image_asset_id,
-                    },
-                ))
-            },
-        ));
-    }
-
-    if !document_ids.is_empty() {
-        let rows = documents::table
-            .filter(documents::id.eq_any(document_ids))
-            .select((
-                documents::id,
-                documents::title,
-                documents::subtitle,
-                documents::description,
-                documents::content,
-                documents::cover_image_asset_id,
-                documents::status,
-            ))
-            .load::<(
-                Uuid,
-                String,
-                String,
-                String,
-                Option<String>,
-                Option<Uuid>,
-                String,
-            )>(conn)?;
-
-        projections.extend(rows.into_iter().filter_map(
-            |(
-                document_id,
-                title,
-                subtitle,
-                description,
-                content,
-                cover_image_asset_id,
-                status_raw,
-            )| {
-                if DocumentStatus::from_db(&status_raw) != DocumentStatus::Active {
-                    return None;
-                }
-                Some((
-                    PostSourceRef::Document(document_id),
-                    SourceProjection {
-                        source_kind: FeedSourceKind::Document,
-                        source_id: document_id,
-                        journal_id: None,
-                        title,
-                        subtitle,
-                        content: content.unwrap_or(description),
-                        cover_image_asset_id,
-                    },
-                ))
-            },
-        ));
-    }
-
-    if !album_ids.is_empty() {
-        let rows = albums::table
-            .filter(albums::id.eq_any(album_ids))
-            .select((
-                albums::id,
-                albums::title,
-                albums::subtitle,
-                albums::content,
-                albums::cover_image_asset_id,
-                albums::completion_status,
-            ))
-            .load::<(Uuid, String, String, String, Option<Uuid>, String)>(conn)?;
-
-        projections.extend(rows.into_iter().filter_map(
-            |(album_id, title, subtitle, content, cover_image_asset_id, completion_status_raw)| {
-                if AlbumCompletionStatus::from_db(&completion_status_raw)
-                    == AlbumCompletionStatus::Archived
-                {
-                    return None;
-                }
-                Some((
-                    PostSourceRef::Album(album_id),
-                    SourceProjection {
-                        source_kind: FeedSourceKind::Album,
-                        source_id: album_id,
-                        journal_id: None,
-                        title,
-                        subtitle,
-                        content,
-                        cover_image_asset_id,
-                    },
-                ))
-            },
-        ));
-    }
-
-    Ok(projections)
-}
 
 pub fn find_feed_items_paginated(
     viewer_user_id: Uuid,
@@ -242,7 +81,19 @@ pub fn find_feed_items_paginated(
         .then_order_by(posts::created_at.desc())
         .load::<FeedPostRow>(&mut conn)?;
 
-    let projections = load_source_projection_map(&rows, &mut conn)?;
+    let source_refs = rows
+        .iter()
+        .filter_map(|row| {
+            if let Some(trace_id) = row.2 {
+                Some(PostSourceRef::Trace(trace_id))
+            } else if let Some(document_id) = row.3 {
+                Some(PostSourceRef::Document(document_id))
+            } else {
+                row.4.map(PostSourceRef::Album)
+            }
+        })
+        .collect::<Vec<_>>();
+    let projections = load_source_projection_map(&source_refs, &mut conn)?;
     let items = rows
         .into_iter()
         .filter_map(
@@ -266,9 +117,16 @@ pub fn find_feed_items_paginated(
                 }?;
 
                 let projection = projections.get(&source_ref)?;
+                if !projection.is_feed_eligible() {
+                    return None;
+                }
                 Some(FeedItem {
                     post_id,
-                    source_kind: projection.source_kind,
+                    source_kind: match projection.source_kind {
+                        SourceProjectionKind::Trace => FeedSourceKind::Trace,
+                        SourceProjectionKind::Document => FeedSourceKind::Document,
+                        SourceProjectionKind::Album => FeedSourceKind::Album,
+                    },
                     source_id: projection.source_id,
                     owner_user_id,
                     journal_id: projection.journal_id,

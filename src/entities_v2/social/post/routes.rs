@@ -14,6 +14,7 @@ use crate::entities_v2::{
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmail, OutboundEmailProvider},
     post_grant::PostGrant,
     session::Session,
+    source_projection::SourceProjection,
     trace::Trace,
     trace_attachment::TraceAttachment,
     trace_version::{TraceVersion, TraceVersionStatus},
@@ -196,38 +197,10 @@ fn dispatch_post_published_notification_emails(post: &Post, pool: &DbPool) {
     }
 }
 
-struct SourceBackedPostProjection {
-    title: String,
-    subtitle: String,
-    content: String,
-    default_post_type: PostType,
-}
-
-fn document_post_projection(document: &Document) -> SourceBackedPostProjection {
-    SourceBackedPostProjection {
-        title: document.title.clone(),
-        subtitle: document.subtitle.clone(),
-        content: document
-            .content
-            .clone()
-            .unwrap_or_else(|| document.description.clone()),
-        default_post_type: document.document_type.unwrap_or(PostType::Idea),
-    }
-}
-
-fn album_post_projection(album: &Album) -> SourceBackedPostProjection {
-    SourceBackedPostProjection {
-        title: album.title.clone(),
-        subtitle: album.subtitle.clone(),
-        content: album.content.clone(),
-        default_post_type: PostType::ResourceList,
-    }
-}
-
-fn apply_source_backed_projection(post: &mut Post, projection: SourceBackedPostProjection) {
-    post.title = projection.title;
-    post.subtitle = projection.subtitle;
-    post.content = projection.content;
+fn apply_source_backed_projection(post: &mut Post, projection: &SourceProjection) {
+    post.title = projection.title.clone();
+    post.subtitle = projection.subtitle.clone();
+    post.content = projection.content.clone();
     if matches!(post.post_type, PostType::Idea) {
         post.post_type = projection.default_post_type;
     }
@@ -656,15 +629,15 @@ pub async fn put_document_post_route(
     let mut post = if let Some(existing_post) = Post::find_for_document(document_id, &pool)? {
         existing_post
     } else {
-        let projection = document_post_projection(&document);
+        let projection = SourceProjection::from_document(&document);
         NewPost {
             source_trace_id: None,
             source_document_id: Some(document_id),
             source_album_id: None,
             trace_version_id: None,
-            title: projection.title,
-            subtitle: projection.subtitle,
-            content: projection.content,
+            title: projection.title.clone(),
+            subtitle: projection.subtitle.clone(),
+            content: projection.content.clone(),
             post_type: projection.default_post_type,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -683,7 +656,8 @@ pub async fn put_document_post_route(
     post.source_document_id = Some(document_id);
     post.source_album_id = None;
     post.trace_version_id = None;
-    apply_source_backed_projection(&mut post, document_post_projection(&document));
+    let projection = SourceProjection::from_document(&document);
+    apply_source_backed_projection(&mut post, &projection);
 
     if let Some(publishing_date) = payload.publishing_date {
         post.publishing_date = publishing_date;
@@ -731,15 +705,15 @@ pub async fn put_album_post_route(
     let mut post = if let Some(existing_post) = Post::find_for_album(album_id, &pool)? {
         existing_post
     } else {
-        let projection = album_post_projection(&album);
+        let projection = SourceProjection::from_album(&album);
         NewPost {
             source_trace_id: None,
             source_document_id: None,
             source_album_id: Some(album_id),
             trace_version_id: None,
-            title: projection.title,
-            subtitle: projection.subtitle,
-            content: projection.content,
+            title: projection.title.clone(),
+            subtitle: projection.subtitle.clone(),
+            content: projection.content.clone(),
             post_type: projection.default_post_type,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -758,7 +732,8 @@ pub async fn put_album_post_route(
     post.source_document_id = None;
     post.source_album_id = Some(album_id);
     post.trace_version_id = None;
-    apply_source_backed_projection(&mut post, album_post_projection(&album));
+    let projection = SourceProjection::from_album(&album);
+    apply_source_backed_projection(&mut post, &projection);
 
     if let Some(publishing_date) = payload.publishing_date {
         post.publishing_date = publishing_date;
