@@ -5,8 +5,8 @@ pub mod persist;
 pub mod routes;
 
 pub use model::{
-    Document, DocumentContentSource, DocumentRole, DocumentStatus, NewDocumentDto, PostType,
-    UpdateDocumentDto,
+    Document, DocumentContentFormat, DocumentContentSource, DocumentRole, DocumentStatus,
+    NewDocumentDto, PostType, UpdateDocumentDto,
 };
 pub use routes::{
     get_document_route, get_user_documents_route, post_document_route, put_document_route,

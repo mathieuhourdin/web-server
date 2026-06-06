@@ -526,7 +526,7 @@ diesel::table! {
     trace_attachments (id) {
         id -> Uuid,
         trace_id -> Uuid,
-        asset_id -> Uuid,
+        document_id -> Uuid,
         attachment_name -> Text,
         created_at -> Timestamp,
     }
@@ -735,7 +735,7 @@ diesel::joinable!(references -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(references -> users (user_id));
 diesel::joinable!(resource_relations -> users (user_id));
 diesel::joinable!(sessions -> users (user_id));
-diesel::joinable!(trace_attachments -> assets (asset_id));
+diesel::joinable!(trace_attachments -> documents (document_id));
 diesel::joinable!(trace_attachments -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));

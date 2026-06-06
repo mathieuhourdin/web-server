@@ -29,7 +29,6 @@ use crate::schema::{albums, assets, documents, trace_attachments, traces, users}
 enum AssetUsage {
     UserProfile,
     TraceImage { trace_id: Uuid },
-    TraceAttachment { trace_id: Uuid },
     DocumentCover { document_id: Uuid },
     DocumentContentAsset { document_id: Uuid },
     AlbumCover { album_id: Uuid },
@@ -196,16 +195,6 @@ impl Asset {
                 .map(|trace_id| AssetUsage::TraceImage { trace_id }),
         );
 
-        let trace_attachment_ids = trace_attachments::table
-            .filter(trace_attachments::asset_id.eq(asset_id))
-            .select(trace_attachments::trace_id)
-            .load::<Uuid>(conn)?;
-        usages.extend(
-            trace_attachment_ids
-                .into_iter()
-                .map(|trace_id| AssetUsage::TraceAttachment { trace_id }),
-        );
-
         let document_cover_ids = documents::table
             .filter(documents::cover_image_asset_id.eq(Some(asset_id)))
             .select(documents::id)
@@ -246,7 +235,7 @@ impl Asset {
     ) -> Result<bool, PpdcError> {
         match usage {
             AssetUsage::UserProfile => Ok(true),
-            AssetUsage::TraceImage { trace_id } | AssetUsage::TraceAttachment { trace_id } => {
+            AssetUsage::TraceImage { trace_id } => {
                 let trace = Trace::find_full_trace(trace_id, pool)?;
                 trace.user_can_read(viewer_user_id, pool)
             }
@@ -256,11 +245,14 @@ impl Asset {
                 if document.user_can_read(viewer_user_id) {
                     return Ok(true);
                 }
-                Self::can_user_read_via_published_post(
+                if Self::can_user_read_via_published_post(
                     Post::find_for_document(document_id, pool)?,
                     viewer_user_id,
                     pool,
-                )
+                )? {
+                    return Ok(true);
+                }
+                Self::can_user_read_via_trace_attachment(document_id, viewer_user_id, pool)
             }
             AssetUsage::AlbumCover { album_id } => {
                 let album = Album::find(album_id, pool)?;
@@ -274,6 +266,27 @@ impl Asset {
                 )
             }
         }
+    }
+
+    fn can_user_read_via_trace_attachment(
+        document_id: Uuid,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+        let trace_ids = trace_attachments::table
+            .filter(trace_attachments::document_id.eq(document_id))
+            .select(trace_attachments::trace_id)
+            .load::<Uuid>(&mut conn)?;
+
+        for trace_id in trace_ids {
+            let trace = Trace::find_full_trace(trace_id, pool)?;
+            if trace.user_can_read(viewer_user_id, pool)? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     fn can_user_read_via_published_post(

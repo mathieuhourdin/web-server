@@ -113,6 +113,10 @@ pub fn create_router() -> Router {
                 .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .route(
+            "/:id/attachments/documents",
+            post(trace::post_trace_document_attachment_route),
+        )
+        .route(
             "/:trace_id/attachments/:attachment_id",
             delete(trace::delete_trace_attachment_route),
         )

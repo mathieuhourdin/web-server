@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::post::routes::enqueue_post_published_notification_emails;
 use crate::entities_v2::{
+    document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
     journal_grant::JournalGrant,
@@ -29,7 +30,8 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     trace_attachment::{
-        NewTraceAttachment, TraceAttachment, TraceAttachmentReadableView, TraceAttachmentWithAsset,
+        NewTraceAttachment, TraceAttachment, TraceAttachmentReadableView,
+        TraceAttachmentWithDocument,
     },
     user::{ensure_user_has_any_lens, User},
     user_post_state::UserPostState,
@@ -85,9 +87,24 @@ pub struct TraceAssetUploadResponse {
 
 #[derive(Serialize)]
 pub struct TraceAttachmentUploadResponse {
-    pub attachment: TraceAttachmentWithAsset,
+    pub attachment: TraceAttachmentWithDocument,
     pub signed_url: String,
     pub expires_at: chrono::NaiveDateTime,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum CreateTraceDocumentAttachmentDto {
+    ExistingDocument {
+        document_id: Uuid,
+        #[serde(default)]
+        attachment_name: Option<String>,
+    },
+    NewDocument {
+        #[serde(default)]
+        attachment_name: Option<String>,
+        document: NewDocumentDto,
+    },
 }
 
 #[derive(Serialize)]
@@ -1007,6 +1024,82 @@ pub async fn get_trace_attachments_route(
 }
 
 #[debug_handler]
+pub async fn post_trace_document_attachment_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CreateTraceDocumentAttachmentDto>,
+) -> Result<Json<TraceAttachmentWithDocument>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    if trace.status != super::enums::TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can receive document attachments".to_string(),
+        ));
+    }
+
+    let (document, attachment_name) = match payload {
+        CreateTraceDocumentAttachmentDto::ExistingDocument {
+            document_id,
+            attachment_name,
+        } => {
+            let document = Document::find_full(document_id, &pool)?;
+            if document.owner_user_id != user_id {
+                return Err(PpdcError::unauthorized());
+            }
+            let attachment_name = attachment_name
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| document.title.trim().to_string());
+            (document, attachment_name)
+        }
+        CreateTraceDocumentAttachmentDto::NewDocument {
+            attachment_name,
+            document,
+        } => {
+            let document = Document::create(document, user_id, &pool)?;
+            let attachment_name = attachment_name
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| document.title.trim().to_string());
+            (document, attachment_name)
+        }
+    };
+
+    let attachment_name = if attachment_name.is_empty() {
+        "Attachment".to_string()
+    } else {
+        attachment_name
+    };
+
+    let attachment = NewTraceAttachment {
+        trace_id: trace.id,
+        document_id: document.id,
+        attachment_name,
+    }
+    .create(&pool)?;
+
+    let attachment = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?
+        .into_iter()
+        .find(|candidate| candidate.id == attachment.id)
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "Failed to hydrate trace document attachment".to_string(),
+            )
+        })?;
+
+    Ok(Json(attachment))
+}
+
+#[debug_handler]
 pub async fn put_trace_seen_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -1080,21 +1173,43 @@ pub async fn post_trace_attachment_route(
                 .trim()
                 .to_string()
         });
+    let document = Document::create(
+        NewDocumentDto {
+            status: None,
+            document_role: DocumentRole::Reference,
+            document_type: None,
+            content_source: DocumentContentSource::InternalAsset,
+            title: Some(attachment_name.clone()),
+            subtitle: None,
+            description: None,
+            author_name: None,
+            content: None,
+            content_format: None,
+            asset_id: Some(asset.id),
+            external_content_url: None,
+            cover_image_asset_id: None,
+            cover_image_external_url: None,
+        },
+        user_id,
+        &pool,
+    )?;
 
     let attachment = NewTraceAttachment {
         trace_id: trace.id,
-        asset_id: asset.id,
+        document_id: document.id,
         attachment_name,
     }
     .create(&pool)?;
-    let attachment = TraceAttachmentWithAsset {
-        id: attachment.id,
-        trace_id: attachment.trace_id,
-        asset_id: attachment.asset_id,
-        attachment_name: attachment.attachment_name,
-        created_at: attachment.created_at,
-        asset,
-    };
+    let attachment = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?
+        .into_iter()
+        .find(|candidate| candidate.id == attachment.id)
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "Failed to hydrate uploaded trace attachment".to_string(),
+            )
+        })?;
 
     Ok(Json(TraceAttachmentUploadResponse {
         attachment,
