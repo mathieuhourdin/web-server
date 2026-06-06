@@ -198,9 +198,6 @@ fn dispatch_post_published_notification_emails(post: &Post, pool: &DbPool) {
 }
 
 fn apply_source_backed_projection(post: &mut Post, projection: &SourceProjection) {
-    post.title = projection.title.clone();
-    post.subtitle = projection.subtitle.clone();
-    post.content = projection.content.clone();
     if matches!(post.post_type, PostType::Idea) {
         post.post_type = projection.default_post_type;
     }
@@ -427,9 +424,6 @@ pub async fn put_trace_post_route(
             source_document_id: None,
             source_album_id: None,
             trace_version_id,
-            title: trace.title.clone(),
-            subtitle: trace.subtitle.clone(),
-            content: trace.content.clone(),
             post_type: PostType::Idea,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -471,9 +465,6 @@ pub async fn put_trace_post_route(
     post.source_document_id = None;
     post.source_album_id = None;
     post.trace_version_id = Some(trace_version_id);
-    post.title = trace_version.title;
-    post.subtitle = trace_version.subtitle;
-    post.content = trace_version.content;
 
     if let Some(publishing_date) = payload.publishing_date {
         post.publishing_date = publishing_date;
@@ -565,16 +556,6 @@ pub async fn put_post_route(
         ));
     }
     let previous_status = post.status;
-    if let Some(title) = payload.title {
-        post.title = title;
-    }
-    if let Some(subtitle) = payload.subtitle {
-        post.subtitle = subtitle;
-    }
-    if let Some(content) = payload.content {
-        post.content = content;
-    }
-
     if let Some(publishing_date) = payload.publishing_date {
         post.publishing_date = publishing_date;
     }
@@ -635,9 +616,6 @@ pub async fn put_document_post_route(
             source_document_id: Some(document_id),
             source_album_id: None,
             trace_version_id: None,
-            title: projection.title.clone(),
-            subtitle: projection.subtitle.clone(),
-            content: projection.content.clone(),
             post_type: projection.default_post_type,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -711,9 +689,6 @@ pub async fn put_album_post_route(
             source_document_id: None,
             source_album_id: Some(album_id),
             trace_version_id: None,
-            title: projection.title.clone(),
-            subtitle: projection.subtitle.clone(),
-            content: projection.content.clone(),
             post_type: projection.default_post_type,
             interaction_type: PostInteractionType::Output,
             user_id,

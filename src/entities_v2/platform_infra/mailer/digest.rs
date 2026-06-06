@@ -309,7 +309,7 @@ fn build_shared_journal_digest_items(
                 app_base_url, journal.id, visible_post.post.id
             ),
             publishing_date_label,
-            excerpt: build_trace_excerpt(&visible_post.post.content, 180),
+            excerpt: build_trace_excerpt(&visible_post.content, 180),
         });
     }
 

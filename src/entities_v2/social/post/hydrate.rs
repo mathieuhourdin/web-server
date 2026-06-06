@@ -23,9 +23,6 @@ type PostTuple = (
     Option<Uuid>,
     String,
     String,
-    String,
-    String,
-    String,
     Option<NaiveDateTime>,
     String,
     String,
@@ -40,9 +37,6 @@ type DigestVisiblePostTuple = (
     Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
-    String,
-    String,
-    String,
     String,
     String,
     Option<NaiveDateTime>,
@@ -62,9 +56,6 @@ type FeedPostTuple = (
     Option<Uuid>,
     String,
     String,
-    String,
-    String,
-    String,
     Option<NaiveDateTime>,
     String,
     String,
@@ -79,6 +70,7 @@ type FeedPostTuple = (
 pub struct DigestVisiblePost {
     pub post: Post,
     pub journal_id: Uuid,
+    pub content: String,
 }
 
 fn tuple_to_post(row: PostTuple) -> Post {
@@ -88,9 +80,6 @@ fn tuple_to_post(row: PostTuple) -> Post {
         source_trace_id,
         source_document_id,
         source_album_id,
-        title,
-        subtitle,
-        content,
         interaction_type_raw,
         post_type_raw,
         publishing_date,
@@ -108,9 +97,6 @@ fn tuple_to_post(row: PostTuple) -> Post {
         source_document_id,
         source_album_id,
         trace_version_id,
-        title,
-        subtitle,
-        content,
         interaction_type: PostInteractionType::from_db(&interaction_type_raw),
         post_type: PostType::from_db(&post_type_raw),
         user_id,
@@ -128,9 +114,6 @@ fn select_post_columns() -> (
     posts::source_trace_id,
     posts::source_document_id,
     posts::source_album_id,
-    posts::title,
-    posts::subtitle,
-    posts::content,
     posts::interaction_type,
     posts::post_type,
     posts::publishing_date,
@@ -146,9 +129,6 @@ fn select_post_columns() -> (
         posts::source_trace_id,
         posts::source_document_id,
         posts::source_album_id,
-        posts::title,
-        posts::subtitle,
-        posts::content,
         posts::interaction_type,
         posts::post_type,
         posts::publishing_date,
@@ -167,9 +147,6 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         source_trace_id,
         source_document_id,
         source_album_id,
-        title,
-        subtitle,
-        content,
         interaction_type_raw,
         post_type_raw,
         publishing_date,
@@ -189,9 +166,6 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             source_document_id,
             source_album_id,
             trace_version_id,
-            title,
-            subtitle,
-            content,
             interaction_type: PostInteractionType::from_db(&interaction_type_raw),
             post_type: PostType::from_db(&post_type_raw),
             user_id,
@@ -202,6 +176,7 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             updated_at,
         },
         journal_id,
+        content: String::new(),
     }
 }
 
@@ -212,9 +187,6 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         source_trace_id,
         source_document_id,
         source_album_id,
-        title,
-        subtitle,
-        content,
         interaction_type_raw,
         post_type_raw,
         publishing_date,
@@ -235,9 +207,6 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             source_document_id,
             source_album_id,
             trace_version_id,
-            title,
-            subtitle,
-            content,
             interaction_type: PostInteractionType::from_db(&interaction_type_raw),
             post_type: PostType::from_db(&post_type_raw),
             user_id,
@@ -322,6 +291,11 @@ fn hydrate_source_projection_for_digest_visible_posts(
     Ok(items
         .into_iter()
         .map(|mut item| {
+            if let Some(source_ref) = item.post.source_ref() {
+                if let Some(projection) = projections.get(&source_ref) {
+                    item.content = projection.content.clone();
+                }
+            }
             apply_source_projection_to_post(&mut item.post, &projections);
             item
         })
@@ -357,9 +331,6 @@ impl Post {
                 posts::source_trace_id,
                 posts::source_document_id,
                 posts::source_album_id,
-                posts::title,
-                posts::subtitle,
-                posts::content,
                 posts::interaction_type,
                 posts::post_type,
                 posts::publishing_date,
@@ -547,9 +518,6 @@ impl Post {
                 posts::source_trace_id,
                 posts::source_document_id,
                 posts::source_album_id,
-                posts::title,
-                posts::subtitle,
-                posts::content,
                 posts::interaction_type,
                 posts::post_type,
                 posts::publishing_date,

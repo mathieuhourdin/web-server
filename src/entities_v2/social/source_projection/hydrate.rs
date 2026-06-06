@@ -191,9 +191,6 @@ pub fn apply_source_projection_to_post(post: &mut Post, projections: &SourceProj
         return;
     };
 
-    post.title = projection.title.clone();
-    post.subtitle = projection.subtitle.clone();
-    post.content = projection.content.clone();
     if matches!(post.post_type, PostType::Idea) {
         post.post_type = projection.default_post_type;
     }
