@@ -180,12 +180,6 @@ pub(crate) struct TraceRow {
     pub updated_at: NaiveDateTime,
 }
 
-#[derive(QueryableByName, Debug)]
-struct OptionalTraceVersionIdRow {
-    #[diesel(sql_type = Nullable<SqlUuid>)]
-    pub id: Option<Uuid>,
-}
-
 impl From<TraceRow> for Trace {
     fn from(row: TraceRow) -> Self {
         Trace {
@@ -230,18 +224,6 @@ impl Trace {
             return Ok(false);
         }
         PostGrant::user_can_read_post(&post, viewer_user_id, pool)
-    }
-
-    pub fn current_version_id(trace_id: Uuid, pool: &DbPool) -> Result<Option<Uuid>, PpdcError> {
-        let mut conn = pool.get()?;
-        let row = diesel::sql_query(
-            "SELECT current_version_id AS id
-             FROM traces
-             WHERE id = $1",
-        )
-        .bind::<SqlUuid, _>(trace_id)
-        .get_result::<OptionalTraceVersionIdRow>(&mut conn)?;
-        Ok(row.id)
     }
 
     pub fn effective_datetime(&self) -> NaiveDateTime {

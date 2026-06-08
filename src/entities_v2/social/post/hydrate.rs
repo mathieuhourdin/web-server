@@ -28,7 +28,6 @@ type PostTuple = (
     String,
     NaiveDateTime,
     NaiveDateTime,
-    Option<Uuid>,
 );
 
 type DigestVisiblePostTuple = (
@@ -45,7 +44,6 @@ type DigestVisiblePostTuple = (
     NaiveDateTime,
     NaiveDateTime,
     Uuid,
-    Option<Uuid>,
 );
 
 type FeedPostTuple = (
@@ -63,7 +61,6 @@ type FeedPostTuple = (
     NaiveDateTime,
     Option<Uuid>,
     Option<String>,
-    Option<Uuid>,
 );
 
 #[derive(Debug, Clone)]
@@ -87,7 +84,6 @@ fn tuple_to_post(row: PostTuple) -> Post {
         audience_role_raw,
         created_at,
         updated_at,
-        trace_version_id,
     ) = row;
 
     Post {
@@ -96,7 +92,6 @@ fn tuple_to_post(row: PostTuple) -> Post {
         source_trace_id,
         source_document_id,
         source_album_id,
-        trace_version_id,
         interaction_type: PostInteractionType::from_db(&interaction_type_raw),
         post_type: PostType::from_db(&post_type_raw),
         user_id,
@@ -121,7 +116,6 @@ fn select_post_columns() -> (
     posts::audience_role,
     posts::created_at,
     posts::updated_at,
-    posts::trace_version_id,
 ) {
     (
         posts::id,
@@ -136,7 +130,6 @@ fn select_post_columns() -> (
         posts::audience_role,
         posts::created_at,
         posts::updated_at,
-        posts::trace_version_id,
     )
 }
 
@@ -155,7 +148,6 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         created_at,
         updated_at,
         journal_id,
-        trace_version_id,
     ) = row;
 
     DigestVisiblePost {
@@ -165,7 +157,6 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             source_trace_id,
             source_document_id,
             source_album_id,
-            trace_version_id,
             interaction_type: PostInteractionType::from_db(&interaction_type_raw),
             post_type: PostType::from_db(&post_type_raw),
             user_id,
@@ -196,7 +187,6 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         updated_at,
         journal_id,
         journal_title,
-        trace_version_id,
     ) = row;
 
     FeedPostResponse {
@@ -206,7 +196,6 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             source_trace_id,
             source_document_id,
             source_album_id,
-            trace_version_id,
             interaction_type: PostInteractionType::from_db(&interaction_type_raw),
             post_type: PostType::from_db(&post_type_raw),
             user_id,
@@ -340,7 +329,6 @@ impl Post {
                 posts::updated_at,
                 traces::journal_id.nullable(),
                 journals::title.nullable(),
-                posts::trace_version_id,
             ))
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
@@ -526,7 +514,6 @@ impl Post {
                 posts::created_at,
                 posts::updated_at,
                 journals::id,
-                posts::trace_version_id,
             ))
             .order(posts::publishing_date.desc().nulls_last())
             .then_order_by(posts::created_at.desc())

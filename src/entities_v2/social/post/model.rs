@@ -12,7 +12,6 @@ pub struct Post {
     pub source_trace_id: Option<Uuid>,
     pub source_document_id: Option<Uuid>,
     pub source_album_id: Option<Uuid>,
-    pub trace_version_id: Option<Uuid>,
     pub interaction_type: PostInteractionType,
     pub post_type: PostType,
     pub user_id: Uuid,
@@ -46,8 +45,6 @@ pub struct NewPostDto {
     pub source_document_id: Option<Uuid>,
     #[serde(default)]
     pub source_album_id: Option<Uuid>,
-    #[serde(default)]
-    pub trace_version_id: Option<Uuid>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
@@ -60,7 +57,6 @@ pub struct NewPost {
     pub source_trace_id: Option<Uuid>,
     pub source_document_id: Option<Uuid>,
     pub source_album_id: Option<Uuid>,
-    pub trace_version_id: Option<Uuid>,
     pub post_type: PostType,
     pub interaction_type: PostInteractionType,
     pub user_id: Uuid,
@@ -80,7 +76,6 @@ impl NewPost {
             source_trace_id: payload.source_trace_id,
             source_document_id: payload.source_document_id,
             source_album_id: payload.source_album_id,
-            trace_version_id: payload.trace_version_id,
             post_type: payload.post_type.unwrap_or(PostType::Idea),
             interaction_type: payload
                 .interaction_type

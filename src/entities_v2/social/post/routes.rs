@@ -17,7 +17,6 @@ use crate::entities_v2::{
     source_projection::SourceProjection,
     trace::Trace,
     trace_attachment::TraceAttachment,
-    trace_version::{TraceVersion, TraceVersionStatus},
     user::{User, UserPrincipalType},
     user_post_state::{PostSeenByUser, UserPostState},
 };
@@ -67,7 +66,6 @@ pub struct DraftPostsQuery {
 
 #[derive(Deserialize)]
 pub struct PutTracePostDto {
-    pub trace_version_id: Option<Option<Uuid>>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
@@ -89,9 +87,6 @@ pub struct UpdatePostDto {
     pub source_trace_id: Option<Option<Uuid>>,
     pub source_document_id: Option<Option<Uuid>>,
     pub source_album_id: Option<Option<Uuid>>,
-    pub title: Option<String>,
-    pub subtitle: Option<String>,
-    pub content: Option<String>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
@@ -407,15 +402,6 @@ pub async fn put_trace_post_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let trace_version_id = Trace::current_version_id(trace_id, &pool)?;
-    if trace_version_id.is_none() {
-        return Err(PpdcError::new(
-            400,
-            crate::entities_v2::error::ErrorType::ApiError,
-            "Trace must have a finalized version before it can be published".to_string(),
-        ));
-    }
-
     let mut post = if let Some(existing_post) = Post::find_for_trace(trace_id, &pool)? {
         existing_post
     } else {
@@ -423,7 +409,6 @@ pub async fn put_trace_post_route(
             source_trace_id: Some(trace_id),
             source_document_id: None,
             source_album_id: None,
-            trace_version_id,
             post_type: PostType::Idea,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -435,36 +420,9 @@ pub async fn put_trace_post_route(
     };
 
     let previous_status = post.status;
-    let next_trace_version_id = payload
-        .trace_version_id
-        .unwrap_or(post.trace_version_id.or(trace_version_id));
-    let trace_version_id = next_trace_version_id.ok_or_else(|| {
-        PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Trace-based posts require trace_version_id".to_string(),
-        )
-    })?;
-    let trace_version = TraceVersion::find(trace_version_id, &pool)?;
-    if trace_version.trace_id != trace_id {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "trace_version_id does not belong to the trace".to_string(),
-        ));
-    }
-    if trace_version.status != TraceVersionStatus::Finalized {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Posts can only use finalized trace versions".to_string(),
-        ));
-    }
-
     post.source_trace_id = Some(trace_id);
     post.source_document_id = None;
     post.source_album_id = None;
-    post.trace_version_id = Some(trace_version_id);
 
     if let Some(publishing_date) = payload.publishing_date {
         post.publishing_date = publishing_date;
@@ -476,6 +434,15 @@ pub async fn put_trace_post_route(
         post.post_type = post_type;
     }
     if let Some(status) = payload.status {
+        if status == PostStatus::Published
+            && trace.status != crate::entities_v2::trace::TraceStatus::Finalized
+        {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Only finalized traces can be published".to_string(),
+            ));
+        }
         post.status = status;
     }
     if let Some(audience_role) = payload.audience_role {
@@ -505,7 +472,6 @@ pub async fn post_post_route(
     if payload.source_trace_id.is_some()
         || payload.source_document_id.is_some()
         || payload.source_album_id.is_some()
-        || payload.trace_version_id.is_some()
     {
         return Err(PpdcError::new(
             400,
@@ -615,7 +581,6 @@ pub async fn put_document_post_route(
             source_trace_id: None,
             source_document_id: Some(document_id),
             source_album_id: None,
-            trace_version_id: None,
             post_type: projection.default_post_type,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -633,7 +598,6 @@ pub async fn put_document_post_route(
     post.source_trace_id = None;
     post.source_document_id = Some(document_id);
     post.source_album_id = None;
-    post.trace_version_id = None;
     let projection = SourceProjection::from_document(&document);
     apply_source_backed_projection(&mut post, &projection);
 
@@ -688,7 +652,6 @@ pub async fn put_album_post_route(
             source_trace_id: None,
             source_document_id: None,
             source_album_id: Some(album_id),
-            trace_version_id: None,
             post_type: projection.default_post_type,
             interaction_type: PostInteractionType::Output,
             user_id,
@@ -706,7 +669,6 @@ pub async fn put_album_post_route(
     post.source_trace_id = None;
     post.source_document_id = None;
     post.source_album_id = Some(album_id);
-    post.trace_version_id = None;
     let projection = SourceProjection::from_album(&album);
     apply_source_backed_projection(&mut post, &projection);
 
