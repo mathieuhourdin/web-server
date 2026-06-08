@@ -21,6 +21,7 @@ type JournalTuple = (
     String,
     bool,
     Option<NaiveDateTime>,
+    Option<Uuid>,
     String,
     String,
     String,
@@ -38,6 +39,7 @@ impl From<JournalTuple> for Journal {
             content,
             is_encrypted,
             last_trace_at,
+            current_draft_id,
             journal_type,
             status,
             sharing_mode,
@@ -46,12 +48,13 @@ impl From<JournalTuple> for Journal {
         ) = row;
         Journal {
             id,
+            user_id,
             title,
             subtitle,
             content,
             is_encrypted,
             last_trace_at,
-            user_id,
+            current_draft_id,
             status: JournalStatus::from_db(&status),
             journal_type: JournalType::from_db(&journal_type),
             sharing_mode: JournalSharingMode::from_db(&sharing_mode),
@@ -61,26 +64,45 @@ impl From<JournalTuple> for Journal {
     }
 }
 
+fn select_journal_columns() -> (
+    journals::id,
+    journals::user_id,
+    journals::title,
+    journals::subtitle,
+    journals::content,
+    journals::is_encrypted,
+    journals::last_trace_at,
+    journals::current_draft_id,
+    journals::journal_type,
+    journals::status,
+    journals::sharing_mode,
+    journals::created_at,
+    journals::updated_at,
+) {
+    (
+        journals::id,
+        journals::user_id,
+        journals::title,
+        journals::subtitle,
+        journals::content,
+        journals::is_encrypted,
+        journals::last_trace_at,
+        journals::current_draft_id,
+        journals::journal_type,
+        journals::status,
+        journals::sharing_mode,
+        journals::created_at,
+        journals::updated_at,
+    )
+}
+
 impl Journal {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {
         let mut conn = pool.get()?;
 
         let row = journals::table
             .filter(journals::id.eq(id))
-            .select((
-                journals::id,
-                journals::user_id,
-                journals::title,
-                journals::subtitle,
-                journals::content,
-                journals::is_encrypted,
-                journals::last_trace_at,
-                journals::journal_type,
-                journals::status,
-                journals::sharing_mode,
-                journals::created_at,
-                journals::updated_at,
-            ))
+            .select(select_journal_columns())
             .first::<JournalTuple>(&mut conn)?;
 
         Ok(row.into())
@@ -121,20 +143,7 @@ impl Journal {
 
         let rows = journals::table
             .filter(journals::user_id.eq(user_id))
-            .select((
-                journals::id,
-                journals::user_id,
-                journals::title,
-                journals::subtitle,
-                journals::content,
-                journals::is_encrypted,
-                journals::last_trace_at,
-                journals::journal_type,
-                journals::status,
-                journals::sharing_mode,
-                journals::created_at,
-                journals::updated_at,
-            ))
+            .select(select_journal_columns())
             .order((
                 journals::last_trace_at.desc().nulls_last(),
                 journals::updated_at.desc(),
@@ -189,20 +198,7 @@ impl Journal {
         }
 
         let rows = items_query
-            .select((
-                journals::id,
-                journals::user_id,
-                journals::title,
-                journals::subtitle,
-                journals::content,
-                journals::is_encrypted,
-                journals::last_trace_at,
-                journals::journal_type,
-                journals::status,
-                journals::sharing_mode,
-                journals::created_at,
-                journals::updated_at,
-            ))
+            .select(select_journal_columns())
             .order((
                 journals::last_trace_at.desc().nulls_last(),
                 journals::updated_at.desc(),
@@ -252,26 +248,14 @@ impl Journal {
                 journals::content,
                 journals::is_encrypted,
                 journals::last_trace_at,
+                journals::current_draft_id,
                 journals::journal_type,
                 journals::status,
                 journals::sharing_mode,
                 journals::created_at,
                 journals::updated_at,
             ))
-            .select((
-                journals::id,
-                journals::user_id,
-                journals::title,
-                journals::subtitle,
-                journals::content,
-                journals::is_encrypted,
-                journals::last_trace_at,
-                journals::journal_type,
-                journals::status,
-                journals::sharing_mode,
-                journals::created_at,
-                journals::updated_at,
-            ))
+            .select(select_journal_columns())
             .order(
                 sql::<Nullable<Timestamp>>(
                     "MAX(COALESCE(posts.publishing_date, posts.updated_at, posts.created_at))",

@@ -7,12 +7,13 @@ pub use super::enums::{JournalExportFormat, JournalSharingMode, JournalStatus, J
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Journal {
     pub id: Uuid,
+    pub user_id: Uuid,
     pub title: String,
     pub subtitle: String,
     pub content: String,
     pub is_encrypted: bool,
     pub last_trace_at: Option<NaiveDateTime>,
-    pub user_id: Uuid,
+    pub current_draft_id: Option<Uuid>,
     pub status: JournalStatus,
     pub journal_type: JournalType,
     pub sharing_mode: JournalSharingMode,

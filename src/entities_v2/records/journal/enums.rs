@@ -51,24 +51,21 @@ impl<'de> Deserialize<'de> for JournalExportFormat {
 #[serde(rename_all = "snake_case")]
 pub enum JournalType {
     MetaJournal,
-    WorkLogJournal,
-    ReadingNoteJournal,
+    UserJournal,
 }
 
 impl JournalType {
     pub fn to_db(self) -> &'static str {
         match self {
             JournalType::MetaJournal => "META_JOURNAL",
-            JournalType::WorkLogJournal => "WORK_LOG_JOURNAL",
-            JournalType::ReadingNoteJournal => "READING_NOTE_JOURNAL",
+            JournalType::UserJournal => "USER_JOURNAL",
         }
     }
 
     pub fn from_db(value: &str) -> Self {
         match value {
             "META_JOURNAL" => JournalType::MetaJournal,
-            "READING_NOTE_JOURNAL" => JournalType::ReadingNoteJournal,
-            _ => JournalType::WorkLogJournal,
+            _ => JournalType::UserJournal,
         }
     }
 }
@@ -76,25 +73,23 @@ impl JournalType {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum JournalStatus {
-    Draft,
-    Published,
+    Active,
     Archived,
 }
 
 impl JournalStatus {
     pub fn to_db(self) -> &'static str {
         match self {
-            JournalStatus::Draft => "DRAFT",
-            JournalStatus::Published => "PUBLISHED",
+            JournalStatus::Active => "ACTIVE",
             JournalStatus::Archived => "ARCHIVED",
         }
     }
 
     pub fn from_db(value: &str) -> Self {
         match value {
-            "PUBLISHED" => JournalStatus::Published,
+            "ACTIVE" | "PUBLISHED" | "DRAFT" => JournalStatus::Active,
             "ARCHIVED" => JournalStatus::Archived,
-            _ => JournalStatus::Draft,
+            _ => JournalStatus::Active,
         }
     }
 }

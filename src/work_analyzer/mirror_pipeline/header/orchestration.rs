@@ -24,7 +24,7 @@ pub async fn run(
         extract_mirror_header(trace, context.analysis_id, &high_level_projects).await?;
     if let Some(journal_id) = trace.journal_id {
         let journal = Journal::find_full(journal_id, &context.pool)?;
-        if journal.journal_type == JournalType::ReadingNoteJournal {
+        if journal.journal_type == JournalType::MetaJournal {
             header.trace_mirror_type = MirrorHeaderTraceMirrorType::Note;
         }
     }

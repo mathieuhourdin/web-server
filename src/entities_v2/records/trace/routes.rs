@@ -12,7 +12,7 @@ use crate::entities_v2::post::routes::enqueue_post_published_notification_emails
 use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
-    journal::{Journal, JournalStatus},
+    journal::{Journal, JournalStatus, JournalType},
     journal_grant::JournalGrant,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
@@ -42,7 +42,7 @@ use crate::work_analyzer;
 use super::{
     enums::{TraceSharingSensitivity, TraceStatus},
     llm_qualify,
-    model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, TraceReadableView, UpdateTraceDto},
+    model::{JournalTraceView, PatchTraceDto, Trace, TraceReadableView, UpdateTraceDto},
 };
 use serde::{Deserialize, Serialize};
 
@@ -293,6 +293,18 @@ async fn finalize_trace_transition(
     trace.timeout_at = None;
 
     let trace = trace.update(pool)?;
+
+    if let Some(journal_id) = trace.journal_id {
+        let mut journal = Journal::find_full(journal_id, pool)?;
+        if journal.status == JournalStatus::Active
+            && journal.journal_type == JournalType::UserJournal
+            && journal.current_draft_id == Some(trace.id)
+        {
+            let next_draft = Trace::create_blank_draft_for_journal(&journal, pool)?;
+            journal.current_draft_id = Some(next_draft.id);
+            let _ = journal.update(pool)?;
+        }
+    }
 
     enqueue_trace_finalized_side_effects(&trace, pool);
 
@@ -607,11 +619,11 @@ async fn create_or_get_journal_draft(
     if journal.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    if journal.status == JournalStatus::Archived {
+    if journal.status != JournalStatus::Active || journal.journal_type != JournalType::UserJournal {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Cannot create a draft in an archived journal".to_string(),
+            "Current persisted drafts are only available for active user journals".to_string(),
         ));
     }
 
@@ -621,10 +633,30 @@ async fn create_or_get_journal_draft(
         let existing_draft =
             finalize_expired_trace_if_needed(existing_draft, pool, session_id).await?;
         if existing_draft.status == super::enums::TraceStatus::Draft {
-            return Ok(existing_draft);
+            return apply_create_draft_payload(existing_draft, payload, user_id, session_id, pool);
         }
     }
 
+    let draft = if let Some(draft) = Trace::find_draft_for_journal(journal.id, pool)? {
+        draft
+    } else {
+        let draft = Trace::create_blank_draft_for_journal(&journal, pool)?;
+        let mut journal = journal;
+        journal.current_draft_id = Some(draft.id);
+        let _ = journal.update(pool)?;
+        draft
+    };
+
+    apply_create_draft_payload(draft, payload, user_id, session_id, pool)
+}
+
+fn apply_create_draft_payload(
+    mut trace: Trace,
+    payload: CreateJournalDraftDto,
+    user_id: Uuid,
+    session_id: Option<Uuid>,
+    pool: &DbPool,
+) -> Result<Trace, PpdcError> {
     let CreateJournalDraftDto {
         content,
         derived_from_trace_id,
@@ -636,24 +668,30 @@ async fn create_or_get_journal_draft(
         timeout_at,
     } = payload;
 
-    let interaction_date = interaction_date.unwrap_or_else(|| Utc::now().naive_utc());
-
-    let mut trace = NewTrace::new(
-        String::new(),
-        String::new(),
-        content,
-        interaction_date,
-        user_id,
-        journal.id,
-    );
-    trace.derived_from_trace_id = derived_from_trace_id;
-    trace.is_encrypted = is_encrypted.unwrap_or(false);
-    trace.encryption_metadata = encryption_metadata;
-    trace.content_image_asset_id = content_image_asset_id;
+    if !content.is_empty() {
+        trace.content = content;
+    }
+    if derived_from_trace_id.is_some() {
+        trace.derived_from_trace_id = derived_from_trace_id;
+    }
+    if let Some(interaction_date) = interaction_date {
+        trace.interaction_date = interaction_date;
+    }
+    if let Some(is_encrypted) = is_encrypted {
+        trace.is_encrypted = is_encrypted;
+    }
+    if encryption_metadata.is_some() || !trace.is_encrypted {
+        trace.encryption_metadata = encryption_metadata;
+    }
+    if content_image_asset_id.is_some() {
+        trace.content_image_asset_id = content_image_asset_id;
+    }
     if let Some(sharing_sensitivity) = sharing_sensitivity {
         trace.sharing_sensitivity = sharing_sensitivity;
     }
-    trace.timeout_at = timeout_at;
+    if timeout_at.is_some() {
+        trace.timeout_at = timeout_at;
+    }
     if trace.is_encrypted && trace.encryption_metadata.is_none() {
         return Err(PpdcError::new(
             400,
@@ -667,7 +705,7 @@ async fn create_or_get_journal_draft(
     if let Some(timeout_at) = trace.timeout_at {
         validate_timeout_at(timeout_at)?;
     }
-    let trace = trace.create(pool)?;
+    let trace = trace.update(pool)?;
     if let Some(timeout_at) = trace.timeout_at {
         let _ = create_usage_event(
             user_id,
@@ -681,6 +719,31 @@ async fn create_or_get_journal_draft(
         );
     }
     Ok(trace)
+}
+
+async fn get_or_repair_current_journal_draft(
+    journal: Journal,
+    user_id: Uuid,
+    session_id: Option<Uuid>,
+    pool: &DbPool,
+) -> Result<Trace, PpdcError> {
+    create_or_get_journal_draft(
+        journal,
+        user_id,
+        session_id,
+        CreateJournalDraftDto {
+            content: String::new(),
+            derived_from_trace_id: None,
+            interaction_date: None,
+            is_encrypted: None,
+            encryption_metadata: None,
+            content_image_asset_id: None,
+            sharing_sensitivity: None,
+            timeout_at: None,
+        },
+        pool,
+    )
+    .await
 }
 
 #[debug_handler]
@@ -702,25 +765,63 @@ pub async fn get_journal_draft_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(journal_id): Path<Uuid>,
-) -> Result<Json<Option<Trace>>, PpdcError> {
+) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    if journal.user_id != user_id {
-        return Err(PpdcError::unauthorized());
+    let draft =
+        get_or_repair_current_journal_draft(journal, user_id, Some(session.id), &pool).await?;
+    Ok(Json(draft))
+}
+
+#[debug_handler]
+pub async fn patch_journal_draft_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Json(payload): Json<PatchTraceDto>,
+) -> Result<Json<Trace>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    let mut trace =
+        get_or_repair_current_journal_draft(journal, user_id, Some(session.id), &pool).await?;
+
+    if let Some(content) = payload.content {
+        trace.content = content;
+    }
+    if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
+        trace.derived_from_trace_id = derived_from_trace_id;
+    }
+    if let Some(interaction_date) = payload.interaction_date {
+        trace.interaction_date = interaction_date;
+    }
+    if let Some(content_image_asset_id) = payload.content_image_asset_id {
+        trace.content_image_asset_id = content_image_asset_id;
+    }
+    if let Some(sharing_sensitivity) = payload.sharing_sensitivity {
+        trace.sharing_sensitivity = sharing_sensitivity;
+    }
+    if let Some(timeout_at) = payload.timeout_at {
+        trace.timeout_at = timeout_at;
+    }
+    if let Some(timeout_at) = trace.timeout_at {
+        validate_timeout_at(timeout_at)?;
     }
 
-    let draft = match Trace::find_draft_for_journal(journal_id, &pool)? {
-        Some(draft) => {
-            let draft = finalize_expired_trace_if_needed(draft, &pool, Some(session.id)).await?;
-            if draft.status == super::enums::TraceStatus::Draft {
-                Some(draft)
-            } else {
-                None
-            }
-        }
-        None => None,
-    };
-    Ok(Json(draft))
+    let trace = trace.update(&pool)?;
+    if let Some(Some(timeout_at)) = payload.timeout_at {
+        let _ = create_usage_event(
+            user_id,
+            Some(session.id),
+            UsageEventType::TraceTimeoutSet,
+            Some(trace.id),
+            Some(serde_json::json!({
+                "timeout_at": timeout_at,
+            })),
+            &pool,
+        );
+    }
+
+    Ok(Json(trace))
 }
 
 #[debug_handler]
@@ -788,7 +889,10 @@ pub async fn put_trace_route(
                 match status {
                     super::enums::TraceStatus::Draft => {}
                     super::enums::TraceStatus::Finalized => {
-                        if trace.content.trim().is_empty() {
+                        if trace.content.trim().is_empty()
+                            && trace.content_image_asset_id.is_none()
+                            && trace.is_blank
+                        {
                             return Err(PpdcError::new(
                                 400,
                                 ErrorType::ApiError,
@@ -1077,14 +1181,16 @@ pub async fn post_trace_document_attachment_route(
         attachment_name
     };
 
+    let trace_id = trace.id;
     let attachment = NewTraceAttachment {
         trace_id: trace.id,
         document_id: document.id,
         attachment_name,
     }
     .create(&pool)?;
+    let _ = trace.update(&pool)?;
 
-    let attachment = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?
+    let attachment = TraceAttachment::find_with_documents_for_trace(trace_id, &pool)?
         .into_iter()
         .find(|candidate| candidate.id == attachment.id)
         .ok_or_else(|| {
@@ -1193,13 +1299,15 @@ pub async fn post_trace_attachment_route(
         &pool,
     )?;
 
+    let trace_id = trace.id;
     let attachment = NewTraceAttachment {
         trace_id: trace.id,
         document_id: document.id,
         attachment_name,
     }
     .create(&pool)?;
-    let attachment = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?
+    let _ = trace.update(&pool)?;
+    let attachment = TraceAttachment::find_with_documents_for_trace(trace_id, &pool)?
         .into_iter()
         .find(|candidate| candidate.id == attachment.id)
         .ok_or_else(|| {
@@ -1246,6 +1354,7 @@ pub async fn delete_trace_attachment_route(
         ));
     }
     TraceAttachment::delete(attachment_id, &pool)?;
+    let _ = trace.update(&pool)?;
     Ok(Json(attachment))
 }
 

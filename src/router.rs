@@ -198,7 +198,9 @@ pub fn create_router() -> Router {
         .route("/shared", get(journal::get_shared_journals_route))
         .route(
             "/:id/draft",
-            get(trace::get_journal_draft_route).post(trace::post_journal_draft_route),
+            get(trace::get_journal_draft_route)
+                .post(trace::post_journal_draft_route)
+                .patch(trace::patch_journal_draft_route),
         )
         .route(
             "/:id",

@@ -62,7 +62,6 @@ diesel::table! {
     documents (id) {
         id -> Uuid,
         owner_user_id -> Uuid,
-        status -> Text,
         document_role -> Text,
         document_type -> Nullable<Text>,
         content_source -> Text,
@@ -71,13 +70,14 @@ diesel::table! {
         description -> Text,
         author_name -> Nullable<Text>,
         content -> Nullable<Text>,
-        content_format -> Nullable<Text>,
         asset_id -> Nullable<Uuid>,
         external_content_url -> Nullable<Text>,
-        cover_image_asset_id -> Nullable<Uuid>,
-        cover_image_external_url -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        cover_image_asset_id -> Nullable<Uuid>,
+        cover_image_external_url -> Nullable<Text>,
+        content_format -> Nullable<Text>,
+        status -> Text,
     }
 }
 
@@ -124,21 +124,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    interactions (id) {
-        id -> Uuid,
-        interaction_user_id -> Uuid,
-        interaction_progress -> Int4,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-        interaction_comment -> Nullable<Text>,
-        interaction_date -> Timestamp,
-        interaction_type -> Nullable<Text>,
-        interaction_is_public -> Bool,
-        resource_id -> Nullable<Uuid>,
-    }
-}
-
-diesel::table! {
     journal_grants (id) {
         id -> Uuid,
         journal_id -> Uuid,
@@ -180,6 +165,7 @@ diesel::table! {
         is_encrypted -> Bool,
         last_trace_at -> Nullable<Timestamp>,
         sharing_mode -> Text,
+        current_draft_id -> Nullable<Uuid>,
     }
 }
 
@@ -471,41 +457,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    resource_relations (id) {
-        id -> Uuid,
-        origin_resource_id -> Uuid,
-        target_resource_id -> Uuid,
-        relation_comment -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-        user_id -> Uuid,
-        relation_type -> Text,
-        relation_entity_pair -> Text,
-        relation_meaning -> Text,
-    }
-}
-
-diesel::table! {
-    resources (id) {
-        id -> Uuid,
-        title -> Text,
-        subtitle -> Text,
-        content -> Text,
-        external_content_url -> Nullable<Text>,
-        comment -> Nullable<Text>,
-        image_url -> Nullable<Text>,
-        resource_type -> Text,
-        maturing_state -> Text,
-        publishing_state -> Text,
-        is_external -> Bool,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-        entity_type -> Text,
-        resource_subtype -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     sessions (id) {
         id -> Uuid,
         user_id -> Nullable<Uuid>,
@@ -569,6 +520,7 @@ diesel::table! {
         timeout_start_at -> Nullable<Timestamptz>,
         sharing_sensitivity -> Text,
         derived_from_trace_id -> Nullable<Uuid>,
+        is_blank -> Bool,
     }
 }
 
@@ -662,7 +614,6 @@ diesel::joinable!(albums -> assets (cover_image_asset_id));
 diesel::joinable!(albums -> users (owner_user_id));
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
-diesel::joinable!(documents -> assets (asset_id));
 diesel::joinable!(documents -> users (owner_user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
 diesel::joinable!(element_landmarks -> landmarks (landmark_id));
@@ -670,8 +621,6 @@ diesel::joinable!(elements -> landscape_analyses (analysis_id));
 diesel::joinable!(elements -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(elements -> traces (trace_id));
 diesel::joinable!(elements -> users (user_id));
-diesel::joinable!(interactions -> resources (resource_id));
-diesel::joinable!(interactions -> users (interaction_user_id));
 diesel::joinable!(journal_grants -> journals (journal_id));
 diesel::joinable!(journal_share_links -> journals (journal_id));
 diesel::joinable!(journal_share_links -> posts (scoped_post_id));
@@ -710,7 +659,6 @@ diesel::joinable!(references -> landmarks (landmark_id));
 diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(references -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(references -> users (user_id));
-diesel::joinable!(resource_relations -> users (user_id));
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(trace_attachments -> documents (document_id));
 diesel::joinable!(trace_attachments -> traces (trace_id));
@@ -718,7 +666,6 @@ diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
 diesel::joinable!(traces -> assets (content_image_asset_id));
-diesel::joinable!(traces -> journals (journal_id));
 diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(usage_events -> sessions (session_id));
 diesel::joinable!(usage_events -> users (user_id));
@@ -736,7 +683,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     element_landmarks,
     element_relations,
     elements,
-    interactions,
     journal_grants,
     journal_share_links,
     journals,
@@ -758,8 +704,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     posts,
     references,
     relationships,
-    resource_relations,
-    resources,
     sessions,
     trace_attachments,
     trace_mirrors,

@@ -4,6 +4,8 @@ use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as Sq
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
+use crate::schema::trace_attachments;
 
 use super::model::{NewTrace, Trace, TraceStatus};
 
@@ -23,6 +25,11 @@ fn recalculate_journal_last_trace_at(
              SELECT MAX(interaction_date)
              FROM traces
              WHERE journal_id = $1
+               AND (
+                    status <> 'DRAFT'
+                    OR trace_type <> 'USER_TRACE'
+                    OR is_blank = FALSE
+               )
          ),
          updated_at = NOW()
          WHERE id = $1",
@@ -30,6 +37,28 @@ fn recalculate_journal_last_trace_at(
     .bind::<SqlUuid, _>(journal_id)
     .execute(conn)?;
     Ok(())
+}
+
+fn trace_has_attachments(
+    conn: &mut diesel::PgConnection,
+    trace_id: uuid::Uuid,
+) -> Result<bool, diesel::result::Error> {
+    let exists = diesel::select(diesel::dsl::exists(
+        trace_attachments::table.filter(trace_attachments::trace_id.eq(trace_id)),
+    ))
+    .get_result::<bool>(conn)?;
+    Ok(exists)
+}
+
+fn compute_is_blank_with_conn(
+    conn: &mut diesel::PgConnection,
+    trace: &Trace,
+) -> Result<bool, diesel::result::Error> {
+    let has_attachments = trace_has_attachments(conn, trace.id)?;
+    Ok(trace.title.trim().is_empty()
+        && trace.content.trim().is_empty()
+        && trace.content_image_asset_id.is_none()
+        && !has_attachments)
 }
 
 fn archive_related_posts_for_trace(
@@ -63,6 +92,11 @@ impl Trace {
         let mut conn = pool.get()?;
 
         conn.transaction::<(), diesel::result::Error, _>(|conn| {
+            let previous_is_blank = self.is_blank;
+            self.is_blank = compute_is_blank_with_conn(conn, &self)?;
+            if previous_is_blank && !self.is_blank {
+                self.start_writing_at = Utc::now().naive_utc();
+            }
             diesel::sql_query(
                 "UPDATE traces
                  SET title = $2,
@@ -79,8 +113,9 @@ impl Trace {
                      trace_type = $13,
                      status = $14,
                      journal_id = $15,
-                     start_writing_at = $16,
-                     finalized_at = $17,
+                     is_blank = $16,
+                     start_writing_at = $17,
+                     finalized_at = $18,
                      updated_at = NOW()
                  WHERE id = $1",
             )
@@ -103,6 +138,7 @@ impl Trace {
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Text, _>(self.status.to_db())
             .bind::<Nullable<SqlUuid>, _>(self.journal_id)
+            .bind::<Bool, _>(self.is_blank)
             .bind::<Timestamp, _>(self.start_writing_at)
             .bind::<Nullable<Timestamp>, _>(self.finalized_at)
             .execute(conn)?;
@@ -149,6 +185,9 @@ impl NewTrace {
         if self.timeout_at.is_some() && self.timeout_start_at.is_none() {
             self.timeout_start_at = Some(Utc::now());
         }
+        self.is_blank = self.title.trim().is_empty()
+            && self.content.trim().is_empty()
+            && self.content_image_asset_id.is_none();
         let mut conn = pool.get()?;
 
         let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
@@ -170,6 +209,7 @@ impl NewTrace {
                     interaction_date,
                     trace_type,
                     status,
+                    is_blank,
                     start_writing_at,
                     finalized_at
                  ) VALUES (
@@ -190,6 +230,7 @@ impl NewTrace {
                     $14,
                     'DRAFT',
                     $15,
+                    $16,
                     NULL
                  )
                  RETURNING id",
@@ -212,6 +253,7 @@ impl NewTrace {
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
+            .bind::<Bool, _>(self.is_blank)
             .bind::<Timestamp, _>(self.start_writing_at)
             .get_result::<IdRow>(conn)?;
 
@@ -221,5 +263,32 @@ impl NewTrace {
         })?;
 
         Trace::find_full_trace(inserted.id, pool)
+    }
+}
+
+impl Trace {
+    pub fn create_blank_draft_for_journal(
+        journal: &Journal,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        if journal.status != JournalStatus::Active
+            || journal.journal_type != JournalType::UserJournal
+        {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Blank drafts are only created for active user journals".to_string(),
+            ));
+        }
+        let mut trace = NewTrace::new(
+            String::new(),
+            String::new(),
+            String::new(),
+            Utc::now().naive_utc(),
+            journal.user_id,
+            journal.id,
+        );
+        trace.is_blank = true;
+        trace.create(pool)
     }
 }
