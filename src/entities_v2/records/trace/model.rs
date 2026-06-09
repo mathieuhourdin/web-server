@@ -38,6 +38,7 @@ pub struct NewTraceDto {
 
 #[derive(Deserialize)]
 pub struct UpdateTraceDto {
+    pub title: Option<String>,
     pub content: Option<String>,
     pub derived_from_trace_id: Option<Option<Uuid>>,
     pub interaction_date: Option<NaiveDateTime>,
@@ -51,6 +52,7 @@ pub struct UpdateTraceDto {
 
 #[derive(Deserialize)]
 pub struct PatchTraceDto {
+    pub title: Option<String>,
     pub content: Option<String>,
     pub derived_from_trace_id: Option<Option<Uuid>>,
     pub interaction_date: Option<NaiveDateTime>,

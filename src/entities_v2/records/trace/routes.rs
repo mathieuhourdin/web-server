@@ -785,6 +785,9 @@ pub async fn patch_journal_draft_route(
     let mut trace =
         get_or_repair_current_journal_draft(journal, user_id, Some(session.id), &pool).await?;
 
+    if let Some(title) = payload.title {
+        trace.title = title;
+    }
     if let Some(content) = payload.content {
         trace.content = content;
     }
@@ -838,6 +841,11 @@ pub async fn put_trace_route(
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
 
+    let title_changed = payload
+        .title
+        .as_ref()
+        .map(|title| title != &trace.title)
+        .unwrap_or(false);
     let content_changed = payload
         .content
         .as_ref()
@@ -863,6 +871,9 @@ pub async fn put_trace_route(
 
     match trace.status {
         super::enums::TraceStatus::Draft => {
+            if let Some(title) = payload.title {
+                trace.title = title;
+            }
             if let Some(content) = payload.content {
                 trace.content = content;
             }
@@ -916,6 +927,7 @@ pub async fn put_trace_route(
         }
         super::enums::TraceStatus::Finalized => {
             if content_changed
+                || title_changed
                 || interaction_date_changed
                 || image_asset_changed
                 || sharing_sensitivity_changed
@@ -924,7 +936,7 @@ pub async fn put_trace_route(
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
+                    "Cannot update title, content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
                 ));
             }
 
@@ -945,6 +957,7 @@ pub async fn put_trace_route(
         }
         super::enums::TraceStatus::Archived => {
             if content_changed
+                || title_changed
                 || interaction_date_changed
                 || image_asset_changed
                 || sharing_sensitivity_changed
@@ -953,7 +966,7 @@ pub async fn put_trace_route(
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is archived".to_string(),
+                    "Cannot update title, content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is archived".to_string(),
                 ));
             }
 
@@ -1019,7 +1032,7 @@ pub async fn patch_trace_route(
         return Err(PpdcError::unauthorized());
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
-    if trace.status != super::enums::TraceStatus::Draft {
+    if trace.status == super::enums::TraceStatus::Archived {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
@@ -1027,6 +1040,9 @@ pub async fn patch_trace_route(
         ));
     }
 
+    if let Some(title) = payload.title {
+        trace.title = title;
+    }
     if let Some(content) = payload.content {
         trace.content = content;
     }
