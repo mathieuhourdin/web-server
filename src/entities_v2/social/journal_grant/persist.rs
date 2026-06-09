@@ -291,7 +291,6 @@ impl JournalGrant {
         journal_id: Uuid,
         owner_user_id: Uuid,
         post_id: Uuid,
-        trace_is_sensitive: bool,
         conn: &mut PgConnection,
     ) -> Result<(), PpdcError> {
         let grant_rows = journal_grants::table
@@ -334,9 +333,6 @@ impl JournalGrant {
             };
             match (grant.grantee_user_id, grant.grantee_scope) {
                 (Some(grantee_user_id), _) => {
-                    if trace_is_sensitive {
-                        continue;
-                    }
                     if !Self::is_follow_accepted_with_conn(grantee_user_id, owner_user_id, conn)? {
                         continue;
                     }
@@ -348,9 +344,6 @@ impl JournalGrant {
                     )?;
                 }
                 (None, Some(JournalGrantScope::AllAcceptedFollowers)) => {
-                    if trace_is_sensitive {
-                        continue;
-                    }
                     let visible_follower_ids =
                         Self::find_accepted_follower_ids_for_user_with_conn(owner_user_id, conn)?;
                     for follower_user_id in visible_follower_ids {
@@ -487,8 +480,6 @@ impl JournalGrant {
                 journal_id,
                 post.user_id,
                 post.id,
-                trace.sharing_sensitivity
-                    != crate::entities_v2::trace::TraceSharingSensitivity::Normal,
                 conn,
             )
         })?;
