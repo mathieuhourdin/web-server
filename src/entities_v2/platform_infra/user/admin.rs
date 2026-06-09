@@ -262,6 +262,7 @@ pub async fn get_admin_recent_user_activity_route(
                     SELECT COUNT(*)::bigint
                     FROM traces t
                     WHERE t.user_id = $1
+                      AND t.finalized_at IS NOT NULL
                       AND timezone($4, COALESCE(t.interaction_date, t.created_at) AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS trace_count,
                 COALESCE((
