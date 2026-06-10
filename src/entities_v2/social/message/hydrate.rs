@@ -1,15 +1,19 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::sql;
 use diesel::prelude::*;
-use diesel::sql_types::{Nullable, Text};
+use diesel::sql_types::{BigInt, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::schema::messages;
+use crate::entities_v2::user::{User, UserPublicResponse};
+use crate::schema::{messages, users};
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
-use super::model::{Message, MessageMetadata, MessageProcessingState, MessageType};
+use super::model::{
+    ConversationSummary, Message, MessageMetadata, MessageProcessingState, MessageType,
+};
 
 type MessageTuple = (
     Uuid,
@@ -30,6 +34,31 @@ type MessageTuple = (
     NaiveDateTime,
     NaiveDateTime,
 );
+
+#[derive(QueryableByName)]
+struct ConversationHeadRow {
+    #[diesel(sql_type = SqlUuid)]
+    partner_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    last_message_id: Uuid,
+    #[diesel(sql_type = Timestamp)]
+    #[allow(dead_code)]
+    last_created_at: NaiveDateTime,
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
+}
+
+#[derive(QueryableByName)]
+struct UnreadRow {
+    #[diesel(sql_type = SqlUuid)]
+    partner_id: Uuid,
+    #[diesel(sql_type = BigInt)]
+    unread: i64,
+}
 
 fn tuple_to_message(row: MessageTuple) -> Message {
     let (
@@ -113,6 +142,126 @@ impl Message {
         row.map(tuple_to_message).ok_or_else(|| {
             PpdcError::new(404, ErrorType::ApiError, "Message not found".to_string())
         })
+    }
+
+    /// Builds the chat-screen conversation list for `viewer_user_id`: one entry per
+    /// other participant, carrying the most recent message and the viewer's unread
+    /// count, ordered most-recent-first. Conversations are derived from `messages`
+    /// (no persisted entity). All conversational message types and context-linked
+    /// messages are included; only fully processed messages count, so in-flight AI
+    /// replies don't surface until ready.
+    pub fn find_conversations_for_user(
+        viewer_user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<ConversationSummary>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+
+        // Latest message per partner, then ordered by recency for the page.
+        let head_rows = diesel::sql_query(
+            "SELECT partner_id, last_message_id, last_created_at FROM (
+                 SELECT DISTINCT ON (partner_id)
+                     (CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END)
+                         AS partner_id,
+                     id AS last_message_id,
+                     created_at AS last_created_at
+                 FROM messages
+                 WHERE (sender_user_id = $1 OR recipient_user_id = $1)
+                   AND processing_state = 'PROCESSED'
+                 ORDER BY partner_id, created_at DESC, id DESC
+             ) latest
+             ORDER BY last_created_at DESC
+             LIMIT $2 OFFSET $3",
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .bind::<BigInt, _>(limit)
+        .bind::<BigInt, _>(offset)
+        .load::<ConversationHeadRow>(&mut conn)?;
+
+        let total = diesel::sql_query(
+            "SELECT COUNT(DISTINCT
+                 (CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END))
+                 AS count
+             FROM messages
+             WHERE (sender_user_id = $1 OR recipient_user_id = $1)
+               AND processing_state = 'PROCESSED'",
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .get_result::<CountRow>(&mut conn)?
+        .count;
+
+        if head_rows.is_empty() {
+            return Ok((vec![], total));
+        }
+
+        let unread_map: HashMap<Uuid, i64> = diesel::sql_query(
+            "SELECT sender_user_id AS partner_id, COUNT(*) AS unread
+             FROM messages
+             WHERE recipient_user_id = $1
+               AND seen_at IS NULL
+               AND processing_state = 'PROCESSED'
+             GROUP BY sender_user_id",
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .load::<UnreadRow>(&mut conn)?
+        .into_iter()
+        .map(|row| (row.partner_id, row.unread))
+        .collect();
+
+        let last_message_ids: Vec<Uuid> = head_rows.iter().map(|row| row.last_message_id).collect();
+        let mut message_map: HashMap<Uuid, Message> = messages::table
+            .filter(messages::id.eq_any(&last_message_ids))
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::post_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .load::<MessageTuple>(&mut conn)?
+            .into_iter()
+            .map(tuple_to_message)
+            .map(|message| (message.id, message))
+            .collect();
+
+        let partner_ids: Vec<Uuid> = head_rows.iter().map(|row| row.partner_id).collect();
+        let mut partner_map: HashMap<Uuid, UserPublicResponse> = users::table
+            .filter(users::id.eq_any(&partner_ids))
+            .select(User::as_select())
+            .load::<User>(&mut conn)?
+            .iter()
+            .map(|user| (user.id, UserPublicResponse::from(user)))
+            .collect();
+
+        // Preserve the recency order from head_rows; take ownership out of the maps
+        // (each id appears once, since DISTINCT ON yields unique partners).
+        let conversations = head_rows
+            .into_iter()
+            .filter_map(|row| {
+                let partner = partner_map.remove(&row.partner_id)?;
+                let last_message = message_map.remove(&row.last_message_id)?;
+                Some(ConversationSummary {
+                    partner,
+                    last_message,
+                    unread_count: unread_map.get(&row.partner_id).copied().unwrap_or(0),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok((conversations, total))
     }
 
     pub fn find_for_participant(

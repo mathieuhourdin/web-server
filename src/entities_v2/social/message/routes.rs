@@ -22,7 +22,9 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
-use super::model::{Message, MessageProcessingState, MessageType, NewMessage, NewMessageDto};
+use super::model::{
+    ConversationSummary, Message, MessageProcessingState, MessageType, NewMessage, NewMessageDto,
+};
 
 #[derive(Deserialize)]
 pub struct MessageFiltersQuery {
@@ -37,6 +39,12 @@ pub struct MessageFiltersQuery {
 pub struct AnalysisMessagesQuery {
     pub received_only: Option<bool>,
     pub unread_only: Option<bool>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+#[derive(Deserialize)]
+pub struct ConversationsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -180,6 +188,19 @@ fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Pos
         return Ok(None);
     }
     Ok(Some(post))
+}
+
+#[debug_handler]
+pub async fn get_conversations_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<ConversationsQuery>,
+) -> Result<Json<PaginatedResponse<ConversationSummary>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.pagination.validate()?;
+    let (conversations, total) =
+        Message::find_conversations_for_user(user_id, pagination.offset, pagination.limit, &pool)?;
+    Ok(Json(PaginatedResponse::new(conversations, pagination, total)))
 }
 
 #[debug_handler]

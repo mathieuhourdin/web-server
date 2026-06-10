@@ -2,6 +2,8 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::entities_v2::user::UserPublicResponse;
+
 use super::attachment::{MessageAttachment, MessageAttachmentType};
 pub use super::enums::{MessageProcessingState, MessageType};
 
@@ -76,6 +78,16 @@ pub struct Message {
     pub seen_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+/// One row of the chat screen: the conversation partner, the most recent message
+/// exchanged with them, and how many of their messages the viewer hasn't seen.
+/// Derived on the fly from `messages` — there is no persisted conversation entity.
+#[derive(Serialize)]
+pub struct ConversationSummary {
+    pub partner: UserPublicResponse,
+    pub last_message: Message,
+    pub unread_count: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

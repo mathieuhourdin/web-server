@@ -351,6 +351,7 @@ pub fn create_router() -> Router {
             "/",
             get(message::get_messages_route).post(message::post_message_route),
         )
+        .route("/conversations", get(message::get_conversations_route))
         .route(
             "/:id",
             get(message::get_message_route).put(message::put_message_route),
