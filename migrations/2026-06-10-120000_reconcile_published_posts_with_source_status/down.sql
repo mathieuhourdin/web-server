@@ -1,0 +1,3 @@
+-- Irreversible data correction: we cannot know which archived posts were
+-- previously published purely as a result of this reconciliation, so rollback
+-- does not attempt to re-publish anything.

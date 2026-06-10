@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use diesel::dsl::not;
+use diesel::dsl::{count_star, not};
 use diesel::prelude::*;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -48,25 +48,57 @@ pub fn find_feed_items_paginated(
     } else {
         vec![]
     };
+    if seen == Some(true) && seen_post_ids.is_empty() {
+        return Ok((vec![], 0));
+    }
 
-    let mut query = posts::table
+    // Feed eligibility is now fully captured by `posts.status = 'published'`: the
+    // publication invariant (doc/publication.md) guarantees a published post always
+    // has an eligible source, so no read-time source-state filter is needed. That
+    // lets us filter, order, and paginate entirely in SQL and hydrate only the page.
+    // The count query mirrors the page predicates so `total` stays exact. The
+    // source-backed predicate keeps source-less custom posts out of the feed.
+    let total: i64 = {
+        let mut count_query = posts::table
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::user_id.ne(viewer_user_id))
+            .filter(posts::id.eq_any(visible_post_ids.clone()))
+            .filter(
+                posts::source_trace_id
+                    .is_not_null()
+                    .or(posts::source_document_id.is_not_null())
+                    .or(posts::source_album_id.is_not_null()),
+            )
+            .into_boxed();
+        if let Some(seen) = seen {
+            count_query = if seen {
+                count_query.filter(posts::id.eq_any(seen_post_ids.clone()))
+            } else {
+                count_query.filter(not(posts::id.eq_any(seen_post_ids.clone())))
+            };
+        }
+        count_query.select(count_star()).get_result(&mut conn)?
+    };
+
+    let mut page_query = posts::table
         .filter(posts::status.eq(PostStatus::Published.to_db()))
         .filter(posts::user_id.ne(viewer_user_id))
         .filter(posts::id.eq_any(visible_post_ids))
+        .filter(
+            posts::source_trace_id
+                .is_not_null()
+                .or(posts::source_document_id.is_not_null())
+                .or(posts::source_album_id.is_not_null()),
+        )
         .into_boxed();
-
     if let Some(seen) = seen {
-        if seen {
-            if seen_post_ids.is_empty() {
-                return Ok((vec![], 0));
-            }
-            query = query.filter(posts::id.eq_any(seen_post_ids));
-        } else if !seen_post_ids.is_empty() {
-            query = query.filter(not(posts::id.eq_any(seen_post_ids)));
-        }
+        page_query = if seen {
+            page_query.filter(posts::id.eq_any(seen_post_ids))
+        } else {
+            page_query.filter(not(posts::id.eq_any(seen_post_ids)))
+        };
     }
-
-    let rows = query
+    let rows = page_query
         .select((
             posts::id,
             posts::user_id,
@@ -80,6 +112,8 @@ pub fn find_feed_items_paginated(
         ))
         .order(posts::publishing_date.desc().nulls_last())
         .then_order_by(posts::created_at.desc())
+        .limit(limit)
+        .offset(offset)
         .load::<FeedPostRow>(&mut conn)?;
 
     let source_refs = rows
@@ -164,8 +198,16 @@ pub fn find_feed_items_paginated(
                 }?;
 
                 let projection = projections.get(&source_ref)?;
+                // The publication invariant should guarantee this never fires; if it
+                // does, a published post has drifted out of sync with its source.
+                // Log for observability but keep the item so SQL pagination stays exact.
                 if !projection.is_feed_eligible() {
-                    return None;
+                    tracing::warn!(
+                        target: "feed",
+                        "published_post_with_ineligible_source post_id={} source={:?}",
+                        post_id,
+                        source_ref
+                    );
                 }
                 Some(FeedItem {
                     post_id,
@@ -195,13 +237,6 @@ pub fn find_feed_items_paginated(
                 })
             },
         )
-        .collect::<Vec<_>>();
-
-    let total = items.len() as i64;
-    let items = items
-        .into_iter()
-        .skip(offset as usize)
-        .take(limit as usize)
         .collect::<Vec<_>>();
 
     Ok((items, total))
