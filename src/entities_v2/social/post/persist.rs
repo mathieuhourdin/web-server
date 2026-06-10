@@ -1,11 +1,12 @@
 use diesel::prelude::*;
+use diesel::sql_types::Uuid as SqlUuid;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::schema::posts;
 
-use super::model::{NewPost, Post};
+use super::model::{NewPost, Post, PostSourceRef};
 
 impl Post {
     pub fn update(self, pool: &DbPool) -> Result<Post, PpdcError> {
@@ -49,4 +50,64 @@ impl NewPost {
             .get_result(&mut conn)?;
         Post::find_full(id, pool)
     }
+}
+
+/// Enforces the one-directional publication invariant from `doc/publication.md`:
+/// when a source record's status no longer permits a published post (e.g. it has
+/// been archived), its related post is archived too, so that owner access never
+/// outranks follower access. It never auto-publishes — publishing stays a
+/// deliberate user action — so eligible sources leave their post untouched.
+///
+/// Callers pass `permits_published_post` computed from their own status enum
+/// (see `*Status::permits_published_post`). The cascade is idempotent and must
+/// run inside the caller's transaction so it commits atomically with the source
+/// status change. Post↔source is 1:1, so at most one post is affected.
+pub fn enforce_publication_invariant_for_source(
+    source: PostSourceRef,
+    permits_published_post: bool,
+    conn: &mut PgConnection,
+) -> Result<(), diesel::result::Error> {
+    if permits_published_post {
+        return Ok(());
+    }
+
+    let (sql, source_id) = match source {
+        PostSourceRef::Trace(id) => (
+            "UPDATE posts SET status = 'ARCHIVED', updated_at = NOW() \
+             WHERE source_trace_id = $1 AND status <> 'ARCHIVED'",
+            id,
+        ),
+        PostSourceRef::Document(id) => (
+            "UPDATE posts SET status = 'ARCHIVED', updated_at = NOW() \
+             WHERE source_document_id = $1 AND status <> 'ARCHIVED'",
+            id,
+        ),
+        PostSourceRef::Album(id) => (
+            "UPDATE posts SET status = 'ARCHIVED', updated_at = NOW() \
+             WHERE source_album_id = $1 AND status <> 'ARCHIVED'",
+            id,
+        ),
+    };
+
+    diesel::sql_query(sql)
+        .bind::<SqlUuid, _>(source_id)
+        .execute(conn)?;
+    Ok(())
+}
+
+/// Guards the publish direction of the publication invariant: a post may only be
+/// set to published when its source record currently permits it (see
+/// `*Status::permits_published_post`). This complements
+/// `enforce_publication_invariant_for_source`, which handles the inverse
+/// (source-mutation) direction. Callers pass the source's eligibility and invoke
+/// this before persisting a post that would become published.
+pub fn ensure_source_permits_published_post(permits_published_post: bool) -> Result<(), PpdcError> {
+    if permits_published_post {
+        return Ok(());
+    }
+    Err(PpdcError::new(
+        400,
+        ErrorType::ApiError,
+        "The linked record is not in a publishable state".to_string(),
+    ))
 }

@@ -92,6 +92,13 @@ impl AlbumCompletionStatus {
     pub fn from_db(value: &str) -> Self {
         Self::from_code(value)
     }
+
+    /// Whether an album in this completion status may back a published post.
+    /// Per `doc/publication.md`: in-progress and complete albums allow published
+    /// posts; archived albums give archived posts.
+    pub fn permits_published_post(self) -> bool {
+        !matches!(self, AlbumCompletionStatus::Archived)
+    }
 }
 
 impl Serialize for AlbumCompletionStatus {
@@ -162,5 +169,18 @@ impl<'de> Deserialize<'de> for AlbumVisibility {
     {
         let value = String::deserialize(deserializer)?;
         Ok(Self::from_code(&value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mirrors the album row of the table in doc/publication.md.
+    #[test]
+    fn permits_published_post_matches_publication_model() {
+        assert!(AlbumCompletionStatus::InProgress.permits_published_post());
+        assert!(AlbumCompletionStatus::Complete.permits_published_post());
+        assert!(!AlbumCompletionStatus::Archived.permits_published_post());
     }
 }

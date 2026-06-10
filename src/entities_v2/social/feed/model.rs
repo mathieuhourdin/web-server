@@ -25,6 +25,8 @@ pub struct FeedItem {
     pub subtitle: String,
     pub content: String,
     pub cover_image_asset_id: Option<Uuid>,
+    pub owner_display_name: String,
+    pub journal_title: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

@@ -5,6 +5,7 @@ pub mod persist;
 pub mod routes;
 
 pub use hydrate::DigestVisiblePost;
+pub use persist::{enforce_publication_invariant_for_source, ensure_source_permits_published_post};
 pub use model::{
     NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType, PostSourceRef, PostStatus,
     PostType,

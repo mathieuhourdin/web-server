@@ -28,6 +28,7 @@ use super::model::{
     FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType, PostStatus,
     PostType,
 };
+use super::persist::ensure_source_permits_published_post;
 
 #[derive(Deserialize)]
 pub struct PostFiltersQuery {
@@ -434,19 +435,13 @@ pub async fn put_trace_post_route(
         post.post_type = post_type;
     }
     if let Some(status) = payload.status {
-        if status == PostStatus::Published
-            && trace.status != crate::entities_v2::trace::TraceStatus::Finalized
-        {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Only finalized traces can be published".to_string(),
-            ));
-        }
         post.status = status;
     }
     if let Some(audience_role) = payload.audience_role {
         post.audience_role = audience_role;
+    }
+    if post.status == PostStatus::Published {
+        ensure_source_permits_published_post(trace.status.permits_published_post())?;
     }
     if previous_status != PostStatus::Published
         && post.status == PostStatus::Published
@@ -686,6 +681,9 @@ pub async fn put_album_post_route(
     }
     if let Some(audience_role) = payload.audience_role {
         post.audience_role = audience_role;
+    }
+    if post.status == PostStatus::Published {
+        ensure_source_permits_published_post(album.completion_status.permits_published_post())?;
     }
     if previous_status != PostStatus::Published
         && post.status == PostStatus::Published

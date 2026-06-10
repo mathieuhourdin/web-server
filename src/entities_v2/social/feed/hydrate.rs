@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::not;
 use diesel::prelude::*;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -10,7 +11,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     source_projection::{load_source_projection_map, SourceProjectionKind},
 };
-use crate::schema::{posts, user_post_states};
+use crate::schema::{journals, posts, user_post_states, users};
 
 use super::model::{FeedItem, FeedSourceKind};
 
@@ -94,6 +95,52 @@ pub fn find_feed_items_paginated(
         })
         .collect::<Vec<_>>();
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
+
+    let owner_user_ids: Vec<Uuid> = rows
+        .iter()
+        .map(|row| row.1)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let display_name_map: HashMap<Uuid, String> = users::table
+        .filter(users::id.eq_any(&owner_user_ids))
+        .select((
+            users::id,
+            users::first_name,
+            users::last_name,
+            users::pseudonym,
+            users::pseudonymized,
+        ))
+        .load::<(Uuid, String, String, String, bool)>(&mut conn)?
+        .into_iter()
+        .map(|(id, first_name, last_name, pseudonym, pseudonymized)| {
+            let name = if pseudonymized {
+                pseudonym
+            } else {
+                format!("{} {}", first_name, last_name)
+            };
+            (id, name)
+        })
+        .collect();
+
+    let journal_ids: Vec<Uuid> = projections
+        .values()
+        .filter(|p| p.source_kind == SourceProjectionKind::Trace)
+        .filter_map(|p| p.journal_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let journal_title_map: HashMap<Uuid, String> = if journal_ids.is_empty() {
+        HashMap::new()
+    } else {
+        journals::table
+            .filter(journals::id.eq_any(&journal_ids))
+            .select((journals::id, journals::title))
+            .load::<(Uuid, String)>(&mut conn)?
+            .into_iter()
+            .collect()
+    };
+
     let items = rows
         .into_iter()
         .filter_map(
@@ -136,6 +183,13 @@ pub fn find_feed_items_paginated(
                     subtitle: projection.subtitle.clone(),
                     content: projection.content.clone(),
                     cover_image_asset_id: projection.cover_image_asset_id,
+                    owner_display_name: display_name_map
+                        .get(&owner_user_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    journal_title: projection
+                        .journal_id
+                        .and_then(|jid| journal_title_map.get(&jid).cloned()),
                     created_at,
                     updated_at,
                 })

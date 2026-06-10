@@ -6,6 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
+    post::{enforce_publication_invariant_for_source, PostSourceRef},
 };
 
 use super::model::{
@@ -256,43 +257,54 @@ impl Document {
             None
         };
 
+        let document_id = self.id;
+        let permits_published_post = self.status.permits_published_post();
         let mut conn = pool.get()?;
-        let _ = diesel::sql_query(
-            "UPDATE documents
-             SET status = $2,
-                 document_role = $3,
-                 document_type = $4,
-                 content_source = $5,
-                 title = $6,
-                 subtitle = $7,
-                 description = $8,
-                 author_name = $9,
-                 content = $10,
-                 content_format = $11,
-                 asset_id = $12,
-                 external_content_url = $13,
-                 cover_image_asset_id = $14,
-                 cover_image_external_url = $15,
-                 updated_at = NOW()
-             WHERE id = $1",
-        )
-        .bind::<SqlUuid, _>(self.id)
-        .bind::<Text, _>(self.status.to_db())
-        .bind::<Text, _>(self.document_role.to_db())
-        .bind::<Nullable<Text>, _>(self.document_type.map(|kind| kind.to_db().to_string()))
-        .bind::<Text, _>(self.content_source.to_db())
-        .bind::<Text, _>(self.title)
-        .bind::<Text, _>(self.subtitle)
-        .bind::<Text, _>(self.description)
-        .bind::<Nullable<Text>, _>(normalize_optional_text(self.author_name))
-        .bind::<Nullable<Text>, _>(self.content)
-        .bind::<Nullable<Text>, _>(content_format.map(|value| value.to_db().to_string()))
-        .bind::<Nullable<SqlUuid>, _>(self.asset_id)
-        .bind::<Nullable<Text>, _>(normalize_optional_text(self.external_content_url))
-        .bind::<Nullable<SqlUuid>, _>(self.cover_image_asset_id)
-        .bind::<Nullable<Text>, _>(normalize_optional_text(self.cover_image_external_url))
-        .execute(&mut conn)?;
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            diesel::sql_query(
+                "UPDATE documents
+                 SET status = $2,
+                     document_role = $3,
+                     document_type = $4,
+                     content_source = $5,
+                     title = $6,
+                     subtitle = $7,
+                     description = $8,
+                     author_name = $9,
+                     content = $10,
+                     content_format = $11,
+                     asset_id = $12,
+                     external_content_url = $13,
+                     cover_image_asset_id = $14,
+                     cover_image_external_url = $15,
+                     updated_at = NOW()
+                 WHERE id = $1",
+            )
+            .bind::<SqlUuid, _>(self.id)
+            .bind::<Text, _>(self.status.to_db())
+            .bind::<Text, _>(self.document_role.to_db())
+            .bind::<Nullable<Text>, _>(self.document_type.map(|kind| kind.to_db().to_string()))
+            .bind::<Text, _>(self.content_source.to_db())
+            .bind::<Text, _>(self.title)
+            .bind::<Text, _>(self.subtitle)
+            .bind::<Text, _>(self.description)
+            .bind::<Nullable<Text>, _>(normalize_optional_text(self.author_name))
+            .bind::<Nullable<Text>, _>(self.content)
+            .bind::<Nullable<Text>, _>(content_format.map(|value| value.to_db().to_string()))
+            .bind::<Nullable<SqlUuid>, _>(self.asset_id)
+            .bind::<Nullable<Text>, _>(normalize_optional_text(self.external_content_url))
+            .bind::<Nullable<SqlUuid>, _>(self.cover_image_asset_id)
+            .bind::<Nullable<Text>, _>(normalize_optional_text(self.cover_image_external_url))
+            .execute(conn)?;
 
-        Document::find_full(self.id, pool)
+            enforce_publication_invariant_for_source(
+                PostSourceRef::Document(document_id),
+                permits_published_post,
+                conn,
+            )?;
+            Ok(())
+        })?;
+
+        Document::find_full(document_id, pool)
     }
 }

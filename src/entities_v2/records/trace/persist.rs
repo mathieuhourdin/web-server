@@ -5,6 +5,7 @@ use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as Sq
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
+use crate::entities_v2::post::{enforce_publication_invariant_for_source, PostSourceRef};
 use crate::schema::trace_attachments;
 
 use super::model::{NewTrace, Trace, TraceStatus};
@@ -59,22 +60,6 @@ fn compute_is_blank_with_conn(
         && trace.content.trim().is_empty()
         && trace.content_image_asset_id.is_none()
         && !has_attachments)
-}
-
-fn archive_related_posts_for_trace(
-    conn: &mut diesel::PgConnection,
-    trace_id: uuid::Uuid,
-) -> Result<(), diesel::result::Error> {
-    diesel::sql_query(
-        "UPDATE posts
-         SET status = 'ARCHIVED',
-             updated_at = NOW()
-         WHERE source_trace_id = $1
-           AND status <> 'ARCHIVED'",
-    )
-    .bind::<SqlUuid, _>(trace_id)
-    .execute(conn)?;
-    Ok(())
 }
 
 impl Trace {
@@ -143,9 +128,11 @@ impl Trace {
             .bind::<Nullable<Timestamp>, _>(self.finalized_at)
             .execute(conn)?;
 
-            if self.status == TraceStatus::Archived {
-                archive_related_posts_for_trace(conn, self.id)?;
-            }
+            enforce_publication_invariant_for_source(
+                PostSourceRef::Trace(self.id),
+                self.status.permits_published_post(),
+                conn,
+            )?;
 
             if let Some(journal_id) = self.journal_id {
                 recalculate_journal_last_trace_at(conn, journal_id)?;

@@ -56,6 +56,13 @@ impl TraceStatus {
             _ => TraceStatus::Draft,
         }
     }
+
+    /// Whether a trace in this status may back a published post.
+    /// Per `doc/publication.md`: only finalized traces; drafts have no post and
+    /// archived traces give archived posts.
+    pub fn permits_published_post(self) -> bool {
+        matches!(self, TraceStatus::Finalized)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,5 +85,18 @@ impl TraceSharingSensitivity {
             "SENSITIVE" | "sensitive" => TraceSharingSensitivity::Sensitive,
             _ => TraceSharingSensitivity::Normal,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mirrors the trace row of the table in doc/publication.md.
+    #[test]
+    fn permits_published_post_matches_publication_model() {
+        assert!(!TraceStatus::Draft.permits_published_post());
+        assert!(TraceStatus::Finalized.permits_published_post());
+        assert!(!TraceStatus::Archived.permits_published_post());
     }
 }

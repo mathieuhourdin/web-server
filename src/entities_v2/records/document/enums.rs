@@ -99,4 +99,23 @@ impl DocumentStatus {
             _ => DocumentStatus::Active,
         }
     }
+
+    /// Whether a document in this status may back a published post.
+    /// Per `doc/publication.md`: active documents allow published posts;
+    /// archived documents give archived posts.
+    pub fn permits_published_post(self) -> bool {
+        matches!(self, DocumentStatus::Active)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mirrors the document row of the table in doc/publication.md.
+    #[test]
+    fn permits_published_post_matches_publication_model() {
+        assert!(DocumentStatus::Active.permits_published_post());
+        assert!(!DocumentStatus::Archived.permits_published_post());
+    }
 }

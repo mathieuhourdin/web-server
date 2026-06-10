@@ -5,7 +5,9 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
-    post::{Post, PostAudienceRole, PostStatus},
+    post::{
+        enforce_publication_invariant_for_source, Post, PostAudienceRole, PostSourceRef, PostStatus,
+    },
     post_grant::PostGrant,
     trace::Trace,
 };
@@ -275,19 +277,30 @@ impl Album {
 
     pub fn update(self, pool: &DbPool) -> Result<Album, PpdcError> {
         validate_cover_asset_owner(self.owner_user_id, self.cover_image_asset_id, pool)?;
+        let album_id = self.id;
+        let permits_published_post = self.completion_status.permits_published_post();
         let mut conn = pool.get()?;
-        diesel::update(albums::table.filter(albums::id.eq(self.id)))
-            .set((
-                albums::title.eq(self.title),
-                albums::subtitle.eq(self.subtitle),
-                albums::content.eq(self.content),
-                albums::ordering_mode.eq(self.ordering_mode.to_db()),
-                albums::completion_status.eq(self.completion_status.to_db()),
-                albums::visibility.eq(self.visibility.to_db()),
-                albums::cover_image_asset_id.eq(self.cover_image_asset_id),
-            ))
-            .execute(&mut conn)?;
-        Album::find(self.id, pool)
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            diesel::update(albums::table.filter(albums::id.eq(self.id)))
+                .set((
+                    albums::title.eq(self.title),
+                    albums::subtitle.eq(self.subtitle),
+                    albums::content.eq(self.content),
+                    albums::ordering_mode.eq(self.ordering_mode.to_db()),
+                    albums::completion_status.eq(self.completion_status.to_db()),
+                    albums::visibility.eq(self.visibility.to_db()),
+                    albums::cover_image_asset_id.eq(self.cover_image_asset_id),
+                ))
+                .execute(conn)?;
+
+            enforce_publication_invariant_for_source(
+                PostSourceRef::Album(album_id),
+                permits_published_post,
+                conn,
+            )?;
+            Ok(())
+        })?;
+        Album::find(album_id, pool)
     }
 
     pub fn user_can_read(&self, viewer_user_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {

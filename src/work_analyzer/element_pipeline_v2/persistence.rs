@@ -674,6 +674,7 @@ mod tests {
             interaction_date: None,
             element_type: ElementType::Transaction,
             element_subtype: ElementSubtype::Input,
+            status: None,
             direct_landmark_ids: HashSet::from([landmark_id]),
             neighbors: HashSet::from(["tra_2".to_string()]),
         };
@@ -686,6 +687,7 @@ mod tests {
             interaction_date: None,
             element_type: ElementType::Transaction,
             element_subtype: ElementSubtype::Output,
+            status: None,
             direct_landmark_ids: HashSet::new(),
             neighbors: HashSet::from(["tra_3".to_string()]),
         };
@@ -698,6 +700,7 @@ mod tests {
             interaction_date: None,
             element_type: ElementType::Transaction,
             element_subtype: ElementSubtype::Output,
+            status: None,
             direct_landmark_ids: HashSet::new(),
             neighbors: HashSet::new(),
         };
