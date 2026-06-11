@@ -204,6 +204,25 @@ pub async fn get_conversations_route(
 }
 
 #[debug_handler]
+pub async fn get_conversation_thread_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(partner_id): Path<Uuid>,
+    Query(params): Query<ConversationsQuery>,
+) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.pagination.validate()?;
+    let (messages, total) = Message::find_thread_with_partner_paginated(
+        user_id,
+        partner_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(messages, pagination, total)))
+}
+
+#[debug_handler]
 pub async fn get_messages_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,

@@ -264,6 +264,68 @@ impl Message {
         Ok((conversations, total))
     }
 
+    /// All messages exchanged between `viewer_user_id` and `partner_id`, newest
+    /// first (matching the other message endpoints; the client reverses for display).
+    /// Same inclusion rules as the conversation list: every message type and
+    /// context-linked message, processed only.
+    pub fn find_thread_with_partner_paginated(
+        viewer_user_id: Uuid,
+        partner_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Message>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+
+        let total = messages::table
+            .filter(
+                messages::sender_user_id
+                    .eq(viewer_user_id)
+                    .and(messages::recipient_user_id.eq(partner_id))
+                    .or(messages::sender_user_id
+                        .eq(partner_id)
+                        .and(messages::recipient_user_id.eq(viewer_user_id))),
+            )
+            .filter(messages::processing_state.eq(MessageProcessingState::Processed.to_db()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        let rows = messages::table
+            .filter(
+                messages::sender_user_id
+                    .eq(viewer_user_id)
+                    .and(messages::recipient_user_id.eq(partner_id))
+                    .or(messages::sender_user_id
+                        .eq(partner_id)
+                        .and(messages::recipient_user_id.eq(viewer_user_id))),
+            )
+            .filter(messages::processing_state.eq(MessageProcessingState::Processed.to_db()))
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::post_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .order(messages::created_at.desc())
+            .offset(offset)
+            .limit(limit.max(1))
+            .load::<MessageTuple>(&mut conn)?;
+        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+    }
+
     pub fn find_for_participant(
         user_id: Uuid,
         landscape_analysis_id: Option<Uuid>,

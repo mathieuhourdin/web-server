@@ -353,6 +353,10 @@ pub fn create_router() -> Router {
         )
         .route("/conversations", get(message::get_conversations_route))
         .route(
+            "/conversations/:partner_id",
+            get(message::get_conversation_thread_route),
+        )
+        .route(
             "/:id",
             get(message::get_message_route).put(message::put_message_route),
         )
