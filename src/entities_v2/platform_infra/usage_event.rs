@@ -213,6 +213,20 @@ impl NewUsageEvent {
 }
 
 impl UsageEvent {
+    pub fn find_latest_occurred_at_for_user_and_type(
+        user_id: Uuid,
+        event_type: UsageEventType,
+        pool: &DbPool,
+    ) -> Result<Option<NaiveDateTime>, PpdcError> {
+        let mut conn = pool.get()?;
+        let occurred_at = usage_events::table
+            .filter(usage_events::user_id.eq(user_id))
+            .filter(usage_events::event_type.eq(event_type.to_db()))
+            .select(diesel::dsl::max(usage_events::occurred_at))
+            .get_result::<Option<NaiveDateTime>>(&mut conn)?;
+        Ok(occurred_at)
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<UsageEvent, PpdcError> {
         let mut conn = pool.get()?;
         let row = usage_events::table

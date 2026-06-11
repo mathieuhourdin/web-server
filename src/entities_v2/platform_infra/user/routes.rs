@@ -4,6 +4,7 @@ use crate::entities_v2::{
     feed::hydrate::count_recent_unread_feed_items,
     message::Message,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
+    platform_infra::usage_event::{UsageEvent, UsageEventType},
     session::Session,
 };
 use crate::environment;
@@ -282,12 +283,16 @@ pub async fn get_me_unread_counts_route(
     let as_of = Utc::now();
     let posts_window_days = 7;
     let messages_window_days = 14;
-
-    let unread_posts_count = count_recent_unread_feed_items(
+    let posts_window_floor = (as_of - Duration::days(posts_window_days)).naive_utc();
+    let posts_cutoff = UsageEvent::find_latest_occurred_at_for_user_and_type(
         user_id,
-        (as_of - Duration::days(posts_window_days)).naive_utc(),
+        UsageEventType::FeedEngaged30s,
         &pool,
-    )?;
+    )?
+    .map(|occurred_at| occurred_at.max(posts_window_floor))
+    .unwrap_or(posts_window_floor);
+
+    let unread_posts_count = count_recent_unread_feed_items(user_id, posts_cutoff, &pool)?;
     let unread_messages_count = Message::count_recent_unread_received_messages(
         user_id,
         (as_of - Duration::days(messages_window_days)).naive_utc(),
