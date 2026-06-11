@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::{count_star, not};
 use diesel::prelude::*;
+use diesel::sql_types::Timestamp;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -240,4 +241,43 @@ pub fn find_feed_items_paginated(
         .collect::<Vec<_>>();
 
     Ok((items, total))
+}
+
+pub fn count_recent_unread_feed_items(
+    viewer_user_id: Uuid,
+    published_since: NaiveDateTime,
+    pool: &DbPool,
+) -> Result<i64, PpdcError> {
+    let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+    if visible_post_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut conn = pool.get()?;
+    let seen_post_ids = user_post_states::table
+        .filter(user_post_states::user_id.eq(viewer_user_id))
+        .select(user_post_states::post_id)
+        .load::<Uuid>(&mut conn)?;
+
+    let mut query = posts::table
+        .filter(posts::status.eq(PostStatus::Published.to_db()))
+        .filter(posts::user_id.ne(viewer_user_id))
+        .filter(posts::id.eq_any(visible_post_ids))
+        .filter(
+            posts::source_trace_id
+                .is_not_null()
+                .or(posts::source_document_id.is_not_null())
+                .or(posts::source_album_id.is_not_null()),
+        )
+        .filter(
+            diesel::dsl::sql::<Timestamp>("COALESCE(posts.publishing_date, posts.created_at)")
+                .ge(published_since),
+        )
+        .into_boxed();
+
+    if !seen_post_ids.is_empty() {
+        query = query.filter(not(posts::id.eq_any(seen_post_ids)));
+    }
+
+    Ok(query.select(count_star()).get_result(&mut conn)?)
 }

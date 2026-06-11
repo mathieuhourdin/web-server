@@ -1,6 +1,8 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::PpdcError,
+    feed::hydrate::count_recent_unread_feed_items,
+    message::Message,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
 };
@@ -10,11 +12,12 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Text, Timestamp, Uuid as SqlUuid};
 use serde::Deserialize;
+use serde::Serialize;
 use uuid::Uuid;
 
 use super::enums::UserPrincipalType;
@@ -42,6 +45,15 @@ struct RankedFollowerUserIdRow {
 struct CountRow {
     #[diesel(sql_type = BigInt)]
     total: i64,
+}
+
+#[derive(Serialize)]
+pub struct MeUnreadCountsResponse {
+    pub unread_posts_count: i64,
+    pub unread_messages_count: i64,
+    pub posts_window_days: i64,
+    pub messages_window_days: i64,
+    pub as_of: DateTime<Utc>,
 }
 
 fn hydrate_user_search_results(
@@ -259,6 +271,36 @@ pub async fn get_suggested_users_route(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Json(results))
+}
+
+#[debug_handler]
+pub async fn get_me_unread_counts_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<Json<MeUnreadCountsResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let as_of = Utc::now();
+    let posts_window_days = 7;
+    let messages_window_days = 14;
+
+    let unread_posts_count = count_recent_unread_feed_items(
+        user_id,
+        (as_of - Duration::days(posts_window_days)).naive_utc(),
+        &pool,
+    )?;
+    let unread_messages_count = Message::count_recent_unread_received_messages(
+        user_id,
+        (as_of - Duration::days(messages_window_days)).naive_utc(),
+        &pool,
+    )?;
+
+    Ok(Json(MeUnreadCountsResponse {
+        unread_posts_count,
+        unread_messages_count,
+        posts_window_days,
+        messages_window_days,
+        as_of,
+    }))
 }
 
 #[debug_handler]

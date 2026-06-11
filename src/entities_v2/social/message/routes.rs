@@ -200,7 +200,11 @@ pub async fn get_conversations_route(
     let pagination = params.pagination.validate()?;
     let (conversations, total) =
         Message::find_conversations_for_user(user_id, pagination.offset, pagination.limit, &pool)?;
-    Ok(Json(PaginatedResponse::new(conversations, pagination, total)))
+    Ok(Json(PaginatedResponse::new(
+        conversations,
+        pagination,
+        total,
+    )))
 }
 
 #[debug_handler]

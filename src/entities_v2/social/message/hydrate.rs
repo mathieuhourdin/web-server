@@ -114,6 +114,24 @@ fn tuple_to_message(row: MessageTuple) -> Message {
 }
 
 impl Message {
+    pub fn count_recent_unread_received_messages(
+        user_id: Uuid,
+        created_since: NaiveDateTime,
+        pool: &DbPool,
+    ) -> Result<i64, PpdcError> {
+        let mut conn = pool.get()?;
+
+        let count = messages::table
+            .filter(messages::recipient_user_id.eq(user_id))
+            .filter(messages::seen_at.is_null())
+            .filter(messages::processing_state.eq(MessageProcessingState::Processed.to_db()))
+            .filter(messages::created_at.ge(created_since))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        Ok(count)
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool.get()?;
         let row = messages::table
