@@ -11,7 +11,7 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
-    album, analysis_summary, asset, document, element,
+    album, analysis_summary, asset, content_report, document, element,
     error::{ErrorType, PpdcError},
     feed, journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
     mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, transcription,
@@ -71,6 +71,14 @@ pub fn create_router() -> Router {
 
     let admin_router = Router::new()
         .nest("/analytics", admin_analytics_router)
+        .route(
+            "/content_reports",
+            get(content_report::get_admin_content_reports_route),
+        )
+        .route(
+            "/content_reports/:id",
+            get(content_report::get_admin_content_report_route),
+        )
         .route(
             "/service_users",
             get(user::get_admin_service_users_route).post(user::post_admin_service_user_route),
@@ -398,6 +406,9 @@ pub fn create_router() -> Router {
     let user_post_states_router = Router::new()
         .route("/", post(user_post_state::post_user_post_state_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let content_reports_router = Router::new()
+        .route("/", post(content_report::post_content_report_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
     let shared_router = Router::new()
         .route(
             "/journals/:id",
@@ -437,6 +448,7 @@ pub fn create_router() -> Router {
         .nest("/sessions", sessions_router)
         .nest("/user_secure_actions", user_secure_actions_router)
         .nest("/user_post_states", user_post_states_router)
+        .nest("/content_reports", content_reports_router)
         .nest("/usage_events", usage_events_router)
         .nest("/analysis", analysis_router)
         .nest("/internal", internal_router)

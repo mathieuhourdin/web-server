@@ -1,4 +1,5 @@
 pub mod album;
+pub mod content_report;
 pub mod feed;
 pub mod journal_grant;
 pub mod message;

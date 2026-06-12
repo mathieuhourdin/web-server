@@ -59,6 +59,31 @@ diesel::table! {
 }
 
 diesel::table! {
+    content_reports (id) {
+        id -> Uuid,
+        reporter_user_id -> Uuid,
+        reported_message_id -> Nullable<Uuid>,
+        reported_post_id -> Nullable<Uuid>,
+        reported_user_id -> Uuid,
+        reason -> Text,
+        reporter_comment -> Text,
+        status -> Text,
+        reviewed_by_user_id -> Nullable<Uuid>,
+        reviewed_at -> Nullable<Timestamp>,
+        resolution_note -> Text,
+        snapshot_title -> Text,
+        snapshot_content -> Text,
+        snapshot_attachment_json -> Nullable<Jsonb>,
+        snapshot_metadata_json -> Nullable<Jsonb>,
+        snapshot_source_kind -> Nullable<Text>,
+        snapshot_source_id -> Nullable<Uuid>,
+        snapshot_context_json -> Nullable<Jsonb>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     documents (id) {
         id -> Uuid,
         owner_user_id -> Uuid,
@@ -679,6 +704,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     albums,
     analysis_summaries,
     assets,
+    content_reports,
     documents,
     element_landmarks,
     element_relations,
