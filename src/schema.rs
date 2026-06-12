@@ -534,6 +534,7 @@ diesel::table! {
         interaction_date -> Timestamp,
         trace_type -> Text,
         status -> Text,
+        version_integer -> Int4,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         is_encrypted -> Bool,

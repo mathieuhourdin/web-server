@@ -1,0 +1,2 @@
+ALTER TABLE traces
+DROP COLUMN IF EXISTS version_integer;

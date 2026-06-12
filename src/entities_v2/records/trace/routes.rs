@@ -139,6 +139,14 @@ pub struct CreateJournalDraftDto {
 #[derive(Deserialize)]
 pub struct ExtendTraceTimeoutDto {
     pub minutes: i64,
+    #[serde(alias = "expected_version")]
+    pub expected_version_integer: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct TraceExpectedVersionQuery {
+    #[serde(alias = "expected_version")]
+    pub expected_version_integer: i32,
 }
 
 fn spawn_autoplay_lens_runs_for_trace(
@@ -285,6 +293,7 @@ async fn finalize_trace_transition(
     pool: &DbPool,
     session_id: Option<Uuid>,
     auto_finalized: bool,
+    expected_version_integer: Option<i32>,
 ) -> Result<Trace, PpdcError> {
     let timeout_at_before = trace.timeout_at;
 
@@ -292,7 +301,11 @@ async fn finalize_trace_transition(
     trace.finalized_at = Some(Utc::now().naive_utc());
     trace.timeout_at = None;
 
-    let trace = trace.update(pool)?;
+    let trace = if let Some(expected_version_integer) = expected_version_integer {
+        trace.update_with_expected_version(expected_version_integer, pool)?
+    } else {
+        trace.update(pool)?
+    };
 
     if let Some(journal_id) = trace.journal_id {
         let mut journal = Journal::find_full(journal_id, pool)?;
@@ -330,7 +343,7 @@ async fn finalize_expired_trace_if_needed(
     session_id: Option<Uuid>,
 ) -> Result<Trace, PpdcError> {
     if is_trace_timeout_expired(&trace) {
-        finalize_trace_transition(trace, pool, session_id, true).await
+        finalize_trace_transition(trace, pool, session_id, true, None).await
     } else {
         Ok(trace)
     }
@@ -343,7 +356,7 @@ async fn finalize_expired_drafts_for_user(
 ) -> Result<(), PpdcError> {
     let expired_drafts = Trace::get_expired_drafts_for_user(user_id, pool)?;
     for trace in expired_drafts {
-        let _ = finalize_trace_transition(trace, pool, session_id, true).await?;
+        let _ = finalize_trace_transition(trace, pool, session_id, true, None).await?;
     }
     Ok(())
 }
@@ -400,6 +413,11 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
     TraceReadableView {
         id: trace.id,
         journal_id: trace.journal_id,
+        version_integer: if include_owner_fields {
+            Some(trace.version_integer)
+        } else {
+            None
+        },
         title: trace.title,
         subtitle: Some(trace.subtitle),
         content: trace.content,
@@ -461,6 +479,18 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         created_at: trace.created_at,
         updated_at: trace.updated_at,
     }
+}
+
+fn require_expected_version_integer(
+    expected_version_integer: Option<i32>,
+) -> Result<i32, PpdcError> {
+    expected_version_integer.ok_or_else(|| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "expected_version_integer is required".to_string(),
+        )
+    })
 }
 
 async fn parse_trace_attachment_multipart(
@@ -667,30 +697,39 @@ fn apply_create_draft_payload(
         sharing_sensitivity,
         timeout_at,
     } = payload;
+    let mut changed = false;
 
     if !content.is_empty() {
         trace.content = content;
+        changed = true;
     }
     if derived_from_trace_id.is_some() {
         trace.derived_from_trace_id = derived_from_trace_id;
+        changed = true;
     }
     if let Some(interaction_date) = interaction_date {
         trace.interaction_date = interaction_date;
+        changed = true;
     }
     if let Some(is_encrypted) = is_encrypted {
         trace.is_encrypted = is_encrypted;
+        changed = true;
     }
     if encryption_metadata.is_some() || !trace.is_encrypted {
         trace.encryption_metadata = encryption_metadata;
+        changed = true;
     }
     if content_image_asset_id.is_some() {
         trace.content_image_asset_id = content_image_asset_id;
+        changed = true;
     }
     if let Some(sharing_sensitivity) = sharing_sensitivity {
         trace.sharing_sensitivity = sharing_sensitivity;
+        changed = true;
     }
     if timeout_at.is_some() {
         trace.timeout_at = timeout_at;
+        changed = true;
     }
     if trace.is_encrypted && trace.encryption_metadata.is_none() {
         return Err(PpdcError::new(
@@ -704,6 +743,9 @@ fn apply_create_draft_payload(
     }
     if let Some(timeout_at) = trace.timeout_at {
         validate_timeout_at(timeout_at)?;
+    }
+    if !changed {
+        return Ok(trace);
     }
     let trace = trace.update(pool)?;
     if let Some(timeout_at) = trace.timeout_at {
@@ -781,6 +823,8 @@ pub async fn patch_journal_draft_route(
     Json(payload): Json<PatchTraceDto>,
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let expected_version_integer =
+        require_expected_version_integer(payload.expected_version_integer)?;
     let journal = Journal::find_full(journal_id, &pool)?;
     let mut trace =
         get_or_repair_current_journal_draft(journal, user_id, Some(session.id), &pool).await?;
@@ -810,7 +854,7 @@ pub async fn patch_journal_draft_route(
         validate_timeout_at(timeout_at)?;
     }
 
-    let trace = trace.update(&pool)?;
+    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
     if let Some(Some(timeout_at)) = payload.timeout_at {
         let _ = create_usage_event(
             user_id,
@@ -835,6 +879,8 @@ pub async fn put_trace_route(
     Json(payload): Json<UpdateTraceDto>,
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let expected_version_integer =
+        require_expected_version_integer(payload.expected_version_integer)?;
     let mut trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
@@ -910,9 +956,14 @@ pub async fn put_trace_route(
                                 "Cannot finalize an empty trace".to_string(),
                             ));
                         }
-                        let trace =
-                            finalize_trace_transition(trace, &pool, Some(session.id), false)
-                                .await?;
+                        let trace = finalize_trace_transition(
+                            trace,
+                            &pool,
+                            Some(session.id),
+                            false,
+                            Some(expected_version_integer),
+                        )
+                        .await?;
                         if publish_default_post {
                             let _ = publish_default_post_for_trace(&trace, &pool)?;
                         }
@@ -990,7 +1041,7 @@ pub async fn put_trace_route(
         }
     }
 
-    let trace = trace.update(&pool)?;
+    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
     if publish_default_post {
         if trace.status != super::enums::TraceStatus::Finalized {
             return Err(PpdcError::new(
@@ -1027,6 +1078,8 @@ pub async fn patch_trace_route(
     Json(payload): Json<PatchTraceDto>,
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let expected_version_integer =
+        require_expected_version_integer(payload.expected_version_integer)?;
     let mut trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
@@ -1065,7 +1118,7 @@ pub async fn patch_trace_route(
         validate_timeout_at(timeout_at)?;
     }
 
-    let trace = trace.update(&pool)?;
+    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
     if let Some(Some(timeout_at)) = payload.timeout_at {
         let _ = create_usage_event(
             user_id,
@@ -1086,6 +1139,7 @@ pub async fn post_trace_asset_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
+    Query(query): Query<TraceExpectedVersionQuery>,
     multipart: Multipart,
 ) -> Result<Json<TraceAssetUploadResponse>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
@@ -1109,7 +1163,7 @@ pub async fn post_trace_asset_route(
     } = upload_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
     trace.content_image_asset_id = Some(asset.id);
-    let trace = trace.update(&pool)?;
+    let trace = trace.update_with_expected_version(query.expected_version_integer, &pool)?;
 
     Ok(Json(TraceAssetUploadResponse {
         trace,
@@ -1383,6 +1437,8 @@ pub async fn post_trace_extend_timeout_route(
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     validate_timeout_extension_minutes(payload.minutes)?;
+    let expected_version_integer =
+        require_expected_version_integer(payload.expected_version_integer)?;
 
     let mut trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
@@ -1408,7 +1464,7 @@ pub async fn post_trace_extend_timeout_route(
     validate_timeout_at(new_timeout_at)?;
 
     trace.timeout_at = Some(new_timeout_at);
-    let trace = trace.update(&pool)?;
+    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
 
     let _ = create_usage_event(
         user_id,
@@ -1793,6 +1849,7 @@ pub async fn get_traces_for_journal_route(
             .map(|trace| JournalTraceView {
                 id: trace.id,
                 post_id: None,
+                version_integer: Some(trace.version_integer),
                 journal_id: id,
                 title: trace.title,
                 subtitle: Some(trace.subtitle),

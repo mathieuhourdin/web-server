@@ -1,6 +1,6 @@
 use chrono::Utc;
 use diesel::prelude::*;
-use diesel::sql_types::{Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Bool, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid};
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
@@ -14,6 +14,18 @@ use super::model::{NewTrace, Trace, TraceStatus};
 struct IdRow {
     #[diesel(sql_type = SqlUuid)]
     id: uuid::Uuid,
+}
+
+#[derive(QueryableByName)]
+struct AffectedRows {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
+}
+
+#[derive(QueryableByName)]
+struct VersionIntegerRow {
+    #[diesel(sql_type = diesel::sql_types::Int4)]
+    version_integer: i32,
 }
 
 fn recalculate_journal_last_trace_at(
@@ -63,7 +75,23 @@ fn compute_is_blank_with_conn(
 }
 
 impl Trace {
-    pub fn update(mut self, pool: &DbPool) -> Result<Trace, PpdcError> {
+    pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
+        self.update_internal(None, pool)
+    }
+
+    pub fn update_with_expected_version(
+        self,
+        expected_version_integer: i32,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        self.update_internal(Some(expected_version_integer), pool)
+    }
+
+    fn update_internal(
+        mut self,
+        expected_version_integer: Option<i32>,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
             return Err(PpdcError::new(
                 400,
@@ -76,57 +104,123 @@ impl Trace {
         }
         let mut conn = pool.get()?;
 
-        conn.transaction::<(), diesel::result::Error, _>(|conn| {
+        let updated = conn.transaction::<bool, diesel::result::Error, _>(|conn| {
             let previous_is_blank = self.is_blank;
             self.is_blank = compute_is_blank_with_conn(conn, &self)?;
             if previous_is_blank && !self.is_blank {
                 self.start_writing_at = Utc::now().naive_utc();
             }
-            diesel::sql_query(
-                "UPDATE traces
-                 SET title = $2,
-                     subtitle = $3,
-                     content = $4,
-                     derived_from_trace_id = $5,
-                     is_encrypted = $6,
-                     encryption_metadata = CAST($7 AS jsonb),
-                     content_image_asset_id = $8,
-                     sharing_sensitivity = $9,
-                     timeout_start_at = $10,
-                     timeout_at = $11,
-                     interaction_date = $12,
-                     trace_type = $13,
-                     status = $14,
-                     journal_id = $15,
-                     is_blank = $16,
-                     start_writing_at = $17,
-                     finalized_at = $18,
-                     updated_at = NOW()
-                 WHERE id = $1",
-            )
-            .bind::<SqlUuid, _>(self.id)
-            .bind::<Text, _>(&self.title)
-            .bind::<Text, _>(&self.subtitle)
-            .bind::<Text, _>(&self.content)
-            .bind::<Nullable<SqlUuid>, _>(self.derived_from_trace_id)
-            .bind::<Bool, _>(self.is_encrypted)
-            .bind::<Nullable<Text>, _>(
-                self.encryption_metadata
-                    .as_ref()
-                    .map(|value| value.to_string()),
-            )
-            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
-            .bind::<Text, _>(self.sharing_sensitivity.to_db())
-            .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
-            .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
-            .bind::<Timestamp, _>(self.interaction_date)
-            .bind::<Text, _>(self.trace_type.to_db())
-            .bind::<Text, _>(self.status.to_db())
-            .bind::<Nullable<SqlUuid>, _>(self.journal_id)
-            .bind::<Bool, _>(self.is_blank)
-            .bind::<Timestamp, _>(self.start_writing_at)
-            .bind::<Nullable<Timestamp>, _>(self.finalized_at)
-            .execute(conn)?;
+            let rows_affected = if let Some(expected_version_integer) = expected_version_integer {
+                diesel::sql_query(
+                    "WITH updated AS (
+                        UPDATE traces
+                        SET title = $2,
+                            subtitle = $3,
+                            content = $4,
+                            derived_from_trace_id = $5,
+                            is_encrypted = $6,
+                            encryption_metadata = CAST($7 AS jsonb),
+                            content_image_asset_id = $8,
+                            sharing_sensitivity = $9,
+                            timeout_start_at = $10,
+                            timeout_at = $11,
+                            interaction_date = $12,
+                            trace_type = $13,
+                            status = $14,
+                            journal_id = $15,
+                            is_blank = $16,
+                            start_writing_at = $17,
+                            finalized_at = $18,
+                            version_integer = version_integer + 1,
+                            updated_at = NOW()
+                        WHERE id = $1
+                          AND version_integer = $19
+                        RETURNING 1
+                    )
+                    SELECT COUNT(*)::bigint AS count FROM updated",
+                )
+                .bind::<SqlUuid, _>(self.id)
+                .bind::<Text, _>(&self.title)
+                .bind::<Text, _>(&self.subtitle)
+                .bind::<Text, _>(&self.content)
+                .bind::<Nullable<SqlUuid>, _>(self.derived_from_trace_id)
+                .bind::<Bool, _>(self.is_encrypted)
+                .bind::<Nullable<Text>, _>(
+                    self.encryption_metadata
+                        .as_ref()
+                        .map(|value| value.to_string()),
+                )
+                .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
+                .bind::<Text, _>(self.sharing_sensitivity.to_db())
+                .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
+                .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
+                .bind::<Timestamp, _>(self.interaction_date)
+                .bind::<Text, _>(self.trace_type.to_db())
+                .bind::<Text, _>(self.status.to_db())
+                .bind::<Nullable<SqlUuid>, _>(self.journal_id)
+                .bind::<Bool, _>(self.is_blank)
+                .bind::<Timestamp, _>(self.start_writing_at)
+                .bind::<Nullable<Timestamp>, _>(self.finalized_at)
+                .bind::<diesel::sql_types::Int4, _>(expected_version_integer)
+                .get_result::<AffectedRows>(conn)?
+                .count
+            } else {
+                diesel::sql_query(
+                    "WITH updated AS (
+                        UPDATE traces
+                        SET title = $2,
+                            subtitle = $3,
+                            content = $4,
+                            derived_from_trace_id = $5,
+                            is_encrypted = $6,
+                            encryption_metadata = CAST($7 AS jsonb),
+                            content_image_asset_id = $8,
+                            sharing_sensitivity = $9,
+                            timeout_start_at = $10,
+                            timeout_at = $11,
+                            interaction_date = $12,
+                            trace_type = $13,
+                            status = $14,
+                            journal_id = $15,
+                            is_blank = $16,
+                            start_writing_at = $17,
+                            finalized_at = $18,
+                            version_integer = version_integer + 1,
+                            updated_at = NOW()
+                        WHERE id = $1
+                        RETURNING 1
+                    )
+                    SELECT COUNT(*)::bigint AS count FROM updated",
+                )
+                .bind::<SqlUuid, _>(self.id)
+                .bind::<Text, _>(&self.title)
+                .bind::<Text, _>(&self.subtitle)
+                .bind::<Text, _>(&self.content)
+                .bind::<Nullable<SqlUuid>, _>(self.derived_from_trace_id)
+                .bind::<Bool, _>(self.is_encrypted)
+                .bind::<Nullable<Text>, _>(
+                    self.encryption_metadata
+                        .as_ref()
+                        .map(|value| value.to_string()),
+                )
+                .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
+                .bind::<Text, _>(self.sharing_sensitivity.to_db())
+                .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
+                .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
+                .bind::<Timestamp, _>(self.interaction_date)
+                .bind::<Text, _>(self.trace_type.to_db())
+                .bind::<Text, _>(self.status.to_db())
+                .bind::<Nullable<SqlUuid>, _>(self.journal_id)
+                .bind::<Bool, _>(self.is_blank)
+                .bind::<Timestamp, _>(self.start_writing_at)
+                .bind::<Nullable<Timestamp>, _>(self.finalized_at)
+                .get_result::<AffectedRows>(conn)?
+                .count
+            };
+
+            if rows_affected == 0 {
+                return Ok(false);
+            }
 
             enforce_publication_invariant_for_source(
                 PostSourceRef::Trace(self.id),
@@ -137,8 +231,33 @@ impl Trace {
             if let Some(journal_id) = self.journal_id {
                 recalculate_journal_last_trace_at(conn, journal_id)?;
             }
-            Ok(())
+            Ok(true)
         })?;
+
+        if !updated {
+            let current_version_integer = {
+                let mut conn = pool.get()?;
+                diesel::sql_query(
+                    "SELECT version_integer
+                     FROM traces
+                     WHERE id = $1",
+                )
+                .bind::<SqlUuid, _>(self.id)
+                .get_result::<VersionIntegerRow>(&mut conn)?
+                .version_integer
+            };
+
+            return Err(PpdcError::new(
+                409,
+                ErrorType::ApiError,
+                "Trace was updated by another request".to_string(),
+            )
+            .with_details(serde_json::json!({
+                "code": "trace_version_conflict",
+                "expected_version_integer": expected_version_integer,
+                "current_version_integer": current_version_integer,
+            })));
+        }
 
         Trace::find_full_trace(self.id, pool)
     }
@@ -195,6 +314,7 @@ impl NewTrace {
                     timeout_at,
                     interaction_date,
                     trace_type,
+                    version_integer,
                     status,
                     is_blank,
                     start_writing_at,
@@ -215,6 +335,7 @@ impl NewTrace {
                     $12,
                     $13,
                     $14,
+                    0,
                     'DRAFT',
                     $15,
                     $16,
