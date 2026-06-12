@@ -1,0 +1,2 @@
+ALTER TABLE journals
+DROP CONSTRAINT IF EXISTS journals_active_user_journal_current_draft_check;

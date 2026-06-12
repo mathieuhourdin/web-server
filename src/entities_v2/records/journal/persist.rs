@@ -75,6 +75,9 @@ impl Journal {
         if journal.status == JournalStatus::Active
             && journal.journal_type == JournalType::UserJournal
         {
+            // The journal row must exist before its persisted draft trace can be created.
+            // This invariant is therefore completed in application logic immediately after
+            // insert, rather than by an insert-time SQL CHECK on journals.current_draft_id.
             let draft = Trace::create_blank_draft_for_journal(&journal, pool)?;
             let mut journal = journal;
             journal.current_draft_id = Some(draft.id);
