@@ -1792,6 +1792,7 @@ pub async fn get_traces_for_journal_route(
             .into_iter()
             .map(|trace| JournalTraceView {
                 id: trace.id,
+                post_id: None,
                 journal_id: id,
                 title: trace.title,
                 subtitle: Some(trace.subtitle),

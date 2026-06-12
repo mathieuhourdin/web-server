@@ -90,6 +90,7 @@ pub struct Trace {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JournalTraceView {
     pub id: Uuid,
+    pub post_id: Option<Uuid>,
     pub journal_id: Uuid,
     pub title: String,
     pub subtitle: Option<String>,
@@ -723,6 +724,7 @@ impl Trace {
         let rows = query
             .select((
                 traces::id,
+                posts::id,
                 traces::journal_id,
                 traces::title,
                 traces::content,
@@ -739,6 +741,7 @@ impl Trace {
             .load::<(
                 Uuid,
                 Uuid,
+                Uuid,
                 String,
                 String,
                 Option<Uuid>,
@@ -753,6 +756,7 @@ impl Trace {
             .map(
                 |(
                     id,
+                    post_id,
                     journal_id,
                     title,
                     content,
@@ -763,6 +767,7 @@ impl Trace {
                     updated_at,
                 )| JournalTraceView {
                     id,
+                    post_id: Some(post_id),
                     journal_id,
                     title,
                     subtitle: None,
