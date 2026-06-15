@@ -15,7 +15,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     feed, journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
     mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, transcription,
-    usage_event, user, user_post_state, user_secure_action,
+    url_preview, usage_event, user, user_post_state, user_secure_action,
 };
 use crate::sessions_service;
 
@@ -403,6 +403,9 @@ pub fn create_router() -> Router {
     let usage_events_router = Router::new()
         .route("/", post(usage_event::post_usage_event_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let url_previews_router = Router::new()
+        .route("/", post(url_preview::post_url_preview_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
     let user_post_states_router = Router::new()
         .route("/", post(user_post_state::post_user_post_state_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
@@ -449,6 +452,7 @@ pub fn create_router() -> Router {
         .nest("/user_secure_actions", user_secure_actions_router)
         .nest("/user_post_states", user_post_states_router)
         .nest("/content_reports", content_reports_router)
+        .nest("/url_previews", url_previews_router)
         .nest("/usage_events", usage_events_router)
         .nest("/analysis", analysis_router)
         .nest("/internal", internal_router)
