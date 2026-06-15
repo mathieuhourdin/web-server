@@ -54,6 +54,7 @@ This file is a practical quick reference for the current server contract.
   "handle": "string",
   "password": "string|null",
   "profile_picture_url": "string|null",
+  "profile_asset_id": "uuid|null",
   "is_platform_user": "bool|null",
   "biography": "string|null",
   "pseudonym": "string|null",
@@ -76,7 +77,9 @@ This file is a practical quick reference for the current server contract.
   "content": "string",
   "interaction_date": "datetime|null",
   "is_encrypted": "bool|null",
-  "encryption_metadata": "json|null"
+  "encryption_metadata": "json|null",
+  "image_asset_id": "uuid|null",
+  "timeout_at": "datetime|null"
 }
 ```
 
@@ -85,7 +88,10 @@ This file is a practical quick reference for the current server contract.
 {
   "content": "string|null",
   "interaction_date": "datetime|null",
-  "status": "draft|finalized|archived|null"
+  "status": "draft|finalized|archived|null",
+  "image_asset_id": "uuid|null",
+  "timeout_at": "datetime|null",
+  "publish_default_post": "bool|null"
 }
 ```
 
@@ -93,7 +99,16 @@ This file is a practical quick reference for the current server contract.
 ```json
 {
   "content": "string|null",
-  "interaction_date": "datetime|null"
+  "interaction_date": "datetime|null",
+  "image_asset_id": "uuid|null",
+  "timeout_at": "datetime|null"
+}
+```
+
+### Extend Trace Timeout
+```json
+{
+  "minutes": 5
 }
 ```
 
@@ -105,6 +120,7 @@ This file is a practical quick reference for the current server contract.
   "subtitle": "string|null",
   "content": "string",
   "image_url": "string|null",
+  "image_asset_id": "uuid|null",
   "post_type": "idea|ratc|book|curs|quest|oatc|pblm|pcst|natc|rdnt|list|null",
   "interaction_type": "outp|inpt|pblm|wish|null",
   "publishing_date": "datetime|null",
@@ -118,6 +134,78 @@ This file is a practical quick reference for the current server contract.
 - `title`
 - `subtitle`
 - `content`
+
+### New User Post State
+```json
+{
+  "post_id": "uuid"
+}
+```
+
+### Asset Upload
+Multipart form-data:
+- first file part is used
+- allowed mime types:
+  - `image/jpeg`
+  - `image/png`
+  - `image/webp`
+  - `image/gif`
+  - `application/pdf`
+  - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+  - `text/plain`
+
+### Trace Attachment Upload
+Multipart form-data:
+- one file part
+- optional text field:
+  - `attachment_name`
+
+Trace attachment response:
+```json
+{
+  "attachment": {
+    "id": "uuid",
+    "trace_id": "uuid",
+    "asset_id": "uuid",
+    "attachment_name": "string",
+    "created_at": "datetime",
+    "asset": {
+      "id": "uuid",
+      "owner_user_id": "uuid",
+      "bucket": "string",
+      "object_key": "string",
+      "mime_type": "string",
+      "original_filename": "string",
+      "size_bytes": 123,
+      "status": "uploading|ready|failed",
+      "created_at": "datetime",
+      "updated_at": "datetime"
+    }
+  },
+  "signed_url": "string",
+  "expires_at": "datetime"
+}
+```
+
+Asset responses:
+```json
+{
+  "asset": {
+    "id": "uuid",
+    "owner_user_id": "uuid",
+    "bucket": "string",
+    "object_key": "string",
+    "mime_type": "string",
+    "original_filename": "string",
+    "size_bytes": 123,
+    "status": "uploading|ready|failed",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  },
+  "signed_url": "string",
+  "expires_at": "datetime"
+}
+```
 
 When omitted, they default from the source trace.
 
@@ -277,32 +365,40 @@ When omitted, they default from the source trace.
 | GET | `/admin/service_users/:id` | Admin only |
 | PUT | `/admin/service_users/:id` | Admin only |
 
-### Drafts
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/drafts` | Current user non-empty draft `USER_TRACE`s, ordered by `updated_at desc` |
-
 ### Traces
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/traces/drafts` | Current user non-empty draft `USER_TRACE`s, ordered by `updated_at desc` |
 | GET | `/traces/:id` | Owner-only |
 | PUT | `/traces/:id` | Full update |
 | PATCH | `/traces/:id` | Partial update |
+| POST | `/traces/:id/extend_timeout` | Owner-only, draft `USER_TRACE` only, `minutes` must be `> 0` |
+| GET | `/traces/:id/attachments` | Owner-only trace attachments |
+| POST | `/traces/:id/attachments` | Owner-only upload attachment to draft trace |
+| DELETE | `/traces/:trace_id/attachments/:attachment_id` | Owner-only remove attachment from draft trace |
 | GET | `/traces/:id/posts` | Owner-only, paginated related posts |
 | POST | `/traces/:id/posts` | Owner-only create related post |
 | GET | `/traces/:id/analysis` | Returns analysis or `null` with `200` |
 | GET | `/traces/:id/messages` | Owner-only trace conversation |
 | POST | `/traces/:id/messages` | Owner-only trace conversation |
 
+**Trace timeout rules**
+- `timeout_at` is optional and only meaningful on draft `USER_TRACE`s
+- returned traces also include `timeout_start_at: datetime|null`
+- `timeout_start_at` is backend-managed and is set automatically the first time a timeout is activated
+- if set, it must be in the future and no more than 8 hours ahead
+- expired draft traces are lazily auto-finalized on trace reads/writes and draft-list reads
+
 ### Posts
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/posts/drafts` | Current user draft posts, ordered by `updated_at desc` |
 | GET | `/posts` | Paginated shared feed |
 | POST | `/posts` | Create post |
 | GET | `/posts/:id` | Owner can see any status, others only published + granted |
+| GET | `/posts/:id/attachments` | List attachments inherited from the source trace |
 | PUT | `/posts/:id` | Update post |
 | GET | `/posts/:id/messages` | Post conversation |
 | POST | `/posts/:id/messages` | Post conversation |
@@ -311,13 +407,28 @@ When omitted, they default from the source trace.
 | DELETE | `/posts/:post_id/grants/:grant_id` | Owner-only revoke |
 | GET | `/posts/users/:id` | Same as `/users/:id/posts` |
 
+### Assets
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/assets` | Upload image, PDF, docx or txt asset via multipart |
+| GET | `/assets/:id/url` | Signed read URL for an asset the current user can read |
+
+### User Post States
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/user_post_states` | Auth required, create or update seen state for a post |
+
 **Posts filters**
 - `interaction_type` repeated
 - `post_type` repeated
 - `resource_type`
 - `is_external`
 - `user_id`
+- `journal_id`
 - `status`
+- `seen`
 - `limit`
 
 Examples:

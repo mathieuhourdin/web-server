@@ -28,6 +28,7 @@ tower-http = { version = "0.5.2", features = ["cors", "fs"] }
 r2d2 = "0.8.10"
 http = "1.2.0"
 urlencoding = "2.1.0"
+url = "2.5.4"
 async-trait = "0.1.89"
 anyhow = "1.0.100"
 tracing = "0.1.41"
