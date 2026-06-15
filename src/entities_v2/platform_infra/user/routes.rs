@@ -1,7 +1,8 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
-    error::PpdcError,
+    error::{ErrorType, PpdcError},
     feed::hydrate::count_recent_unread_feed_items,
+    journal::Journal,
     message::Message,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     platform_infra::usage_event::{UsageEvent, UsageEventType},
@@ -516,6 +517,17 @@ pub async fn put_user_route(
             existing_user.onboarding_version,
             requested_onboarding_version,
         )?;
+    }
+    if let Some(journal_id) = payload.external_captures_default_journal_id {
+        let journal = Journal::find_full(journal_id, &pool)?;
+        if journal.user_id != id {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "external_captures_default_journal_id must reference one of your journals"
+                    .to_string(),
+            ));
+        }
     }
 
     let updated_user = payload.update(&id, &pool)?;

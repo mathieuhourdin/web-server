@@ -69,6 +69,7 @@ pub struct User {
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
     pub onboarding_version: i32,
+    pub external_captures_default_journal_id: Option<Uuid>,
 }
 
 pub enum UserResponse {
@@ -126,6 +127,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
     pub onboarding_version: i32,
+    pub external_captures_default_journal_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRole>>,
     pub display_name: String,
@@ -167,6 +169,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             ai_features_enabled: user.ai_features_enabled,
             onboarding_version: user.onboarding_version,
+            external_captures_default_journal_id: user.external_captures_default_journal_id,
             roles: None,
             display_name: user.display_name(),
         }
@@ -227,6 +230,7 @@ pub struct UserPseudonymizedResponse {
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
+    pub external_captures_default_journal_id: Option<Uuid>,
     pub display_name: String,
 }
 
@@ -262,6 +266,7 @@ impl UserPseudonymizedResponse {
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             ai_features_enabled: user.ai_features_enabled,
+            external_captures_default_journal_id: user.external_captures_default_journal_id,
             display_name: user.display_name(),
         }
     }
@@ -386,6 +391,7 @@ pub struct NewUser {
     pub mentor_feedback_email_enabled: Option<bool>,
     pub ai_features_enabled: Option<bool>,
     pub onboarding_version: Option<i32>,
+    pub external_captures_default_journal_id: Option<Uuid>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -445,6 +451,7 @@ impl NewServiceUserDto {
             mentor_feedback_email_enabled: None,
             ai_features_enabled: None,
             onboarding_version: None,
+            external_captures_default_journal_id: None,
         }
     }
 
@@ -481,6 +488,8 @@ impl NewServiceUserDto {
             mentor_feedback_email_enabled: Some(existing_user.mentor_feedback_email_enabled),
             ai_features_enabled: Some(existing_user.ai_features_enabled),
             onboarding_version: Some(existing_user.onboarding_version),
+            external_captures_default_journal_id: existing_user
+                .external_captures_default_journal_id,
         }
     }
 }
@@ -1081,6 +1090,7 @@ mod tests {
             mentor_feedback_email_enabled: true,
             ai_features_enabled: true,
             onboarding_version: 0,
+            external_captures_default_journal_id: None,
         }
     }
 
@@ -1113,6 +1123,7 @@ mod tests {
             mentor_feedback_email_enabled: None,
             ai_features_enabled: None,
             onboarding_version: None,
+            external_captures_default_journal_id: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

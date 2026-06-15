@@ -631,6 +631,7 @@ diesel::table! {
         mentor_feedback_email_enabled -> Bool,
         onboarding_version -> Int4,
         ai_features_enabled -> Bool,
+        external_captures_default_journal_id -> Nullable<Uuid>,
     }
 }
 
