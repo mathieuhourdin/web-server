@@ -36,7 +36,12 @@ pub fn create_router() -> Router {
         .route("/", get(user::get_users))
         .route("/suggested", get(user::get_suggested_users_route))
         .route("/search", get(user::get_user_search_route))
-        .route("/:id", get(user::get_user_route).put(user::put_user_route))
+        .route(
+            "/:id",
+            get(user::get_user_route)
+                .put(user::put_user_route)
+                .patch(user::patch_user_route),
+        )
         .route("/:id/albums", get(album::get_user_albums_route))
         .route("/:id/documents", get(document::get_user_documents_route))
         .route("/:id/posts", get(post::get_user_posts_route))

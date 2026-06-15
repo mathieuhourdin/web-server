@@ -17,12 +17,13 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Bool, Int4, Nullable, SmallInt, Text, Timestamp, Uuid as SqlUuid};
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
 
 use super::enums::UserPrincipalType;
+use super::enums::{EmailNotificationMode, HomeFocusView, JournalTheme, WeekAnalysisWeekday};
 use super::model::{
     create_bio_trace_for_user, create_high_level_projects_definition_trace_for_user,
     ensure_user_has_any_lens, ensure_user_has_default_journals, ensure_user_has_meta_journal,
@@ -47,6 +48,32 @@ struct RankedFollowerUserIdRow {
 struct CountRow {
     #[diesel(sql_type = BigInt)]
     total: i64,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct PatchUserDto {
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub handle: Option<String>,
+    pub profile_picture_url: Option<Option<String>>,
+    pub profile_asset_id: Option<Option<Uuid>>,
+    pub biography: Option<Option<String>>,
+    pub pseudonym: Option<String>,
+    pub pseudonymized: Option<bool>,
+    pub high_level_projects_definition: Option<Option<String>>,
+    pub journal_theme: Option<JournalTheme>,
+    pub current_lens_id: Option<Option<Uuid>>,
+    pub week_analysis_weekday: Option<WeekAnalysisWeekday>,
+    pub timezone: Option<String>,
+    pub context_anchor_at: Option<Option<chrono::NaiveDateTime>>,
+    pub welcome_message: Option<Option<String>>,
+    pub home_focus_view: Option<HomeFocusView>,
+    pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
+    pub received_message_email_mode: Option<EmailNotificationMode>,
+    pub mentor_feedback_email_enabled: Option<bool>,
+    pub ai_features_enabled: Option<bool>,
+    pub onboarding_version: Option<i32>,
+    pub external_captures_default_journal_id: Option<Option<Uuid>>,
 }
 
 #[derive(Serialize)]
@@ -539,6 +566,143 @@ pub async fn put_user_route(
     }
     if hlp_definition_changed {
         if let Some(high_level_projects_definition) = new_hlp_definition {
+            create_high_level_projects_definition_trace_for_user(
+                id,
+                high_level_projects_definition,
+                &pool,
+            )?;
+        }
+    }
+
+    Ok(Json(updated_user))
+}
+
+#[debug_handler]
+pub async fn patch_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<PatchUserDto>,
+) -> Result<Json<User>, PpdcError> {
+    let session_user_id = session.user_id.unwrap();
+    if session_user_id != id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let existing_user = User::find(&id, &pool)?;
+    if let Some(requested_onboarding_version) = payload.onboarding_version {
+        User::validate_onboarding_version_transition(
+            existing_user.onboarding_version,
+            requested_onboarding_version,
+        )?;
+    }
+    if let Some(Some(journal_id)) = payload.external_captures_default_journal_id {
+        let journal = Journal::find_full(journal_id, &pool)?;
+        if journal.user_id != id {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "external_captures_default_journal_id must reference one of your journals"
+                    .to_string(),
+            ));
+        }
+    }
+
+    let patched_biography = payload
+        .biography
+        .clone()
+        .unwrap_or_else(|| existing_user.biography.clone());
+    let biography_changed =
+        payload.biography.is_some() && patched_biography != existing_user.biography;
+    let patched_hlp_definition = payload
+        .high_level_projects_definition
+        .clone()
+        .unwrap_or_else(|| existing_user.high_level_projects_definition.clone());
+    let hlp_definition_changed = payload.high_level_projects_definition.is_some()
+        && patched_hlp_definition != existing_user.high_level_projects_definition;
+
+    let mut conn = pool.get()?;
+    diesel::sql_query(
+        "UPDATE users
+         SET first_name = COALESCE($2, first_name),
+             last_name = COALESCE($3, last_name),
+             handle = COALESCE($4, handle),
+             profile_picture_url = CASE WHEN $5 THEN $6 ELSE profile_picture_url END,
+             profile_asset_id = CASE WHEN $7 THEN $8 ELSE profile_asset_id END,
+             biography = CASE WHEN $9 THEN $10 ELSE biography END,
+             pseudonym = COALESCE($11, pseudonym),
+             pseudonymized = COALESCE($12, pseudonymized),
+             high_level_projects_definition = CASE WHEN $13 THEN $14 ELSE high_level_projects_definition END,
+             journal_theme = COALESCE($15, journal_theme),
+             current_lens_id = CASE WHEN $16 THEN $17 ELSE current_lens_id END,
+             week_analysis_weekday = COALESCE($18, week_analysis_weekday),
+             timezone = COALESCE($19, timezone),
+             context_anchor_at = CASE WHEN $20 THEN $21 ELSE context_anchor_at END,
+             welcome_message = CASE WHEN $22 THEN $23 ELSE welcome_message END,
+             home_focus_view = COALESCE($24, home_focus_view),
+             shared_journal_activity_email_mode = COALESCE($25, shared_journal_activity_email_mode),
+             received_message_email_mode = COALESCE($26, received_message_email_mode),
+             mentor_feedback_email_enabled = COALESCE($27, mentor_feedback_email_enabled),
+             ai_features_enabled = COALESCE($28, ai_features_enabled),
+             onboarding_version = COALESCE($29, onboarding_version),
+             external_captures_default_journal_id = CASE WHEN $30 THEN $31 ELSE external_captures_default_journal_id END,
+             updated_at = NOW()
+         WHERE id = $1
+         ",
+    )
+    .bind::<SqlUuid, _>(id)
+    .bind::<Nullable<Text>, _>(payload.first_name)
+    .bind::<Nullable<Text>, _>(payload.last_name)
+    .bind::<Nullable<Text>, _>(payload.handle)
+    .bind::<Bool, _>(payload.profile_picture_url.is_some())
+    .bind::<Nullable<Text>, _>(payload.profile_picture_url.flatten())
+    .bind::<Bool, _>(payload.profile_asset_id.is_some())
+    .bind::<Nullable<SqlUuid>, _>(payload.profile_asset_id.flatten())
+    .bind::<Bool, _>(payload.biography.is_some())
+    .bind::<Nullable<Text>, _>(patched_biography.clone())
+    .bind::<Nullable<Text>, _>(payload.pseudonym)
+    .bind::<Nullable<Bool>, _>(payload.pseudonymized)
+    .bind::<Bool, _>(payload.high_level_projects_definition.is_some())
+    .bind::<Nullable<Text>, _>(patched_hlp_definition.clone())
+    .bind::<Nullable<Text>, _>(payload.journal_theme.map(|value| value.to_code().to_string()))
+    .bind::<Bool, _>(payload.current_lens_id.is_some())
+    .bind::<Nullable<SqlUuid>, _>(payload.current_lens_id.flatten())
+    .bind::<Nullable<SmallInt>, _>(
+        payload
+            .week_analysis_weekday
+            .map(|value| value.to_db_value()),
+    )
+    .bind::<Nullable<Text>, _>(payload.timezone)
+    .bind::<Bool, _>(payload.context_anchor_at.is_some())
+    .bind::<Nullable<Timestamp>, _>(payload.context_anchor_at.flatten())
+    .bind::<Bool, _>(payload.welcome_message.is_some())
+    .bind::<Nullable<Text>, _>(payload.welcome_message.flatten())
+    .bind::<Nullable<Text>, _>(payload.home_focus_view.map(|value| value.to_code().to_string()))
+    .bind::<Nullable<Text>, _>(
+        payload
+            .shared_journal_activity_email_mode
+            .map(|value| value.to_code().to_string()),
+    )
+    .bind::<Nullable<Text>, _>(
+        payload
+            .received_message_email_mode
+            .map(|value| value.to_code().to_string()),
+    )
+    .bind::<Nullable<Bool>, _>(payload.mentor_feedback_email_enabled)
+    .bind::<Nullable<Bool>, _>(payload.ai_features_enabled)
+    .bind::<Nullable<Int4>, _>(payload.onboarding_version)
+    .bind::<Bool, _>(payload.external_captures_default_journal_id.is_some())
+    .bind::<Nullable<SqlUuid>, _>(payload.external_captures_default_journal_id.flatten())
+    .execute(&mut conn)?;
+    let updated_user = User::find(&id, &pool)?;
+
+    if biography_changed {
+        if let Some(biography) = patched_biography {
+            create_bio_trace_for_user(id, biography, &pool)?;
+        }
+    }
+    if hlp_definition_changed {
+        if let Some(high_level_projects_definition) = patched_hlp_definition {
             create_high_level_projects_definition_trace_for_user(
                 id,
                 high_level_projects_definition,
