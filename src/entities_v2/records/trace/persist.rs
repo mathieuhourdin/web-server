@@ -372,6 +372,97 @@ impl NewTrace {
 
         Trace::find_full_trace(inserted.id, pool)
     }
+
+    pub fn create_finalized(mut self, pool: &DbPool) -> Result<Trace, PpdcError> {
+        if self.is_encrypted && self.encryption_metadata.is_none() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "encryption_metadata is required when is_encrypted is true".to_string(),
+            ));
+        }
+        self.timeout_start_at = None;
+        self.timeout_at = None;
+        self.is_blank = false;
+        let finalized_at = Utc::now().naive_utc();
+        let mut conn = pool.get()?;
+
+        let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
+            let inserted = diesel::sql_query(
+                "INSERT INTO traces (
+                    id,
+                    user_id,
+                    journal_id,
+                    derived_from_trace_id,
+                    title,
+                    subtitle,
+                    content,
+                    is_encrypted,
+                    encryption_metadata,
+                    content_image_asset_id,
+                    sharing_sensitivity,
+                    timeout_start_at,
+                    timeout_at,
+                    interaction_date,
+                    trace_type,
+                    version_integer,
+                    status,
+                    is_blank,
+                    start_writing_at,
+                    finalized_at
+                 ) VALUES (
+                    uuid_generate_v4(),
+                    $1,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    CAST($8 AS jsonb),
+                    $9,
+                    $10,
+                    $11,
+                    $12,
+                    $13,
+                    $14,
+                    0,
+                    'FINALIZED',
+                    FALSE,
+                    $15,
+                    $16
+                 )
+                 RETURNING id",
+            )
+            .bind::<SqlUuid, _>(self.user_id)
+            .bind::<SqlUuid, _>(self.journal_id)
+            .bind::<Nullable<SqlUuid>, _>(self.derived_from_trace_id)
+            .bind::<Text, _>(&self.title)
+            .bind::<Text, _>(&self.subtitle)
+            .bind::<Text, _>(&self.content)
+            .bind::<Bool, _>(self.is_encrypted)
+            .bind::<Nullable<Text>, _>(
+                self.encryption_metadata
+                    .as_ref()
+                    .map(|value| value.to_string()),
+            )
+            .bind::<Nullable<SqlUuid>, _>(self.content_image_asset_id)
+            .bind::<Text, _>(self.sharing_sensitivity.to_db())
+            .bind::<Nullable<Timestamptz>, _>(self.timeout_start_at)
+            .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
+            .bind::<Timestamp, _>(self.interaction_date)
+            .bind::<Text, _>(self.trace_type.to_db())
+            .bind::<Timestamp, _>(self.start_writing_at)
+            .bind::<Timestamp, _>(finalized_at)
+            .get_result::<IdRow>(conn)?;
+
+            recalculate_journal_last_trace_at(conn, self.journal_id)?;
+
+            Ok(inserted)
+        })?;
+
+        Trace::find_full_trace(inserted.id, pool)
+    }
 }
 
 impl Trace {

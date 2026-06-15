@@ -230,6 +230,10 @@ pub fn create_router() -> Router {
         )
         .route("/:id/posts", get(post::get_journal_posts_route))
         .route(
+            "/:id/traces/finalized",
+            post(trace::post_finalized_journal_trace_route),
+        )
+        .route(
             "/:journal_id/grants/:grant_id",
             delete(journal_grant::delete_journal_grant_route),
         )

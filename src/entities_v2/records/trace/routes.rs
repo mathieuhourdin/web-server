@@ -42,7 +42,7 @@ use crate::work_analyzer;
 use super::{
     enums::{TraceSharingSensitivity, TraceStatus},
     llm_qualify,
-    model::{JournalTraceView, PatchTraceDto, Trace, TraceReadableView, UpdateTraceDto},
+    model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, TraceReadableView, UpdateTraceDto},
 };
 use serde::{Deserialize, Serialize};
 
@@ -134,6 +134,47 @@ pub struct CreateJournalDraftDto {
     pub sharing_sensitivity: Option<super::enums::TraceSharingSensitivity>,
     #[serde(default)]
     pub timeout_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CreateFinalizedTraceDocumentAttachmentDto {
+    pub document_id: Uuid,
+    #[serde(default)]
+    pub attachment_name: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CreateFinalizedJournalTraceDto {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub derived_from_trace_id: Option<Uuid>,
+    #[serde(default)]
+    pub interaction_date: Option<chrono::NaiveDateTime>,
+    #[serde(default, alias = "is_ecrypted")]
+    pub is_encrypted: Option<bool>,
+    #[serde(default)]
+    pub encryption_metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    #[serde(alias = "image_asset_id")]
+    pub content_image_asset_id: Option<Uuid>,
+    #[serde(default)]
+    pub sharing_sensitivity: Option<super::enums::TraceSharingSensitivity>,
+    #[serde(default)]
+    pub publish_default_post: Option<bool>,
+    #[serde(default)]
+    pub document_attachments: Vec<CreateFinalizedTraceDocumentAttachmentDto>,
+}
+
+#[derive(Serialize)]
+pub struct CreateFinalizedJournalTraceResponse {
+    pub trace: Trace,
+    pub attachments: Vec<TraceAttachmentWithDocument>,
+    pub post: Option<Post>,
 }
 
 #[derive(Deserialize)]
@@ -800,6 +841,127 @@ pub async fn post_journal_draft_route(
     let trace =
         create_or_get_journal_draft(journal, user_id, Some(session.id), payload, &pool).await?;
     Ok(Json(trace))
+}
+
+#[debug_handler]
+pub async fn post_finalized_journal_trace_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Json(payload): Json<CreateFinalizedJournalTraceDto>,
+) -> Result<Json<CreateFinalizedJournalTraceResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if journal.status != JournalStatus::Active || journal.journal_type != JournalType::UserJournal {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Finalized traces can only be created directly in active user journals".to_string(),
+        ));
+    }
+
+    let mut seen_document_ids = HashSet::new();
+    let mut attachment_documents = Vec::with_capacity(payload.document_attachments.len());
+    for attachment in &payload.document_attachments {
+        if !seen_document_ids.insert(attachment.document_id) {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "document_attachments cannot contain duplicate document_id values".to_string(),
+            ));
+        }
+        let document = Document::find_full(attachment.document_id, &pool)?;
+        if document.owner_user_id != user_id {
+            return Err(PpdcError::unauthorized());
+        }
+        attachment_documents.push((attachment.clone(), document));
+    }
+
+    let has_meaningful_content = !payload.title.trim().is_empty()
+        || !payload.content.trim().is_empty()
+        || payload.content_image_asset_id.is_some()
+        || !attachment_documents.is_empty();
+    if !has_meaningful_content {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Cannot create an empty finalized trace".to_string(),
+        ));
+    }
+    if payload.is_encrypted.unwrap_or(false) && payload.encryption_metadata.is_none() {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "encryption_metadata is required when is_encrypted is true".to_string(),
+        ));
+    }
+
+    let mut new_trace = NewTrace::new(
+        payload.title,
+        payload.subtitle,
+        payload.content,
+        payload
+            .interaction_date
+            .unwrap_or_else(|| Utc::now().naive_utc()),
+        user_id,
+        journal_id,
+    );
+    new_trace.derived_from_trace_id = payload.derived_from_trace_id;
+    new_trace.is_encrypted = payload.is_encrypted.unwrap_or(false);
+    new_trace.encryption_metadata = if new_trace.is_encrypted {
+        payload.encryption_metadata
+    } else {
+        None
+    };
+    new_trace.content_image_asset_id = payload.content_image_asset_id;
+    new_trace.sharing_sensitivity = payload
+        .sharing_sensitivity
+        .unwrap_or(TraceSharingSensitivity::Normal);
+    new_trace.start_writing_at = new_trace.interaction_date;
+
+    let trace = new_trace.create_finalized(&pool)?;
+    let mut created_attachments = Vec::with_capacity(attachment_documents.len());
+    for (attachment, document) in attachment_documents {
+        let attachment_name = attachment
+            .attachment_name
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| {
+                let title = document.title.trim();
+                if title.is_empty() {
+                    "Attachment".to_string()
+                } else {
+                    title.to_string()
+                }
+            });
+
+        NewTraceAttachment {
+            trace_id: trace.id,
+            document_id: document.id,
+            attachment_name,
+        }
+        .create(&pool)?;
+    }
+
+    if !created_attachments.is_empty() || !seen_document_ids.is_empty() {
+        created_attachments = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?;
+    }
+
+    let post = if payload.publish_default_post.unwrap_or(false) {
+        publish_default_post_for_trace(&trace, &pool)?
+    } else {
+        None
+    };
+    let trace = Trace::find_full_trace(trace.id, &pool)?;
+
+    Ok(Json(CreateFinalizedJournalTraceResponse {
+        trace,
+        attachments: created_attachments,
+        post,
+    }))
 }
 
 #[debug_handler]
