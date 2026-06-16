@@ -1,0 +1,2 @@
+ALTER TABLE trace_search_documents
+DROP COLUMN IF EXISTS high_level_project_landmark_text;

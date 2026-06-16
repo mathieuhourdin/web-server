@@ -543,7 +543,9 @@ diesel::table! {
         mirror_text -> Text,
         tag_text -> Text,
         element_text -> Text,
+        reference_text -> Text,
         landmark_text -> Text,
+        high_level_project_landmark_text -> Text,
         search_vector -> Tsvector,
         refreshed_at -> Timestamp,
     }

@@ -103,6 +103,9 @@ impl TraceSearchDocument {
                     COALESCE(string_agg(CONCAT_WS(' ', tm.title, tm.subtitle), ' '), '') AS mirror_text,
                     COALESCE(string_agg(tag_value, ' '), '') AS tag_text
                 FROM trace_mirrors tm
+                INNER JOIN landscape_analyses la
+                  ON la.id = tm.landscape_analysis_id
+                 AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
                 INNER JOIN users u
                   ON u.id = $2
                 INNER JOIN lens_analysis_scopes las
@@ -114,6 +117,9 @@ impl TraceSearchDocument {
             element_parts AS (
                 SELECT COALESCE(string_agg(CONCAT_WS(' ', e.title, e.subtitle, e.verb), ' '), '') AS element_text
                 FROM elements e
+                INNER JOIN landscape_analyses la
+                  ON la.id = e.analysis_id
+                 AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
                 INNER JOIN users u
                   ON u.id = $2
                 INNER JOIN lens_analysis_scopes las
@@ -126,11 +132,16 @@ impl TraceSearchDocument {
                 FROM "references" r
                 INNER JOIN trace_mirrors tm
                   ON tm.id = r.trace_mirror_id
+                INNER JOIN landscape_analyses la
+                  ON la.id = r.landscape_analysis_id
+                 AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
                 INNER JOIN users u
                   ON u.id = $2
                 INNER JOIN lens_analysis_scopes las
                   ON las.landscape_analysis_id = r.landscape_analysis_id
                  AND las.lens_id = u.current_lens_id
+                LEFT JOIN landmarks l
+                  ON l.id = r.landmark_id
                 LEFT JOIN LATERAL (
                     SELECT COALESCE(string_agg(value, ' '), '') AS context_tags
                     FROM jsonb_array_elements_text(r.context_tags) AS tag_value(value)
@@ -140,12 +151,16 @@ impl TraceSearchDocument {
                     FROM jsonb_array_elements_text(r.reference_variants) AS variant_value(value)
                 ) variants ON TRUE
                 WHERE tm.trace_id = $1
+                  AND (l.id IS NULL OR l.landmark_type <> 'HIGH_LEVEL_PROJECT')
             ),
             reference_landmark_parts AS (
                 SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS landmark_text
                 FROM "references" r
                 INNER JOIN trace_mirrors tm
                   ON tm.id = r.trace_mirror_id
+                INNER JOIN landscape_analyses la
+                  ON la.id = r.landscape_analysis_id
+                 AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
                 INNER JOIN users u
                   ON u.id = $2
                 INNER JOIN lens_analysis_scopes las
@@ -155,32 +170,26 @@ impl TraceSearchDocument {
                   ON l.id = r.landmark_id
                 WHERE tm.trace_id = $1
                   AND r.landmark_id IS NOT NULL
+                  AND l.landmark_type <> 'HIGH_LEVEL_PROJECT'
             ),
-            primary_landmark_parts AS (
-                SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS landmark_text
-                FROM trace_mirrors tm
+            high_level_project_landmark_parts AS (
+                SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS high_level_project_landmark_text
+                FROM "references" r
+                INNER JOIN trace_mirrors tm
+                  ON tm.id = r.trace_mirror_id
+                INNER JOIN landscape_analyses la
+                  ON la.id = r.landscape_analysis_id
+                 AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
                 INNER JOIN users u
                   ON u.id = $2
                 INNER JOIN lens_analysis_scopes las
-                  ON las.landscape_analysis_id = tm.landscape_analysis_id
+                  ON las.landscape_analysis_id = r.landscape_analysis_id
                  AND las.lens_id = u.current_lens_id
                 JOIN landmarks l
-                  ON l.id = tm.primary_landmark_id
+                  ON l.id = r.landmark_id
                 WHERE tm.trace_id = $1
-            ),
-            direct_landmark_parts AS (
-                SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS landmark_text
-                FROM landscape_analyses la
-                INNER JOIN users u
-                  ON u.id = $2
-                INNER JOIN lens_analysis_scopes las
-                  ON las.landscape_analysis_id = la.id
-                 AND las.lens_id = u.current_lens_id
-                INNER JOIN landscape_landmarks ll
-                  ON ll.landscape_analysis_id = la.id
-                INNER JOIN landmarks l
-                  ON l.id = ll.landmark_id
-                WHERE la.analyzed_trace_id = $1
+                  AND r.landmark_id IS NOT NULL
+                  AND l.landmark_type = 'HIGH_LEVEL_PROJECT'
             ),
             doc AS (
                 SELECT
@@ -194,13 +203,13 @@ impl TraceSearchDocument {
                     mp.tag_text,
                     ep.element_text,
                     rp.reference_text,
-                    CONCAT_WS(' ', rlp.landmark_text, plp.landmark_text, dlp.landmark_text) AS landmark_text
+                    rlp.landmark_text,
+                    hlp.high_level_project_landmark_text
                 FROM mirror_parts mp
                 CROSS JOIN element_parts ep
                 CROSS JOIN reference_parts rp
                 CROSS JOIN reference_landmark_parts rlp
-                CROSS JOIN primary_landmark_parts plp
-                CROSS JOIN direct_landmark_parts dlp
+                CROSS JOIN high_level_project_landmark_parts hlp
             )
             INSERT INTO trace_search_documents (
                 trace_id,
@@ -214,6 +223,7 @@ impl TraceSearchDocument {
                 element_text,
                 reference_text,
                 landmark_text,
+                high_level_project_landmark_text,
                 search_vector,
                 refreshed_at
             )
@@ -229,13 +239,15 @@ impl TraceSearchDocument {
                 element_text,
                 reference_text,
                 landmark_text,
+                high_level_project_landmark_text,
                 setweight(to_tsvector('simple', title), 'A') ||
                 setweight(to_tsvector('simple', content), 'A') ||
                 setweight(to_tsvector('simple', tag_text), 'A') ||
                 setweight(to_tsvector('simple', mirror_text), 'B') ||
                 setweight(to_tsvector('simple', element_text), 'C') ||
                 setweight(to_tsvector('simple', reference_text), 'C') ||
-                setweight(to_tsvector('simple', landmark_text), 'C'),
+                setweight(to_tsvector('simple', landmark_text), 'C') ||
+                setweight(to_tsvector('simple', high_level_project_landmark_text), 'C'),
                 NOW()
             FROM doc
             ON CONFLICT (trace_id) DO UPDATE
@@ -249,6 +261,7 @@ impl TraceSearchDocument {
                 element_text = EXCLUDED.element_text,
                 reference_text = EXCLUDED.reference_text,
                 landmark_text = EXCLUDED.landmark_text,
+                high_level_project_landmark_text = EXCLUDED.high_level_project_landmark_text,
                 search_vector = EXCLUDED.search_vector,
                 refreshed_at = NOW()
             "#,
@@ -296,104 +309,44 @@ impl TraceSearchDocument {
                 cardinality($4::uuid[]) = 0
                 OR EXISTS (
                     SELECT 1
-                    FROM (
-                        SELECT ll.landmark_id, l.landmark_type
-                        FROM landscape_analyses la
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = la.id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landscape_landmarks ll
-                          ON ll.landscape_analysis_id = la.id
-                        INNER JOIN landmarks l
-                          ON l.id = ll.landmark_id
-                        WHERE la.analyzed_trace_id = tsd.trace_id
-                          AND la.user_id = $1
-
-                        UNION
-
-                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
-                        FROM trace_mirrors tm
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = tm.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = tm.primary_landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-
-                        UNION
-
-                        SELECT r.landmark_id, l.landmark_type
-                        FROM "references" r
-                        INNER JOIN trace_mirrors tm
-                          ON tm.id = r.trace_mirror_id
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = r.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = r.landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-                          AND r.landmark_id IS NOT NULL
-                    ) visible_landmarks
-                    WHERE visible_landmarks.landmark_id = ANY($4)
-                      AND visible_landmarks.landmark_type <> 'HIGH_LEVEL_PROJECT'
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($4)
+                      AND l.landmark_type <> 'HIGH_LEVEL_PROJECT'
                 )
               )
               AND (
                 cardinality($5::uuid[]) = 0
                 OR EXISTS (
                     SELECT 1
-                    FROM (
-                        SELECT ll.landmark_id, l.landmark_type
-                        FROM landscape_analyses la
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = la.id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landscape_landmarks ll
-                          ON ll.landscape_analysis_id = la.id
-                        INNER JOIN landmarks l
-                          ON l.id = ll.landmark_id
-                        WHERE la.analyzed_trace_id = tsd.trace_id
-                          AND la.user_id = $1
-
-                        UNION
-
-                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
-                        FROM trace_mirrors tm
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = tm.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = tm.primary_landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-
-                        UNION
-
-                        SELECT r.landmark_id, l.landmark_type
-                        FROM "references" r
-                        INNER JOIN trace_mirrors tm
-                          ON tm.id = r.trace_mirror_id
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = r.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = r.landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-                          AND r.landmark_id IS NOT NULL
-                    ) visible_landmarks
-                    WHERE visible_landmarks.landmark_id = ANY($5)
-                      AND visible_landmarks.landmark_type = 'HIGH_LEVEL_PROJECT'
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($5)
+                      AND l.landmark_type = 'HIGH_LEVEL_PROJECT'
                 )
               )
             "#,
@@ -426,7 +379,9 @@ impl TraceSearchDocument {
                         CASE WHEN setweight(to_tsvector('simple', tsd.reference_text), 'C') @@ q.query
                              THEN 'reference' END,
                         CASE WHEN setweight(to_tsvector('simple', tsd.landmark_text), 'C') @@ q.query
-                             THEN 'landmark' END
+                             THEN 'landmark' END,
+                        CASE WHEN setweight(to_tsvector('simple', tsd.high_level_project_landmark_text), 'C') @@ q.query
+                             THEN 'high_level_project_landmark' END
                     ], NULL),
                     ','
                 ) AS matched_sources
@@ -438,104 +393,44 @@ impl TraceSearchDocument {
                 cardinality($4::uuid[]) = 0
                 OR EXISTS (
                     SELECT 1
-                    FROM (
-                        SELECT ll.landmark_id, l.landmark_type
-                        FROM landscape_analyses la
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = la.id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landscape_landmarks ll
-                          ON ll.landscape_analysis_id = la.id
-                        INNER JOIN landmarks l
-                          ON l.id = ll.landmark_id
-                        WHERE la.analyzed_trace_id = tsd.trace_id
-                          AND la.user_id = $1
-
-                        UNION
-
-                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
-                        FROM trace_mirrors tm
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = tm.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = tm.primary_landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-
-                        UNION
-
-                        SELECT r.landmark_id, l.landmark_type
-                        FROM "references" r
-                        INNER JOIN trace_mirrors tm
-                          ON tm.id = r.trace_mirror_id
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = r.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = r.landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-                          AND r.landmark_id IS NOT NULL
-                    ) visible_landmarks
-                    WHERE visible_landmarks.landmark_id = ANY($4)
-                      AND visible_landmarks.landmark_type <> 'HIGH_LEVEL_PROJECT'
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($4)
+                      AND l.landmark_type <> 'HIGH_LEVEL_PROJECT'
                 )
               )
               AND (
                 cardinality($5::uuid[]) = 0
                 OR EXISTS (
                     SELECT 1
-                    FROM (
-                        SELECT ll.landmark_id, l.landmark_type
-                        FROM landscape_analyses la
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = la.id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landscape_landmarks ll
-                          ON ll.landscape_analysis_id = la.id
-                        INNER JOIN landmarks l
-                          ON l.id = ll.landmark_id
-                        WHERE la.analyzed_trace_id = tsd.trace_id
-                          AND la.user_id = $1
-
-                        UNION
-
-                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
-                        FROM trace_mirrors tm
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = tm.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = tm.primary_landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-
-                        UNION
-
-                        SELECT r.landmark_id, l.landmark_type
-                        FROM "references" r
-                        INNER JOIN trace_mirrors tm
-                          ON tm.id = r.trace_mirror_id
-                        INNER JOIN users u
-                          ON u.id = $1
-                        INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = r.landscape_analysis_id
-                         AND las.lens_id = u.current_lens_id
-                        INNER JOIN landmarks l
-                          ON l.id = r.landmark_id
-                        WHERE tm.trace_id = tsd.trace_id
-                          AND r.landmark_id IS NOT NULL
-                    ) visible_landmarks
-                    WHERE visible_landmarks.landmark_id = ANY($5)
-                      AND visible_landmarks.landmark_type = 'HIGH_LEVEL_PROJECT'
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($5)
+                      AND l.landmark_type = 'HIGH_LEVEL_PROJECT'
                 )
               )
             ORDER BY score DESC, tsd.interaction_date DESC
@@ -604,7 +499,7 @@ impl TraceSearchDocument {
             ),
             candidates AS (
                 SELECT
-                    la.analyzed_trace_id AS trace_id,
+                    tm.trace_id,
                     l.id AS landmark_id,
                     l.title,
                     l.subtitle,
@@ -612,55 +507,13 @@ impl TraceSearchDocument {
                     l.updated_at,
                     0 AS relation_priority
                 FROM input_trace_ids ti
-                INNER JOIN landscape_analyses la
-                  ON la.analyzed_trace_id = ti.trace_id
-                 AND la.user_id = $1
-                INNER JOIN users u
-                  ON u.id = $1
-                INNER JOIN lens_analysis_scopes las
-                  ON las.landscape_analysis_id = la.id
-                 AND las.lens_id = u.current_lens_id
-                INNER JOIN landscape_landmarks ll
-                  ON ll.landscape_analysis_id = la.id
-                INNER JOIN landmarks l
-                  ON l.id = ll.landmark_id
-
-                UNION ALL
-
-                SELECT
-                    tm.trace_id,
-                    l.id AS landmark_id,
-                    l.title,
-                    l.subtitle,
-                    l.landmark_type,
-                    l.updated_at,
-                    1 AS relation_priority
-                FROM input_trace_ids ti
-                INNER JOIN trace_mirrors tm
-                  ON tm.trace_id = ti.trace_id
-                INNER JOIN users u
-                  ON u.id = $1
-                INNER JOIN lens_analysis_scopes las
-                  ON las.landscape_analysis_id = tm.landscape_analysis_id
-                 AND las.lens_id = u.current_lens_id
-                INNER JOIN landmarks l
-                  ON l.id = tm.primary_landmark_id
-
-                UNION ALL
-
-                SELECT
-                    tm.trace_id,
-                    l.id AS landmark_id,
-                    l.title,
-                    l.subtitle,
-                    l.landmark_type,
-                    l.updated_at,
-                    2 AS relation_priority
-                FROM input_trace_ids ti
                 INNER JOIN trace_mirrors tm
                   ON tm.trace_id = ti.trace_id
                 INNER JOIN "references" r
                   ON r.trace_mirror_id = tm.id
+                INNER JOIN landscape_analyses la
+                  ON la.id = r.landscape_analysis_id
+                 AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
                 INNER JOIN users u
                   ON u.id = $1
                 INNER JOIN lens_analysis_scopes las
