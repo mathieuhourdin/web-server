@@ -1,8 +1,10 @@
 // @generated automatically by Diesel CLI.
 
-#[derive(diesel::sql_types::SqlType)]
-#[diesel(postgres_type(name = "tsvector"))]
-pub struct Tsvector;
+pub mod sql_types {
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "tsvector", schema = "pg_catalog"))]
+    pub struct Tsvector;
+}
 
 diesel::table! {
     album_items (id) {
@@ -501,23 +503,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    trace_search_documents (trace_id) {
-        trace_id -> Uuid,
-        user_id -> Uuid,
-        journal_id -> Uuid,
-        interaction_date -> Timestamp,
-        title -> Text,
-        content -> Text,
-        mirror_text -> Text,
-        tag_text -> Text,
-        element_text -> Text,
-        landmark_text -> Text,
-        search_vector -> crate::schema::Tsvector,
-        refreshed_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     trace_attachments (id) {
         id -> Uuid,
         trace_id -> Uuid,
@@ -545,6 +530,26 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::Tsvector;
+
+    trace_search_documents (trace_id) {
+        trace_id -> Uuid,
+        user_id -> Uuid,
+        journal_id -> Uuid,
+        interaction_date -> Timestamp,
+        title -> Text,
+        content -> Text,
+        mirror_text -> Text,
+        tag_text -> Text,
+        element_text -> Text,
+        landmark_text -> Text,
+        search_vector -> Tsvector,
+        refreshed_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     traces (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -555,7 +560,6 @@ diesel::table! {
         interaction_date -> Timestamp,
         trace_type -> Text,
         status -> Text,
-        version_integer -> Int4,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         is_encrypted -> Bool,
@@ -568,6 +572,7 @@ diesel::table! {
         sharing_sensitivity -> Text,
         derived_from_trace_id -> Nullable<Uuid>,
         is_blank -> Bool,
+        version_integer -> Int4,
     }
 }
 
@@ -662,6 +667,8 @@ diesel::joinable!(albums -> assets (cover_image_asset_id));
 diesel::joinable!(albums -> users (owner_user_id));
 diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(analysis_summaries -> users (user_id));
+diesel::joinable!(content_reports -> messages (reported_message_id));
+diesel::joinable!(content_reports -> posts (reported_post_id));
 diesel::joinable!(documents -> users (owner_user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
 diesel::joinable!(element_landmarks -> landmarks (landmark_id));
@@ -673,7 +680,6 @@ diesel::joinable!(journal_grants -> journals (journal_id));
 diesel::joinable!(journal_share_links -> journals (journal_id));
 diesel::joinable!(journal_share_links -> posts (scoped_post_id));
 diesel::joinable!(journal_share_links -> users (owner_user_id));
-diesel::joinable!(journals -> users (user_id));
 diesel::joinable!(landmarks -> landscape_analyses (analysis_id));
 diesel::joinable!(landmarks -> users (user_id));
 diesel::joinable!(landscape_analyses -> traces (analyzed_trace_id));

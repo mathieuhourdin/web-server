@@ -121,19 +121,40 @@ impl TraceSearchDocument {
                  AND las.lens_id = u.current_lens_id
                 WHERE e.trace_id = $1
             ),
-            landmark_parts AS (
-                SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS landmark_text
-                FROM elements e
+            reference_parts AS (
+                SELECT COALESCE(string_agg(CONCAT_WS(' ', r.mention, tags.context_tags, variants.reference_variants), ' '), '') AS reference_text
+                FROM "references" r
+                INNER JOIN trace_mirrors tm
+                  ON tm.id = r.trace_mirror_id
                 INNER JOIN users u
                   ON u.id = $2
                 INNER JOIN lens_analysis_scopes las
-                  ON las.landscape_analysis_id = e.analysis_id
+                  ON las.landscape_analysis_id = r.landscape_analysis_id
                  AND las.lens_id = u.current_lens_id
-                JOIN element_landmarks el
-                  ON el.element_id = e.id
+                LEFT JOIN LATERAL (
+                    SELECT COALESCE(string_agg(value, ' '), '') AS context_tags
+                    FROM jsonb_array_elements_text(r.context_tags) AS tag_value(value)
+                ) tags ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT COALESCE(string_agg(value, ' '), '') AS reference_variants
+                    FROM jsonb_array_elements_text(r.reference_variants) AS variant_value(value)
+                ) variants ON TRUE
+                WHERE tm.trace_id = $1
+            ),
+            reference_landmark_parts AS (
+                SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS landmark_text
+                FROM "references" r
+                INNER JOIN trace_mirrors tm
+                  ON tm.id = r.trace_mirror_id
+                INNER JOIN users u
+                  ON u.id = $2
+                INNER JOIN lens_analysis_scopes las
+                  ON las.landscape_analysis_id = r.landscape_analysis_id
+                 AND las.lens_id = u.current_lens_id
                 JOIN landmarks l
-                  ON l.id = el.landmark_id
-                WHERE e.trace_id = $1
+                  ON l.id = r.landmark_id
+                WHERE tm.trace_id = $1
+                  AND r.landmark_id IS NOT NULL
             ),
             primary_landmark_parts AS (
                 SELECT COALESCE(string_agg(DISTINCT CONCAT_WS(' ', l.title, l.subtitle), ' '), '') AS landmark_text
@@ -172,10 +193,12 @@ impl TraceSearchDocument {
                     mp.mirror_text,
                     mp.tag_text,
                     ep.element_text,
-                    CONCAT_WS(' ', lp.landmark_text, plp.landmark_text, dlp.landmark_text) AS landmark_text
+                    rp.reference_text,
+                    CONCAT_WS(' ', rlp.landmark_text, plp.landmark_text, dlp.landmark_text) AS landmark_text
                 FROM mirror_parts mp
                 CROSS JOIN element_parts ep
-                CROSS JOIN landmark_parts lp
+                CROSS JOIN reference_parts rp
+                CROSS JOIN reference_landmark_parts rlp
                 CROSS JOIN primary_landmark_parts plp
                 CROSS JOIN direct_landmark_parts dlp
             )
@@ -189,6 +212,7 @@ impl TraceSearchDocument {
                 mirror_text,
                 tag_text,
                 element_text,
+                reference_text,
                 landmark_text,
                 search_vector,
                 refreshed_at
@@ -203,12 +227,14 @@ impl TraceSearchDocument {
                 mirror_text,
                 tag_text,
                 element_text,
+                reference_text,
                 landmark_text,
                 setweight(to_tsvector('simple', title), 'A') ||
                 setweight(to_tsvector('simple', content), 'A') ||
                 setweight(to_tsvector('simple', tag_text), 'A') ||
                 setweight(to_tsvector('simple', mirror_text), 'B') ||
                 setweight(to_tsvector('simple', element_text), 'C') ||
+                setweight(to_tsvector('simple', reference_text), 'C') ||
                 setweight(to_tsvector('simple', landmark_text), 'C'),
                 NOW()
             FROM doc
@@ -221,6 +247,7 @@ impl TraceSearchDocument {
                 mirror_text = EXCLUDED.mirror_text,
                 tag_text = EXCLUDED.tag_text,
                 element_text = EXCLUDED.element_text,
+                reference_text = EXCLUDED.reference_text,
                 landmark_text = EXCLUDED.landmark_text,
                 search_vector = EXCLUDED.search_vector,
                 refreshed_at = NOW()
@@ -299,18 +326,19 @@ impl TraceSearchDocument {
 
                         UNION
 
-                        SELECT el.landmark_id, l.landmark_type
-                        FROM elements e
+                        SELECT r.landmark_id, l.landmark_type
+                        FROM "references" r
+                        INNER JOIN trace_mirrors tm
+                          ON tm.id = r.trace_mirror_id
                         INNER JOIN users u
                           ON u.id = $1
                         INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = e.analysis_id
+                          ON las.landscape_analysis_id = r.landscape_analysis_id
                          AND las.lens_id = u.current_lens_id
-                        INNER JOIN element_landmarks el
-                          ON el.element_id = e.id
                         INNER JOIN landmarks l
-                          ON l.id = el.landmark_id
-                        WHERE e.trace_id = tsd.trace_id
+                          ON l.id = r.landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+                          AND r.landmark_id IS NOT NULL
                     ) visible_landmarks
                     WHERE visible_landmarks.landmark_id = ANY($4)
                       AND visible_landmarks.landmark_type <> 'HIGH_LEVEL_PROJECT'
@@ -350,18 +378,19 @@ impl TraceSearchDocument {
 
                         UNION
 
-                        SELECT el.landmark_id, l.landmark_type
-                        FROM elements e
+                        SELECT r.landmark_id, l.landmark_type
+                        FROM "references" r
+                        INNER JOIN trace_mirrors tm
+                          ON tm.id = r.trace_mirror_id
                         INNER JOIN users u
                           ON u.id = $1
                         INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = e.analysis_id
+                          ON las.landscape_analysis_id = r.landscape_analysis_id
                          AND las.lens_id = u.current_lens_id
-                        INNER JOIN element_landmarks el
-                          ON el.element_id = e.id
                         INNER JOIN landmarks l
-                          ON l.id = el.landmark_id
-                        WHERE e.trace_id = tsd.trace_id
+                          ON l.id = r.landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+                          AND r.landmark_id IS NOT NULL
                     ) visible_landmarks
                     WHERE visible_landmarks.landmark_id = ANY($5)
                       AND visible_landmarks.landmark_type = 'HIGH_LEVEL_PROJECT'
@@ -394,6 +423,8 @@ impl TraceSearchDocument {
                              THEN 'trace_mirror' END,
                         CASE WHEN setweight(to_tsvector('simple', tsd.element_text), 'C') @@ q.query
                              THEN 'element' END,
+                        CASE WHEN setweight(to_tsvector('simple', tsd.reference_text), 'C') @@ q.query
+                             THEN 'reference' END,
                         CASE WHEN setweight(to_tsvector('simple', tsd.landmark_text), 'C') @@ q.query
                              THEN 'landmark' END
                     ], NULL),
@@ -437,18 +468,19 @@ impl TraceSearchDocument {
 
                         UNION
 
-                        SELECT el.landmark_id, l.landmark_type
-                        FROM elements e
+                        SELECT r.landmark_id, l.landmark_type
+                        FROM "references" r
+                        INNER JOIN trace_mirrors tm
+                          ON tm.id = r.trace_mirror_id
                         INNER JOIN users u
                           ON u.id = $1
                         INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = e.analysis_id
+                          ON las.landscape_analysis_id = r.landscape_analysis_id
                          AND las.lens_id = u.current_lens_id
-                        INNER JOIN element_landmarks el
-                          ON el.element_id = e.id
                         INNER JOIN landmarks l
-                          ON l.id = el.landmark_id
-                        WHERE e.trace_id = tsd.trace_id
+                          ON l.id = r.landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+                          AND r.landmark_id IS NOT NULL
                     ) visible_landmarks
                     WHERE visible_landmarks.landmark_id = ANY($4)
                       AND visible_landmarks.landmark_type <> 'HIGH_LEVEL_PROJECT'
@@ -488,18 +520,19 @@ impl TraceSearchDocument {
 
                         UNION
 
-                        SELECT el.landmark_id, l.landmark_type
-                        FROM elements e
+                        SELECT r.landmark_id, l.landmark_type
+                        FROM "references" r
+                        INNER JOIN trace_mirrors tm
+                          ON tm.id = r.trace_mirror_id
                         INNER JOIN users u
                           ON u.id = $1
                         INNER JOIN lens_analysis_scopes las
-                          ON las.landscape_analysis_id = e.analysis_id
+                          ON las.landscape_analysis_id = r.landscape_analysis_id
                          AND las.lens_id = u.current_lens_id
-                        INNER JOIN element_landmarks el
-                          ON el.element_id = e.id
                         INNER JOIN landmarks l
-                          ON l.id = el.landmark_id
-                        WHERE e.trace_id = tsd.trace_id
+                          ON l.id = r.landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+                          AND r.landmark_id IS NOT NULL
                     ) visible_landmarks
                     WHERE visible_landmarks.landmark_id = ANY($5)
                       AND visible_landmarks.landmark_type = 'HIGH_LEVEL_PROJECT'
@@ -616,7 +649,7 @@ impl TraceSearchDocument {
                 UNION ALL
 
                 SELECT
-                    e.trace_id,
+                    tm.trace_id,
                     l.id AS landmark_id,
                     l.title,
                     l.subtitle,
@@ -624,17 +657,18 @@ impl TraceSearchDocument {
                     l.updated_at,
                     2 AS relation_priority
                 FROM input_trace_ids ti
-                INNER JOIN elements e
-                  ON e.trace_id = ti.trace_id
+                INNER JOIN trace_mirrors tm
+                  ON tm.trace_id = ti.trace_id
+                INNER JOIN "references" r
+                  ON r.trace_mirror_id = tm.id
                 INNER JOIN users u
                   ON u.id = $1
                 INNER JOIN lens_analysis_scopes las
-                  ON las.landscape_analysis_id = e.analysis_id
+                  ON las.landscape_analysis_id = r.landscape_analysis_id
                  AND las.lens_id = u.current_lens_id
-                INNER JOIN element_landmarks el
-                  ON el.element_id = e.id
                 INNER JOIN landmarks l
-                  ON l.id = el.landmark_id
+                  ON l.id = r.landmark_id
+                WHERE r.landmark_id IS NOT NULL
             ),
             grouped AS (
                 SELECT
