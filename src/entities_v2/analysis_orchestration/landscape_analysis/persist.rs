@@ -13,6 +13,7 @@ use crate::entities_v2::reference::Reference;
 use crate::entities_v2::{
     lens::Lens,
     trace::{Trace, TraceType},
+    trace_search::TraceSearchDocument,
     user::User,
 };
 use crate::schema::{
@@ -39,6 +40,12 @@ struct BoolRow {
 impl LandscapeAnalysis {
     /// Persists all mutable fields of an analysis row after a worker or route has changed its state.
     pub fn update(self, pool: &DbPool) -> Result<LandscapeAnalysis, PpdcError> {
+        let trace_search_refresh_id =
+            if self.processing_state == LandscapeProcessingState::Completed {
+                self.analyzed_trace_id
+            } else {
+                None
+            };
         let mut conn = pool.get()?;
         diesel::update(landscape_analyses::table.filter(landscape_analyses::id.eq(self.id)))
             .set((
@@ -58,7 +65,15 @@ impl LandscapeAnalysis {
                 landscape_analyses::trace_mirror_id.eq(self.trace_mirror_id),
             ))
             .execute(&mut conn)?;
-        LandscapeAnalysis::find_full_analysis(self.id, pool)
+        drop(conn);
+
+        let analysis = LandscapeAnalysis::find_full_analysis(self.id, pool)?;
+
+        if let Some(trace_id) = trace_search_refresh_id {
+            TraceSearchDocument::refresh_for_trace(trace_id, pool)?;
+        }
+
+        Ok(analysis)
     }
 
     /// Convenience helper used by the analysis queue to move an analysis between pending, running, completed, and failed.

@@ -6,6 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
 use crate::entities_v2::post::{enforce_publication_invariant_for_source, PostSourceRef};
+use crate::entities_v2::trace_search::TraceSearchDocument;
 use crate::schema::trace_attachments;
 
 use super::model::{NewTrace, Trace, TraceStatus};
@@ -259,6 +260,10 @@ impl Trace {
             })));
         }
 
+        if self.status != TraceStatus::Draft {
+            TraceSearchDocument::refresh_for_trace(self.id, pool)?;
+        }
+
         Trace::find_full_trace(self.id, pool)
     }
 
@@ -461,7 +466,9 @@ impl NewTrace {
             Ok(inserted)
         })?;
 
-        Trace::find_full_trace(inserted.id, pool)
+        let trace = Trace::find_full_trace(inserted.id, pool)?;
+        TraceSearchDocument::refresh_for_trace(trace.id, pool)?;
+        Ok(trace)
     }
 }
 

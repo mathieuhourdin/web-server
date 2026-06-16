@@ -14,8 +14,8 @@ use crate::entities_v2::{
     album, analysis_summary, asset, content_report, document, element,
     error::{ErrorType, PpdcError},
     feed, journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
-    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, transcription,
-    url_preview, usage_event, user, user_post_state, user_secure_action,
+    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, trace_search,
+    transcription, url_preview, usage_event, user, user_post_state, user_secure_action,
 };
 use crate::sessions_service;
 
@@ -96,6 +96,7 @@ pub fn create_router() -> Router {
 
     let traces_router = Router::new()
         .route("/drafts", get(trace::get_trace_drafts_route))
+        .route("/search", get(trace_search::get_trace_search_route))
         .route(
             "/:id",
             get(trace::get_trace_route)

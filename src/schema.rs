@@ -1,5 +1,9 @@
 // @generated automatically by Diesel CLI.
 
+#[derive(diesel::sql_types::SqlType)]
+#[diesel(postgres_type(name = "tsvector"))]
+pub struct Tsvector;
+
 diesel::table! {
     album_items (id) {
         id -> Uuid,
@@ -497,6 +501,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    trace_search_documents (trace_id) {
+        trace_id -> Uuid,
+        user_id -> Uuid,
+        journal_id -> Uuid,
+        interaction_date -> Timestamp,
+        title -> Text,
+        content -> Text,
+        mirror_text -> Text,
+        tag_text -> Text,
+        element_text -> Text,
+        landmark_text -> Text,
+        search_vector -> crate::schema::Tsvector,
+        refreshed_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     trace_attachments (id) {
         id -> Uuid,
         trace_id -> Uuid,
@@ -692,6 +713,9 @@ diesel::joinable!(trace_attachments -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
+diesel::joinable!(trace_search_documents -> journals (journal_id));
+diesel::joinable!(trace_search_documents -> traces (trace_id));
+diesel::joinable!(trace_search_documents -> users (user_id));
 diesel::joinable!(traces -> assets (content_image_asset_id));
 diesel::joinable!(traces -> users (user_id));
 diesel::joinable!(usage_events -> sessions (session_id));
@@ -735,6 +759,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     sessions,
     trace_attachments,
     trace_mirrors,
+    trace_search_documents,
     traces,
     usage_events,
     user_post_states,
