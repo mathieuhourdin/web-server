@@ -3,7 +3,7 @@ use axum::{
     http::{Method, StatusCode},
     middleware::from_fn,
     response::IntoResponse,
-    routing::{delete, get, patch, post, put, Router},
+    routing::{delete, get, post, put, Router},
 };
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -378,7 +378,10 @@ pub fn create_router() -> Router {
             "/:id",
             get(message::get_message_route).put(message::put_message_route),
         )
-        .route("/:id/seen", patch(message::patch_message_seen_route))
+        .route(
+            "/:id/seen",
+            put(message::put_message_seen_route).patch(message::patch_message_seen_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let trace_mirrors_router = Router::new()

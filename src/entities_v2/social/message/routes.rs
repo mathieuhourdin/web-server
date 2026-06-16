@@ -64,10 +64,22 @@ pub struct NewPostMessageDto {
     pub attachment: Option<MessageAttachment>,
 }
 
+#[derive(Deserialize, Default)]
+pub struct MarkMessageSeenDto {
+    pub trace_id: Option<Uuid>,
+    pub post_id: Option<Uuid>,
+}
+
 #[derive(Serialize)]
 pub struct MessageCreationResponse {
     pub question_message: Message,
     pub pending_reply_message: Option<Message>,
+}
+
+#[derive(Serialize)]
+pub struct MessageSeenResponse {
+    pub message: Message,
+    pub marked_seen_count: i64,
 }
 
 pub(crate) fn is_service_mentor(recipient: &User, pool: &DbPool) -> Result<bool, PpdcError> {
@@ -336,6 +348,42 @@ pub async fn patch_message_seen_route(
     let message = Message::find(id, &pool)?;
     let message = message.mark_seen(user_id, &pool)?;
     Ok(Json(message))
+}
+
+#[debug_handler]
+pub async fn put_message_seen_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    payload: Option<Json<MarkMessageSeenDto>>,
+) -> Result<Json<MessageSeenResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let message = Message::find(id, &pool)?;
+    let payload = payload.map(|Json(payload)| payload).unwrap_or_default();
+
+    if payload.trace_id.is_some() && payload.post_id.is_some() {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "trace_id and post_id cannot both be provided".to_string(),
+        ));
+    }
+
+    let (message, marked_seen_count) = match (payload.trace_id, payload.post_id) {
+        (Some(trace_id), None) => {
+            message.mark_seen_until_in_trace_conversation(user_id, trace_id, &pool)?
+        }
+        (None, Some(post_id)) => {
+            message.mark_seen_until_in_post_conversation(user_id, post_id, &pool)?
+        }
+        (None, None) => message.mark_seen_until_in_general_conversation(user_id, &pool)?,
+        (Some(_), Some(_)) => unreachable!(),
+    };
+
+    Ok(Json(MessageSeenResponse {
+        message,
+        marked_seen_count,
+    }))
 }
 
 #[debug_handler]

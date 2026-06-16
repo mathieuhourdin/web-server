@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -13,6 +13,12 @@ use super::model::{Message, MessageMetadata, NewMessage};
 struct IdRow {
     #[diesel(sql_type = SqlUuid)]
     id: Uuid,
+}
+
+#[derive(QueryableByName)]
+struct AffectedRows {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
 }
 
 fn serialize_attachment(
@@ -109,9 +115,6 @@ impl Message {
         if self.recipient_user_id != viewer_user_id {
             return Err(PpdcError::unauthorized());
         }
-        if self.seen_at.is_some() {
-            return Ok(self);
-        }
 
         let mut conn = pool.get()?;
         sql_query(
@@ -125,6 +128,141 @@ impl Message {
         .bind::<SqlUuid, _>(self.id)
         .execute(&mut conn)?;
         Message::find(self.id, pool)
+    }
+
+    pub fn mark_seen_until_in_general_conversation(
+        &self,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<(Message, i64), PpdcError> {
+        if self.recipient_user_id != viewer_user_id {
+            return Err(PpdcError::unauthorized());
+        }
+        if self.trace_id.is_some() || self.post_id.is_some() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Message does not belong to the general conversation".to_string(),
+            ));
+        }
+
+        let mut conn = pool.get()?;
+        let marked_seen_count = sql_query(
+            r#"
+            WITH updated AS (
+                UPDATE messages
+                SET seen_at = NOW(),
+                    updated_at = NOW()
+                WHERE recipient_user_id = $1
+                  AND sender_user_id = $2
+                  AND trace_id IS NULL
+                  AND post_id IS NULL
+                  AND processing_state = 'PROCESSED'
+                  AND seen_at IS NULL
+                  AND created_at <= $3
+                RETURNING 1
+            )
+            SELECT COUNT(*)::bigint AS count FROM updated
+            "#,
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .bind::<SqlUuid, _>(self.sender_user_id)
+        .bind::<Timestamp, _>(self.created_at)
+        .get_result::<AffectedRows>(&mut conn)?
+        .count;
+
+        Ok((Message::find(self.id, pool)?, marked_seen_count))
+    }
+
+    pub fn mark_seen_until_in_trace_conversation(
+        &self,
+        viewer_user_id: Uuid,
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<(Message, i64), PpdcError> {
+        if self.recipient_user_id != viewer_user_id {
+            return Err(PpdcError::unauthorized());
+        }
+        if self.trace_id != Some(trace_id) || self.post_id.is_some() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Message does not belong to the requested trace conversation".to_string(),
+            ));
+        }
+
+        let mut conn = pool.get()?;
+        let marked_seen_count = sql_query(
+            r#"
+            WITH updated AS (
+                UPDATE messages
+                SET seen_at = NOW(),
+                    updated_at = NOW()
+                WHERE recipient_user_id = $1
+                  AND sender_user_id = $2
+                  AND trace_id = $3
+                  AND post_id IS NULL
+                  AND processing_state = 'PROCESSED'
+                  AND seen_at IS NULL
+                  AND created_at <= $4
+                RETURNING 1
+            )
+            SELECT COUNT(*)::bigint AS count FROM updated
+            "#,
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .bind::<SqlUuid, _>(self.sender_user_id)
+        .bind::<SqlUuid, _>(trace_id)
+        .bind::<Timestamp, _>(self.created_at)
+        .get_result::<AffectedRows>(&mut conn)?
+        .count;
+
+        Ok((Message::find(self.id, pool)?, marked_seen_count))
+    }
+
+    pub fn mark_seen_until_in_post_conversation(
+        &self,
+        viewer_user_id: Uuid,
+        post_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<(Message, i64), PpdcError> {
+        if self.recipient_user_id != viewer_user_id {
+            return Err(PpdcError::unauthorized());
+        }
+        if self.post_id != Some(post_id) {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Message does not belong to the requested post conversation".to_string(),
+            ));
+        }
+
+        let mut conn = pool.get()?;
+        let marked_seen_count = sql_query(
+            r#"
+            WITH updated AS (
+                UPDATE messages
+                SET seen_at = NOW(),
+                    updated_at = NOW()
+                WHERE recipient_user_id = $1
+                  AND sender_user_id = $2
+                  AND post_id = $3
+                  AND processing_state = 'PROCESSED'
+                  AND seen_at IS NULL
+                  AND created_at <= $4
+                RETURNING 1
+            )
+            SELECT COUNT(*)::bigint AS count FROM updated
+            "#,
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .bind::<SqlUuid, _>(self.sender_user_id)
+        .bind::<SqlUuid, _>(post_id)
+        .bind::<Timestamp, _>(self.created_at)
+        .get_result::<AffectedRows>(&mut conn)?
+        .count;
+
+        Ok((Message::find(self.id, pool)?, marked_seen_count))
     }
 }
 
