@@ -1142,15 +1142,18 @@ pub async fn put_trace_route(
             if content_changed
                 || title_changed
                 || interaction_date_changed
-                || image_asset_changed
                 || sharing_sensitivity_changed
                 || timeout_changed
             {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update title, content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
+                    "Cannot update title, content, interaction_date, sharing_sensitivity or timeout_at once trace is finalized".to_string(),
                 ));
+            }
+
+            if let Some(content_image_asset_id) = payload.content_image_asset_id {
+                trace.content_image_asset_id = content_image_asset_id;
             }
 
             match payload.status {
@@ -1310,11 +1313,11 @@ pub async fn post_trace_asset_route(
         return Err(PpdcError::unauthorized());
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
-    if trace.status != super::enums::TraceStatus::Draft {
+    if trace.status == super::enums::TraceStatus::Archived {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Only draft traces can receive uploaded assets".to_string(),
+            "Archived traces cannot receive uploaded assets".to_string(),
         ));
     }
 
