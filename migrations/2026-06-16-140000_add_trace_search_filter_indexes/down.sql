@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idx_trace_mirrors_primary_landmark_trace;
+DROP INDEX IF EXISTS idx_element_landmarks_landmark_element;
+DROP INDEX IF EXISTS idx_landscape_landmarks_landmark_analysis;

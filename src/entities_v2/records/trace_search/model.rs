@@ -1,7 +1,8 @@
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Float, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Array, BigInt, Bool, Float, Int4, Text, Timestamp, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -17,7 +18,6 @@ pub struct TraceSearchDocument;
 #[derive(Debug, Deserialize)]
 pub struct TraceSearchParams {
     pub q: String,
-    pub journal_id: Option<Uuid>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -27,6 +27,17 @@ pub struct TraceSearchItem {
     pub trace: Trace,
     pub score: f32,
     pub matched_sources: Vec<String>,
+    pub landmarks: Vec<TraceSearchLandmark>,
+    pub high_level_project_landmarks: Vec<TraceSearchLandmark>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TraceSearchLandmark {
+    pub id: Uuid,
+    pub title: String,
+    pub subtitle: String,
+    pub score: f32,
+    pub matched_query: bool,
 }
 
 #[derive(QueryableByName)]
@@ -43,6 +54,27 @@ struct TraceSearchRow {
     score: f32,
     #[diesel(sql_type = Text)]
     matched_sources: String,
+}
+
+#[derive(QueryableByName)]
+struct TraceSearchLandmarkRow {
+    #[diesel(sql_type = SqlUuid)]
+    trace_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    landmark_id: Uuid,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    subtitle: String,
+    #[diesel(sql_type = Float)]
+    score: f32,
+    #[diesel(sql_type = Bool)]
+    matched_query: bool,
+    #[diesel(sql_type = Bool)]
+    is_high_level_project: bool,
+    #[diesel(sql_type = Int4)]
+    #[allow(dead_code)]
+    row_rank: i32,
 }
 
 impl TraceSearchDocument {
@@ -208,7 +240,9 @@ impl TraceSearchDocument {
     pub fn search_for_user(
         user_id: Uuid,
         query: &str,
-        journal_id: Option<Uuid>,
+        journal_ids: &[Uuid],
+        landmark_ids: &[Uuid],
+        high_level_project_landmark_ids: &[Uuid],
         offset: i64,
         limit: i64,
         pool: &DbPool,
@@ -229,13 +263,117 @@ impl TraceSearchDocument {
             SELECT COUNT(*)::bigint AS count
             FROM trace_search_documents tsd, q
             WHERE tsd.user_id = $1
-              AND ($3::uuid IS NULL OR tsd.journal_id = $3)
+              AND (cardinality($3::uuid[]) = 0 OR tsd.journal_id = ANY($3))
               AND tsd.search_vector @@ q.query
+              AND (
+                cardinality($4::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT ll.landmark_id, l.landmark_type
+                        FROM landscape_analyses la
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = la.id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landscape_landmarks ll
+                          ON ll.landscape_analysis_id = la.id
+                        INNER JOIN landmarks l
+                          ON l.id = ll.landmark_id
+                        WHERE la.analyzed_trace_id = tsd.trace_id
+                          AND la.user_id = $1
+
+                        UNION
+
+                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
+                        FROM trace_mirrors tm
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = tm.landscape_analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landmarks l
+                          ON l.id = tm.primary_landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+
+                        UNION
+
+                        SELECT el.landmark_id, l.landmark_type
+                        FROM elements e
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = e.analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN element_landmarks el
+                          ON el.element_id = e.id
+                        INNER JOIN landmarks l
+                          ON l.id = el.landmark_id
+                        WHERE e.trace_id = tsd.trace_id
+                    ) visible_landmarks
+                    WHERE visible_landmarks.landmark_id = ANY($4)
+                      AND visible_landmarks.landmark_type <> 'HIGH_LEVEL_PROJECT'
+                )
+              )
+              AND (
+                cardinality($5::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT ll.landmark_id, l.landmark_type
+                        FROM landscape_analyses la
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = la.id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landscape_landmarks ll
+                          ON ll.landscape_analysis_id = la.id
+                        INNER JOIN landmarks l
+                          ON l.id = ll.landmark_id
+                        WHERE la.analyzed_trace_id = tsd.trace_id
+                          AND la.user_id = $1
+
+                        UNION
+
+                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
+                        FROM trace_mirrors tm
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = tm.landscape_analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landmarks l
+                          ON l.id = tm.primary_landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+
+                        UNION
+
+                        SELECT el.landmark_id, l.landmark_type
+                        FROM elements e
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = e.analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN element_landmarks el
+                          ON el.element_id = e.id
+                        INNER JOIN landmarks l
+                          ON l.id = el.landmark_id
+                        WHERE e.trace_id = tsd.trace_id
+                    ) visible_landmarks
+                    WHERE visible_landmarks.landmark_id = ANY($5)
+                      AND visible_landmarks.landmark_type = 'HIGH_LEVEL_PROJECT'
+                )
+              )
             "#,
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Text, _>(query)
-        .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(journal_id)
+        .bind::<Array<SqlUuid>, _>(journal_ids)
+        .bind::<Array<SqlUuid>, _>(landmark_ids)
+        .bind::<Array<SqlUuid>, _>(high_level_project_landmark_ids)
         .get_result::<CountRow>(&mut conn)?
         .count;
 
@@ -263,24 +401,133 @@ impl TraceSearchDocument {
                 ) AS matched_sources
             FROM trace_search_documents tsd, q
             WHERE tsd.user_id = $1
-              AND ($3::uuid IS NULL OR tsd.journal_id = $3)
+              AND (cardinality($3::uuid[]) = 0 OR tsd.journal_id = ANY($3))
               AND tsd.search_vector @@ q.query
+              AND (
+                cardinality($4::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT ll.landmark_id, l.landmark_type
+                        FROM landscape_analyses la
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = la.id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landscape_landmarks ll
+                          ON ll.landscape_analysis_id = la.id
+                        INNER JOIN landmarks l
+                          ON l.id = ll.landmark_id
+                        WHERE la.analyzed_trace_id = tsd.trace_id
+                          AND la.user_id = $1
+
+                        UNION
+
+                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
+                        FROM trace_mirrors tm
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = tm.landscape_analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landmarks l
+                          ON l.id = tm.primary_landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+
+                        UNION
+
+                        SELECT el.landmark_id, l.landmark_type
+                        FROM elements e
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = e.analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN element_landmarks el
+                          ON el.element_id = e.id
+                        INNER JOIN landmarks l
+                          ON l.id = el.landmark_id
+                        WHERE e.trace_id = tsd.trace_id
+                    ) visible_landmarks
+                    WHERE visible_landmarks.landmark_id = ANY($4)
+                      AND visible_landmarks.landmark_type <> 'HIGH_LEVEL_PROJECT'
+                )
+              )
+              AND (
+                cardinality($5::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM (
+                        SELECT ll.landmark_id, l.landmark_type
+                        FROM landscape_analyses la
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = la.id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landscape_landmarks ll
+                          ON ll.landscape_analysis_id = la.id
+                        INNER JOIN landmarks l
+                          ON l.id = ll.landmark_id
+                        WHERE la.analyzed_trace_id = tsd.trace_id
+                          AND la.user_id = $1
+
+                        UNION
+
+                        SELECT tm.primary_landmark_id AS landmark_id, l.landmark_type
+                        FROM trace_mirrors tm
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = tm.landscape_analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN landmarks l
+                          ON l.id = tm.primary_landmark_id
+                        WHERE tm.trace_id = tsd.trace_id
+
+                        UNION
+
+                        SELECT el.landmark_id, l.landmark_type
+                        FROM elements e
+                        INNER JOIN users u
+                          ON u.id = $1
+                        INNER JOIN lens_analysis_scopes las
+                          ON las.landscape_analysis_id = e.analysis_id
+                         AND las.lens_id = u.current_lens_id
+                        INNER JOIN element_landmarks el
+                          ON el.element_id = e.id
+                        INNER JOIN landmarks l
+                          ON l.id = el.landmark_id
+                        WHERE e.trace_id = tsd.trace_id
+                    ) visible_landmarks
+                    WHERE visible_landmarks.landmark_id = ANY($5)
+                      AND visible_landmarks.landmark_type = 'HIGH_LEVEL_PROJECT'
+                )
+              )
             ORDER BY score DESC, tsd.interaction_date DESC
-            OFFSET $4
-            LIMIT $5
+            OFFSET $6
+            LIMIT $7
             "#,
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Text, _>(query)
-        .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(journal_id)
+        .bind::<Array<SqlUuid>, _>(journal_ids)
+        .bind::<Array<SqlUuid>, _>(landmark_ids)
+        .bind::<Array<SqlUuid>, _>(high_level_project_landmark_ids)
         .bind::<BigInt, _>(offset)
         .bind::<BigInt, _>(limit)
         .load::<TraceSearchRow>(&mut conn)?;
+
+        let trace_ids = rows.iter().map(|row| row.trace_id).collect::<Vec<_>>();
+        let landmark_context =
+            Self::hydrate_ranked_landmarks_for_traces(user_id, query, &trace_ids, pool)?;
 
         let items = rows
             .into_iter()
             .map(|row| {
                 let trace = Trace::find_full_trace(row.trace_id, pool)?;
+                let context = landmark_context.get(&row.trace_id);
                 Ok(TraceSearchItem {
                     trace,
                     score: row.score,
@@ -290,10 +537,195 @@ impl TraceSearchDocument {
                         .filter(|value| !value.is_empty())
                         .map(|value| value.to_string())
                         .collect(),
+                    landmarks: context
+                        .map(|context| context.landmarks.clone())
+                        .unwrap_or_default(),
+                    high_level_project_landmarks: context
+                        .map(|context| context.high_level_project_landmarks.clone())
+                        .unwrap_or_default(),
                 })
             })
             .collect::<Result<Vec<_>, PpdcError>>()?;
 
         Ok((items, total))
     }
+
+    fn hydrate_ranked_landmarks_for_traces(
+        user_id: Uuid,
+        query: &str,
+        trace_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, TraceSearchLandmarkContext>, PpdcError> {
+        if trace_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut conn = pool.get()?;
+        let rows = sql_query(
+            r#"
+            WITH input_trace_ids AS (
+                SELECT unnest($2::uuid[]) AS trace_id
+            ),
+            q AS (
+                SELECT websearch_to_tsquery('simple', $3) AS query
+            ),
+            candidates AS (
+                SELECT
+                    la.analyzed_trace_id AS trace_id,
+                    l.id AS landmark_id,
+                    l.title,
+                    l.subtitle,
+                    l.landmark_type,
+                    l.updated_at,
+                    0 AS relation_priority
+                FROM input_trace_ids ti
+                INNER JOIN landscape_analyses la
+                  ON la.analyzed_trace_id = ti.trace_id
+                 AND la.user_id = $1
+                INNER JOIN users u
+                  ON u.id = $1
+                INNER JOIN lens_analysis_scopes las
+                  ON las.landscape_analysis_id = la.id
+                 AND las.lens_id = u.current_lens_id
+                INNER JOIN landscape_landmarks ll
+                  ON ll.landscape_analysis_id = la.id
+                INNER JOIN landmarks l
+                  ON l.id = ll.landmark_id
+
+                UNION ALL
+
+                SELECT
+                    tm.trace_id,
+                    l.id AS landmark_id,
+                    l.title,
+                    l.subtitle,
+                    l.landmark_type,
+                    l.updated_at,
+                    1 AS relation_priority
+                FROM input_trace_ids ti
+                INNER JOIN trace_mirrors tm
+                  ON tm.trace_id = ti.trace_id
+                INNER JOIN users u
+                  ON u.id = $1
+                INNER JOIN lens_analysis_scopes las
+                  ON las.landscape_analysis_id = tm.landscape_analysis_id
+                 AND las.lens_id = u.current_lens_id
+                INNER JOIN landmarks l
+                  ON l.id = tm.primary_landmark_id
+
+                UNION ALL
+
+                SELECT
+                    e.trace_id,
+                    l.id AS landmark_id,
+                    l.title,
+                    l.subtitle,
+                    l.landmark_type,
+                    l.updated_at,
+                    2 AS relation_priority
+                FROM input_trace_ids ti
+                INNER JOIN elements e
+                  ON e.trace_id = ti.trace_id
+                INNER JOIN users u
+                  ON u.id = $1
+                INNER JOIN lens_analysis_scopes las
+                  ON las.landscape_analysis_id = e.analysis_id
+                 AND las.lens_id = u.current_lens_id
+                INNER JOIN element_landmarks el
+                  ON el.element_id = e.id
+                INNER JOIN landmarks l
+                  ON l.id = el.landmark_id
+            ),
+            grouped AS (
+                SELECT
+                    trace_id,
+                    landmark_id,
+                    title,
+                    subtitle,
+                    landmark_type,
+                    MAX(updated_at) AS updated_at,
+                    MIN(relation_priority) AS relation_priority
+                FROM candidates
+                GROUP BY trace_id, landmark_id, title, subtitle, landmark_type
+            ),
+            scored AS (
+                SELECT
+                    g.trace_id,
+                    g.landmark_id,
+                    g.title,
+                    g.subtitle,
+                    g.landmark_type = 'HIGH_LEVEL_PROJECT' AS is_high_level_project,
+                    (
+                        setweight(to_tsvector('simple', g.title), 'A') ||
+                        setweight(to_tsvector('simple', g.subtitle), 'B')
+                    ) @@ q.query AS matched_query,
+                    ts_rank_cd(
+                        setweight(to_tsvector('simple', g.title), 'A') ||
+                        setweight(to_tsvector('simple', g.subtitle), 'B'),
+                        q.query
+                    )::real AS score,
+                    g.relation_priority,
+                    g.updated_at
+                FROM grouped g
+                CROSS JOIN q
+            ),
+            ranked AS (
+                SELECT
+                    trace_id,
+                    landmark_id,
+                    title,
+                    subtitle,
+                    score,
+                    matched_query,
+                    is_high_level_project,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY trace_id, is_high_level_project
+                        ORDER BY matched_query DESC, score DESC, relation_priority ASC, updated_at DESC
+                    )::integer AS row_rank
+                FROM scored
+            )
+            SELECT
+                trace_id,
+                landmark_id,
+                title,
+                subtitle,
+                score,
+                matched_query,
+                is_high_level_project,
+                row_rank
+            FROM ranked
+            WHERE row_rank <= 5
+            ORDER BY trace_id ASC, is_high_level_project ASC, row_rank ASC
+            "#,
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Array<SqlUuid>, _>(trace_ids)
+        .bind::<Text, _>(query)
+        .load::<TraceSearchLandmarkRow>(&mut conn)?;
+
+        let mut contexts: HashMap<Uuid, TraceSearchLandmarkContext> = HashMap::new();
+        for row in rows {
+            let context = contexts.entry(row.trace_id).or_default();
+            let landmark = TraceSearchLandmark {
+                id: row.landmark_id,
+                title: row.title,
+                subtitle: row.subtitle,
+                score: row.score,
+                matched_query: row.matched_query,
+            };
+            if row.is_high_level_project {
+                context.high_level_project_landmarks.push(landmark);
+            } else {
+                context.landmarks.push(landmark);
+            }
+        }
+
+        Ok(contexts)
+    }
+}
+
+#[derive(Default)]
+struct TraceSearchLandmarkContext {
+    landmarks: Vec<TraceSearchLandmark>,
+    high_level_project_landmarks: Vec<TraceSearchLandmark>,
 }
