@@ -187,6 +187,7 @@ pub struct ExtendTraceTimeoutDto {
 #[derive(Deserialize)]
 pub struct TraceExpectedVersionQuery {
     #[serde(alias = "expected_version")]
+    #[serde(alias = "version_integer")]
     pub expected_version_integer: i32,
 }
 
@@ -756,7 +757,7 @@ fn apply_create_draft_payload(
         trace.is_encrypted = is_encrypted;
         changed = true;
     }
-    if encryption_metadata.is_some() || !trace.is_encrypted {
+    if encryption_metadata.is_some() {
         trace.encryption_metadata = encryption_metadata;
         changed = true;
     }
@@ -779,8 +780,9 @@ fn apply_create_draft_payload(
             "encryption_metadata is required when is_encrypted is true".to_string(),
         ));
     }
-    if !trace.is_encrypted {
+    if !trace.is_encrypted && trace.encryption_metadata.is_some() {
         trace.encryption_metadata = None;
+        changed = true;
     }
     if let Some(timeout_at) = trace.timeout_at {
         validate_timeout_at(timeout_at)?;
@@ -804,29 +806,42 @@ fn apply_create_draft_payload(
     Ok(trace)
 }
 
-async fn get_or_repair_current_journal_draft(
-    journal: Journal,
+fn get_current_journal_draft(
+    journal: &Journal,
     user_id: Uuid,
-    session_id: Option<Uuid>,
     pool: &DbPool,
 ) -> Result<Trace, PpdcError> {
-    create_or_get_journal_draft(
-        journal,
-        user_id,
-        session_id,
-        CreateJournalDraftDto {
-            content: String::new(),
-            derived_from_trace_id: None,
-            interaction_date: None,
-            is_encrypted: None,
-            encryption_metadata: None,
-            content_image_asset_id: None,
-            sharing_sensitivity: None,
-            timeout_at: None,
-        },
-        pool,
-    )
-    .await
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if journal.status != JournalStatus::Active || journal.journal_type != JournalType::UserJournal {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Current persisted drafts are only available for active user journals".to_string(),
+        ));
+    }
+
+    let draft_id = journal.current_draft_id.ok_or_else(|| {
+        PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            "Journal current draft invariant is broken: current_draft_id is missing".to_string(),
+        )
+    })?;
+    let trace = Trace::find_full_trace(draft_id, pool)?;
+    if trace.user_id != user_id
+        || trace.journal_id != Some(journal.id)
+        || trace.status != TraceStatus::Draft
+    {
+        return Err(PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            "Journal current draft invariant is broken: current_draft_id does not point to a valid draft trace".to_string(),
+        ));
+    }
+
+    Ok(trace)
 }
 
 #[debug_handler]
@@ -972,8 +987,7 @@ pub async fn get_journal_draft_route(
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let draft =
-        get_or_repair_current_journal_draft(journal, user_id, Some(session.id), &pool).await?;
+    let draft = get_current_journal_draft(&journal, user_id, &pool)?;
     Ok(Json(draft))
 }
 
@@ -988,8 +1002,7 @@ pub async fn patch_journal_draft_route(
     let expected_version_integer =
         require_expected_version_integer(payload.expected_version_integer)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let mut trace =
-        get_or_repair_current_journal_draft(journal, user_id, Some(session.id), &pool).await?;
+    let mut trace = get_current_journal_draft(&journal, user_id, &pool)?;
 
     if let Some(title) = payload.title {
         trace.title = title;
