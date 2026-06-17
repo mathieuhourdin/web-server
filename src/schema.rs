@@ -90,6 +90,28 @@ diesel::table! {
 }
 
 diesel::table! {
+    devices (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        identifier -> Text,
+        device_type -> Text,
+        push_token -> Nullable<Text>,
+        push_provider -> Nullable<Text>,
+        name -> Nullable<Text>,
+        app_version -> Nullable<Text>,
+        os_name -> Nullable<Text>,
+        os_version -> Nullable<Text>,
+        browser_name -> Nullable<Text>,
+        browser_version -> Nullable<Text>,
+        last_seen_at -> Nullable<Timestamp>,
+        push_token_updated_at -> Nullable<Timestamp>,
+        revoked_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     documents (id) {
         id -> Uuid,
         owner_user_id -> Uuid,
@@ -499,6 +521,7 @@ diesel::table! {
         secret_hash -> Nullable<Text>,
         revoked_at -> Nullable<Timestamp>,
         last_seen_at -> Nullable<Timestamp>,
+        device_id -> Nullable<Uuid>,
     }
 }
 
@@ -671,6 +694,7 @@ diesel::joinable!(analysis_summaries -> landscape_analyses (landscape_analysis_i
 diesel::joinable!(analysis_summaries -> users (user_id));
 diesel::joinable!(content_reports -> messages (reported_message_id));
 diesel::joinable!(content_reports -> posts (reported_post_id));
+diesel::joinable!(devices -> users (user_id));
 diesel::joinable!(documents -> users (owner_user_id));
 diesel::joinable!(element_landmarks -> elements (element_id));
 diesel::joinable!(element_landmarks -> landmarks (landmark_id));
@@ -715,6 +739,7 @@ diesel::joinable!(references -> landmarks (landmark_id));
 diesel::joinable!(references -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(references -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(references -> users (user_id));
+diesel::joinable!(sessions -> devices (device_id));
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(trace_attachments -> documents (document_id));
 diesel::joinable!(trace_attachments -> traces (trace_id));
@@ -739,6 +764,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     analysis_summaries,
     assets,
     content_reports,
+    devices,
     documents,
     element_landmarks,
     element_relations,

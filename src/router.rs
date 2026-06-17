@@ -3,7 +3,7 @@ use axum::{
     http::{Method, StatusCode},
     middleware::from_fn,
     response::IntoResponse,
-    routing::{delete, get, post, put, Router},
+    routing::{delete, get, patch, post, put, Router},
 };
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -11,7 +11,7 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
-    album, analysis_summary, asset, content_report, document, element,
+    album, analysis_summary, asset, content_report, device, document, element,
     error::{ErrorType, PpdcError},
     feed, journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
     mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, trace_search,
@@ -407,6 +407,11 @@ pub fn create_router() -> Router {
             .post(sessions_service::post_session_route)
             .delete(sessions_service::delete_session_route),
     );
+    let devices_router = Router::new()
+        .route("/", get(device::get_devices_route))
+        .route("/current", patch(device::patch_current_device_route))
+        .route("/:id", delete(device::delete_device_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
     let user_secure_actions_router = Router::new()
         .route("/", post(user_secure_action::post_user_secure_action_route))
         .route(
@@ -462,6 +467,7 @@ pub fn create_router() -> Router {
         .nest("/journals", journals_router)
         .nest("/transcriptions", transcriptions_router)
         .nest("/sessions", sessions_router)
+        .nest("/devices", devices_router)
         .nest("/user_secure_actions", user_secure_actions_router)
         .nest("/user_post_states", user_post_states_router)
         .nest("/content_reports", content_reports_router)

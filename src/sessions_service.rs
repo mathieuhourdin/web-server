@@ -1,5 +1,6 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
+    device::{Device, DeviceRegistrationDto},
     error::{ErrorType, PpdcError},
     session::Session,
     user::{User, UserPrincipalType},
@@ -12,12 +13,13 @@ use axum::{
     middleware::Next,
     response::IntoResponse,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct LoginCheck {
     username: String,
     password: String,
+    device: Option<DeviceRegistrationDto>,
 }
 
 pub async fn add_session_to_request(
@@ -59,7 +61,30 @@ pub async fn post_session_route(
     let is_valid_password = existing_user.verify_password(&payload.password.as_bytes())?;
 
     if is_valid_password {
+        let device = match payload.device {
+            Some(device) => Some(Device::upsert_for_user(existing_user.id, device, &pool)?),
+            None => None,
+        };
+
         if session.user_id == Some(existing_user.id) {
+            if let Some(device) = device {
+                if session.device_id == Some(device.id) {
+                    let mut session = session;
+                    session.token = headers
+                        .get("Authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_owned);
+                    return Ok(Json(session));
+                }
+
+                let (session, _bearer_token) = Session::create_authenticated_for_device(
+                    existing_user.id,
+                    Some(device.id),
+                    &pool,
+                )?;
+                return Ok(Json(session));
+            }
+
             let mut session = session;
             session.token = headers
                 .get("Authorization")
@@ -71,7 +96,9 @@ pub async fn post_session_route(
         if session.user_id.is_some() {
             let _ = Session::revoke(session.id, &pool);
         }
-        let (session, _bearer_token) = Session::create_authenticated(existing_user.id, &pool)?;
+        let device_id = device.map(|device| device.id);
+        let (session, _bearer_token) =
+            Session::create_authenticated_for_device(existing_user.id, device_id, &pool)?;
         return Ok(Json(session));
     }
     Err(PpdcError::new(

@@ -9,7 +9,7 @@ pub mod social;
 pub use analysis_orchestration::{landscape_analysis, lens};
 pub use derived_context::{analysis_summary, element, landmark, reference, trace_mirror};
 pub use platform_infra::{
-    asset, error, llm_call, mailer, session, transcription, url_preview, usage_event, user,
+    asset, device, error, llm_call, mailer, session, transcription, url_preview, usage_event, user,
     user_secure_action,
 };
 pub use records::{

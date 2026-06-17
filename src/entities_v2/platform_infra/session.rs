@@ -1,5 +1,8 @@
 use crate::db::DbPool;
-use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::{
+    device::{Device, DeviceType},
+    error::{ErrorType, PpdcError},
+};
 use crate::schema::sessions;
 use argon2::Config;
 use axum::{
@@ -32,6 +35,7 @@ pub struct Session {
     pub secret_hash: Option<String>,
     pub revoked_at: Option<NaiveDateTime>,
     pub last_seen_at: Option<NaiveDateTime>,
+    pub device_id: Option<Uuid>,
 }
 
 #[derive(Deserialize, Insertable)]
@@ -44,6 +48,7 @@ pub struct NewSession {
     pub secret_hash: Option<String>,
     pub revoked_at: Option<NaiveDateTime>,
     pub last_seen_at: Option<NaiveDateTime>,
+    pub device_id: Option<Uuid>,
 }
 
 impl NewSession {
@@ -59,6 +64,7 @@ impl NewSession {
             secret_hash: None,
             revoked_at: None,
             last_seen_at: None,
+            device_id: None,
         }
     }
 }
@@ -76,6 +82,7 @@ impl Session {
             secret_hash: None,
             revoked_at: None,
             last_seen_at: None,
+            device_id: None,
         }
     }
 
@@ -164,25 +171,59 @@ impl Session {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<(Session, String), PpdcError> {
+        Session::create_authenticated_for_device(user_id, None, pool)
+    }
+
+    pub fn create_authenticated_for_device(
+        user_id: Uuid,
+        device_id: Option<Uuid>,
+        pool: &DbPool,
+    ) -> Result<(Session, String), PpdcError> {
         let secret = Session::generate_secret();
         let secret_hash = Session::hash_secret(&secret)?;
+        let ttl_days = if let Some(device_id) = device_id {
+            let device = Device::find(device_id, pool)?;
+            match DeviceType::from_db_for_session_ttl(&device.device_type) {
+                DeviceType::Web => 30,
+                _ => SESSION_TTL_DAYS,
+            }
+        } else {
+            SESSION_TTL_DAYS
+        };
         let new_session = NewSession {
             user_id: Some(user_id),
             token: None,
             authenticated: true,
             expires_at: Utc::now()
                 .naive_utc()
-                .checked_add_signed(Duration::days(SESSION_TTL_DAYS))
+                .checked_add_signed(Duration::days(ttl_days))
                 .unwrap(),
             secret_hash: Some(secret_hash),
             revoked_at: None,
             last_seen_at: Some(Utc::now().naive_utc()),
+            device_id,
         };
         let mut session = Session::create(&new_session, pool)?;
         let bearer_token = format!("{}{}.{}", BEARER_PREFIX, session.id, secret);
         // Backward-compatible response channel for clients that already read `session.token`.
         session.token = Some(bearer_token.clone());
         Ok((session, bearer_token))
+    }
+
+    pub fn attach_device(
+        session_id: Uuid,
+        device_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Session, PpdcError> {
+        let mut conn = pool.get()?;
+        let now = Utc::now().naive_utc();
+        let session = diesel::update(sessions::table.filter(sessions::id.eq(session_id)))
+            .set((
+                sessions::device_id.eq(Some(device_id)),
+                sessions::updated_at.eq(now),
+            ))
+            .get_result(&mut conn)?;
+        Ok(session)
     }
 
     pub fn revoke(session_id: Uuid, pool: &DbPool) -> Result<Session, PpdcError> {
@@ -209,6 +250,11 @@ impl Session {
                 sessions::updated_at.eq(now),
             ))
             .execute(&mut conn)?;
+        if let Ok(session) = Session::find(&session_id, pool) {
+            if let Some(device_id) = session.device_id {
+                let _ = Device::touch(device_id, pool);
+            }
+        }
         Ok(())
     }
 
