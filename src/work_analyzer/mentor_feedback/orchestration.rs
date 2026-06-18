@@ -20,6 +20,7 @@ struct MentorFeedbackDraft {
 struct MentorFeedbackPromptInput {
     mentor_name: String,
     mentor_biography: Option<String>,
+    mentor_specific_prompt: Option<String>,
     context: super::context::MentorFeedbackPromptContext,
 }
 
@@ -38,11 +39,13 @@ pub async fn send(
         prompt_context.mentor.first_name, prompt_context.mentor.last_name
     );
     let mentor_biography = prompt_context.mentor.biography.clone();
+    let mentor_specific_prompt = prompt_context.mentor.mentor_specific_prompt.clone();
     let system_prompt = include_str!("system.md").to_string();
     let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&MentorFeedbackPromptInput {
         mentor_name,
         mentor_biography,
+        mentor_specific_prompt,
         context: prompt_context,
     })?;
 

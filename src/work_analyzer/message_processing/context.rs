@@ -14,6 +14,7 @@ use crate::entities_v2::user::User;
 pub struct TraceMessageReplyPromptContext {
     pub mentor_name: String,
     pub mentor_biography: Option<String>,
+    pub mentor_specific_prompt: Option<String>,
     pub user_question: MessageContextItem,
     pub target_trace: Option<TraceContextItem>,
     pub current_user_high_level_projects: Vec<HighLevelProjectContextItem>,
@@ -119,6 +120,7 @@ pub fn build(
     Ok(TraceMessageReplyPromptContext {
         mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
         mentor_biography: mentor_user.biography.clone(),
+        mentor_specific_prompt: mentor_user.mentor_specific_prompt.clone(),
         user_question: MessageContextItem {
             id: question_message.id,
             title: question_message.title.clone(),

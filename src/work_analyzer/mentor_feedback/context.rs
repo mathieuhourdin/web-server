@@ -23,6 +23,7 @@ pub struct MentorProfileContextItem {
     pub first_name: String,
     pub last_name: String,
     pub biography: Option<String>,
+    pub mentor_specific_prompt: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +90,7 @@ pub fn build(
             first_name: mentor_user.first_name,
             last_name: mentor_user.last_name,
             biography: mentor_user.biography,
+            mentor_specific_prompt: mentor_user.mentor_specific_prompt,
         },
         summary_context,
         recent_feedback_metadata,

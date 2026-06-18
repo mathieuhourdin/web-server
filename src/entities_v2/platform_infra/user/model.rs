@@ -70,6 +70,7 @@ pub struct User {
     pub ai_features_enabled: bool,
     pub onboarding_version: i32,
     pub external_captures_default_journal_id: Option<Uuid>,
+    pub mentor_specific_prompt: Option<String>,
 }
 
 pub enum UserResponse {
@@ -392,6 +393,8 @@ pub struct NewUser {
     pub ai_features_enabled: Option<bool>,
     pub onboarding_version: Option<i32>,
     pub external_captures_default_journal_id: Option<Uuid>,
+    #[serde(default, skip_deserializing)]
+    pub mentor_specific_prompt: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -402,6 +405,7 @@ pub struct NewServiceUserDto {
     pub profile_picture_url: Option<String>,
     pub profile_picture_asset_id: Option<Uuid>,
     pub welcome_message: Option<String>,
+    pub mentor_specific_prompt: Option<String>,
 }
 
 impl NewServiceUserDto {
@@ -452,6 +456,7 @@ impl NewServiceUserDto {
             ai_features_enabled: None,
             onboarding_version: None,
             external_captures_default_journal_id: None,
+            mentor_specific_prompt: Some(self.mentor_specific_prompt.unwrap_or_default()),
         }
     }
 
@@ -492,6 +497,9 @@ impl NewServiceUserDto {
             onboarding_version: Some(existing_user.onboarding_version),
             external_captures_default_journal_id: existing_user
                 .external_captures_default_journal_id,
+            mentor_specific_prompt: self
+                .mentor_specific_prompt
+                .or(existing_user.mentor_specific_prompt.clone()),
         }
     }
 }
@@ -521,6 +529,13 @@ impl NewUser {
         }
         if payload.ai_features_enabled.is_none() {
             payload.ai_features_enabled = Some(true);
+        }
+        if payload.principal_type == Some(UserPrincipalType::Service) {
+            if payload.mentor_specific_prompt.is_none() {
+                payload.mentor_specific_prompt = Some(String::new());
+            }
+        } else {
+            payload.mentor_specific_prompt = None;
         }
         payload.onboarding_version = Some(0);
         let email = payload.email.clone();
@@ -748,6 +763,15 @@ impl User {
             .on_conflict((user_roles::user_id, user_roles::role))
             .do_nothing()
             .execute(&mut conn)?;
+        if role == UserRole::Mentor {
+            diesel::update(users::table.filter(users::id.eq(self.id)))
+                .set(
+                    users::mentor_specific_prompt.eq(diesel::dsl::sql::<Nullable<Text>>(
+                        "COALESCE(mentor_specific_prompt, '')",
+                    )),
+                )
+                .execute(&mut conn)?;
+        }
         Ok(())
     }
 }
@@ -1093,6 +1117,7 @@ mod tests {
             ai_features_enabled: true,
             onboarding_version: 0,
             external_captures_default_journal_id: None,
+            mentor_specific_prompt: None,
         }
     }
 
@@ -1126,6 +1151,7 @@ mod tests {
             ai_features_enabled: None,
             onboarding_version: None,
             external_captures_default_journal_id: None,
+            mentor_specific_prompt: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));
