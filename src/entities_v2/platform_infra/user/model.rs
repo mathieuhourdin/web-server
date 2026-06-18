@@ -51,7 +51,7 @@ pub struct User {
     pub created_at: NaiveDateTime,
     pub updated_at: Option<NaiveDateTime>,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
     pub pseudonym: String,
@@ -110,7 +110,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub created_at: NaiveDateTime,
     pub updated_at: Option<NaiveDateTime>,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
     pub high_level_projects_definition: Option<String>,
@@ -152,7 +152,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             created_at: user.created_at,
             updated_at: user.updated_at,
             profile_picture_url: user.profile_picture_url.clone(),
-            profile_asset_id: user.profile_asset_id,
+            profile_picture_asset_id: user.profile_picture_asset_id,
             is_platform_user: user.is_platform_user,
             biography: visible_biography_for_viewer(user, viewer_user_id),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
@@ -183,7 +183,7 @@ pub struct UserPublicResponse {
     pub handle: String,
     pub created_at: NaiveDateTime,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub pseudonymized: bool,
     pub welcome_message: Option<String>,
     pub display_name: String,
@@ -197,7 +197,7 @@ impl From<&User> for UserPublicResponse {
             handle: user.handle.clone(),
             created_at: user.created_at,
             profile_picture_url: user.profile_picture_url.clone(),
-            profile_asset_id: user.profile_asset_id,
+            profile_picture_asset_id: user.profile_picture_asset_id,
             pseudonymized: user.pseudonymized,
             welcome_message: user.welcome_message.clone(),
             display_name: user.display_name(),
@@ -214,7 +214,7 @@ pub struct UserPseudonymizedResponse {
     pub created_at: NaiveDateTime,
     pub updated_at: Option<NaiveDateTime>,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub is_platform_user: bool,
     pub biography: Option<String>,
     pub high_level_projects_definition: Option<String>,
@@ -250,7 +250,7 @@ impl UserPseudonymizedResponse {
             created_at: user.created_at,
             updated_at: user.updated_at,
             profile_picture_url: user.profile_picture_url.clone(),
-            profile_asset_id: user.profile_asset_id,
+            profile_picture_asset_id: user.profile_picture_asset_id,
             is_platform_user: user.is_platform_user,
             biography: visible_biography_for_viewer(user, viewer_user_id),
             high_level_projects_definition: user.high_level_projects_definition.clone(),
@@ -300,7 +300,7 @@ pub(crate) struct UserSearchRow {
     #[diesel(sql_type = Nullable<Text>)]
     pub(crate) profile_picture_url: Option<String>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
-    pub(crate) profile_asset_id: Option<Uuid>,
+    pub(crate) profile_picture_asset_id: Option<Uuid>,
     #[diesel(sql_type = Text)]
     pub(crate) principal_type: String,
     #[diesel(sql_type = diesel::sql_types::Bool)]
@@ -315,7 +315,7 @@ pub struct UserSearchResult {
     pub handle: String,
     pub principal_type: UserPrincipalType,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub display_name: String,
 }
 
@@ -343,7 +343,7 @@ impl From<UserSearchRow> for UserSearchResult {
             handle: row.handle,
             principal_type,
             profile_picture_url: row.profile_picture_url,
-            profile_asset_id: row.profile_asset_id,
+            profile_picture_asset_id: row.profile_picture_asset_id,
             display_name,
         }
     }
@@ -356,7 +356,7 @@ impl From<&User> for UserSearchResult {
             handle: user.handle.clone(),
             principal_type: user.principal_type,
             profile_picture_url: user.profile_picture_url.clone(),
-            profile_asset_id: user.profile_asset_id,
+            profile_picture_asset_id: user.profile_picture_asset_id,
             display_name: user.display_name(),
         }
     }
@@ -373,7 +373,7 @@ pub struct NewUser {
     pub handle: String,
     pub password: Option<String>,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub is_platform_user: Option<bool>,
     pub biography: Option<String>,
     pub pseudonym: Option<String>,
@@ -400,7 +400,7 @@ pub struct NewServiceUserDto {
     pub last_name: String,
     pub biography: Option<String>,
     pub profile_picture_url: Option<String>,
-    pub profile_asset_id: Option<Uuid>,
+    pub profile_picture_asset_id: Option<Uuid>,
     pub welcome_message: Option<String>,
 }
 
@@ -433,7 +433,7 @@ impl NewServiceUserDto {
             handle: normalized_handle,
             password: None,
             profile_picture_url: self.profile_picture_url,
-            profile_asset_id: self.profile_asset_id,
+            profile_picture_asset_id: self.profile_picture_asset_id,
             is_platform_user: Some(false),
             biography: self.biography,
             pseudonym: None,
@@ -468,7 +468,9 @@ impl NewServiceUserDto {
             handle: normalized_handle,
             password: Some(existing_user.password.clone()),
             profile_picture_url: self.profile_picture_url,
-            profile_asset_id: self.profile_asset_id.or(existing_user.profile_asset_id),
+            profile_picture_asset_id: self
+                .profile_picture_asset_id
+                .or(existing_user.profile_picture_asset_id),
             is_platform_user: Some(existing_user.is_platform_user),
             biography: self.biography,
             pseudonym: Some(existing_user.pseudonym.clone()),
@@ -1072,7 +1074,7 @@ mod tests {
             created_at: Utc::now().naive_utc(),
             updated_at: None,
             profile_picture_url: None,
-            profile_asset_id: None,
+            profile_picture_asset_id: None,
             is_platform_user: false,
             biography: Some("Biography".to_string()),
             pseudonym: "Analytical Poet".to_string(),
@@ -1105,7 +1107,7 @@ mod tests {
             handle: String::from("@handle"),
             password: Some(String::from("password")),
             profile_picture_url: None,
-            profile_asset_id: None,
+            profile_picture_asset_id: None,
             is_platform_user: None,
             biography: None,
             high_level_projects_definition: None,

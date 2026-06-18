@@ -178,7 +178,7 @@ impl Asset {
         let mut usages = Vec::new();
 
         let profile_owner_ids = users::table
-            .filter(users::profile_asset_id.eq(Some(asset_id)))
+            .filter(users::profile_picture_asset_id.eq(Some(asset_id)))
             .select(users::id)
             .load::<Uuid>(conn)?;
         if !profile_owner_ids.is_empty() {

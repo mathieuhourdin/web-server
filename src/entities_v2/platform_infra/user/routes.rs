@@ -1,5 +1,6 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::{upload_image_asset_for_user_from_multipart, AssetUploadResponse},
     error::{ErrorType, PpdcError},
     feed::hydrate::count_recent_unread_feed_items,
     journal::Journal,
@@ -12,7 +13,7 @@ use crate::environment;
 use crate::pagination::PaginatedResponse;
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::{Extension, Json, Multipart, Path, Query},
 };
 use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
@@ -56,7 +57,8 @@ pub struct PatchUserDto {
     pub last_name: Option<String>,
     pub handle: Option<String>,
     pub profile_picture_url: Option<Option<String>>,
-    pub profile_asset_id: Option<Option<Uuid>>,
+    #[serde(alias = "profile_asset_id")]
+    pub profile_picture_asset_id: Option<Option<Uuid>>,
     pub biography: Option<Option<String>>,
     pub pseudonym: Option<String>,
     pub pseudonymized: Option<bool>,
@@ -210,7 +212,7 @@ pub async fn get_user_search_route(
             NULLIF(first_name, '') AS first_name,
             NULLIF(last_name, '') AS last_name,
             profile_picture_url,
-            profile_asset_id,
+            profile_picture_asset_id,
             principal_type,
             pseudonymized,
             pseudonym
@@ -628,7 +630,7 @@ pub async fn patch_user_route(
              last_name = COALESCE($3, last_name),
              handle = COALESCE($4, handle),
              profile_picture_url = CASE WHEN $5 THEN $6 ELSE profile_picture_url END,
-             profile_asset_id = CASE WHEN $7 THEN $8 ELSE profile_asset_id END,
+             profile_picture_asset_id = CASE WHEN $7 THEN $8 ELSE profile_picture_asset_id END,
              biography = CASE WHEN $9 THEN $10 ELSE biography END,
              pseudonym = COALESCE($11, pseudonym),
              pseudonymized = COALESCE($12, pseudonymized),
@@ -656,8 +658,8 @@ pub async fn patch_user_route(
     .bind::<Nullable<Text>, _>(payload.handle)
     .bind::<Bool, _>(payload.profile_picture_url.is_some())
     .bind::<Nullable<Text>, _>(payload.profile_picture_url.flatten())
-    .bind::<Bool, _>(payload.profile_asset_id.is_some())
-    .bind::<Nullable<SqlUuid>, _>(payload.profile_asset_id.flatten())
+    .bind::<Bool, _>(payload.profile_picture_asset_id.is_some())
+    .bind::<Nullable<SqlUuid>, _>(payload.profile_picture_asset_id.flatten())
     .bind::<Bool, _>(payload.biography.is_some())
     .bind::<Nullable<Text>, _>(patched_biography.clone())
     .bind::<Nullable<Text>, _>(payload.pseudonym)
@@ -712,6 +714,34 @@ pub async fn patch_user_route(
     }
 
     Ok(Json(updated_user))
+}
+
+#[debug_handler]
+pub async fn post_user_profile_picture_asset_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    multipart: Multipart,
+) -> Result<Json<AssetUploadResponse>, PpdcError> {
+    let session_user_id = session.user_id.unwrap();
+    if session_user_id != id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let response = upload_image_asset_for_user_from_multipart(id, &pool, multipart).await?;
+    let mut conn = pool.get()?;
+    diesel::sql_query(
+        "UPDATE users
+         SET profile_picture_asset_id = $2,
+             profile_picture_url = NULL,
+             updated_at = NOW()
+         WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(id)
+    .bind::<SqlUuid, _>(response.asset.id)
+    .execute(&mut conn)?;
+
+    Ok(Json(response))
 }
 
 #[debug_handler]

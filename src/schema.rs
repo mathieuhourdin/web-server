@@ -676,7 +676,7 @@ diesel::table! {
         mentor_id -> Nullable<Uuid>,
         welcome_message -> Nullable<Text>,
         home_focus_view -> Text,
-        profile_asset_id -> Nullable<Uuid>,
+        profile_picture_asset_id -> Nullable<Uuid>,
         shared_journal_activity_email_mode -> Text,
         received_message_email_mode -> Text,
         mentor_feedback_email_enabled -> Bool,

@@ -42,6 +42,11 @@ pub fn create_router() -> Router {
                 .put(user::put_user_route)
                 .patch(user::patch_user_route),
         )
+        .route(
+            "/:id/profile_picture_asset",
+            post(user::post_user_profile_picture_asset_route)
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+        )
         .route("/:id/albums", get(album::get_user_albums_route))
         .route("/:id/documents", get(document::get_user_documents_route))
         .route("/:id/posts", get(post::get_user_posts_route))
