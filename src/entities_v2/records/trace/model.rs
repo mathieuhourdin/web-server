@@ -613,7 +613,7 @@ impl Trace {
                 traces::created_at,
                 traces::updated_at,
             ))
-            .order(traces::interaction_date.desc().nulls_last())
+            .order(traces::finalized_at.desc().nulls_last())
             .then_order_by(traces::created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -748,7 +748,7 @@ impl Trace {
                 traces::created_at,
                 traces::updated_at,
             ))
-            .order(traces::interaction_date.desc())
+            .order(traces::finalized_at.desc().nulls_last())
             .then_order_by(traces::created_at.desc())
             .offset(offset)
             .limit(limit)
