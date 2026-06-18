@@ -217,7 +217,7 @@ fn create_enqueued_digest_row_with_email(
                 None,
                 None,
                 recipient.email.clone(),
-                "Matière Grise <noreply@ppdcoeur.fr>".to_string(),
+                "hupo <noreply@ppdcoeur.fr>".to_string(),
                 subject,
                 text_body,
                 html_body,

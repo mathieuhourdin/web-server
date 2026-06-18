@@ -116,7 +116,7 @@ fn schedule_daily_recap_email(
         Some("LANDSCAPE_ANALYSIS".to_string()),
         Some(analysis.id),
         user.email.clone(),
-        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
+        "hupo <noreply@ppdcoeur.fr>".to_string(),
         template.subject,
         template.text_body,
         template.html_body,

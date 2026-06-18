@@ -159,7 +159,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
             Some("POST".to_string()),
             Some(post.id),
             recipient.email,
-            "Matière Grise <noreply@ppdcoeur.fr>".to_string(),
+            "hupo <noreply@ppdcoeur.fr>".to_string(),
             template.subject,
             template.text_body,
             template.html_body,

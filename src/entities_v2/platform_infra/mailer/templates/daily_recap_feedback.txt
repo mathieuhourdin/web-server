@@ -9,5 +9,5 @@ Aperçu du récap du jour :
 {{recap_title}}
 {{recap_preview}}
 
-Ouvrir le feedback dans Matière Grise :
+Ouvrir le feedback dans hupo :
 {{recap_url}}

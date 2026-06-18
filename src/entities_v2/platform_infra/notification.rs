@@ -110,7 +110,7 @@ fn enqueue_received_message_notification_email(
         Some("MESSAGE".to_string()),
         Some(message.id),
         recipient.email,
-        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
+        "hupo <noreply@ppdcoeur.fr>".to_string(),
         template.subject,
         template.text_body,
         template.html_body,

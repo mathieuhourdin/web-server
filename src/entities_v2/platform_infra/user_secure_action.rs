@@ -328,7 +328,7 @@ fn enqueue_password_reset_email(
         Some("USER_SECURE_ACTION".to_string()),
         None,
         user.email.clone(),
-        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
+        "hupo <noreply@ppdcoeur.fr>".to_string(),
         template.subject,
         template.text_body,
         template.html_body,

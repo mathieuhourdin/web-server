@@ -123,7 +123,7 @@ fn enqueue_new_user_signup_notification_email(
         Some("USER".to_string()),
         Some(user.id),
         "mathieu.hourdin@gmail.com".to_string(),
-        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
+        "hupo <noreply@ppdcoeur.fr>".to_string(),
         template.subject,
         template.text_body,
         template.html_body,

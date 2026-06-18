@@ -6,4 +6,4 @@ Bonjour {{recipient_display_name}},
 
 {{items_text}}
 
-Ouvrir Matière Grise : {{home_url}}
+Ouvrir hupo : {{home_url}}

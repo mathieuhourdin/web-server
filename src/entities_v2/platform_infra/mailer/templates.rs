@@ -71,10 +71,18 @@ fn escape_html(value: &str) -> String {
 
 fn render_template(template: &str, variables: &[(&str, String)]) -> String {
     let mut rendered = template.to_string();
+    rendered = rendered.replace("{{app_icon_url}}", &app_icon_url());
     for (key, value) in variables {
         rendered = rendered.replace(&format!("{{{{{}}}}}", key), value);
     }
     rendered
+}
+
+fn app_icon_url() -> String {
+    format!(
+        "{}/public/assets/icon.svg",
+        environment::get_api_url().trim_end_matches('/')
+    )
 }
 
 fn append_contact_preferences_footer(template: EmailTemplate) -> EmailTemplate {
@@ -267,8 +275,7 @@ pub fn message_received_email(
                 conversation_url
                     .map(|url| format!("Ouvrir la conversation : {}", url))
                     .unwrap_or_else(|| {
-                        "Connectez-vous à Matière Grise pour lire et répondre au message."
-                            .to_string()
+                        "Connectez-vous à hupo pour lire et répondre au message.".to_string()
                     }),
             ),
         ],
@@ -292,8 +299,7 @@ pub fn message_received_email(
                         )
                     })
                     .unwrap_or_else(|| {
-                        "Connectez-vous à Matière Grise pour lire et répondre au message."
-                            .to_string()
+                        "Connectez-vous à hupo pour lire et répondre au message.".to_string()
                     }),
             ),
         ],
@@ -343,7 +349,7 @@ pub fn follow_request_received_email(
 }
 
 pub fn password_reset_email(recipient_display_name: &str, reset_url: &str) -> EmailTemplate {
-    let subject = "Réinitialisation de votre mot de passe Matière Grise".to_string();
+    let subject = "Réinitialisation de votre mot de passe hupo".to_string();
     let text_body = render_template(
         PASSWORD_RESET_TEXT,
         &[
@@ -441,10 +447,10 @@ pub fn daily_recap_email(
     recap_url: &str,
 ) -> EmailTemplate {
     let subject = if feedback_title.trim().is_empty() {
-        format!("🫀 Votre retour du jour de {}", mentor_display_name)
+        format!("Votre retour du jour de {}", mentor_display_name)
     } else {
         format!(
-            "🫀 {} vous a laissé un retour : {}",
+            "{} vous a laissé un retour : {}",
             mentor_display_name, feedback_title
         )
     };

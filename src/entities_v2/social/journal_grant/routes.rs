@@ -56,7 +56,7 @@ fn enqueue_journal_access_granted_email(
         Some("JOURNAL".to_string()),
         Some(journal.id),
         recipient.email,
-        "Matiere Grise <noreply@ppdcoeur.fr>".to_string(),
+        "hupo <noreply@ppdcoeur.fr>".to_string(),
         template.subject,
         template.text_body,
         template.html_body,
