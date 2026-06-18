@@ -76,6 +76,11 @@ pub fn get_gcs_bucket_name() -> String {
     std::env::var("GCS_BUCKET_NAME").expect("GCS_BUCKET_NAME should be provided")
 }
 
+pub fn get_firebase_project_id() -> String {
+    dotenv().ok();
+    std::env::var("FIREBASE_PROJECT_ID").expect("FIREBASE_PROJECT_ID should be provided")
+}
+
 pub fn get_assets_signed_url_ttl_seconds() -> u64 {
     dotenv().ok();
     std::env::var("ASSETS_SIGNED_URL_TTL_SECONDS")

@@ -240,6 +240,21 @@ fn clear_duplicate_push_token(
 }
 
 impl Device {
+    pub fn find_active_fcm_targets_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Device>, PpdcError> {
+        let mut conn = pool.get()?;
+        devices::table
+            .filter(devices::user_id.eq(user_id))
+            .filter(devices::revoked_at.is_null())
+            .filter(devices::push_provider.eq(Some("FCM".to_string())))
+            .filter(devices::push_token.is_not_null())
+            .order(devices::last_seen_at.desc())
+            .load(&mut conn)
+            .map_err(Into::into)
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Device, PpdcError> {
         let mut conn = pool.get()?;
         devices::table
@@ -332,6 +347,20 @@ impl Device {
         diesel::update(devices::table.filter(devices::id.eq(device_id)))
             .set((
                 devices::last_seen_at.eq(Some(now)),
+                devices::updated_at.eq(now),
+            ))
+            .execute(&mut conn)?;
+        Ok(())
+    }
+
+    pub fn clear_push_token(device_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+        let mut conn = pool.get()?;
+        let now = Utc::now().naive_utc();
+        diesel::update(devices::table.filter(devices::id.eq(device_id)))
+            .set((
+                devices::push_token.eq::<Option<String>>(None),
+                devices::push_provider.eq::<Option<String>>(None),
+                devices::push_token_updated_at.eq(Some(now)),
                 devices::updated_at.eq(now),
             ))
             .execute(&mut conn)?;

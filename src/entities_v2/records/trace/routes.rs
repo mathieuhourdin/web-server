@@ -17,10 +17,10 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
-        routes::{enqueue_received_message_notification_email, is_service_mentor},
-        Message, MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType,
-        NewMessage,
+        routes::is_service_mentor, Message, MessageAttachment, MessageAttachmentType,
+        MessageProcessingState, MessageType, NewMessage,
     },
+    notification,
     platform_infra::{
         asset::{upload_asset_for_user, upload_asset_for_user_from_multipart, AssetUploadResponse},
         mailer,
@@ -1977,12 +1977,7 @@ pub async fn post_trace_message_route(
         metadata: None,
     }
     .create(&pool)?;
-    if let Some(email_id) = enqueue_received_message_notification_email(&message, &pool)? {
-        let pool_for_task = pool.clone();
-        tokio::spawn(async move {
-            let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
-        });
-    }
+    notification::spawn_message_received_notification(message.clone(), pool.clone());
 
     Ok(Json(TraceMessageCreationResponse {
         question_message: message,
