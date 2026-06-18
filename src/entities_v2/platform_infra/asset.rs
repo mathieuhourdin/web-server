@@ -92,6 +92,12 @@ pub struct AssetSignedUrlResponse {
     pub expires_at: NaiveDateTime,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum AssetUploadPolicy {
+    Generic,
+    ImageOnly,
+}
+
 type AssetTuple = (
     Uuid,
     Uuid,
@@ -473,10 +479,21 @@ fn validate_image_upload(content_type: &str, size_bytes: usize) -> Result<(), Pp
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            format!("Unsupported album cover content type: {}", content_type),
+            format!("Unsupported image asset content type: {}", content_type),
         ));
     }
     Ok(())
+}
+
+fn validate_upload_with_policy(
+    policy: AssetUploadPolicy,
+    content_type: &str,
+    size_bytes: usize,
+) -> Result<(), PpdcError> {
+    match policy {
+        AssetUploadPolicy::Generic => validate_upload(content_type, size_bytes),
+        AssetUploadPolicy::ImageOnly => validate_image_upload(content_type, size_bytes),
+    }
 }
 
 async fn upload_object_to_gcs(
@@ -520,6 +537,25 @@ pub async fn upload_asset_for_user(
     content_type: Option<String>,
     content_bytes: Vec<u8>,
 ) -> Result<AssetUploadResponse, PpdcError> {
+    upload_asset_for_user_with_policy(
+        user_id,
+        pool,
+        file_name,
+        content_type,
+        content_bytes,
+        AssetUploadPolicy::Generic,
+    )
+    .await
+}
+
+async fn upload_asset_for_user_with_policy(
+    user_id: Uuid,
+    pool: &DbPool,
+    file_name: Option<String>,
+    content_type: Option<String>,
+    content_bytes: Vec<u8>,
+    policy: AssetUploadPolicy,
+) -> Result<AssetUploadResponse, PpdcError> {
     let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("upload.bin"));
     if content_bytes.is_empty() {
         return Err(PpdcError::new(
@@ -529,7 +565,7 @@ pub async fn upload_asset_for_user(
         ));
     }
     let mime_type = infer_content_type(&original_filename, content_type.as_deref());
-    validate_upload(&mime_type, content_bytes.len())?;
+    validate_upload_with_policy(policy, &mime_type, content_bytes.len())?;
 
     let asset_id = Uuid::new_v4();
     let bucket = crate::environment::get_gcs_bucket_name();
@@ -566,8 +602,20 @@ pub async fn upload_asset_for_user(
 pub async fn upload_asset_for_user_from_multipart(
     user_id: Uuid,
     pool: &DbPool,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<AssetUploadResponse, PpdcError> {
+    upload_asset_for_user_from_multipart_with_policy(
+        user_id,
+        pool,
+        multipart,
+        AssetUploadPolicy::Generic,
+    )
+    .await
+}
+
+async fn extract_multipart_file(
+    mut multipart: Multipart,
+) -> Result<(Option<String>, Option<String>, Vec<u8>), PpdcError> {
     let mut file_name: Option<String> = None;
     let mut content_type: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
@@ -609,7 +657,25 @@ pub async fn upload_asset_for_user_from_multipart(
         )
     })?;
 
-    upload_asset_for_user(user_id, pool, file_name, content_type, content_bytes).await
+    Ok((file_name, content_type, content_bytes))
+}
+
+async fn upload_asset_for_user_from_multipart_with_policy(
+    user_id: Uuid,
+    pool: &DbPool,
+    multipart: Multipart,
+    policy: AssetUploadPolicy,
+) -> Result<AssetUploadResponse, PpdcError> {
+    let (file_name, content_type, content_bytes) = extract_multipart_file(multipart).await?;
+    upload_asset_for_user_with_policy(
+        user_id,
+        pool,
+        file_name,
+        content_type,
+        content_bytes,
+        policy,
+    )
+    .await
 }
 
 pub async fn upload_image_asset_for_user(
@@ -619,96 +685,29 @@ pub async fn upload_image_asset_for_user(
     content_type: Option<String>,
     content_bytes: Vec<u8>,
 ) -> Result<AssetUploadResponse, PpdcError> {
-    let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("upload.bin"));
-    if content_bytes.is_empty() {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "No file provided in multipart payload".to_string(),
-        ));
-    }
-    let mime_type = infer_content_type(&original_filename, content_type.as_deref());
-    validate_image_upload(&mime_type, content_bytes.len())?;
-
-    let asset_id = Uuid::new_v4();
-    let bucket = crate::environment::get_gcs_bucket_name();
-    let object_key = format!(
-        "users/{}/original/{}/{}",
-        user_id, asset_id, original_filename
-    );
-
-    upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone()).await?;
-
-    let asset = NewAsset {
-        id: asset_id,
-        owner_user_id: user_id,
-        bucket,
-        object_key,
-        mime_type,
-        original_filename,
-        size_bytes: content_bytes.len() as i64,
-        status: AssetStatus::Ready,
-    }
-    .create(&pool)?;
-
-    let (signed_url, expires_at) = asset
-        .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
-        .await?;
-
-    Ok(AssetUploadResponse {
-        asset,
-        signed_url,
-        expires_at,
-    })
+    upload_asset_for_user_with_policy(
+        user_id,
+        pool,
+        file_name,
+        content_type,
+        content_bytes,
+        AssetUploadPolicy::ImageOnly,
+    )
+    .await
 }
 
 pub async fn upload_image_asset_for_user_from_multipart(
     user_id: Uuid,
     pool: &DbPool,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<AssetUploadResponse, PpdcError> {
-    let mut file_name: Option<String> = None;
-    let mut content_type: Option<String> = None;
-    let mut file_bytes: Option<Vec<u8>> = None;
-
-    while let Some(field) = multipart.next_field().await.map_err(|err| {
-        PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            format!("Multipart error: {}", err),
-        )
-    })? {
-        if field.file_name().is_none() {
-            continue;
-        }
-
-        file_name = field.file_name().map(|value| value.to_string());
-        content_type = field.content_type().map(|value| value.to_string());
-        file_bytes = Some(
-            field
-                .bytes()
-                .await
-                .map_err(|err| {
-                    PpdcError::new(
-                        400,
-                        ErrorType::ApiError,
-                        format!("Failed to read multipart field: {}", err),
-                    )
-                })?
-                .to_vec(),
-        );
-        break;
-    }
-
-    let content_bytes = file_bytes.ok_or_else(|| {
-        PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "No file provided in multipart payload".to_string(),
-        )
-    })?;
-
-    upload_image_asset_for_user(user_id, pool, file_name, content_type, content_bytes).await
+    upload_asset_for_user_from_multipart_with_policy(
+        user_id,
+        pool,
+        multipart,
+        AssetUploadPolicy::ImageOnly,
+    )
+    .await
 }
 
 #[debug_handler]

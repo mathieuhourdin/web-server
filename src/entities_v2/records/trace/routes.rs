@@ -22,7 +22,9 @@ use crate::entities_v2::{
     },
     notification,
     platform_infra::{
-        asset::{upload_asset_for_user, upload_asset_for_user_from_multipart, AssetUploadResponse},
+        asset::{
+            upload_asset_for_user, upload_image_asset_for_user_from_multipart, AssetUploadResponse,
+        },
         mailer,
         usage_event::{create_usage_event, UsageEventType},
     },
@@ -1338,7 +1340,7 @@ pub async fn post_trace_asset_route(
         asset,
         signed_url,
         expires_at,
-    } = upload_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
+    } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
     trace.content_image_asset_id = Some(asset.id);
     let trace = trace.update_with_expected_version(query.expected_version_integer, &pool)?;

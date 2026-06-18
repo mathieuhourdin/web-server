@@ -1,12 +1,17 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Json, Path, Query},
+    extract::{Extension, Json, Multipart, Path, Query},
 };
 use serde::Deserialize;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::{error::PpdcError, session::Session};
+use crate::entities_v2::{
+    asset::{upload_image_asset_for_user_from_multipart, Asset, AssetUploadResponse},
+    error::PpdcError,
+    session::Session,
+};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
@@ -22,6 +27,14 @@ pub struct UserDocumentsQuery {
     pub document_type: Option<PostType>,
     pub content_source: Option<DocumentContentSource>,
     pub status: Option<DocumentStatus>,
+}
+
+#[derive(Serialize)]
+pub struct DocumentCoverImageUploadResponse {
+    pub document: Document,
+    pub asset: Asset,
+    pub signed_url: String,
+    pub expires_at: chrono::NaiveDateTime,
 }
 
 #[debug_handler]
@@ -133,4 +146,35 @@ pub async fn put_document_route(
 
     let document = document.update(&pool)?;
     Ok(Json(document))
+}
+
+#[debug_handler]
+pub async fn post_document_cover_image_asset_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    multipart: Multipart,
+) -> Result<Json<DocumentCoverImageUploadResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut document = Document::find_full(id, &pool)?;
+    if document.owner_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let AssetUploadResponse {
+        asset,
+        signed_url,
+        expires_at,
+    } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
+
+    document.cover_image_asset_id = Some(asset.id);
+    document.cover_image_external_url = None;
+    let document = document.update(&pool)?;
+
+    Ok(Json(DocumentCoverImageUploadResponse {
+        document,
+        asset,
+        signed_url,
+        expires_at,
+    }))
 }

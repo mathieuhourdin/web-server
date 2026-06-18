@@ -203,6 +203,11 @@ pub fn create_router() -> Router {
             get(document::get_document_route).put(document::put_document_route),
         )
         .route(
+            "/:id/cover_image_asset",
+            post(document::post_document_cover_image_asset_route)
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+        )
+        .route(
             "/:id/post",
             get(post::get_document_post_route).put(post::put_document_post_route),
         )

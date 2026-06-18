@@ -9,5 +9,6 @@ pub use model::{
     NewDocumentDto, PostType, UpdateDocumentDto,
 };
 pub use routes::{
-    get_document_route, get_user_documents_route, post_document_route, put_document_route,
+    get_document_route, get_user_documents_route, post_document_cover_image_asset_route,
+    post_document_route, put_document_route,
 };
