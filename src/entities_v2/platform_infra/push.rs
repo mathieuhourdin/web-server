@@ -247,8 +247,8 @@ pub(crate) fn message_received_notification(
     }
 
     Ok(PushNotification {
-        title: format!("New message from {}", sender.display_name()),
-        body: "You received a new message".to_string(),
+        title: sender.display_name(),
+        body: message.content.clone(),
         data,
     })
 }
