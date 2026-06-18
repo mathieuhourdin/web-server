@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::Asset,
     device::Device,
     error::{ErrorType, PpdcError},
     message::Message,
@@ -18,8 +19,6 @@ const FIREBASE_MESSAGING_SCOPE: &str = "https://www.googleapis.com/auth/firebase
 
 #[derive(Debug, Clone)]
 pub struct PushNotification {
-    pub title: String,
-    pub body: String,
     pub data: HashMap<String, String>,
 }
 
@@ -43,14 +42,7 @@ struct FcmRequest<'a> {
 #[derive(Debug, Serialize)]
 struct FcmMessage<'a> {
     token: &'a str,
-    notification: FcmNotification<'a>,
     data: &'a HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize)]
-struct FcmNotification<'a> {
-    title: &'a str,
-    body: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,10 +108,6 @@ async fn send_fcm_to_device(
     let payload = FcmRequest {
         message: FcmMessage {
             token: push_token,
-            notification: FcmNotification {
-                title: &notification.title,
-                body: &notification.body,
-            },
             data: &notification.data,
         },
     };
@@ -223,32 +211,64 @@ pub async fn send_to_user(
     Ok(result)
 }
 
-pub(crate) fn message_received_notification(
+async fn sender_avatar_url(sender: &User, pool: &DbPool) -> Option<String> {
+    if let Some(asset_id) = sender.profile_picture_asset_id {
+        match Asset::find(asset_id, pool) {
+            Ok(asset) => match asset
+                .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
+                .await
+            {
+                Ok((url, _expires_at)) => return Some(url),
+                Err(err) => {
+                    warn!(
+                        target: "push",
+                        sender_user_id = %sender.id,
+                        asset_id = %asset_id,
+                        error = %err.message,
+                        "sender_avatar_signed_url_failed"
+                    );
+                }
+            },
+            Err(err) => {
+                warn!(
+                    target: "push",
+                    sender_user_id = %sender.id,
+                    asset_id = %asset_id,
+                    error = %err.message,
+                    "sender_avatar_asset_lookup_failed"
+                );
+            }
+        }
+    }
+
+    sender
+        .profile_picture_url
+        .as_ref()
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty())
+}
+
+pub(crate) async fn message_received_notification(
     message: &Message,
     pool: &DbPool,
 ) -> Result<PushNotification, PpdcError> {
     let sender = User::find(&message.sender_user_id, pool)?;
     let mut data = HashMap::new();
     data.insert("event_type".to_string(), "message_received".to_string());
-    data.insert("message_id".to_string(), message.id.to_string());
     data.insert(
         "sender_user_id".to_string(),
         message.sender_user_id.to_string(),
     );
+    data.insert("sender_display_name".to_string(), sender.display_name());
+    if let Some(avatar_url) = sender_avatar_url(&sender, pool).await {
+        data.insert("sender_avatar_url".to_string(), avatar_url);
+    }
+    data.insert("message_id".to_string(), message.id.to_string());
+    data.insert("message_content".to_string(), message.content.clone());
     data.insert(
-        "recipient_user_id".to_string(),
-        message.recipient_user_id.to_string(),
+        "message_timestamp".to_string(),
+        message.created_at.and_utc().timestamp_millis().to_string(),
     );
-    if let Some(trace_id) = message.trace_id {
-        data.insert("trace_id".to_string(), trace_id.to_string());
-    }
-    if let Some(post_id) = message.post_id {
-        data.insert("post_id".to_string(), post_id.to_string());
-    }
 
-    Ok(PushNotification {
-        title: sender.display_name(),
-        body: message.content.clone(),
-        data,
-    })
+    Ok(PushNotification { data })
 }

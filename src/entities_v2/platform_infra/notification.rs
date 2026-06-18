@@ -129,7 +129,7 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
 
     tokio::spawn(async move {
         let mut push_sent = false;
-        match push::message_received_notification(&message, &pool) {
+        match push::message_received_notification(&message, &pool).await {
             Ok(notification) => {
                 match push::send_to_user(message.recipient_user_id, notification, &pool).await {
                     Ok(result) => {
