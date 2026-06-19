@@ -130,20 +130,13 @@ impl Message {
         Message::find(self.id, pool)
     }
 
-    pub fn mark_seen_until_in_general_conversation(
+    pub fn mark_seen_until_from_sender(
         &self,
         viewer_user_id: Uuid,
         pool: &DbPool,
     ) -> Result<(Message, i64), PpdcError> {
         if self.recipient_user_id != viewer_user_id {
             return Err(PpdcError::unauthorized());
-        }
-        if self.trace_id.is_some() || self.post_id.is_some() {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Message does not belong to the general conversation".to_string(),
-            ));
         }
 
         let mut conn = pool.get()?;
@@ -155,8 +148,6 @@ impl Message {
                     updated_at = NOW()
                 WHERE recipient_user_id = $1
                   AND sender_user_id = $2
-                  AND trace_id IS NULL
-                  AND post_id IS NULL
                   AND processing_state = 'PROCESSED'
                   AND seen_at IS NULL
                   AND created_at <= $3

@@ -11,6 +11,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::Journal,
     journal_grant::JournalGrant,
+    notification,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmail, OutboundEmailProvider},
     post_grant::PostGrant,
     session::Session,
@@ -191,6 +192,11 @@ fn dispatch_post_published_notification_emails(post: &Post, pool: &DbPool) {
             );
         }
     }
+}
+
+pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) {
+    notification::spawn_post_published_push_notification(post.clone(), pool.clone());
+    dispatch_post_published_notification_emails(post, pool);
 }
 
 fn apply_source_backed_projection(post: &mut Post, projection: &SourceProjection) {
@@ -453,7 +459,7 @@ pub async fn put_trace_post_route(
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
-        dispatch_post_published_notification_emails(&post, &pool);
+        dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
 }
@@ -478,7 +484,7 @@ pub async fn post_post_route(
     let new_post = NewPost::new(payload, session.user_id.unwrap());
     let post = new_post.create(&pool)?;
     if post.status == PostStatus::Published {
-        dispatch_post_published_notification_emails(&post, &pool);
+        dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
 }
@@ -542,7 +548,7 @@ pub async fn put_post_route(
 
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
-        dispatch_post_published_notification_emails(&post, &pool);
+        dispatch_post_published_notifications(&post, &pool);
     }
 
     Ok(Json(post))
@@ -621,7 +627,7 @@ pub async fn put_document_post_route(
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
-        dispatch_post_published_notification_emails(&post, &pool);
+        dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
 }
@@ -695,7 +701,7 @@ pub async fn put_album_post_route(
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
-        dispatch_post_published_notification_emails(&post, &pool);
+        dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
 }

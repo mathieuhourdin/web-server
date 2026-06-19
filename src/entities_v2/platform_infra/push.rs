@@ -12,6 +12,8 @@ use crate::entities_v2::{
     device::Device,
     error::{ErrorType, PpdcError},
     message::Message,
+    post::Post,
+    source_projection::{load_source_projection_map, SourceProjectionKind},
     user::User,
 };
 
@@ -179,6 +181,23 @@ pub async fn send_to_user(
     pool: &DbPool,
 ) -> Result<PushDispatchResult, PpdcError> {
     let devices = Device::find_active_fcm_targets_for_user(user_id, pool)?;
+    send_to_devices(devices, notification, pool).await
+}
+
+pub async fn send_to_mobile_user(
+    user_id: Uuid,
+    notification: PushNotification,
+    pool: &DbPool,
+) -> Result<PushDispatchResult, PpdcError> {
+    let devices = Device::find_active_mobile_fcm_targets_for_user(user_id, pool)?;
+    send_to_devices(devices, notification, pool).await
+}
+
+async fn send_to_devices(
+    devices: Vec<Device>,
+    notification: PushNotification,
+    pool: &DbPool,
+) -> Result<PushDispatchResult, PpdcError> {
     let mut result = PushDispatchResult {
         attempted_count: devices.len(),
         sent_count: 0,
@@ -271,4 +290,106 @@ pub(crate) async fn message_received_notification(
     );
 
     Ok(PushNotification { data })
+}
+
+fn source_kind_value(source_kind: SourceProjectionKind) -> &'static str {
+    match source_kind {
+        SourceProjectionKind::Trace => "trace",
+        SourceProjectionKind::Document => "document",
+        SourceProjectionKind::Album => "album",
+    }
+}
+
+fn content_preview(value: &str) -> String {
+    const MAX_CHARS: usize = 280;
+    let trimmed = value.trim();
+    let mut preview = trimmed.chars().take(MAX_CHARS).collect::<String>();
+    if trimmed.chars().count() > MAX_CHARS {
+        preview.push_str("...");
+    }
+    preview
+}
+
+async fn signed_asset_url(asset_id: Uuid, pool: &DbPool, target: &'static str) -> Option<String> {
+    match Asset::find(asset_id, pool) {
+        Ok(asset) => match asset
+            .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
+            .await
+        {
+            Ok((url, _expires_at)) => Some(url),
+            Err(err) => {
+                warn!(
+                    target: "push",
+                    asset_id = %asset_id,
+                    error = %err.message,
+                    "{}",
+                    target
+                );
+                None
+            }
+        },
+        Err(err) => {
+            warn!(
+                target: "push",
+                asset_id = %asset_id,
+                error = %err.message,
+                "{}",
+                target
+            );
+            None
+        }
+    }
+}
+
+pub(crate) async fn post_published_notification(
+    post: &Post,
+    pool: &DbPool,
+) -> Result<Option<PushNotification>, PpdcError> {
+    let Some(source_ref) = post.source_ref() else {
+        return Ok(None);
+    };
+
+    let owner = User::find(&post.user_id, pool)?;
+    let projection = {
+        let mut conn = pool.get()?;
+        let mut projections = load_source_projection_map(&[source_ref], &mut conn)?;
+        projections.remove(&source_ref)
+    };
+    let Some(projection) = projection else {
+        return Ok(None);
+    };
+
+    let mut data = HashMap::new();
+    data.insert("event_type".to_string(), "post_published".to_string());
+    data.insert("post_id".to_string(), post.id.to_string());
+    data.insert(
+        "source_kind".to_string(),
+        source_kind_value(projection.source_kind).to_string(),
+    );
+    data.insert("source_id".to_string(), projection.source_id.to_string());
+    if let Some(journal_id) = projection.journal_id {
+        data.insert("journal_id".to_string(), journal_id.to_string());
+    }
+    data.insert("publisher_user_id".to_string(), post.user_id.to_string());
+    data.insert("publisher_display_name".to_string(), owner.display_name());
+    data.insert("title".to_string(), projection.title);
+    data.insert(
+        "content_preview".to_string(),
+        content_preview(&projection.content),
+    );
+    data.insert(
+        "published_at".to_string(),
+        post.publishing_date
+            .unwrap_or(post.created_at)
+            .and_utc()
+            .timestamp_millis()
+            .to_string(),
+    );
+    if let Some(asset_id) = projection.cover_image_asset_id {
+        if let Some(url) = signed_asset_url(asset_id, pool, "post_cover_signed_url_failed").await {
+            data.insert("cover_image_url".to_string(), url);
+        }
+    }
+
+    Ok(Some(PushNotification { data }))
 }

@@ -272,7 +272,7 @@ pub async fn put_message_seen_route(
         (None, Some(post_id)) => {
             message.mark_seen_until_in_post_conversation(user_id, post_id, &pool)?
         }
-        (None, None) => message.mark_seen_until_in_general_conversation(user_id, &pool)?,
+        (None, None) => message.mark_seen_until_from_sender(user_id, &pool)?,
         (Some(_), Some(_)) => unreachable!(),
     };
 

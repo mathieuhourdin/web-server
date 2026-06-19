@@ -6,7 +6,8 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::PpdcError,
     message::Message,
-    post::Post,
+    post::{Post, PostStatus},
+    post_grant::PostGrant,
     trace::Trace,
     user::{User, UserPrincipalType},
 };
@@ -191,6 +192,83 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                     error = %err.message,
                     "message_received_email_enqueue_failed"
                 );
+            }
+        }
+    });
+}
+
+pub fn spawn_post_published_push_notification(post: Post, pool: DbPool) {
+    if post.status != PostStatus::Published || post.source_ref().is_none() {
+        return;
+    }
+
+    tokio::spawn(async move {
+        let notification = match push::post_published_notification(&post, &pool).await {
+            Ok(Some(notification)) => notification,
+            Ok(None) => return,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    error = %err.message,
+                    "post_published_push_build_failed"
+                );
+                return;
+            }
+        };
+
+        let recipient_ids = match PostGrant::find_active_recipient_user_ids_for_post(&post, &pool) {
+            Ok(recipient_ids) => recipient_ids,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    error = %err.message,
+                    "post_published_push_recipient_lookup_failed"
+                );
+                return;
+            }
+        };
+        if recipient_ids.is_empty() {
+            return;
+        }
+
+        let recipients = match User::find_many(&recipient_ids, &pool) {
+            Ok(recipients) => recipients,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    error = %err.message,
+                    "post_published_push_recipient_user_lookup_failed"
+                );
+                return;
+            }
+        };
+
+        for recipient in recipients.into_iter().filter(|recipient| {
+            recipient.id != post.user_id && recipient.principal_type == UserPrincipalType::Human
+        }) {
+            match push::send_to_mobile_user(recipient.id, notification.clone(), &pool).await {
+                Ok(result) => {
+                    info!(
+                        target: "notification",
+                        post_id = %post.id,
+                        recipient_user_id = %recipient.id,
+                        push_attempted_count = result.attempted_count,
+                        push_sent_count = result.sent_count,
+                        "post_published_push_dispatch_completed"
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        target: "notification",
+                        post_id = %post.id,
+                        recipient_user_id = %recipient.id,
+                        error = %err.message,
+                        "post_published_push_dispatch_failed"
+                    );
+                }
             }
         }
     });

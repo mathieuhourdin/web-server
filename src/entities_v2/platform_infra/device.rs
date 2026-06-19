@@ -255,6 +255,22 @@ impl Device {
             .map_err(Into::into)
     }
 
+    pub fn find_active_mobile_fcm_targets_for_user(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Device>, PpdcError> {
+        let mut conn = pool.get()?;
+        devices::table
+            .filter(devices::user_id.eq(user_id))
+            .filter(devices::revoked_at.is_null())
+            .filter(devices::device_type.eq_any(["IOS".to_string(), "ANDROID".to_string()]))
+            .filter(devices::push_provider.eq(Some("FCM".to_string())))
+            .filter(devices::push_token.is_not_null())
+            .order(devices::last_seen_at.desc())
+            .load(&mut conn)
+            .map_err(Into::into)
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Device, PpdcError> {
         let mut conn = pool.get()?;
         devices::table

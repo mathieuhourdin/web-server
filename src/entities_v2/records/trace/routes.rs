@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::post::routes::enqueue_post_published_notification_emails;
+use crate::entities_v2::post::routes::dispatch_post_published_notifications;
 use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
@@ -25,7 +25,6 @@ use crate::entities_v2::{
         asset::{
             upload_asset_for_user, upload_image_asset_for_user_from_multipart, AssetUploadResponse,
         },
-        mailer,
         usage_event::{create_usage_event, UsageEventType},
     },
     post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType},
@@ -661,24 +660,7 @@ fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option
     }
     let post = post.update(pool)?;
     JournalGrant::sync_effective_post_grants_for_post(&post, pool)?;
-
-    match enqueue_post_published_notification_emails(&post, pool) {
-        Ok(email_ids) if !email_ids.is_empty() => {
-            let pool_for_task = pool.clone();
-            tokio::spawn(async move {
-                let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
-            });
-        }
-        Ok(_) => {}
-        Err(err) => {
-            tracing::warn!(
-                target: "mailer",
-                "post_publish_email_enqueue_failed post_id={} message={}",
-                post.id,
-                err.message
-            );
-        }
-    }
+    dispatch_post_published_notifications(&post, pool);
 
     Ok(Some(post))
 }
