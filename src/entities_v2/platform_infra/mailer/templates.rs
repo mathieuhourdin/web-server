@@ -85,11 +85,16 @@ fn app_icon_url() -> String {
     )
 }
 
+fn app_url(path: &str) -> String {
+    format!(
+        "{}/{}",
+        environment::get_app_base_url().trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
+}
+
 fn append_contact_preferences_footer(template: EmailTemplate) -> EmailTemplate {
-    let preferences_url = format!(
-        "{}/me/user#email-preferences",
-        environment::get_app_base_url().trim_end_matches('/')
-    );
+    let preferences_url = app_url("/me/user#email-preferences");
     let footer_title = "Réglez vos préférences de contact par mail";
 
     let text_body = template.text_body.map(|body| {
@@ -264,6 +269,8 @@ pub fn message_received_email(
 ) -> EmailTemplate {
     let excerpt = build_trace_excerpt(message_content, 180);
     let subject = format!("{} vous a envoyé un message", sender_display_name);
+    let fallback_conversation_url = app_url("/me/conversation");
+    let conversation_url = conversation_url.unwrap_or(&fallback_conversation_url);
     let text_body = render_template(
         MESSAGE_RECEIVED_TEXT,
         &[
@@ -272,11 +279,7 @@ pub fn message_received_email(
             ("excerpt", excerpt.clone()),
             (
                 "conversation_cta",
-                conversation_url
-                    .map(|url| format!("Ouvrir la conversation : {}", url))
-                    .unwrap_or_else(|| {
-                        "Connectez-vous à hupo pour lire et répondre au message.".to_string()
-                    }),
+                format!("Ouvrir la conversation : {}", conversation_url),
             ),
         ],
     );
@@ -291,16 +294,10 @@ pub fn message_received_email(
             ("excerpt_html", escape_html(&excerpt)),
             (
                 "conversation_link_html",
-                conversation_url
-                    .map(|url| {
-                        format!(
-                            "<a href=\"{url}\">Ouvrir la conversation</a>",
-                            url = escape_html(url)
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        "Connectez-vous à hupo pour lire et répondre au message.".to_string()
-                    }),
+                format!(
+                    "<a href=\"{url}\" style=\"color:#f4efe7;text-decoration:underline;\">Ouvrir la conversation</a>",
+                    url = escape_html(conversation_url)
+                ),
             ),
         ],
     );
@@ -318,12 +315,14 @@ pub fn follow_request_received_email(
     requester_handle: &str,
 ) -> EmailTemplate {
     let subject = format!("{} souhaite vous suivre", requester_display_name);
+    let followers_url = app_url("/social/followers");
     let text_body = render_template(
         FOLLOW_REQUEST_RECEIVED_TEXT,
         &[
             ("recipient_display_name", recipient_display_name.to_string()),
             ("requester_display_name", requester_display_name.to_string()),
             ("requester_handle", requester_handle.to_string()),
+            ("followers_url", followers_url.clone()),
         ],
     );
     let html_body = render_template(
@@ -338,6 +337,7 @@ pub fn follow_request_received_email(
                 escape_html(requester_display_name),
             ),
             ("requester_handle", escape_html(requester_handle)),
+            ("followers_url", escape_html(&followers_url)),
         ],
     );
 
