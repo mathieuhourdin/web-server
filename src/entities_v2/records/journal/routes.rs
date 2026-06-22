@@ -294,6 +294,8 @@ fn render_text_export(journal: &Journal, traces: &[Trace], messages: &[Message])
 
     for trace in traces {
         out.push_str(format!("export_generated_date: {}\n", trace.interaction_date).as_str());
+        out.push_str(trace.title.as_str());
+        out.push('\n');
         out.push_str(trace.content.as_str());
         out.push('\n');
         out.push('\n');
