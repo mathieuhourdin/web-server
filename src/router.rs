@@ -13,9 +13,10 @@ use tower_http::{
 use crate::entities_v2::{
     album, analysis_summary, asset, content_report, device, document, element,
     error::{ErrorType, PpdcError},
-    feed, journal, journal_grant, journal_share_link, landmark, landscape_analysis, lens, llm_call,
-    mailer, message, post, post_grant, reference, relationship, trace, trace_mirror, trace_search,
-    transcription, url_preview, usage_event, user, user_post_state, user_secure_action,
+    feed, journal, journal_share_link, journal_sharing_policy, landmark, landscape_analysis, lens,
+    llm_call, mailer, message, post, post_grant, reference, relationship, trace, trace_mirror,
+    trace_search, transcription, url_preview, usage_event, user, user_post_state,
+    user_secure_action,
 };
 use crate::sessions_service;
 
@@ -240,9 +241,9 @@ pub fn create_router() -> Router {
         )
         .route("/:id/exports", post(journal::post_journal_export_route))
         .route(
-            "/:id/grants",
-            get(journal_grant::get_journal_grants_route)
-                .post(journal_grant::post_journal_grant_route),
+            "/:id/sharing_policies",
+            get(journal_sharing_policy::get_journal_sharing_policies_route)
+                .post(journal_sharing_policy::post_journal_sharing_policy_route),
         )
         .route("/:id/posts", get(post::get_journal_posts_route))
         .route(
@@ -250,8 +251,13 @@ pub fn create_router() -> Router {
             post(trace::post_finalized_journal_trace_route),
         )
         .route(
-            "/:journal_id/grants/:grant_id",
-            delete(journal_grant::delete_journal_grant_route),
+            "/:journal_id/sharing_policies/:policy_id",
+            delete(journal_sharing_policy::delete_journal_sharing_policy_route)
+                .patch(journal_sharing_policy::patch_journal_sharing_policy_route),
+        )
+        .route(
+            "/:journal_id/sharing_policies/:policy_id/history_decision",
+            post(journal_sharing_policy::post_journal_sharing_policy_history_decision_route),
         )
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
         .route("/:id/imports", post(journal::post_journal_import_route))
@@ -460,6 +466,12 @@ pub fn create_router() -> Router {
     let feed_router = Router::new()
         .route("/", get(feed::get_feed_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let journal_sharing_policies_router = Router::new()
+        .route(
+            "/pending_reviews",
+            get(journal_sharing_policy::get_journal_sharing_policy_pending_reviews_route),
+        )
+        .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/unread_counts", get(user::get_me_unread_counts_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
@@ -494,6 +506,7 @@ pub fn create_router() -> Router {
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)
         .nest("/feed", feed_router)
+        .nest("/journal_sharing_policies", journal_sharing_policies_router)
         .nest("/me", me_router)
         .nest("/shared", shared_router)
         .fallback(fallback_handler)

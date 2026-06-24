@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    journal_grant::JournalGrant,
+    journal_sharing_policy::JournalSharingPolicy,
     message::Message,
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
@@ -51,7 +51,7 @@ pub async fn get_shared_journals_route(
 ) -> Result<Json<PaginatedResponse<Journal>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.validate()?;
-    let shared_ids = JournalGrant::find_shared_journal_ids_for_user(user_id, &pool)?;
+    let shared_ids = JournalSharingPolicy::find_shared_journal_ids_for_user(user_id, &pool)?;
     let (journals, total) =
         Journal::find_many_paginated(shared_ids, pagination.offset, pagination.limit, true, &pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
@@ -82,7 +82,7 @@ pub async fn get_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
-    if !JournalGrant::user_can_read_journal(&journal, user_id, &pool)? {
+    if !JournalSharingPolicy::user_can_read_journal(&journal, user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     Ok(Json(journal))
@@ -96,6 +96,7 @@ pub async fn post_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::create(payload, user_id, &pool)?;
+    JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
     Ok(Json(journal))
 }
 
@@ -122,11 +123,12 @@ pub async fn put_journal_route(
         journal.content = content;
     }
     if let Some(is_encrypted) = payload.is_encrypted {
-        if is_encrypted && JournalGrant::has_active_grants_for_journal(journal.id, &pool)? {
+        if is_encrypted && JournalSharingPolicy::has_active_policies_for_journal(journal.id, &pool)?
+        {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Revoke active journal grants before enabling encryption".to_string(),
+                "Revoke active journal sharing policies before enabling encryption".to_string(),
             ));
         }
         journal.is_encrypted = is_encrypted;
@@ -142,6 +144,7 @@ pub async fn put_journal_route(
     }
 
     let journal = journal.update(&pool)?;
+    JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
     Ok(Json(journal))
 }
 

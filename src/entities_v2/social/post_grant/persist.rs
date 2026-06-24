@@ -221,32 +221,6 @@ impl PostGrant {
         Ok(())
     }
 
-    pub(crate) fn revoke_direct_grants_for_posts_with_conn(
-        post_ids: &[Uuid],
-        owner_user_id: Uuid,
-        grantee_user_id: Uuid,
-        conn: &mut PgConnection,
-    ) -> Result<(), PpdcError> {
-        if post_ids.is_empty() {
-            return Ok(());
-        }
-
-        diesel::update(
-            post_grants::table
-                .filter(post_grants::post_id.eq_any(post_ids))
-                .filter(post_grants::owner_user_id.eq(owner_user_id))
-                .filter(post_grants::grantee_user_id.eq(Some(grantee_user_id)))
-                .filter(post_grants::grantee_scope.is_null()),
-        )
-        .set((
-            post_grants::status.eq(PostGrantStatus::Revoked.to_db()),
-            post_grants::updated_at.eq(diesel::dsl::now),
-        ))
-        .execute(conn)?;
-
-        Ok(())
-    }
-
     pub(crate) fn revoke_all_direct_between_users_with_conn(
         user_a_id: Uuid,
         user_b_id: Uuid,

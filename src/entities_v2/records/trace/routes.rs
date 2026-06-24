@@ -8,12 +8,10 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::post::routes::dispatch_post_published_notifications;
 use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus, JournalType},
-    journal_grant::JournalGrant,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
@@ -27,7 +25,7 @@ use crate::entities_v2::{
         },
         usage_event::{create_usage_event, UsageEventType},
     },
-    post::{NewPost, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType},
+    post::{Post, PostStatus},
     post_grant::PostGrant,
     session::Session,
     trace_attachment::{
@@ -271,23 +269,9 @@ fn validate_timeout_extension_minutes(minutes: i64) -> Result<(), PpdcError> {
     Ok(())
 }
 
-fn enqueue_trace_post_finalize_side_effects(trace: &Trace, pool: &DbPool) {
-    if trace.trace_type == super::enums::TraceType::UserTrace {
-        if let Err(err) = ensure_default_draft_post_for_shared_trace(trace, pool) {
-            tracing::warn!(
-                target: "post",
-                "shared_trace_default_post_create_failed trace_id={} message={}",
-                trace.id,
-                err.message
-            );
-        }
-    }
-}
-
 pub(crate) fn enqueue_trace_finalized_side_effects(trace: &Trace, pool: &DbPool) {
     if !trace.is_encrypted {
         enqueue_autoplay_lens_runs_for_trace(trace.user_id, trace.id, pool.clone());
-        enqueue_trace_post_finalize_side_effects(trace, pool);
     }
 }
 
@@ -593,78 +577,6 @@ async fn parse_trace_attachment_multipart(
     Ok((file_name, content_type, file_bytes, attachment_name))
 }
 
-fn ensure_default_draft_post_for_shared_trace(
-    trace: &Trace,
-    pool: &DbPool,
-) -> Result<Option<Uuid>, PpdcError> {
-    let Some(journal_id) = trace.journal_id else {
-        return Ok(None);
-    };
-
-    let journal = Journal::find_full(journal_id, pool)?;
-    if journal.is_encrypted || journal.status == JournalStatus::Archived {
-        return Ok(None);
-    }
-    if !JournalGrant::has_active_grants_for_journal(journal.id, pool)? {
-        return Ok(None);
-    }
-
-    if let Some(existing_post) = Post::find_for_trace(trace.id, pool)? {
-        return Ok(Some(existing_post.id));
-    }
-
-    let post = NewPost {
-        source_trace_id: Some(trace.id),
-        source_document_id: None,
-        source_album_id: None,
-        post_type: PostType::Idea,
-        interaction_type: PostInteractionType::Output,
-        user_id: trace.user_id,
-        publishing_date: None,
-        status: crate::entities_v2::post::PostStatus::Draft,
-        audience_role: PostAudienceRole::Default,
-    }
-    .create(pool)?;
-
-    Ok(Some(post.id))
-}
-
-fn publish_default_post_for_trace(trace: &Trace, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
-    let Some(_) = ensure_default_draft_post_for_shared_trace(trace, pool)? else {
-        return Ok(None);
-    };
-
-    let mut post = Post::find_for_trace(trace.id, pool)?.ok_or_else(|| {
-        PpdcError::new(
-            409,
-            ErrorType::ApiError,
-            "Trace post could not be found for this trace".to_string(),
-        )
-    })?;
-
-    if post.status == crate::entities_v2::post::PostStatus::Archived {
-        return Err(PpdcError::new(
-            409,
-            ErrorType::ApiError,
-            "Trace post is archived and cannot be auto-published".to_string(),
-        ));
-    }
-
-    if post.status == crate::entities_v2::post::PostStatus::Published {
-        return Ok(Some(post));
-    }
-
-    post.status = crate::entities_v2::post::PostStatus::Published;
-    if post.publishing_date.is_none() {
-        post.publishing_date = Some(Utc::now().naive_utc());
-    }
-    let post = post.update(pool)?;
-    JournalGrant::sync_effective_post_grants_for_post(&post, pool)?;
-    dispatch_post_published_notifications(&post, pool);
-
-    Ok(Some(post))
-}
-
 async fn create_or_get_journal_draft(
     journal: Journal,
     user_id: Uuid,
@@ -861,6 +773,13 @@ pub async fn post_finalized_journal_trace_route(
             "Finalized traces can only be created directly in active user journals".to_string(),
         ));
     }
+    if payload.publish_default_post.unwrap_or(false) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "publish_default_post is no longer supported; manage the trace post through /traces/{id}/post".to_string(),
+        ));
+    }
 
     let mut seen_document_ids = HashSet::new();
     let mut attachment_documents = Vec::with_capacity(payload.document_attachments.len());
@@ -949,17 +868,12 @@ pub async fn post_finalized_journal_trace_route(
         created_attachments = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?;
     }
 
-    let post = if payload.publish_default_post.unwrap_or(false) {
-        publish_default_post_for_trace(&trace, &pool)?
-    } else {
-        None
-    };
     let trace = Trace::find_full_trace(trace.id, &pool)?;
 
     Ok(Json(CreateFinalizedJournalTraceResponse {
         trace,
         attachments: created_attachments,
-        post,
+        post: None,
     }))
 }
 
@@ -1072,7 +986,13 @@ pub async fn put_trace_route(
         .timeout_at
         .map(|timeout_at| timeout_at != trace.timeout_at)
         .unwrap_or(false);
-    let publish_default_post = payload.publish_default_post.unwrap_or(false);
+    if payload.publish_default_post.unwrap_or(false) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "publish_default_post is no longer supported; manage the trace post through /traces/{id}/post".to_string(),
+        ));
+    }
 
     match trace.status {
         super::enums::TraceStatus::Draft => {
@@ -1123,9 +1043,6 @@ pub async fn put_trace_route(
                             Some(expected_version_integer),
                         )
                         .await?;
-                        if publish_default_post {
-                            let _ = publish_default_post_for_trace(&trace, &pool)?;
-                        }
                         return Ok(Json(trace));
                     }
                     super::enums::TraceStatus::Archived => {
@@ -1204,16 +1121,6 @@ pub async fn put_trace_route(
     }
 
     let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
-    if publish_default_post {
-        if trace.status != super::enums::TraceStatus::Finalized {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "publish_default_post requires the trace to be finalized".to_string(),
-            ));
-        }
-        let _ = publish_default_post_for_trace(&trace, &pool)?;
-    }
     if timeout_changed {
         if let Some(Some(timeout_at)) = payload.timeout_at {
             let _ = create_usage_event(

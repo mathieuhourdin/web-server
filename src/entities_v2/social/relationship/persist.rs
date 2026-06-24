@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::entities_v2::journal_grant::JournalGrant;
+use crate::entities_v2::journal_sharing_policy::JournalSharingPolicy;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::schema::relationships;
 
@@ -212,13 +212,13 @@ impl Relationship {
                         conn,
                     )
                     .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-                    JournalGrant::propagate_follower_default_grants_for_pair_with_conn(
+                    JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
                         actor_user_id,
                         relationship.requester_user_id,
                         conn,
                     )
                     .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-                    JournalGrant::propagate_follower_default_grants_for_pair_with_conn(
+                    JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
                         relationship.requester_user_id,
                         actor_user_id,
                         conn,

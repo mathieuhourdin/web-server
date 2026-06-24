@@ -10,7 +10,7 @@ use crate::entities_v2::{
     document::{Document, DocumentStatus},
     error::{ErrorType, PpdcError},
     journal::Journal,
-    journal_grant::JournalGrant,
+    journal_sharing_policy::JournalSharingPolicy,
     notification,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmail, OutboundEmailProvider},
     post_grant::PostGrant,
@@ -324,7 +324,7 @@ pub async fn get_journal_posts_route(
 ) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    if !JournalGrant::user_can_read_journal(&journal, viewer_user_id, &pool)? {
+    if !JournalSharingPolicy::user_can_read_journal(&journal, viewer_user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.pagination.validate()?;
@@ -412,7 +412,7 @@ pub async fn put_trace_post_route(
     let mut post = if let Some(existing_post) = Post::find_for_trace(trace_id, &pool)? {
         existing_post
     } else {
-        NewPost {
+        let post = NewPost {
             source_trace_id: Some(trace_id),
             source_document_id: None,
             source_album_id: None,
@@ -423,7 +423,9 @@ pub async fn put_trace_post_route(
             status: PostStatus::Draft,
             audience_role: PostAudienceRole::Default,
         }
-        .create(&pool)?
+        .create(&pool)?;
+        JournalSharingPolicy::materialize_default_post_grants_for_post(&post, &pool)?;
+        post
     };
 
     let previous_status = post.status;
@@ -458,7 +460,6 @@ pub async fn put_trace_post_route(
 
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
-        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
         dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
@@ -547,7 +548,6 @@ pub async fn put_post_route(
     let post = post.update(&pool)?;
 
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
-        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
         dispatch_post_published_notifications(&post, &pool);
     }
 
@@ -626,7 +626,6 @@ pub async fn put_document_post_route(
 
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
-        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
         dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
@@ -700,7 +699,6 @@ pub async fn put_album_post_route(
 
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
-        JournalGrant::sync_effective_post_grants_for_post(&post, &pool)?;
         dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))

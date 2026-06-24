@@ -177,14 +177,16 @@ diesel::table! {
 }
 
 diesel::table! {
-    journal_grants (id) {
+    journal_sharing_policies (id) {
         id -> Uuid,
         journal_id -> Uuid,
         owner_user_id -> Uuid,
-        grantee_user_id -> Nullable<Uuid>,
-        grantee_scope -> Nullable<Text>,
-        access_level -> Text,
+        grantee_user_id -> Uuid,
         status -> Text,
+        default_future_access_enabled -> Bool,
+        history_review_state -> Text,
+        history_decision -> Nullable<Text>,
+        history_reviewed_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -703,7 +705,7 @@ diesel::joinable!(elements -> landscape_analyses (analysis_id));
 diesel::joinable!(elements -> trace_mirrors (trace_mirror_id));
 diesel::joinable!(elements -> traces (trace_id));
 diesel::joinable!(elements -> users (user_id));
-diesel::joinable!(journal_grants -> journals (journal_id));
+diesel::joinable!(journal_sharing_policies -> journals (journal_id));
 diesel::joinable!(journal_share_links -> journals (journal_id));
 diesel::joinable!(journal_share_links -> posts (scoped_post_id));
 diesel::joinable!(journal_share_links -> users (owner_user_id));
@@ -770,7 +772,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     element_landmarks,
     element_relations,
     elements,
-    journal_grants,
+    journal_sharing_policies,
     journal_share_links,
     journals,
     landmark_relations,

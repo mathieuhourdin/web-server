@@ -2,7 +2,6 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalSharingMode, JournalType, NewJournalDto},
-    journal_grant::{JournalGrant, JournalGrantScope, NewJournalGrantDto},
     lens::{LensProcessingState, NewLens},
     trace::{NewTrace, TraceType},
 };
@@ -816,7 +815,7 @@ pub fn ensure_user_has_default_journals(user_id: Uuid, pool: &DbPool) -> Result<
         return Ok(());
     }
 
-    let shared_journal = Journal::create(
+    Journal::create(
         NewJournalDto {
             title: "Journal partagé".to_string(),
             subtitle: Some(String::new()),
@@ -826,17 +825,6 @@ pub fn ensure_user_has_default_journals(user_id: Uuid, pool: &DbPool) -> Result<
             sharing_mode: Some(JournalSharingMode::Shared),
         },
         user_id,
-        pool,
-    )?;
-
-    JournalGrant::create_or_update(
-        &shared_journal,
-        user_id,
-        NewJournalGrantDto {
-            grantee_user_id: None,
-            grantee_scope: Some(JournalGrantScope::AllAcceptedFollowers),
-            access_level: None,
-        },
         pool,
     )?;
 
