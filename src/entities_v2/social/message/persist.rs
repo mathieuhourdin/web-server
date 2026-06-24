@@ -174,7 +174,7 @@ impl Message {
         if self.recipient_user_id != viewer_user_id {
             return Err(PpdcError::unauthorized());
         }
-        if self.trace_id != Some(trace_id) || self.post_id.is_some() {
+        if self.trace_id != Some(trace_id) {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
@@ -189,13 +189,12 @@ impl Message {
                 UPDATE messages
                 SET seen_at = NOW(),
                     updated_at = NOW()
-                WHERE recipient_user_id = $1
-                  AND sender_user_id = $2
-                  AND trace_id = $3
-                  AND post_id IS NULL
-                  AND processing_state = 'PROCESSED'
-                  AND seen_at IS NULL
-                  AND created_at <= $4
+	                WHERE recipient_user_id = $1
+	                  AND sender_user_id = $2
+	                  AND trace_id = $3
+	                  AND processing_state = 'PROCESSED'
+	                  AND seen_at IS NULL
+	                  AND created_at <= $4
                 RETURNING 1
             )
             SELECT COUNT(*)::bigint AS count FROM updated
