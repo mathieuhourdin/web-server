@@ -35,7 +35,7 @@ use crate::entities_v2::{
     user::{ensure_user_has_any_lens, User},
     user_post_state::UserPostState,
 };
-use crate::pagination::{PaginatedResponse, PaginationParams};
+use crate::pagination::{PaginatedResponse, PaginationParams, ValidatedPagination};
 use crate::work_analyzer;
 
 use super::{
@@ -58,6 +58,16 @@ pub struct JournalTracesQuery {
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub status: Option<TraceStatus>,
     pub seen: Option<bool>,
+    pub until_trace_id: Option<Uuid>,
+}
+
+const JOURNAL_TRACE_POSITION_BATCH_SIZE: i64 = 20;
+
+fn pagination_until_rank(rank: i64) -> ValidatedPagination {
+    let limit = ((rank + JOURNAL_TRACE_POSITION_BATCH_SIZE - 1)
+        / JOURNAL_TRACE_POSITION_BATCH_SIZE)
+        * JOURNAL_TRACE_POSITION_BATCH_SIZE;
+    ValidatedPagination { offset: 0, limit }
 }
 
 #[derive(Deserialize)]
@@ -1898,6 +1908,27 @@ pub async fn get_traces_for_journal_route(
     }
 
     if journal.user_id == user_id {
+        let pagination = if let Some(until_trace_id) = params.until_trace_id {
+            let rank = Trace::find_rank_for_journal(
+                id,
+                user_id,
+                until_trace_id,
+                params.sharing_sensitivity,
+                requested_status,
+                params.seen,
+                &pool,
+            )?
+            .ok_or_else(|| {
+                PpdcError::new(
+                    404,
+                    ErrorType::ApiError,
+                    "until_trace_id was not found in this journal trace list".to_string(),
+                )
+            })?;
+            pagination_until_rank(rank)
+        } else {
+            pagination
+        };
         let (traces, total) = Trace::get_for_journal_paginated(
             id,
             user_id,
@@ -1944,6 +1975,21 @@ pub async fn get_traces_for_journal_route(
     if requested_status == TraceStatus::Archived {
         return Err(PpdcError::unauthorized());
     }
+
+    let pagination = if let Some(until_trace_id) = params.until_trace_id {
+        let rank =
+            Trace::find_shared_rank_for_journal(user_id, id, until_trace_id, params.seen, &pool)?
+                .ok_or_else(|| {
+                PpdcError::new(
+                    404,
+                    ErrorType::ApiError,
+                    "until_trace_id was not found in this journal trace list".to_string(),
+                )
+            })?;
+        pagination_until_rank(rank)
+    } else {
+        pagination
+    };
 
     let (traces, total) = Trace::get_shared_for_journal_paginated(
         user_id,

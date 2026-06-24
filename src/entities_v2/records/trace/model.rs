@@ -678,6 +678,56 @@ impl Trace {
         ))
     }
 
+    pub fn find_rank_for_journal(
+        journal_id: Uuid,
+        viewer_user_id: Uuid,
+        target_trace_id: Uuid,
+        sharing_sensitivity: Option<TraceSharingSensitivity>,
+        status: TraceStatus,
+        seen: Option<bool>,
+        pool: &DbPool,
+    ) -> Result<Option<i64>, PpdcError> {
+        let mut conn = pool.get()?;
+        let seen_trace_ids = if seen.is_some() {
+            crate::entities_v2::user_post_state::UserPostState::find_seen_trace_ids_for_user(
+                viewer_user_id,
+                pool,
+            )?
+        } else {
+            vec![]
+        };
+
+        let mut query = traces::table
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::status.eq(status.to_db()))
+            .into_boxed();
+        if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
+            query =
+                query.filter(traces::sharing_sensitivity.eq(sharing_sensitivity_filter.to_db()));
+        }
+        if let Some(seen) = seen {
+            if seen {
+                if seen_trace_ids.is_empty() {
+                    return Ok(None);
+                }
+                query = query.filter(traces::id.eq_any(seen_trace_ids));
+            } else if !seen_trace_ids.is_empty() {
+                query = query.filter(not(traces::id.eq_any(seen_trace_ids)));
+            }
+        }
+
+        let ordered_ids = query
+            .select(traces::id)
+            .order(traces::finalized_at.desc().nulls_last())
+            .then_order_by(traces::created_at.desc())
+            .load::<Uuid>(&mut conn)?;
+
+        Ok(ordered_ids
+            .into_iter()
+            .position(|trace_id| trace_id == target_trace_id)
+            .map(|index| index as i64 + 1))
+    }
+
     pub fn get_shared_for_journal_paginated(
         viewer_user_id: Uuid,
         journal_id: Uuid,
@@ -809,6 +859,58 @@ impl Trace {
             .collect();
 
         Ok((traces, total))
+    }
+
+    pub fn find_shared_rank_for_journal(
+        viewer_user_id: Uuid,
+        journal_id: Uuid,
+        target_trace_id: Uuid,
+        seen: Option<bool>,
+        pool: &DbPool,
+    ) -> Result<Option<i64>, PpdcError> {
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
+        if visible_post_ids.is_empty() {
+            return Ok(None);
+        }
+
+        let mut conn = pool.get()?;
+        let seen_trace_ids = if seen.is_some() {
+            crate::entities_v2::user_post_state::UserPostState::find_seen_trace_ids_for_user(
+                viewer_user_id,
+                pool,
+            )?
+        } else {
+            vec![]
+        };
+
+        let mut query = traces::table
+            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::id.eq_any(visible_post_ids))
+            .into_boxed();
+        if let Some(seen) = seen {
+            if seen {
+                if seen_trace_ids.is_empty() {
+                    return Ok(None);
+                }
+                query = query.filter(traces::id.eq_any(seen_trace_ids));
+            } else if !seen_trace_ids.is_empty() {
+                query = query.filter(not(traces::id.eq_any(seen_trace_ids)));
+            }
+        }
+
+        let ordered_ids = query
+            .select(traces::id)
+            .order(traces::finalized_at.desc().nulls_last())
+            .then_order_by(traces::created_at.desc())
+            .load::<Uuid>(&mut conn)?;
+
+        Ok(ordered_ids
+            .into_iter()
+            .position(|trace_id| trace_id == target_trace_id)
+            .map(|index| index as i64 + 1))
     }
 
     pub fn get_non_empty_drafts_for_user_paginated(
