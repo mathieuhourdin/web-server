@@ -11,6 +11,7 @@ use crate::entities_v2::{
     asset::Asset,
     device::Device,
     error::{ErrorType, PpdcError},
+    journal::Journal,
     message::Message,
     post::Post,
     source_projection::{load_source_projection_map, SourceProjectionKind},
@@ -341,6 +342,32 @@ async fn signed_asset_url(asset_id: Uuid, pool: &DbPool, target: &'static str) -
     }
 }
 
+fn user_profile_picture_public_url(user: &User, pool: &DbPool) -> Option<String> {
+    if let Some(asset_id) = user.profile_picture_asset_id {
+        match Asset::find(asset_id, pool) {
+            Ok(asset) => {
+                if let Some(public_url) = asset.public_url() {
+                    return Some(public_url);
+                }
+            }
+            Err(err) => {
+                warn!(
+                    target: "push",
+                    user_id = %user.id,
+                    asset_id = %asset_id,
+                    error = %err.message,
+                    "user_profile_picture_asset_lookup_failed"
+                );
+            }
+        }
+    }
+
+    user.profile_picture_url
+        .as_ref()
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty())
+}
+
 pub(crate) async fn post_published_notification(
     post: &Post,
     pool: &DbPool,
@@ -369,9 +396,29 @@ pub(crate) async fn post_published_notification(
     data.insert("source_id".to_string(), projection.source_id.to_string());
     if let Some(journal_id) = projection.journal_id {
         data.insert("journal_id".to_string(), journal_id.to_string());
+        match Journal::find_full(journal_id, pool) {
+            Ok(journal) => {
+                data.insert("journal_title".to_string(), journal.title);
+            }
+            Err(err) => {
+                warn!(
+                    target: "push",
+                    post_id = %post.id,
+                    journal_id = %journal_id,
+                    error = %err.message,
+                    "post_published_journal_lookup_failed"
+                );
+            }
+        }
     }
     data.insert("publisher_user_id".to_string(), post.user_id.to_string());
     data.insert("publisher_display_name".to_string(), owner.display_name());
+    if let Some(profile_picture_url) = user_profile_picture_public_url(&owner, pool) {
+        data.insert(
+            "publisher_profile_picture_url".to_string(),
+            profile_picture_url,
+        );
+    }
     data.insert("title".to_string(), projection.title);
     data.insert(
         "content_preview".to_string(),
