@@ -21,6 +21,7 @@ use crate::entities_v2::{
     user::{User, UserPrincipalType},
     user_post_state::{PostSeenByUser, UserPostState},
 };
+use crate::environment;
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use chrono::Utc;
 use serde::Deserialize;
@@ -160,7 +161,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
             Some("POST".to_string()),
             Some(post.id),
             recipient.email,
-            "hupo <noreply@ppdcoeur.fr>".to_string(),
+            environment::get_resend_from_email(),
             template.subject,
             template.text_body,
             template.html_body,

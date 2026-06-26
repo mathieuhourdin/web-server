@@ -217,7 +217,7 @@ fn create_enqueued_digest_row_with_email(
                 None,
                 None,
                 recipient.email.clone(),
-                "hupo <noreply@ppdcoeur.fr>".to_string(),
+                environment::get_resend_from_email(),
                 subject,
                 text_body,
                 html_body,

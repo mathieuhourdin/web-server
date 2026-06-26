@@ -12,6 +12,7 @@ use crate::entities_v2::{
     session::Session,
     user::{User, UserPrincipalType, UserSearchResult},
 };
+use crate::environment;
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::{
@@ -62,7 +63,7 @@ fn enqueue_follow_request_notification_email(
         Some("RELATIONSHIP".to_string()),
         Some(relationship.id),
         recipient.email,
-        "hupo <noreply@ppdcoeur.fr>".to_string(),
+        environment::get_resend_from_email(),
         template.subject,
         template.text_body,
         template.html_body,

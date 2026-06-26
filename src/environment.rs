@@ -51,6 +51,13 @@ pub fn get_resend_api_base_url() -> String {
         .unwrap_or_else(|_| "https://api.resend.com".to_string())
 }
 
+pub fn get_resend_from_email() -> String {
+    dotenv().ok();
+    std::env::var("RESEND_FROM_EMAIL")
+        .or_else(|_| std::env::var("resend_from_email"))
+        .unwrap_or_else(|_| "hupo <noreply@hupo.fr>".to_string())
+}
+
 pub fn get_search_api_key() -> String {
     dotenv().ok();
     std::env::var("SEARCH_API_KEY").unwrap_or_else(|_| "".to_string())
