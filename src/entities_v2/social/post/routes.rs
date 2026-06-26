@@ -16,7 +16,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     source_projection::SourceProjection,
-    trace::Trace,
+    trace::{Trace, TraceStatus},
     trace_attachment::TraceAttachment,
     user::{User, UserPrincipalType},
     user_post_state::{PostSeenByUser, UserPostState},
@@ -464,6 +464,36 @@ pub async fn put_trace_post_route(
         dispatch_post_published_notifications(&post, &pool);
     }
     Ok(Json(post))
+}
+
+#[debug_handler]
+pub async fn delete_trace_post_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+) -> Result<Json<Post>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if trace.status != TraceStatus::Draft {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only draft traces can have their staged post deleted".to_string(),
+        ));
+    }
+
+    let post = Post::find_for_trace(trace_id, &pool)?.ok_or_else(|| {
+        PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Trace has no staged post".to_string(),
+        )
+    })?;
+    let deleted_post = post.delete_draft_trace_post(&pool)?;
+    Ok(Json(deleted_post))
 }
 
 #[debug_handler]

@@ -4,9 +4,9 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::schema::posts;
+use crate::schema::{messages, posts};
 
-use super::model::{NewPost, Post, PostSourceRef};
+use super::model::{NewPost, Post, PostSourceRef, PostStatus};
 
 impl Post {
     pub fn update(self, pool: &DbPool) -> Result<Post, PpdcError> {
@@ -25,6 +25,48 @@ impl Post {
             ))
             .execute(&mut conn)?;
         Post::find_full(self.id, pool)
+    }
+
+    pub fn delete_draft_trace_post(self, pool: &DbPool) -> Result<Post, PpdcError> {
+        if self.source_trace_id.is_none() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Only trace-backed posts can be deleted through this route".to_string(),
+            ));
+        }
+        if self.status == PostStatus::Published {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Published trace posts cannot be deleted".to_string(),
+            ));
+        }
+
+        let mut conn = pool.get()?;
+        let message_count = messages::table
+            .filter(messages::post_id.eq(Some(self.id)))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+        if message_count > 0 {
+            return Err(PpdcError::new(
+                409,
+                ErrorType::ApiError,
+                "Trace post has messages and cannot be deleted".to_string(),
+            ));
+        }
+
+        let deleted =
+            diesel::delete(posts::table.filter(posts::id.eq(self.id))).execute(&mut conn)?;
+        if deleted == 0 {
+            return Err(PpdcError::new(
+                404,
+                ErrorType::ApiError,
+                "Post not found".to_string(),
+            ));
+        }
+
+        Ok(self)
     }
 }
 

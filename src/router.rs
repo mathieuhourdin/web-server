@@ -123,7 +123,9 @@ pub fn create_router() -> Router {
         )
         .route(
             "/:id/post",
-            get(post::get_trace_post_route).put(post::put_trace_post_route),
+            get(post::get_trace_post_route)
+                .put(post::put_trace_post_route)
+                .delete(post::delete_trace_post_route),
         )
         .route(
             "/:id/extend_timeout",
