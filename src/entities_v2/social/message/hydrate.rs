@@ -282,6 +282,113 @@ impl Message {
         Ok((conversations, total))
     }
 
+    pub fn find_trace_context_conversations_for_user(
+        viewer_user_id: Uuid,
+        trace_id: Uuid,
+        post_id: Option<Uuid>,
+        pool: &DbPool,
+    ) -> Result<Vec<ConversationSummary>, PpdcError> {
+        let mut conn = pool.get()?;
+
+        let head_rows = diesel::sql_query(
+            "SELECT partner_id, last_message_id, last_created_at FROM (
+                 SELECT DISTINCT ON (partner_id)
+                     (CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END)
+                         AS partner_id,
+                     id AS last_message_id,
+                     created_at AS last_created_at
+                 FROM messages
+                 WHERE (sender_user_id = $1 OR recipient_user_id = $1)
+                   AND processing_state = 'PROCESSED'
+                   AND (trace_id = $2 OR ($3 IS NOT NULL AND post_id = $3))
+                 ORDER BY partner_id, created_at DESC, id DESC
+             ) latest
+             ORDER BY last_created_at DESC",
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .bind::<SqlUuid, _>(trace_id)
+        .bind::<Nullable<SqlUuid>, _>(post_id)
+        .load::<ConversationHeadRow>(&mut conn)?;
+        if head_rows.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let unread_map: HashMap<Uuid, i64> = diesel::sql_query(
+            "SELECT sender_user_id AS partner_id, COUNT(*) AS unread
+             FROM messages
+             WHERE recipient_user_id = $1
+               AND seen_at IS NULL
+               AND processing_state = 'PROCESSED'
+               AND (trace_id = $2 OR ($3 IS NOT NULL AND post_id = $3))
+             GROUP BY sender_user_id",
+        )
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .bind::<SqlUuid, _>(trace_id)
+        .bind::<Nullable<SqlUuid>, _>(post_id)
+        .load::<UnreadRow>(&mut conn)?
+        .into_iter()
+        .map(|row| (row.partner_id, row.unread))
+        .collect();
+
+        Self::hydrate_conversation_summaries(head_rows, unread_map, &mut conn)
+    }
+
+    fn hydrate_conversation_summaries(
+        head_rows: Vec<ConversationHeadRow>,
+        unread_map: HashMap<Uuid, i64>,
+        conn: &mut PgConnection,
+    ) -> Result<Vec<ConversationSummary>, PpdcError> {
+        let last_message_ids: Vec<Uuid> = head_rows.iter().map(|row| row.last_message_id).collect();
+        let mut message_map: HashMap<Uuid, Message> = messages::table
+            .filter(messages::id.eq_any(&last_message_ids))
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::post_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .load::<MessageTuple>(conn)?
+            .into_iter()
+            .map(tuple_to_message)
+            .map(|message| (message.id, message))
+            .collect();
+
+        let partner_ids: Vec<Uuid> = head_rows.iter().map(|row| row.partner_id).collect();
+        let mut partner_map: HashMap<Uuid, UserPublicResponse> = users::table
+            .filter(users::id.eq_any(&partner_ids))
+            .select(User::as_select())
+            .load::<User>(conn)?
+            .iter()
+            .map(|user| (user.id, UserPublicResponse::from(user)))
+            .collect();
+
+        Ok(head_rows
+            .into_iter()
+            .filter_map(|row| {
+                let partner = partner_map.remove(&row.partner_id)?;
+                let last_message = message_map.remove(&row.last_message_id)?;
+                Some(ConversationSummary {
+                    partner,
+                    last_message,
+                    unread_count: unread_map.get(&row.partner_id).copied().unwrap_or(0),
+                })
+            })
+            .collect())
+    }
+
     /// All messages exchanged between `viewer_user_id` and `partner_id`, newest
     /// first (matching the other message endpoints; the client reverses for display).
     /// Same inclusion rules as the conversation list: every message type and
@@ -489,6 +596,89 @@ impl Message {
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
             )
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::trace_id,
+                messages::post_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .order(messages::created_at.desc())
+            .offset(offset)
+            .limit(limit.max(1))
+            .load::<MessageTuple>(&mut conn)?;
+        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+    }
+
+    pub fn find_for_trace_context_conversation_paginated(
+        user_id: Uuid,
+        trace_id: Uuid,
+        post_id: Option<Uuid>,
+        conversation_user_id: Option<Uuid>,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Message>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+
+        let mut count_query = messages::table.into_boxed();
+        count_query = match post_id {
+            Some(post_id) => count_query.filter(
+                messages::trace_id
+                    .eq(Some(trace_id))
+                    .or(messages::post_id.eq(Some(post_id))),
+            ),
+            None => count_query.filter(messages::trace_id.eq(Some(trace_id))),
+        };
+        count_query = count_query.filter(
+            messages::sender_user_id
+                .eq(user_id)
+                .or(messages::recipient_user_id.eq(user_id)),
+        );
+        if let Some(conversation_user_id) = conversation_user_id {
+            count_query = count_query.filter(
+                messages::sender_user_id
+                    .eq(conversation_user_id)
+                    .or(messages::recipient_user_id.eq(conversation_user_id)),
+            );
+        }
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
+        let mut query = messages::table.into_boxed();
+        query = match post_id {
+            Some(post_id) => query.filter(
+                messages::trace_id
+                    .eq(Some(trace_id))
+                    .or(messages::post_id.eq(Some(post_id))),
+            ),
+            None => query.filter(messages::trace_id.eq(Some(trace_id))),
+        };
+        query = query.filter(
+            messages::sender_user_id
+                .eq(user_id)
+                .or(messages::recipient_user_id.eq(user_id)),
+        );
+        if let Some(conversation_user_id) = conversation_user_id {
+            query = query.filter(
+                messages::sender_user_id
+                    .eq(conversation_user_id)
+                    .or(messages::recipient_user_id.eq(conversation_user_id)),
+            );
+        }
+
+        let rows = query
             .select((
                 messages::id,
                 messages::sender_user_id,

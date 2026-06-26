@@ -132,6 +132,10 @@ pub fn create_router() -> Router {
         .route("/:id/seen", put(trace::put_trace_seen_route))
         .route("/:id/seen_by", get(trace::get_trace_seen_by_route))
         .route(
+            "/:id/conversations",
+            get(trace::get_trace_conversations_route),
+        )
+        .route(
             "/:id/assets",
             post(trace::post_trace_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )

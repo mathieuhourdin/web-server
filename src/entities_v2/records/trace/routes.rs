@@ -15,8 +15,8 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
-        routes::is_service_mentor, Message, MessageAttachment, MessageAttachmentType,
-        MessageProcessingState, MessageType, NewMessage,
+        routes::is_service_mentor, ConversationSummary, Message, MessageAttachment,
+        MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
     },
     notification,
     platform_infra::{
@@ -49,6 +49,8 @@ use serde::{Deserialize, Serialize};
 pub struct TraceMessagesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
+    #[serde(alias = "partner_user_id")]
+    pub conversation_user_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -1718,10 +1720,10 @@ pub async fn get_trace_messages_route(
 ) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
+    let shared_post = find_published_trace_post(trace_id, &pool)?;
     if trace.user_id != user_id {
-        let shared_post = find_published_trace_post(trace_id, &pool)?;
-        let can_read_shared_trace = match shared_post {
-            Some(post) => PostGrant::user_can_read_post(&post, user_id, &pool)?,
+        let can_read_shared_trace = match shared_post.as_ref() {
+            Some(post) => PostGrant::user_can_read_post(post, user_id, &pool)?,
             None => false,
         };
         if !can_read_shared_trace {
@@ -1730,14 +1732,44 @@ pub async fn get_trace_messages_route(
     }
 
     let pagination = params.pagination.validate()?;
-    let (messages, total) = Message::find_for_trace_conversation_paginated(
+    let (messages, total) = Message::find_for_trace_context_conversation_paginated(
         user_id,
         trace_id,
+        shared_post.as_ref().map(|post| post.id),
+        params.conversation_user_id,
         pagination.offset,
         pagination.limit,
         &pool,
     )?;
     Ok(Json(PaginatedResponse::new(messages, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn get_trace_conversations_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+) -> Result<Json<Vec<ConversationSummary>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    let shared_post = find_published_trace_post(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        let can_read_shared_trace = match shared_post.as_ref() {
+            Some(post) => PostGrant::user_can_read_post(post, user_id, &pool)?,
+            None => false,
+        };
+        if !can_read_shared_trace {
+            return Err(PpdcError::unauthorized());
+        }
+    }
+
+    let conversations = Message::find_trace_context_conversations_for_user(
+        user_id,
+        trace_id,
+        shared_post.as_ref().map(|post| post.id),
+        &pool,
+    )?;
+    Ok(Json(conversations))
 }
 
 #[debug_handler]

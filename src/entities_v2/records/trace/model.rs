@@ -793,6 +793,7 @@ impl Trace {
                 traces::id,
                 posts::id,
                 traces::journal_id,
+                traces::user_id,
                 traces::title,
                 traces::content,
                 traces::content_image_asset_id,
@@ -806,6 +807,7 @@ impl Trace {
             .offset(offset)
             .limit(limit)
             .load::<(
+                Uuid,
                 Uuid,
                 Uuid,
                 Uuid,
@@ -825,6 +827,7 @@ impl Trace {
                     id,
                     post_id,
                     journal_id,
+                    user_id,
                     title,
                     content,
                     content_image_asset_id,
@@ -847,7 +850,7 @@ impl Trace {
                     sharing_sensitivity: None,
                     timeout_start_at: None,
                     timeout_at: None,
-                    user_id: None,
+                    user_id: Some(user_id),
                     trace_type: None,
                     status: None,
                     start_writing_at: None,

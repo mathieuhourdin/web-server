@@ -771,6 +771,32 @@ pub async fn post_user_profile_picture_asset_route(
     Ok(Json(response))
 }
 
+fn hydrate_profile_picture_display_url(user: &User, pool: &DbPool) -> Option<String> {
+    if let Some(asset_id) = user.profile_picture_asset_id {
+        match Asset::find(asset_id, pool) {
+            Ok(asset) => {
+                if let Some(public_url) = asset.public_url() {
+                    return Some(public_url);
+                }
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "asset",
+                    user_id = %user.id,
+                    asset_id = %asset_id,
+                    error = %err.message,
+                    "user_profile_picture_asset_lookup_failed"
+                );
+            }
+        }
+    }
+
+    user.profile_picture_url
+        .as_ref()
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty())
+}
+
 #[debug_handler]
 pub async fn get_user_route(
     Extension(pool): Extension<DbPool>,
@@ -782,12 +808,16 @@ pub async fn get_user_route(
     if session.user_id == Some(id) {
         let mut user_response =
             UserPseudonymizedAuthentifiedResponse::from_viewer(&user, viewer_user_id);
+        user_response.profile_picture_display_url =
+            hydrate_profile_picture_display_url(&user, &pool);
         if session.user_id == Some(id) {
             user_response.roles = Some(user.list_roles(&pool)?);
         }
         Ok(UserResponse::PseudonymizedAuthentified(user_response))
     } else {
-        let user_response = UserPublicResponse::from(&user);
+        let mut user_response = UserPublicResponse::from(&user);
+        user_response.profile_picture_display_url =
+            hydrate_profile_picture_display_url(&user, &pool);
         Ok(UserResponse::Public(user_response))
     }
 }
