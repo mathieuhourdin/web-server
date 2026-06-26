@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="0" y="0" width="256" height="256" rx="132" fill="#ebe4d8"/>
+
+  <g transform="translate(0 0)">
+    <!-- stem -->
+    <path
+      d="M110 232 L110 126"
+      fill="none"
+      stroke="#08134f"
+      stroke-width="32"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+
+    <!-- left arm -->
+    <path
+      d="M110 126 C108 100 98 82 85 64 C70 43 40 20 2 13"
+      fill="none"
+      stroke="#08134f"
+      stroke-width="32"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+
+    <!-- right arm -->
+    <path
+      d="M110 136 C112 110 118 88 128 70 C140 48 160 34 188 28"
+      fill="none"
+      stroke="#08134f"
+      stroke-width="32"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M148 126 218 110"
+      fill="none"
+      stroke="#08134f"
+      stroke-width="6"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M148 146 218 130"
+      fill="none"
+      stroke="#08134f"
+      stroke-width="6"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M148 166 218 150"
+      fill="none"
+      stroke="#08134f"
+      stroke-width="6"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

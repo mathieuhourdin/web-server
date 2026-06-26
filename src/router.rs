@@ -1,12 +1,13 @@
 use axum::{
     extract::DefaultBodyLimit,
-    http::{Method, StatusCode},
+    http::{request::Parts as RequestParts, HeaderValue, Method, StatusCode},
     middleware::from_fn,
     response::IntoResponse,
     routing::{delete, get, patch, post, put, Router},
 };
+use regex::Regex;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{AllowHeaders, AllowOrigin, CorsLayer},
     services::ServeDir,
 };
 
@@ -18,11 +19,20 @@ use crate::entities_v2::{
     trace_search, transcription, url_preview, usage_event, user, user_post_state,
     user_secure_action,
 };
-use crate::sessions_service;
+use crate::{environment, sessions_service};
 
 pub fn create_router() -> Router {
+    let allow_origin_regex =
+        Regex::new(&environment::get_allow_origin()).expect("ALLOW_ORIGIN must be a valid regex");
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(AllowOrigin::predicate(
+            move |origin: &HeaderValue, _request_parts: &RequestParts| {
+                origin
+                    .to_str()
+                    .map(|origin| allow_origin_regex.is_match(origin))
+                    .unwrap_or(false)
+            },
+        ))
         .allow_methods(vec![
             Method::OPTIONS,
             Method::GET,
@@ -31,7 +41,8 @@ pub fn create_router() -> Router {
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers(Any);
+        .allow_headers(AllowHeaders::mirror_request())
+        .allow_credentials(true);
 
     let users_router = Router::new()
         .route("/", get(user::get_users))
