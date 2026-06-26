@@ -119,6 +119,7 @@ pub fn create_router() -> Router {
             post(trace::post_trace_extend_timeout_route),
         )
         .route("/:id/seen", put(trace::put_trace_seen_route))
+        .route("/:id/seen_by", get(trace::get_trace_seen_by_route))
         .route(
             "/:id/assets",
             post(trace::post_trace_asset_route).layer(DefaultBodyLimit::max(30 * 1024 * 1024)),

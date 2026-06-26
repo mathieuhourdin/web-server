@@ -1,6 +1,6 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
-    asset::{upload_image_asset_for_user_from_multipart, AssetUploadResponse},
+    asset::{upload_profile_picture_asset_for_user_from_multipart, Asset, AssetUploadResponse},
     error::{ErrorType, PpdcError},
     feed::hydrate::count_recent_unread_feed_items,
     journal::Journal,
@@ -728,7 +728,9 @@ pub async fn post_user_profile_picture_asset_route(
         return Err(PpdcError::unauthorized());
     }
 
-    let response = upload_image_asset_for_user_from_multipart(id, &pool, multipart).await?;
+    let previous_profile_picture_asset_id = User::find(&id, &pool)?.profile_picture_asset_id;
+    let response =
+        upload_profile_picture_asset_for_user_from_multipart(id, &pool, multipart).await?;
     let mut conn = pool.get()?;
     diesel::sql_query(
         "UPDATE users
@@ -740,6 +742,31 @@ pub async fn post_user_profile_picture_asset_route(
     .bind::<SqlUuid, _>(id)
     .bind::<SqlUuid, _>(response.asset.id)
     .execute(&mut conn)?;
+
+    if previous_profile_picture_asset_id != Some(response.asset.id) {
+        if let Some(previous_asset_id) = previous_profile_picture_asset_id {
+            match Asset::find(previous_asset_id, &pool) {
+                Ok(previous_asset) => {
+                    if let Err(err) = previous_asset.delete_public_object_if_present().await {
+                        tracing::warn!(
+                            target: "asset",
+                            previous_asset_id = %previous_asset_id,
+                            error = %err.message,
+                            "previous_profile_picture_public_delete_failed"
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "asset",
+                        previous_asset_id = %previous_asset_id,
+                        error = %err.message,
+                        "previous_profile_picture_asset_lookup_failed"
+                    );
+                }
+            }
+        }
+    }
 
     Ok(Json(response))
 }

@@ -33,7 +33,7 @@ use crate::entities_v2::{
         TraceAttachmentWithDocument,
     },
     user::{ensure_user_has_any_lens, User},
-    user_post_state::{PostSeenByPreview, UserPostState},
+    user_post_state::{PostSeenByPreview, PostSeenByUser, UserPostState},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams, ValidatedPagination};
 use crate::work_analyzer;
@@ -1269,6 +1269,7 @@ pub async fn post_trace_asset_route(
         asset,
         signed_url,
         expires_at,
+        ..
     } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
     trace.content_image_asset_id = Some(asset.id);
@@ -1421,6 +1422,29 @@ pub async fn put_trace_seen_route(
 }
 
 #[debug_handler]
+pub async fn get_trace_seen_by_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<PostSeenByUser>>, PpdcError> {
+    let owner_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != owner_user_id {
+        return Err(PpdcError::unauthorized());
+    }
+
+    let post = find_published_trace_post(id, &pool)?.ok_or_else(|| {
+        PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Trace has no published post".to_string(),
+        )
+    })?;
+    let seen_by = UserPostState::find_seen_by_for_post(owner_user_id, post.id, &pool)?;
+    Ok(Json(seen_by))
+}
+
+#[debug_handler]
 pub async fn post_trace_attachment_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -1447,6 +1471,7 @@ pub async fn post_trace_attachment_route(
         asset,
         signed_url,
         expires_at,
+        ..
     } = upload_asset_for_user(user_id, &pool, file_name.clone(), content_type, file_bytes).await?;
     let attachment_name = attachment_name
         .map(|value| value.trim().to_string())

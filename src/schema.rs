@@ -61,6 +61,8 @@ diesel::table! {
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        public_bucket -> Nullable<Text>,
+        public_object_key -> Nullable<Text>,
     }
 }
 

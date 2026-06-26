@@ -126,6 +126,7 @@ pub async fn post_album_asset_route(
         asset,
         signed_url,
         expires_at,
+        ..
     } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
     album.cover_image_asset_id = Some(asset.id);

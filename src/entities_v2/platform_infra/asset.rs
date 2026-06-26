@@ -8,7 +8,10 @@ use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use google_cloud_auth::credentials::Builder as CredentialsBuilder;
-use google_cloud_storage::{builder::storage::SignedUrlBuilder, client::Storage};
+use google_cloud_storage::{
+    builder::storage::SignedUrlBuilder,
+    client::{Storage, StorageControl},
+};
 use http::Method;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -77,6 +80,8 @@ pub struct Asset {
     pub status: AssetStatus,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub public_bucket: Option<String>,
+    pub public_object_key: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -84,12 +89,14 @@ pub struct AssetUploadResponse {
     pub asset: Asset,
     pub signed_url: String,
     pub expires_at: NaiveDateTime,
+    pub public_url: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone)]
 pub struct AssetSignedUrlResponse {
     pub url: String,
     pub expires_at: NaiveDateTime,
+    pub public_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,6 +116,8 @@ type AssetTuple = (
     String,
     NaiveDateTime,
     NaiveDateTime,
+    Option<String>,
+    Option<String>,
 );
 
 #[derive(Debug, Clone)]
@@ -121,6 +130,8 @@ struct NewAsset {
     pub original_filename: String,
     pub size_bytes: i64,
     pub status: AssetStatus,
+    pub public_bucket: Option<String>,
+    pub public_object_key: Option<String>,
 }
 
 fn tuple_to_asset(row: AssetTuple) -> Result<Asset, PpdcError> {
@@ -135,6 +146,8 @@ fn tuple_to_asset(row: AssetTuple) -> Result<Asset, PpdcError> {
         status_raw,
         created_at,
         updated_at,
+        public_bucket,
+        public_object_key,
     ) = row;
     Ok(Asset {
         id,
@@ -147,6 +160,8 @@ fn tuple_to_asset(row: AssetTuple) -> Result<Asset, PpdcError> {
         status: AssetStatus::from_db(&status_raw)?,
         created_at,
         updated_at,
+        public_bucket,
+        public_object_key,
     })
 }
 
@@ -161,6 +176,8 @@ fn select_asset_columns() -> (
     assets::status,
     assets::created_at,
     assets::updated_at,
+    assets::public_bucket,
+    assets::public_object_key,
 ) {
     (
         assets::id,
@@ -173,6 +190,8 @@ fn select_asset_columns() -> (
         assets::status,
         assets::created_at,
         assets::updated_at,
+        assets::public_bucket,
+        assets::public_object_key,
     )
 }
 
@@ -380,6 +399,23 @@ impl Asset {
             Utc::now().naive_utc() + ChronoDuration::seconds(expires_in_seconds as i64);
         Ok((url, expires_at))
     }
+
+    pub fn public_url(&self) -> Option<String> {
+        let bucket = self.public_bucket.as_ref()?;
+        let object_key = self.public_object_key.as_ref()?;
+        Some(public_gcs_url(bucket, object_key))
+    }
+
+    pub async fn delete_public_object_if_present(&self) -> Result<(), PpdcError> {
+        let Some(bucket) = self.public_bucket.as_ref() else {
+            return Ok(());
+        };
+        let Some(object_key) = self.public_object_key.as_ref() else {
+            return Ok(());
+        };
+
+        delete_object_from_gcs(bucket, object_key).await
+    }
 }
 
 impl NewAsset {
@@ -395,11 +431,25 @@ impl NewAsset {
                 assets::original_filename.eq(self.original_filename),
                 assets::size_bytes.eq(self.size_bytes),
                 assets::status.eq(self.status.to_db()),
+                assets::public_bucket.eq(self.public_bucket),
+                assets::public_object_key.eq(self.public_object_key),
             ))
             .returning(assets::id)
             .get_result::<Uuid>(&mut conn)?;
         Asset::find(id, pool)
     }
+}
+
+fn public_gcs_url(bucket_name: &str, object_key: &str) -> String {
+    let encoded_key = object_key
+        .split('/')
+        .map(urlencoding::encode)
+        .collect::<Vec<_>>()
+        .join("/");
+    format!(
+        "https://storage.googleapis.com/{}/{}",
+        bucket_name, encoded_key
+    )
 }
 
 fn sanitize_filename(filename: &str) -> String {
@@ -530,6 +580,32 @@ async fn upload_object_to_gcs(
     Ok(())
 }
 
+async fn delete_object_from_gcs(bucket_name: &str, object_key: &str) -> Result<(), PpdcError> {
+    let storage = StorageControl::builder().build().await.map_err(|err| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            format!("Failed to build GCS storage control client: {}", err),
+        )
+    })?;
+
+    storage
+        .delete_object()
+        .set_bucket(format!("projects/_/buckets/{}", bucket_name))
+        .set_object(object_key.to_string())
+        .send()
+        .await
+        .map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Failed to delete GCS object: {}", err),
+            )
+        })?;
+
+    Ok(())
+}
+
 pub async fn upload_asset_for_user(
     user_id: Uuid,
     pool: &DbPool,
@@ -544,6 +620,7 @@ pub async fn upload_asset_for_user(
         content_type,
         content_bytes,
         AssetUploadPolicy::Generic,
+        None,
     )
     .await
 }
@@ -555,6 +632,7 @@ async fn upload_asset_for_user_with_policy(
     content_type: Option<String>,
     content_bytes: Vec<u8>,
     policy: AssetUploadPolicy,
+    public_object_key: Option<String>,
 ) -> Result<AssetUploadResponse, PpdcError> {
     let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("upload.bin"));
     if content_bytes.is_empty() {
@@ -575,6 +653,27 @@ async fn upload_asset_for_user_with_policy(
     );
 
     upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone()).await?;
+    let requested_public_object_key = public_object_key;
+    let public_bucket = if requested_public_object_key.is_some() {
+        crate::environment::get_gcs_public_assets_bucket_name()
+    } else {
+        None
+    };
+    let public_object_key = match (public_bucket.as_ref(), requested_public_object_key) {
+        (Some(_), Some(public_object_key)) => Some(public_object_key),
+        _ => None,
+    };
+    if let (Some(public_bucket), Some(public_object_key)) =
+        (public_bucket.as_ref(), public_object_key.as_ref())
+    {
+        upload_object_to_gcs(
+            public_bucket,
+            public_object_key,
+            &mime_type,
+            content_bytes.clone(),
+        )
+        .await?;
+    }
 
     let asset = NewAsset {
         id: asset_id,
@@ -585,6 +684,8 @@ async fn upload_asset_for_user_with_policy(
         original_filename,
         size_bytes: content_bytes.len() as i64,
         status: AssetStatus::Ready,
+        public_bucket,
+        public_object_key,
     }
     .create(&pool)?;
 
@@ -593,6 +694,7 @@ async fn upload_asset_for_user_with_policy(
         .await?;
 
     Ok(AssetUploadResponse {
+        public_url: asset.public_url(),
         asset,
         signed_url,
         expires_at,
@@ -674,6 +776,7 @@ async fn upload_asset_for_user_from_multipart_with_policy(
         content_type,
         content_bytes,
         policy,
+        None,
     )
     .await
 }
@@ -692,6 +795,7 @@ pub async fn upload_image_asset_for_user(
         content_type,
         content_bytes,
         AssetUploadPolicy::ImageOnly,
+        None,
     )
     .await
 }
@@ -706,6 +810,32 @@ pub async fn upload_image_asset_for_user_from_multipart(
         pool,
         multipart,
         AssetUploadPolicy::ImageOnly,
+    )
+    .await
+}
+
+pub async fn upload_profile_picture_asset_for_user_from_multipart(
+    user_id: Uuid,
+    pool: &DbPool,
+    multipart: Multipart,
+) -> Result<AssetUploadResponse, PpdcError> {
+    let (file_name, content_type, content_bytes) = extract_multipart_file(multipart).await?;
+    let original_filename = sanitize_filename(file_name.as_deref().unwrap_or("profile-picture"));
+    let public_object_key = Some(format!(
+        "users/{}/profile-pictures/{}/{}",
+        user_id,
+        Uuid::new_v4(),
+        original_filename
+    ));
+
+    upload_asset_for_user_with_policy(
+        user_id,
+        pool,
+        Some(original_filename),
+        content_type,
+        content_bytes,
+        AssetUploadPolicy::ImageOnly,
+        public_object_key,
     )
     .await
 }
@@ -737,5 +867,9 @@ pub async fn get_asset_signed_url_route(
         .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
         .await?;
 
-    Ok(Json(AssetSignedUrlResponse { url, expires_at }))
+    Ok(Json(AssetSignedUrlResponse {
+        public_url: asset.public_url(),
+        url,
+        expires_at,
+    }))
 }
