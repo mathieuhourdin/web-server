@@ -234,21 +234,27 @@ async fn send_to_devices(
 async fn sender_avatar_url(sender: &User, pool: &DbPool) -> Option<String> {
     if let Some(asset_id) = sender.profile_picture_asset_id {
         match Asset::find(asset_id, pool) {
-            Ok(asset) => match asset
-                .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
-                .await
-            {
-                Ok((url, _expires_at)) => return Some(url),
-                Err(err) => {
-                    warn!(
-                        target: "push",
-                        sender_user_id = %sender.id,
-                        asset_id = %asset_id,
-                        error = %err.message,
-                        "sender_avatar_signed_url_failed"
-                    );
+            Ok(asset) => {
+                if let Some(public_url) = asset.public_url() {
+                    return Some(public_url);
                 }
-            },
+
+                match asset
+                    .signed_read_url(crate::environment::get_assets_signed_url_ttl_seconds())
+                    .await
+                {
+                    Ok((url, _expires_at)) => return Some(url),
+                    Err(err) => {
+                        warn!(
+                            target: "push",
+                            sender_user_id = %sender.id,
+                            asset_id = %asset_id,
+                            error = %err.message,
+                            "sender_avatar_signed_url_failed"
+                        );
+                    }
+                }
+            }
             Err(err) => {
                 warn!(
                     target: "push",
