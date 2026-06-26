@@ -33,7 +33,7 @@ use crate::entities_v2::{
         TraceAttachmentWithDocument,
     },
     user::{ensure_user_has_any_lens, User},
-    user_post_state::UserPostState,
+    user_post_state::{PostSeenByPreview, UserPostState},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams, ValidatedPagination};
 use crate::work_analyzer;
@@ -59,9 +59,12 @@ pub struct JournalTracesQuery {
     pub status: Option<TraceStatus>,
     pub seen: Option<bool>,
     pub until_trace_id: Option<Uuid>,
+    #[serde(default)]
+    pub include_seen_by_preview: bool,
 }
 
 const JOURNAL_TRACE_POSITION_BATCH_SIZE: i64 = 20;
+const JOURNAL_TRACE_SEEN_BY_PREVIEW_LIMIT: i64 = 3;
 
 fn pagination_until_rank(rank: i64) -> ValidatedPagination {
     let limit = ((rank + JOURNAL_TRACE_POSITION_BATCH_SIZE - 1)
@@ -422,6 +425,33 @@ fn attach_seen_state_to_journal_trace_views(
         .map(|mut item| {
             item.last_seen_at = last_seen_at_by_trace_id.get(&item.id).copied();
             item.seen = item.last_seen_at.is_some();
+            item
+        })
+        .collect())
+}
+
+fn attach_seen_by_preview_to_journal_trace_views(
+    owner_user_id: Uuid,
+    items: Vec<JournalTraceView>,
+    pool: &DbPool,
+) -> Result<Vec<JournalTraceView>, PpdcError> {
+    let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let previews = UserPostState::find_seen_by_preview_by_trace_ids(
+        owner_user_id,
+        &trace_ids,
+        JOURNAL_TRACE_SEEN_BY_PREVIEW_LIMIT,
+        pool,
+    )?;
+
+    Ok(items
+        .into_iter()
+        .map(|mut item| {
+            item.seen_by_preview = Some(
+                previews
+                    .get(&item.id)
+                    .cloned()
+                    .unwrap_or_else(PostSeenByPreview::default),
+            );
             item
         })
         .collect())
@@ -1963,12 +1993,18 @@ pub async fn get_traces_for_journal_route(
                 finalized_at: trace.finalized_at,
                 seen: false,
                 last_seen_at: None,
+                seen_by_preview: None,
                 interaction_date: trace.interaction_date,
                 created_at: trace.created_at,
                 updated_at: trace.updated_at,
             })
             .collect::<Vec<_>>();
         let items = attach_seen_state_to_journal_trace_views(user_id, items, &pool)?;
+        let items = if params.include_seen_by_preview {
+            attach_seen_by_preview_to_journal_trace_views(user_id, items, &pool)?
+        } else {
+            items
+        };
         return Ok(Json(PaginatedResponse::new(items, pagination, total)));
     }
 

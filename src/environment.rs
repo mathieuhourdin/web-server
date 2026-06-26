@@ -66,6 +66,14 @@ pub fn get_env() -> String {
     std::env::var("ENV").unwrap_or_else(|_| "development".to_string())
 }
 
+pub fn get_auth_marker_cookie_domain() -> Option<String> {
+    dotenv().ok();
+    std::env::var("AUTH_MARKER_COOKIE_DOMAIN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub fn get_observability_mode() -> String {
     dotenv().ok();
     std::env::var("OBSERVABILITY_MODE").unwrap_or_else(|_| "redacted".to_string())

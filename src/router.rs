@@ -64,7 +64,8 @@ pub fn create_router() -> Router {
             "/:id/closest_followers",
             get(user::get_closest_followers_route),
         )
-        .layer(from_fn(sessions_service::auth_middleware_custom));
+        .layer(from_fn(sessions_service::auth_middleware_custom))
+        .layer(from_fn(sessions_service::auth_marker_cookie_middleware));
 
     let mentors_router = Router::new()
         .route("/", get(user::get_mentors_route))

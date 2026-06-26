@@ -10,6 +10,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
+use crate::entities_v2::user_post_state::PostSeenByPreview;
 use crate::schema::{posts, traces};
 
 pub use super::enums::{TraceSharingSensitivity, TraceStatus, TraceType};
@@ -115,6 +116,8 @@ pub struct JournalTraceView {
     pub finalized_at: Option<NaiveDateTime>,
     pub seen: bool,
     pub last_seen_at: Option<NaiveDateTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen_by_preview: Option<PostSeenByPreview>,
     pub interaction_date: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -851,6 +854,7 @@ impl Trace {
                     finalized_at,
                     seen: false,
                     last_seen_at: None,
+                    seen_by_preview: None,
                     interaction_date,
                     created_at,
                     updated_at,

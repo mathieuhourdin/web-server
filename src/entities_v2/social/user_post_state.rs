@@ -5,7 +5,7 @@ use axum::{
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::Uuid as SqlUuid;
+use diesel::sql_types::{Array, BigInt, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -40,6 +40,21 @@ pub struct PostSeenByUser {
     pub last_seen_at: NaiveDateTime,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PostSeenByPreviewUser {
+    pub user_id: Uuid,
+    pub display_name: String,
+    pub profile_picture_asset_id: Option<Uuid>,
+    pub first_seen_at: NaiveDateTime,
+    pub last_seen_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct PostSeenByPreview {
+    pub seen_count: i64,
+    pub users: Vec<PostSeenByPreviewUser>,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct NewUserPostStateDto {
     pub post_id: Uuid,
@@ -54,6 +69,24 @@ type UserPostStateTuple = (
     NaiveDateTime,
     NaiveDateTime,
 );
+
+#[derive(QueryableByName)]
+struct PostSeenByPreviewRow {
+    #[diesel(sql_type = SqlUuid)]
+    trace_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = Text)]
+    display_name: String,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    profile_picture_asset_id: Option<Uuid>,
+    #[diesel(sql_type = Timestamp)]
+    first_seen_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    last_seen_at: NaiveDateTime,
+    #[diesel(sql_type = BigInt)]
+    seen_count: i64,
+}
 
 impl From<UserPostStateTuple> for UserPostState {
     fn from(row: UserPostStateTuple) -> Self {
@@ -170,6 +203,79 @@ impl UserPostState {
             .load::<Option<Uuid>>(&mut conn)?;
 
         Ok(rows.into_iter().flatten().collect())
+    }
+
+    pub fn find_seen_by_preview_by_trace_ids(
+        owner_user_id: Uuid,
+        trace_ids: &[Uuid],
+        preview_limit: i64,
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, PostSeenByPreview>, PpdcError> {
+        if trace_ids.is_empty() || preview_limit <= 0 {
+            return Ok(HashMap::new());
+        }
+
+        let mut conn = pool.get()?;
+        let rows = sql_query(
+            r#"
+            WITH ranked_seen AS (
+                SELECT
+                    p.source_trace_id AS trace_id,
+                    ups.user_id,
+                    CASE
+                        WHEN u.pseudonymized THEN u.pseudonym
+                        ELSE TRIM(CONCAT(u.first_name, ' ', u.last_name))
+                    END AS display_name,
+                    u.profile_picture_asset_id,
+                    ups.first_seen_at,
+                    ups.last_seen_at,
+                    COUNT(*) OVER (PARTITION BY ups.post_id) AS seen_count,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ups.post_id
+                        ORDER BY ups.last_seen_at DESC
+                    ) AS seen_rank
+                FROM posts p
+                INNER JOIN user_post_states ups ON ups.post_id = p.id
+                INNER JOIN users u ON u.id = ups.user_id
+                WHERE p.user_id = $1
+                  AND p.source_trace_id = ANY($2)
+                  AND ups.user_id <> $1
+            )
+            SELECT
+                trace_id,
+                user_id,
+                display_name,
+                profile_picture_asset_id,
+                first_seen_at,
+                last_seen_at,
+                seen_count
+            FROM ranked_seen
+            WHERE seen_rank <= $3
+            ORDER BY trace_id, last_seen_at DESC
+            "#,
+        )
+        .bind::<SqlUuid, _>(owner_user_id)
+        .bind::<Array<SqlUuid>, _>(trace_ids.to_vec())
+        .bind::<BigInt, _>(preview_limit)
+        .load::<PostSeenByPreviewRow>(&mut conn)?;
+
+        let mut previews = HashMap::<Uuid, PostSeenByPreview>::new();
+        for row in rows {
+            let preview = previews.entry(row.trace_id).or_insert(PostSeenByPreview {
+                seen_count: row.seen_count,
+                users: Vec::new(),
+            });
+            preview.seen_count = row.seen_count;
+            preview.users.push(PostSeenByPreviewUser {
+                user_id: row.user_id,
+                display_name: row.display_name,
+                profile_picture_asset_id: row.profile_picture_asset_id,
+                first_seen_at: row.first_seen_at,
+                last_seen_at: row.last_seen_at,
+            });
+        }
+
+        Ok(previews)
     }
 
     pub fn find_seen_by_for_post(
