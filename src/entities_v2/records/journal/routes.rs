@@ -20,16 +20,23 @@ use crate::entities_v2::{
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, NewJournalDto,
-    UpdateJournalDto,
+    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalType,
+    NewJournalDto, UpdateJournalDto,
 };
+
+#[derive(serde::Deserialize)]
+pub struct UserJournalsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub journal_type: Option<JournalType>,
+}
 
 #[debug_handler]
 pub async fn get_user_journals_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<UserJournalsQuery>,
 ) -> Result<Json<PaginatedResponse<Journal>>, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     if session_user_id != user_id {
@@ -37,9 +44,15 @@ pub async fn get_user_journals_route(
     }
     ensure_user_has_default_journals(user_id, &pool)?;
     ensure_user_has_meta_journal(user_id, &pool)?;
-    let pagination = params.validate()?;
-    let (journals, total) =
-        Journal::find_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    let pagination = params.pagination.validate()?;
+    let journal_type = params.journal_type.unwrap_or(JournalType::UserJournal);
+    let (journals, total) = Journal::find_for_user_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        journal_type,
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 

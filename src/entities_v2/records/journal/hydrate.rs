@@ -113,7 +113,13 @@ impl Journal {
     }
 
     pub fn find_for_user(user_id: Uuid, pool: &DbPool) -> Result<Vec<Journal>, PpdcError> {
-        let (items, _) = Self::find_for_user_paginated(user_id, 0, i64::MAX / 4, pool)?;
+        let (items, _) = Self::find_for_user_paginated(
+            user_id,
+            0,
+            i64::MAX / 4,
+            JournalType::UserJournal,
+            pool,
+        )?;
         Ok(items)
     }
 
@@ -132,17 +138,20 @@ impl Journal {
         user_id: Uuid,
         offset: i64,
         limit: i64,
+        journal_type: JournalType,
         pool: &DbPool,
     ) -> Result<(Vec<Journal>, i64), PpdcError> {
         let mut conn = pool.get()?;
 
         let total = journals::table
             .filter(journals::user_id.eq(user_id))
+            .filter(journals::journal_type.eq(journal_type.to_db()))
             .count()
             .get_result::<i64>(&mut conn)?;
 
         let rows = journals::table
             .filter(journals::user_id.eq(user_id))
+            .filter(journals::journal_type.eq(journal_type.to_db()))
             .select(select_journal_columns())
             .order((
                 journals::last_trace_at.desc().nulls_last(),
