@@ -46,6 +46,38 @@ struct FcmRequest<'a> {
 struct FcmMessage<'a> {
     token: &'a str,
     data: &'a HashMap<String, String>,
+    android: FcmAndroidConfig,
+    apns: FcmApnsConfig,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmAndroidConfig {
+    priority: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmApnsConfig {
+    headers: FcmApnsHeaders,
+    payload: FcmApnsPayload,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmApnsHeaders {
+    #[serde(rename = "apns-push-type")]
+    push_type: &'static str,
+    #[serde(rename = "apns-priority")]
+    priority: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmApnsPayload {
+    aps: FcmApsPayload,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmApsPayload {
+    #[serde(rename = "content-available")]
+    content_available: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +144,18 @@ async fn send_fcm_to_device(
         message: FcmMessage {
             token: push_token,
             data: &notification.data,
+            android: FcmAndroidConfig { priority: "HIGH" },
+            apns: FcmApnsConfig {
+                headers: FcmApnsHeaders {
+                    push_type: "background",
+                    priority: "5",
+                },
+                payload: FcmApnsPayload {
+                    aps: FcmApsPayload {
+                        content_available: 1,
+                    },
+                },
+            },
         },
     };
 
