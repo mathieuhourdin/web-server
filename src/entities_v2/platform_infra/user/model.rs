@@ -1,5 +1,6 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::Asset,
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalSharingMode, JournalType, NewJournalDto},
     lens::{LensProcessingState, NewLens},
@@ -206,6 +207,43 @@ impl From<&User> for UserPublicResponse {
             welcome_message: user.welcome_message.clone(),
             display_name: user.display_name(),
         }
+    }
+}
+
+impl User {
+    pub fn profile_picture_display_url(&self, pool: &DbPool) -> Option<String> {
+        if let Some(asset_id) = self.profile_picture_asset_id {
+            match Asset::find(asset_id, pool) {
+                Ok(asset) => {
+                    if let Some(public_url) = asset.public_url() {
+                        return Some(public_url);
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "asset",
+                        user_id = %self.id,
+                        asset_id = %asset_id,
+                        error = %err.message,
+                        "user_profile_picture_asset_lookup_failed"
+                    );
+                }
+            }
+        }
+
+        self.profile_picture_url
+            .as_ref()
+            .map(|url| url.trim().to_string())
+            .filter(|url| !url.is_empty())
+    }
+
+    pub fn public_response_with_profile_picture_display_url(
+        &self,
+        pool: &DbPool,
+    ) -> UserPublicResponse {
+        let mut response = UserPublicResponse::from(self);
+        response.profile_picture_display_url = self.profile_picture_display_url(pool);
+        response
     }
 }
 

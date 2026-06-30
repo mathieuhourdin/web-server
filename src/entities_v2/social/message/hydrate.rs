@@ -261,7 +261,12 @@ impl Message {
             .select(User::as_select())
             .load::<User>(&mut conn)?
             .iter()
-            .map(|user| (user.id, UserPublicResponse::from(user)))
+            .map(|user| {
+                (
+                    user.id,
+                    user.public_response_with_profile_picture_display_url(pool),
+                )
+            })
             .collect();
 
         // Preserve the recency order from head_rows; take ownership out of the maps
@@ -330,13 +335,14 @@ impl Message {
         .map(|row| (row.partner_id, row.unread))
         .collect();
 
-        Self::hydrate_conversation_summaries(head_rows, unread_map, &mut conn)
+        Self::hydrate_conversation_summaries(head_rows, unread_map, &mut conn, pool)
     }
 
     fn hydrate_conversation_summaries(
         head_rows: Vec<ConversationHeadRow>,
         unread_map: HashMap<Uuid, i64>,
         conn: &mut PgConnection,
+        pool: &DbPool,
     ) -> Result<Vec<ConversationSummary>, PpdcError> {
         let last_message_ids: Vec<Uuid> = head_rows.iter().map(|row| row.last_message_id).collect();
         let mut message_map: HashMap<Uuid, Message> = messages::table
@@ -372,7 +378,12 @@ impl Message {
             .select(User::as_select())
             .load::<User>(conn)?
             .iter()
-            .map(|user| (user.id, UserPublicResponse::from(user)))
+            .map(|user| {
+                (
+                    user.id,
+                    user.public_response_with_profile_picture_display_url(pool),
+                )
+            })
             .collect();
 
         Ok(head_rows
