@@ -68,6 +68,7 @@ pub struct User {
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
+    pub ai_features_enabled_by_admin: bool,
     pub onboarding_version: i32,
     pub external_captures_default_journal_id: Option<Uuid>,
     pub mentor_specific_prompt: Option<String>,
@@ -128,6 +129,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
+    pub ai_features_enabled_by_admin: bool,
     pub onboarding_version: i32,
     pub external_captures_default_journal_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -171,6 +173,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             ai_features_enabled: user.ai_features_enabled,
+            ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
             onboarding_version: user.onboarding_version,
             external_captures_default_journal_id: user.external_captures_default_journal_id,
             roles: None,
@@ -273,6 +276,7 @@ pub struct UserPseudonymizedResponse {
     pub received_message_email_mode: EmailNotificationMode,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
+    pub ai_features_enabled_by_admin: bool,
     pub external_captures_default_journal_id: Option<Uuid>,
     pub display_name: String,
 }
@@ -310,6 +314,7 @@ impl UserPseudonymizedResponse {
             received_message_email_mode: user.received_message_email_mode,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             ai_features_enabled: user.ai_features_enabled,
+            ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
             external_captures_default_journal_id: user.external_captures_default_journal_id,
             display_name: user.display_name(),
         }
@@ -434,6 +439,8 @@ pub struct NewUser {
     pub received_message_email_mode: Option<EmailNotificationMode>,
     pub mentor_feedback_email_enabled: Option<bool>,
     pub ai_features_enabled: Option<bool>,
+    #[serde(default, skip_deserializing)]
+    pub ai_features_enabled_by_admin: Option<bool>,
     pub onboarding_version: Option<i32>,
     pub external_captures_default_journal_id: Option<Uuid>,
     #[serde(default, skip_deserializing)]
@@ -497,6 +504,7 @@ impl NewServiceUserDto {
             received_message_email_mode: None,
             mentor_feedback_email_enabled: None,
             ai_features_enabled: None,
+            ai_features_enabled_by_admin: None,
             onboarding_version: None,
             external_captures_default_journal_id: None,
             mentor_specific_prompt: Some(self.mentor_specific_prompt.unwrap_or_default()),
@@ -537,6 +545,7 @@ impl NewServiceUserDto {
             received_message_email_mode: Some(existing_user.received_message_email_mode),
             mentor_feedback_email_enabled: Some(existing_user.mentor_feedback_email_enabled),
             ai_features_enabled: Some(existing_user.ai_features_enabled),
+            ai_features_enabled_by_admin: Some(existing_user.ai_features_enabled_by_admin),
             onboarding_version: Some(existing_user.onboarding_version),
             external_captures_default_journal_id: existing_user
                 .external_captures_default_journal_id,
@@ -572,6 +581,9 @@ impl NewUser {
         }
         if payload.ai_features_enabled.is_none() {
             payload.ai_features_enabled = Some(true);
+        }
+        if payload.ai_features_enabled_by_admin.is_none() {
+            payload.ai_features_enabled_by_admin = Some(true);
         }
         if payload.principal_type == Some(UserPrincipalType::Service) {
             if payload.mentor_specific_prompt.is_none() {
@@ -691,7 +703,7 @@ impl User {
     }
 
     pub fn allows_ai_features(&self) -> bool {
-        self.ai_features_enabled
+        self.ai_features_enabled && self.ai_features_enabled_by_admin
     }
 
     pub fn hash_password_value(password: &str) -> Result<String, PpdcError> {
@@ -1147,6 +1159,7 @@ mod tests {
             received_message_email_mode: EmailNotificationMode::Instant,
             mentor_feedback_email_enabled: true,
             ai_features_enabled: true,
+            ai_features_enabled_by_admin: true,
             onboarding_version: 0,
             external_captures_default_journal_id: None,
             mentor_specific_prompt: None,
@@ -1181,6 +1194,7 @@ mod tests {
             received_message_email_mode: None,
             mentor_feedback_email_enabled: None,
             ai_features_enabled: None,
+            ai_features_enabled_by_admin: None,
             onboarding_version: None,
             external_captures_default_journal_id: None,
             mentor_specific_prompt: None,

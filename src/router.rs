@@ -94,6 +94,11 @@ pub fn create_router() -> Router {
 
     let admin_router = Router::new()
         .nest("/analytics", admin_analytics_router)
+        .route("/users", get(user::get_admin_users_route))
+        .route(
+            "/users/:id/ai_features",
+            patch(user::patch_admin_user_ai_features_route),
+        )
         .route(
             "/content_reports",
             get(content_report::get_admin_content_reports_route),
@@ -494,6 +499,11 @@ pub fn create_router() -> Router {
     let me_router = Router::new()
         .route("/unread_counts", get(user::get_me_unread_counts_route))
         .route("/traces", get(trace::get_me_traces_route))
+        .route("/landmarks", get(landmark::get_me_landmarks_route))
+        .route(
+            "/high_level_projects",
+            get(landmark::get_me_high_level_projects_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()

@@ -32,6 +32,13 @@ pub struct LandmarkWithParentsAndElements {
     pub related_elements: Vec<Element>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LandmarkReferenceListItem {
+    #[serde(flatten)]
+    pub landmark: Landmark,
+    pub references_count: i64,
+}
+
 impl LandmarkWithParentsAndElements {
     pub fn new(
         landmark: Landmark,

@@ -1,8 +1,12 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{BigInt, Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
-use super::model::{Landmark, LandmarkType, LandmarkWithParentsAndElements};
+use super::model::{
+    Landmark, LandmarkReferenceListItem, LandmarkType, LandmarkWithParentsAndElements,
+};
 use crate::db::DbPool;
 use crate::entities_v2::element::model::Element;
 use crate::entities_v2::error::{ErrorType, PpdcError};
@@ -26,6 +30,20 @@ type LandmarkTuple = (
     NaiveDateTime,
     NaiveDateTime,
 );
+
+#[derive(diesel::QueryableByName)]
+struct LandmarkReferenceListRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = BigInt)]
+    references_count: i64,
+}
+
+#[derive(diesel::QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    value: i64,
+}
 
 fn tuple_to_landmark(row: LandmarkTuple) -> Landmark {
     let (
@@ -206,5 +224,100 @@ impl Landmark {
             .into_iter()
             .map(|id| Landmark::find(id, pool))
             .collect()
+    }
+
+    pub fn find_reference_ranked_for_current_lens(
+        user_id: Uuid,
+        landmark_type_filter: LandmarkReferenceTypeFilter,
+        limit: i64,
+        offset: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<LandmarkReferenceListItem>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let total = sql_query(
+            r#"
+            SELECT COUNT(DISTINCT l.id)::bigint AS value
+            FROM users u
+            INNER JOIN lens_analysis_scopes las
+                ON las.lens_id = u.current_lens_id
+            INNER JOIN "references" r
+                ON r.landscape_analysis_id = las.landscape_analysis_id
+               AND r.user_id = u.id
+               AND r.landmark_id IS NOT NULL
+            INNER JOIN landmarks l
+                ON l.id = r.landmark_id
+               AND l.user_id = u.id
+            WHERE u.id = $1
+              AND (
+                  ($2 = 'HIGH_LEVEL_PROJECT' AND l.landmark_type = 'HIGH_LEVEL_PROJECT')
+                  OR
+                  ($2 = 'NON_HIGH_LEVEL_PROJECT' AND l.landmark_type != 'HIGH_LEVEL_PROJECT')
+              )
+            "#,
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Text, _>(landmark_type_filter.to_db())
+        .get_result::<CountRow>(&mut conn)?
+        .value;
+
+        let rows = sql_query(
+            r#"
+            SELECT
+                l.id,
+                COUNT(r.id)::bigint AS references_count
+            FROM users u
+            INNER JOIN lens_analysis_scopes las
+                ON las.lens_id = u.current_lens_id
+            INNER JOIN "references" r
+                ON r.landscape_analysis_id = las.landscape_analysis_id
+               AND r.user_id = u.id
+               AND r.landmark_id IS NOT NULL
+            INNER JOIN landmarks l
+                ON l.id = r.landmark_id
+               AND l.user_id = u.id
+            WHERE u.id = $1
+              AND (
+                  ($2 = 'HIGH_LEVEL_PROJECT' AND l.landmark_type = 'HIGH_LEVEL_PROJECT')
+                  OR
+                  ($2 = 'NON_HIGH_LEVEL_PROJECT' AND l.landmark_type != 'HIGH_LEVEL_PROJECT')
+              )
+            GROUP BY l.id
+            ORDER BY COUNT(r.id) DESC, MAX(r.created_at) DESC, l.title ASC
+            OFFSET $3
+            LIMIT $4
+            "#,
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Text, _>(landmark_type_filter.to_db())
+        .bind::<BigInt, _>(offset)
+        .bind::<BigInt, _>(limit)
+        .load::<LandmarkReferenceListRow>(&mut conn)?;
+
+        let items = rows
+            .into_iter()
+            .map(|row| {
+                Ok(LandmarkReferenceListItem {
+                    landmark: Landmark::find(row.id, pool)?,
+                    references_count: row.references_count,
+                })
+            })
+            .collect::<Result<Vec<_>, PpdcError>>()?;
+
+        Ok((items, total))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LandmarkReferenceTypeFilter {
+    NonHighLevelProject,
+    HighLevelProject,
+}
+
+impl LandmarkReferenceTypeFilter {
+    fn to_db(self) -> &'static str {
+        match self {
+            LandmarkReferenceTypeFilter::NonHighLevelProject => "NON_HIGH_LEVEL_PROJECT",
+            LandmarkReferenceTypeFilter::HighLevelProject => "HIGH_LEVEL_PROJECT",
+        }
     }
 }

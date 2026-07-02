@@ -20,6 +20,7 @@ use crate::entities_v2::{
     },
     notification,
     platform_infra::{
+        ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
         asset::{
             upload_asset_for_user, upload_image_asset_for_user_from_multipart, AssetUploadResponse,
         },
@@ -1848,13 +1849,12 @@ pub async fn post_trace_message_route(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
     ) {
-        if !sender_user.allows_ai_features() {
-            return Err(PpdcError::new(
-                403,
-                ErrorType::ApiError,
-                "AI features are disabled for this account".to_string(),
-            ));
-        }
+        let ai_usage_kind = if message_type == MessageType::TarotReadingRequest {
+            AiUsageKind::TarotReading
+        } else {
+            AiUsageKind::MentorQuestion
+        };
+        ensure_ai_usage_allowed(&sender_user, Some(session.id), ai_usage_kind, &pool)?;
         if !sender_is_owner {
             return Err(PpdcError::new(
                 401,

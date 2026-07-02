@@ -9,12 +9,12 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
 };
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Date, Text, Uuid as SqlUuid};
-use serde::Serialize;
+use diesel::sql_types::{BigInt, Bool, Date, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::enums::{UserPrincipalType, UserRole};
@@ -32,6 +32,36 @@ struct UserIdRow {
 struct CountRow {
     #[diesel(sql_type = BigInt)]
     value: i64,
+}
+
+#[derive(QueryableByName)]
+struct AdminUserRow {
+    #[diesel(sql_type = SqlUuid)]
+    id: Uuid,
+    #[diesel(sql_type = Text)]
+    email: String,
+    #[diesel(sql_type = Text)]
+    first_name: String,
+    #[diesel(sql_type = Text)]
+    last_name: String,
+    #[diesel(sql_type = Text)]
+    handle: String,
+    #[diesel(sql_type = Timestamp)]
+    created_at: NaiveDateTime,
+    #[diesel(sql_type = Text)]
+    principal_type: String,
+    #[diesel(sql_type = Bool)]
+    is_platform_user: bool,
+    #[diesel(sql_type = Bool)]
+    ai_features_enabled: bool,
+    #[diesel(sql_type = Bool)]
+    ai_features_enabled_by_admin: bool,
+    #[diesel(sql_type = BigInt)]
+    llm_calls_count: i64,
+    #[diesel(sql_type = BigInt)]
+    ai_requests_last_24h: i64,
+    #[diesel(sql_type = BigInt)]
+    ai_requests_last_7d: i64,
 }
 
 #[derive(QueryableByName)]
@@ -147,6 +177,48 @@ pub struct AdminPlatformOverview {
     pub daily_overview: Vec<AdminPlatformDailyOverview>,
 }
 
+#[derive(Deserialize)]
+pub struct AdminUsersQuery {
+    pub q: Option<String>,
+    pub ai_features_enabled_by_admin: Option<bool>,
+    pub principal_type: Option<UserPrincipalType>,
+    pub is_platform_user: Option<bool>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+#[derive(Serialize)]
+pub struct AdminUserListItem {
+    pub id: Uuid,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub handle: String,
+    pub display_name: String,
+    pub created_at: NaiveDateTime,
+    pub principal_type: UserPrincipalType,
+    pub is_platform_user: bool,
+    pub ai_features_enabled: bool,
+    pub ai_features_enabled_by_admin: bool,
+    pub allows_ai_features: bool,
+    pub llm_calls_count: i64,
+    pub ai_requests_last_24h: i64,
+    pub ai_requests_last_7d: i64,
+}
+
+#[derive(Deserialize)]
+pub struct PatchAdminUserAiFeaturesDto {
+    pub ai_features_enabled_by_admin: bool,
+}
+
+#[derive(Serialize)]
+pub struct AdminUserAiFeaturesResponse {
+    pub id: Uuid,
+    pub ai_features_enabled: bool,
+    pub ai_features_enabled_by_admin: bool,
+    pub allows_ai_features: bool,
+}
+
 fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let session_user = User::find(&session_user_id, pool)?;
@@ -169,6 +241,175 @@ fn postgres_timezone_name(tz: Tz) -> &'static str {
         chrono_tz::Asia::Saigon => "Asia/Ho_Chi_Minh",
         _ => tz.name(),
     }
+}
+
+#[debug_handler]
+pub async fn get_admin_users_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<AdminUsersQuery>,
+) -> Result<Json<PaginatedResponse<AdminUserListItem>>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let pagination = params.pagination.validate()?;
+    let q = params
+        .q
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let principal_type = params
+        .principal_type
+        .map(|principal_type| principal_type.to_db().to_string());
+
+    let mut conn = pool.get()?;
+
+    let filter_sql = r#"
+        FROM users u
+        WHERE ($1 IS NULL OR (
+            LOWER(u.email) LIKE '%' || LOWER($1) || '%'
+            OR LOWER(u.first_name) LIKE '%' || LOWER($1) || '%'
+            OR LOWER(u.last_name) LIKE '%' || LOWER($1) || '%'
+            OR LOWER(u.handle) LIKE '%' || LOWER($1) || '%'
+        ))
+          AND ($2 IS NULL OR u.ai_features_enabled_by_admin = $2)
+          AND ($3 IS NULL OR u.principal_type = $3)
+          AND ($4 IS NULL OR u.is_platform_user = $4)
+    "#;
+
+    let total = sql_query(format!("SELECT COUNT(*)::bigint AS value {}", filter_sql))
+        .bind::<Nullable<Text>, _>(q.clone())
+        .bind::<Nullable<Bool>, _>(params.ai_features_enabled_by_admin)
+        .bind::<Nullable<Text>, _>(principal_type.clone())
+        .bind::<Nullable<Bool>, _>(params.is_platform_user)
+        .get_result::<CountRow>(&mut conn)?
+        .value;
+
+    let rows = sql_query(format!(
+        r#"
+        SELECT
+            u.id,
+            u.email,
+            u.first_name,
+            u.last_name,
+            u.handle,
+            u.created_at,
+            u.principal_type,
+            u.is_platform_user,
+            u.ai_features_enabled,
+            u.ai_features_enabled_by_admin,
+            COALESCE((
+                SELECT COUNT(lc.id)::bigint
+                FROM llm_calls lc
+                INNER JOIN landscape_analyses la ON la.id = lc.analysis_id
+                WHERE la.user_id = u.id
+            ), 0)::bigint AS llm_calls_count,
+            (
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM messages m
+                    WHERE m.sender_user_id = u.id
+                      AND m.message_type IN ('QUESTION', 'TAROT_READING_REQUEST')
+                      AND m.created_at >= NOW() - INTERVAL '24 hours'
+                ), 0)
+                + COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM landscape_analyses la
+                    WHERE la.user_id = u.id
+                      AND la.landscape_analysis_type IN ('TRACE_INCREMENTAL', 'HLP', 'BIO')
+                      AND la.created_at >= NOW() - INTERVAL '24 hours'
+                ), 0)
+                + COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = u.id
+                      AND ue.event_type = 'AI_TRANSCRIPTION_REQUESTED'
+                      AND ue.occurred_at >= NOW() - INTERVAL '24 hours'
+                ), 0)
+            )::bigint AS ai_requests_last_24h,
+            (
+                COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM messages m
+                    WHERE m.sender_user_id = u.id
+                      AND m.message_type IN ('QUESTION', 'TAROT_READING_REQUEST')
+                      AND m.created_at >= NOW() - INTERVAL '7 days'
+                ), 0)
+                + COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM landscape_analyses la
+                    WHERE la.user_id = u.id
+                      AND la.landscape_analysis_type IN ('TRACE_INCREMENTAL', 'HLP', 'BIO')
+                      AND la.created_at >= NOW() - INTERVAL '7 days'
+                ), 0)
+                + COALESCE((
+                    SELECT COUNT(*)::bigint
+                    FROM usage_events ue
+                    WHERE ue.user_id = u.id
+                      AND ue.event_type = 'AI_TRANSCRIPTION_REQUESTED'
+                      AND ue.occurred_at >= NOW() - INTERVAL '7 days'
+                ), 0)
+            )::bigint AS ai_requests_last_7d
+        {}
+        ORDER BY u.created_at DESC
+        OFFSET $5
+        LIMIT $6
+        "#,
+        filter_sql
+    ))
+    .bind::<Nullable<Text>, _>(q)
+    .bind::<Nullable<Bool>, _>(params.ai_features_enabled_by_admin)
+    .bind::<Nullable<Text>, _>(principal_type)
+    .bind::<Nullable<Bool>, _>(params.is_platform_user)
+    .bind::<BigInt, _>(pagination.offset)
+    .bind::<BigInt, _>(pagination.limit)
+    .load::<AdminUserRow>(&mut conn)?;
+
+    let items = rows
+        .into_iter()
+        .map(|row| {
+            let principal_type = UserPrincipalType::from_db(&row.principal_type)?;
+            Ok(AdminUserListItem {
+                id: row.id,
+                email: row.email,
+                display_name: format!("{} {}", row.first_name, row.last_name),
+                first_name: row.first_name,
+                last_name: row.last_name,
+                handle: row.handle,
+                created_at: row.created_at,
+                principal_type,
+                is_platform_user: row.is_platform_user,
+                ai_features_enabled: row.ai_features_enabled,
+                ai_features_enabled_by_admin: row.ai_features_enabled_by_admin,
+                allows_ai_features: row.ai_features_enabled && row.ai_features_enabled_by_admin,
+                llm_calls_count: row.llm_calls_count,
+                ai_requests_last_24h: row.ai_requests_last_24h,
+                ai_requests_last_7d: row.ai_requests_last_7d,
+            })
+        })
+        .collect::<Result<Vec<_>, PpdcError>>()?;
+
+    Ok(Json(PaginatedResponse::new(items, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn patch_admin_user_ai_features_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<PatchAdminUserAiFeaturesDto>,
+) -> Result<Json<AdminUserAiFeaturesResponse>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let mut conn = pool.get()?;
+
+    diesel::update(users::table.filter(users::id.eq(id)))
+        .set(users::ai_features_enabled_by_admin.eq(payload.ai_features_enabled_by_admin))
+        .execute(&mut conn)?;
+
+    let user = User::find(&id, &pool)?;
+    Ok(Json(AdminUserAiFeaturesResponse {
+        id: user.id,
+        ai_features_enabled: user.ai_features_enabled,
+        ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
+        allows_ai_features: user.allows_ai_features(),
+    }))
 }
 
 #[debug_handler]

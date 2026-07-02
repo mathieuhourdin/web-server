@@ -1,3 +1,4 @@
+pub mod ai_usage_guard;
 pub mod asset;
 pub mod device;
 pub mod error;

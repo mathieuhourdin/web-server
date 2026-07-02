@@ -298,7 +298,10 @@ pub async fn get_suggested_users_route(
 
     let results = ranked_user_ids
         .into_iter()
-        .map(|row| User::find(&row.user_id, &pool).map(|user| UserPublicResponse::from(&user)))
+        .map(|row| {
+            User::find(&row.user_id, &pool)
+                .map(|user| user.public_response_with_profile_picture_display_url(&pool))
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Json(results))

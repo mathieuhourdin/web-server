@@ -15,6 +15,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     landmark::Landmark,
     lens::{Lens, LensProcessingState},
+    platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     session::Session,
     trace::Trace,
     trace_mirror::TraceMirror,
@@ -330,6 +331,13 @@ pub async fn post_analysis_route(
             anchor_date.format("%Y-%m-%d")
         ),
     };
+    let user = User::find(&session_user_id, &pool)?;
+    ensure_ai_usage_allowed(
+        &user,
+        Some(session.id),
+        AiUsageKind::LandscapeAnalysis,
+        &pool,
+    )?;
 
     let analysis = NewLandscapeAnalysis::new(
         analysis_title,

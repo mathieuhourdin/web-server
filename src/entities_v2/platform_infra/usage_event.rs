@@ -42,6 +42,7 @@ pub enum UsageEventType {
     TraceTimeoutSet,
     TraceTimeoutExtended,
     TraceTimeoutAutoFinalized,
+    AiTranscriptionRequested,
 }
 
 impl UsageEventType {
@@ -61,6 +62,7 @@ impl UsageEventType {
             UsageEventType::TraceTimeoutSet => "TRACE_TIMEOUT_SET",
             UsageEventType::TraceTimeoutExtended => "TRACE_TIMEOUT_EXTENDED",
             UsageEventType::TraceTimeoutAutoFinalized => "TRACE_TIMEOUT_AUTO_FINALIZED",
+            UsageEventType::AiTranscriptionRequested => "AI_TRANSCRIPTION_REQUESTED",
         }
     }
 
@@ -89,6 +91,9 @@ impl UsageEventType {
             }
             "TRACE_TIMEOUT_AUTO_FINALIZED" | "trace_timeout_auto_finalized" => {
                 Ok(UsageEventType::TraceTimeoutAutoFinalized)
+            }
+            "AI_TRANSCRIPTION_REQUESTED" | "ai_transcription_requested" => {
+                Ok(UsageEventType::AiTranscriptionRequested)
             }
             _ => Err(PpdcError::new(
                 400,
@@ -271,6 +276,22 @@ pub fn create_usage_event(
     NewUsageEvent::new(payload, user_id, session_id).create(pool)
 }
 
+pub fn create_internal_usage_event(
+    user_id: Uuid,
+    session_id: Option<Uuid>,
+    event_type: UsageEventType,
+    resource_id: Option<Uuid>,
+    context_json: Option<Value>,
+    pool: &DbPool,
+) -> Result<UsageEvent, PpdcError> {
+    let payload = NewUsageEventDto {
+        event_type,
+        resource_id,
+        context_json,
+    };
+    NewUsageEvent::new(payload, user_id, session_id).create(pool)
+}
+
 fn validate_usage_event_access(
     event_type: UsageEventType,
     resource_id: Option<Uuid>,
@@ -363,6 +384,13 @@ fn validate_usage_event_access(
             if trace.user_id != user_id {
                 return Err(PpdcError::unauthorized());
             }
+        }
+        UsageEventType::AiTranscriptionRequested => {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "This usage event type is internal".to_string(),
+            ));
         }
     }
 

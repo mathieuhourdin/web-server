@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
-    error::{ErrorType, PpdcError},
+    error::PpdcError,
     trace::{Trace, TraceStatus},
 };
 use crate::pagination::PaginationParams;
@@ -17,7 +17,7 @@ pub struct TraceSearchDocument;
 
 #[derive(Debug, Deserialize)]
 pub struct TraceSearchParams {
-    pub q: String,
+    pub q: Option<String>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -279,7 +279,7 @@ impl TraceSearchDocument {
 
     pub fn search_for_user(
         user_id: Uuid,
-        query: &str,
+        query: Option<&str>,
         journal_ids: &[Uuid],
         landmark_ids: &[Uuid],
         high_level_project_landmark_ids: &[Uuid],
@@ -287,13 +287,17 @@ impl TraceSearchDocument {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<TraceSearchItem>, i64), PpdcError> {
-        let query = query.trim();
+        let query = query.unwrap_or("").trim();
         if query.is_empty() {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "q is required".to_string(),
-            ));
+            return Self::list_for_user(
+                user_id,
+                journal_ids,
+                landmark_ids,
+                high_level_project_landmark_ids,
+                offset,
+                limit,
+                pool,
+            );
         }
 
         let mut conn = pool.get()?;
@@ -478,6 +482,169 @@ impl TraceSearchDocument {
         Ok((items, total))
     }
 
+    fn list_for_user(
+        user_id: Uuid,
+        journal_ids: &[Uuid],
+        landmark_ids: &[Uuid],
+        high_level_project_landmark_ids: &[Uuid],
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<TraceSearchItem>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let total = sql_query(
+            r#"
+            SELECT COUNT(*)::bigint AS count
+            FROM trace_search_documents tsd
+            WHERE tsd.user_id = $1
+              AND (cardinality($2::uuid[]) = 0 OR tsd.journal_id = ANY($2))
+              AND (
+                cardinality($3::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($3)
+                      AND l.landmark_type <> 'HIGH_LEVEL_PROJECT'
+                )
+              )
+              AND (
+                cardinality($4::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($4)
+                      AND l.landmark_type = 'HIGH_LEVEL_PROJECT'
+                )
+              )
+            "#,
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Array<SqlUuid>, _>(journal_ids)
+        .bind::<Array<SqlUuid>, _>(landmark_ids)
+        .bind::<Array<SqlUuid>, _>(high_level_project_landmark_ids)
+        .get_result::<CountRow>(&mut conn)?
+        .count;
+
+        let rows = sql_query(
+            r#"
+            SELECT
+                tsd.trace_id,
+                0::real AS score,
+                ''::text AS matched_sources
+            FROM trace_search_documents tsd
+            INNER JOIN traces t
+              ON t.id = tsd.trace_id
+            WHERE tsd.user_id = $1
+              AND (cardinality($2::uuid[]) = 0 OR tsd.journal_id = ANY($2))
+              AND (
+                cardinality($3::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($3)
+                      AND l.landmark_type <> 'HIGH_LEVEL_PROJECT'
+                )
+              )
+              AND (
+                cardinality($4::uuid[]) = 0
+                OR EXISTS (
+                    SELECT 1
+                    FROM "references" r
+                    INNER JOIN trace_mirrors tm
+                      ON tm.id = r.trace_mirror_id
+                    INNER JOIN landscape_analyses la
+                      ON la.id = r.landscape_analysis_id
+                     AND la.landscape_analysis_type = 'TRACE_INCREMENTAL'
+                    INNER JOIN users u
+                      ON u.id = $1
+                    INNER JOIN lens_analysis_scopes las
+                      ON las.landscape_analysis_id = r.landscape_analysis_id
+                     AND las.lens_id = u.current_lens_id
+                    INNER JOIN landmarks l
+                      ON l.id = r.landmark_id
+                    WHERE tm.trace_id = tsd.trace_id
+                      AND r.landmark_id = ANY($4)
+                      AND l.landmark_type = 'HIGH_LEVEL_PROJECT'
+                )
+              )
+            ORDER BY t.finalized_at DESC NULLS LAST, tsd.interaction_date DESC, tsd.trace_id ASC
+            OFFSET $5
+            LIMIT $6
+            "#,
+        )
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Array<SqlUuid>, _>(journal_ids)
+        .bind::<Array<SqlUuid>, _>(landmark_ids)
+        .bind::<Array<SqlUuid>, _>(high_level_project_landmark_ids)
+        .bind::<BigInt, _>(offset)
+        .bind::<BigInt, _>(limit)
+        .load::<TraceSearchRow>(&mut conn)?;
+
+        let trace_ids = rows.iter().map(|row| row.trace_id).collect::<Vec<_>>();
+        let landmark_context =
+            Self::hydrate_ranked_landmarks_for_traces(user_id, "", &trace_ids, pool)?;
+
+        let items = rows
+            .into_iter()
+            .map(|row| {
+                let trace = Trace::find_full_trace(row.trace_id, pool)?;
+                let context = landmark_context.get(&row.trace_id);
+                Ok(TraceSearchItem {
+                    trace,
+                    score: row.score,
+                    matched_sources: vec![],
+                    landmarks: context
+                        .map(|context| context.landmarks.clone())
+                        .unwrap_or_default(),
+                    high_level_project_landmarks: context
+                        .map(|context| context.high_level_project_landmarks.clone())
+                        .unwrap_or_default(),
+                })
+            })
+            .collect::<Result<Vec<_>, PpdcError>>()?;
+
+        Ok((items, total))
+    }
+
     fn hydrate_ranked_landmarks_for_traces(
         user_id: Uuid,
         query: &str,
@@ -495,7 +662,9 @@ impl TraceSearchDocument {
                 SELECT unnest($2::uuid[]) AS trace_id
             ),
             q AS (
-                SELECT websearch_to_tsquery('simple', $3) AS query
+                SELECT
+                    websearch_to_tsquery('simple', $3) AS query,
+                    NULLIF(BTRIM($3), '') IS NOT NULL AS has_query
             ),
             candidates AS (
                 SELECT
@@ -542,15 +711,21 @@ impl TraceSearchDocument {
                     g.title,
                     g.subtitle,
                     g.landmark_type = 'HIGH_LEVEL_PROJECT' AS is_high_level_project,
-                    (
-                        setweight(to_tsvector('simple', g.title), 'A') ||
-                        setweight(to_tsvector('simple', g.subtitle), 'B')
-                    ) @@ q.query AS matched_query,
-                    ts_rank_cd(
-                        setweight(to_tsvector('simple', g.title), 'A') ||
-                        setweight(to_tsvector('simple', g.subtitle), 'B'),
-                        q.query
-                    )::real AS score,
+                    CASE
+                        WHEN q.has_query THEN (
+                            setweight(to_tsvector('simple', g.title), 'A') ||
+                            setweight(to_tsvector('simple', g.subtitle), 'B')
+                        ) @@ q.query
+                        ELSE FALSE
+                    END AS matched_query,
+                    CASE
+                        WHEN q.has_query THEN ts_rank_cd(
+                            setweight(to_tsvector('simple', g.title), 'A') ||
+                            setweight(to_tsvector('simple', g.subtitle), 'B'),
+                            q.query
+                        )::real
+                        ELSE 0::real
+                    END AS score,
                     g.relation_priority,
                     g.updated_at
                 FROM grouped g

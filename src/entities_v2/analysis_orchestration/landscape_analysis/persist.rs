@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind};
 use crate::entities_v2::reference::Reference;
 use crate::entities_v2::{
     lens::Lens,
@@ -522,6 +523,7 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
     let mut created = Vec::new();
 
     if !has_trace_analysis_for_lens(lens_id, trace_analysis_type, trace.id, pool)? {
+        ensure_ai_usage_allowed(&user, None, AiUsageKind::LandscapeAnalysis, pool)?;
         let new_analysis = match trace_analysis_type {
             LandscapeAnalysisType::Hlp => NewLandscapeAnalysis::new_hlp(
                 format!("HLP analysis {}", trace.id),
@@ -831,6 +833,7 @@ WHERE la.processing_state = 'PENDING'
   AND la.period_end <= NOW()
   AND l.processing_state != 'FAILED'
   AND u.ai_features_enabled = TRUE
+  AND u.ai_features_enabled_by_admin = TRUE
   AND NOT (
     u.principal_type = 'HUMAN'
     AND u.is_platform_user = TRUE

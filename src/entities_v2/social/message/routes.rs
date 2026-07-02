@@ -10,6 +10,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     landscape_analysis::LandscapeAnalysis,
     notification,
+    platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     post::{Post, PostStatus},
     post_grant::PostGrant,
     session::Session,
@@ -403,13 +404,12 @@ pub async fn post_message_route(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
     ) {
-        if !sender_user.allows_ai_features() {
-            return Err(PpdcError::new(
-                403,
-                ErrorType::ApiError,
-                "AI features are disabled for this account".to_string(),
-            ));
-        }
+        let ai_usage_kind = if message_type == MessageType::TarotReadingRequest {
+            AiUsageKind::TarotReading
+        } else {
+            AiUsageKind::MentorQuestion
+        };
+        ensure_ai_usage_allowed(&sender_user, Some(session.id), ai_usage_kind, &pool)?;
         if !recipient_is_service_mentor {
             return Err(PpdcError::new(
                 400,

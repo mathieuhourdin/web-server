@@ -1,4 +1,5 @@
 use crate::db::DbPool;
+use crate::entities_v2::platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind};
 use crate::entities_v2::session::Session;
 use crate::entities_v2::user::User;
 use crate::openai_handler::whisper_handler::transcribe_audio_with_openai;
@@ -28,13 +29,7 @@ pub async fn post_transcription_route(
 
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let user = User::find(&user_id, &pool)?;
-    if !user.allows_ai_features() {
-        return Err(PpdcError::new(
-            403,
-            ErrorType::ApiError,
-            "AI features are disabled for this account".to_string(),
-        ));
-    }
+    ensure_ai_usage_allowed(&user, Some(session.id), AiUsageKind::Transcription, &pool)?;
 
     // Log that the request has been received
     tracing::info!(
