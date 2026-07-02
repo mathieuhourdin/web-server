@@ -94,7 +94,7 @@ pub struct Trace {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct JournalTraceView {
+pub struct TraceListItem {
     pub id: Uuid,
     pub post_id: Option<Uuid>,
     pub version_integer: Option<i32>,
@@ -731,6 +731,202 @@ impl Trace {
             .map(|index| index as i64 + 1))
     }
 
+    pub fn find_list_items_for_owner_paginated(
+        owner_user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        status: TraceStatus,
+        journal_id: Option<Uuid>,
+        sharing_sensitivity: Option<TraceSharingSensitivity>,
+        has_post: Option<bool>,
+        seen: Option<bool>,
+        pool: &DbPool,
+    ) -> Result<(Vec<TraceListItem>, i64), PpdcError> {
+        type TraceListItemTuple = (
+            Uuid,
+            Option<Uuid>,
+            Option<Uuid>,
+            String,
+            String,
+            NaiveDateTime,
+            String,
+            bool,
+            Option<String>,
+            Option<Uuid>,
+            String,
+            Option<DateTime<Utc>>,
+            Option<DateTime<Utc>>,
+            Uuid,
+            String,
+            String,
+            i32,
+            NaiveDateTime,
+            Option<NaiveDateTime>,
+            NaiveDateTime,
+            NaiveDateTime,
+        );
+
+        let mut conn = pool.get()?;
+        let seen_trace_ids = if seen.is_some() {
+            crate::entities_v2::user_post_state::UserPostState::find_seen_trace_ids_for_user(
+                owner_user_id,
+                pool,
+            )?
+        } else {
+            vec![]
+        };
+
+        let mut count_query = traces::table
+            .left_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::user_id.eq(owner_user_id))
+            .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
+            .filter(traces::status.eq(status.to_db()))
+            .into_boxed();
+        if let Some(journal_id) = journal_id {
+            count_query = count_query.filter(traces::journal_id.eq(journal_id));
+        }
+        if let Some(sharing_sensitivity) = sharing_sensitivity {
+            count_query =
+                count_query.filter(traces::sharing_sensitivity.eq(sharing_sensitivity.to_db()));
+        }
+        if let Some(has_post) = has_post {
+            count_query = if has_post {
+                count_query.filter(posts::id.is_not_null())
+            } else {
+                count_query.filter(posts::id.is_null())
+            };
+        }
+        if let Some(seen) = seen {
+            if seen {
+                if seen_trace_ids.is_empty() {
+                    return Ok((vec![], 0));
+                }
+                count_query = count_query.filter(traces::id.eq_any(seen_trace_ids.clone()));
+            } else if !seen_trace_ids.is_empty() {
+                count_query = count_query.filter(not(traces::id.eq_any(seen_trace_ids.clone())));
+            }
+        }
+        let total = count_query.count().get_result::<i64>(&mut conn)?;
+
+        let mut query = traces::table
+            .left_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(traces::user_id.eq(owner_user_id))
+            .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
+            .filter(traces::status.eq(status.to_db()))
+            .into_boxed();
+        if let Some(journal_id) = journal_id {
+            query = query.filter(traces::journal_id.eq(journal_id));
+        }
+        if let Some(sharing_sensitivity) = sharing_sensitivity {
+            query = query.filter(traces::sharing_sensitivity.eq(sharing_sensitivity.to_db()));
+        }
+        if let Some(has_post) = has_post {
+            query = if has_post {
+                query.filter(posts::id.is_not_null())
+            } else {
+                query.filter(posts::id.is_null())
+            };
+        }
+        if let Some(seen) = seen {
+            if seen {
+                query = query.filter(traces::id.eq_any(seen_trace_ids));
+            } else if !seen_trace_ids.is_empty() {
+                query = query.filter(not(traces::id.eq_any(seen_trace_ids)));
+            }
+        }
+
+        let rows = query
+            .select((
+                traces::id,
+                posts::id.nullable(),
+                traces::derived_from_trace_id,
+                traces::title,
+                traces::subtitle,
+                traces::interaction_date,
+                traces::content,
+                traces::is_encrypted,
+                sql::<Nullable<Text>>("encryption_metadata::text"),
+                traces::content_image_asset_id,
+                traces::sharing_sensitivity,
+                sql::<Nullable<Timestamptz>>("timeout_start_at"),
+                sql::<Nullable<Timestamptz>>("timeout_at"),
+                traces::journal_id,
+                traces::trace_type,
+                traces::status,
+                traces::version_integer,
+                traces::start_writing_at,
+                traces::finalized_at,
+                traces::created_at,
+                traces::updated_at,
+            ))
+            .order(traces::finalized_at.desc().nulls_last())
+            .then_order_by(traces::interaction_date.desc())
+            .then_order_by(traces::created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<TraceListItemTuple>(&mut conn)?;
+
+        let items = rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    post_id,
+                    derived_from_trace_id,
+                    title,
+                    subtitle,
+                    interaction_date,
+                    content,
+                    is_encrypted,
+                    encryption_metadata,
+                    content_image_asset_id,
+                    sharing_sensitivity_raw,
+                    timeout_start_at,
+                    timeout_at,
+                    journal_id,
+                    trace_type_raw,
+                    status_raw,
+                    version_integer,
+                    start_writing_at,
+                    finalized_at,
+                    created_at,
+                    updated_at,
+                )| TraceListItem {
+                    id,
+                    post_id,
+                    version_integer: Some(version_integer),
+                    journal_id,
+                    title,
+                    subtitle: Some(subtitle),
+                    content,
+                    derived_from_trace_id,
+                    is_encrypted: Some(is_encrypted),
+                    encryption_metadata: encryption_metadata
+                        .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
+                    content_image_asset_id,
+                    sharing_sensitivity: Some(TraceSharingSensitivity::from_db(
+                        &sharing_sensitivity_raw,
+                    )),
+                    timeout_start_at,
+                    timeout_at,
+                    user_id: Some(owner_user_id),
+                    trace_type: Some(TraceType::from_db(&trace_type_raw)),
+                    status: Some(TraceStatus::from_db(&status_raw)),
+                    start_writing_at: Some(start_writing_at),
+                    finalized_at,
+                    seen: false,
+                    last_seen_at: None,
+                    seen_by_preview: None,
+                    interaction_date,
+                    created_at,
+                    updated_at,
+                },
+            )
+            .collect();
+
+        Ok((items, total))
+    }
+
     pub fn get_shared_for_journal_paginated(
         viewer_user_id: Uuid,
         journal_id: Uuid,
@@ -738,7 +934,7 @@ impl Trace {
         limit: i64,
         seen: Option<bool>,
         pool: &DbPool,
-    ) -> Result<(Vec<JournalTraceView>, i64), PpdcError> {
+    ) -> Result<(Vec<TraceListItem>, i64), PpdcError> {
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
         if visible_post_ids.is_empty() {
             return Ok((vec![], 0));
@@ -835,7 +1031,7 @@ impl Trace {
                     interaction_date,
                     created_at,
                     updated_at,
-                )| JournalTraceView {
+                )| TraceListItem {
                     id,
                     post_id: Some(post_id),
                     version_integer: None,

@@ -41,7 +41,7 @@ use crate::work_analyzer;
 use super::{
     enums::{TraceSharingSensitivity, TraceStatus},
     llm_qualify,
-    model::{JournalTraceView, NewTrace, PatchTraceDto, Trace, TraceReadableView, UpdateTraceDto},
+    model::{NewTrace, PatchTraceDto, Trace, TraceListItem, TraceReadableView, UpdateTraceDto},
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +63,17 @@ pub struct JournalTracesQuery {
     pub until_trace_id: Option<Uuid>,
     #[serde(default)]
     pub include_seen_by_preview: bool,
+}
+
+#[derive(Deserialize)]
+pub struct MeTracesQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub status: Option<TraceStatus>,
+    pub journal_id: Option<Uuid>,
+    pub sharing_sensitivity: Option<TraceSharingSensitivity>,
+    pub has_post: Option<bool>,
+    pub seen: Option<bool>,
 }
 
 const JOURNAL_TRACE_POSITION_BATCH_SIZE: i64 = 20;
@@ -413,11 +424,11 @@ fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Pos
     Ok(Some(post))
 }
 
-fn attach_seen_state_to_journal_trace_views(
+fn attach_seen_state_to_trace_list_items(
     user_id: Uuid,
-    items: Vec<JournalTraceView>,
+    items: Vec<TraceListItem>,
     pool: &DbPool,
-) -> Result<Vec<JournalTraceView>, PpdcError> {
+) -> Result<Vec<TraceListItem>, PpdcError> {
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -432,11 +443,11 @@ fn attach_seen_state_to_journal_trace_views(
         .collect())
 }
 
-fn attach_seen_by_preview_to_journal_trace_views(
+fn attach_seen_by_preview_to_trace_list_items(
     owner_user_id: Uuid,
-    items: Vec<JournalTraceView>,
+    items: Vec<TraceListItem>,
     pool: &DbPool,
-) -> Result<Vec<JournalTraceView>, PpdcError> {
+) -> Result<Vec<TraceListItem>, PpdcError> {
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let previews = UserPostState::find_seen_by_preview_by_trace_ids(
         owner_user_id,
@@ -1637,6 +1648,31 @@ pub async fn get_all_traces_for_user_route(
 }
 
 #[debug_handler]
+pub async fn get_me_traces_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<MeTracesQuery>,
+) -> Result<Json<PaginatedResponse<TraceListItem>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    finalize_expired_drafts_for_user(user_id, &pool, Some(session.id)).await?;
+    let pagination = params.pagination.validate()?;
+    let status = params.status.unwrap_or(TraceStatus::Finalized);
+    let (items, total) = Trace::find_list_items_for_owner_paginated(
+        user_id,
+        pagination.offset,
+        pagination.limit,
+        status,
+        params.journal_id,
+        params.sharing_sensitivity,
+        params.has_post,
+        params.seen,
+        &pool,
+    )?;
+    let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
+    Ok(Json(PaginatedResponse::new(items, pagination, total)))
+}
+
+#[debug_handler]
 pub async fn get_trace_drafts_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -1979,7 +2015,7 @@ pub async fn get_traces_for_journal_route(
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Query(params): Query<JournalTracesQuery>,
-) -> Result<Json<PaginatedResponse<JournalTraceView>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<TraceListItem>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
     let pagination = params.pagination.validate()?;
@@ -2028,7 +2064,7 @@ pub async fn get_traces_for_journal_route(
         )?;
         let items = traces
             .into_iter()
-            .map(|trace| JournalTraceView {
+            .map(|trace| TraceListItem {
                 id: trace.id,
                 post_id: None,
                 version_integer: Some(trace.version_integer),
@@ -2056,9 +2092,9 @@ pub async fn get_traces_for_journal_route(
                 updated_at: trace.updated_at,
             })
             .collect::<Vec<_>>();
-        let items = attach_seen_state_to_journal_trace_views(user_id, items, &pool)?;
+        let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
         let items = if params.include_seen_by_preview {
-            attach_seen_by_preview_to_journal_trace_views(user_id, items, &pool)?
+            attach_seen_by_preview_to_trace_list_items(user_id, items, &pool)?
         } else {
             items
         };
@@ -2095,6 +2131,6 @@ pub async fn get_traces_for_journal_route(
     if total == 0 {
         return Err(PpdcError::unauthorized());
     }
-    let traces = attach_seen_state_to_journal_trace_views(user_id, traces, &pool)?;
+    let traces = attach_seen_state_to_trace_list_items(user_id, traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

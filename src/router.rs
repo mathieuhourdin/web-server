@@ -493,6 +493,7 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/unread_counts", get(user::get_me_unread_counts_route))
+        .route("/traces", get(trace::get_me_traces_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
