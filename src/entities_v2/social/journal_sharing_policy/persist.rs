@@ -109,6 +109,24 @@ fn find_accepted_follower_ids_for_user_with_conn(
     Ok(rows)
 }
 
+fn has_eligible_history_posts_with_conn(
+    journal_id: Uuid,
+    owner_user_id: Uuid,
+    conn: &mut PgConnection,
+) -> Result<bool, PpdcError> {
+    let post_id = posts::table
+        .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+        .filter(posts::user_id.eq(owner_user_id))
+        .filter(posts::status.ne(PostStatus::Archived.to_db()))
+        .filter(traces::journal_id.eq(journal_id))
+        .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
+        .filter(traces::status.ne(TraceStatus::Archived.to_db()))
+        .select(posts::id)
+        .first::<Uuid>(conn)
+        .optional()?;
+    Ok(post_id.is_some())
+}
+
 fn default_policy_values_for_sharing_mode(
     sharing_mode: JournalSharingMode,
 ) -> Option<(JournalSharingPolicyStatus, bool, JournalHistoryReviewState)> {
@@ -357,36 +375,80 @@ impl JournalSharingPolicy {
         let default_future_access_enabled = payload
             .default_future_access_enabled
             .unwrap_or(status == JournalSharingPolicyStatus::Active);
-        let history_review_state = if status == JournalSharingPolicyStatus::Active {
-            JournalHistoryReviewState::Unreviewed
-        } else {
-            JournalHistoryReviewState::NotStarted
-        };
-
         let mut conn = pool.get()?;
         let id = conn.transaction::<Uuid, PpdcError, _>(|conn| {
-            let existing_id = journal_sharing_policies::table
+            let existing_policy = journal_sharing_policies::table
                 .filter(journal_sharing_policies::journal_id.eq(journal.id))
                 .filter(journal_sharing_policies::grantee_user_id.eq(payload.grantee_user_id))
-                .select(journal_sharing_policies::id)
-                .first::<Uuid>(conn)
-                .optional()?;
+                .select(select_policy_columns())
+                .first::<JournalSharingPolicyTuple>(conn)
+                .optional()?
+                .map(tuple_to_policy);
 
-            if let Some(existing_id) = existing_id {
-                diesel::update(
-                    journal_sharing_policies::table
-                        .filter(journal_sharing_policies::id.eq(existing_id)),
-                )
-                .set((
-                    journal_sharing_policies::status.eq(status.to_db()),
-                    journal_sharing_policies::default_future_access_enabled
-                        .eq(default_future_access_enabled),
-                    journal_sharing_policies::history_review_state.eq(history_review_state.to_db()),
-                    journal_sharing_policies::updated_at.eq(diesel::dsl::now),
-                ))
-                .execute(conn)?;
-                return Ok(existing_id);
+            if let Some(existing_policy) = existing_policy {
+                let reactivating = existing_policy.status != JournalSharingPolicyStatus::Active
+                    && status == JournalSharingPolicyStatus::Active;
+
+                if reactivating {
+                    let has_history =
+                        has_eligible_history_posts_with_conn(journal.id, owner_user_id, conn)?;
+                    let (history_review_state, history_decision, history_reviewed_at) =
+                        if has_history {
+                            (JournalHistoryReviewState::Unreviewed, None, None)
+                        } else {
+                            (
+                                JournalHistoryReviewState::Reviewed,
+                                Some(JournalHistoryDecision::None.to_db()),
+                                Some(chrono::Utc::now().naive_utc()),
+                            )
+                        };
+
+                    diesel::update(
+                        journal_sharing_policies::table
+                            .filter(journal_sharing_policies::id.eq(existing_policy.id)),
+                    )
+                    .set((
+                        journal_sharing_policies::status.eq(status.to_db()),
+                        journal_sharing_policies::default_future_access_enabled
+                            .eq(default_future_access_enabled),
+                        journal_sharing_policies::history_review_state
+                            .eq(history_review_state.to_db()),
+                        journal_sharing_policies::history_decision.eq(history_decision),
+                        journal_sharing_policies::history_reviewed_at.eq(history_reviewed_at),
+                        journal_sharing_policies::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+                } else {
+                    // Repeated POSTs must not erase a completed history review.
+                    diesel::update(
+                        journal_sharing_policies::table
+                            .filter(journal_sharing_policies::id.eq(existing_policy.id)),
+                    )
+                    .set((
+                        journal_sharing_policies::status.eq(status.to_db()),
+                        journal_sharing_policies::default_future_access_enabled
+                            .eq(default_future_access_enabled),
+                        journal_sharing_policies::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+                }
+                return Ok(existing_policy.id);
             }
+
+            let (history_review_state, history_decision, history_reviewed_at) =
+                if status == JournalSharingPolicyStatus::Active {
+                    if has_eligible_history_posts_with_conn(journal.id, owner_user_id, conn)? {
+                        (JournalHistoryReviewState::Unreviewed, None, None)
+                    } else {
+                        (
+                            JournalHistoryReviewState::Reviewed,
+                            Some(JournalHistoryDecision::None.to_db()),
+                            Some(chrono::Utc::now().naive_utc()),
+                        )
+                    }
+                } else {
+                    (JournalHistoryReviewState::NotStarted, None, None)
+                };
 
             let id = Uuid::new_v4();
             diesel::insert_into(journal_sharing_policies::table)
@@ -399,6 +461,8 @@ impl JournalSharingPolicy {
                     journal_sharing_policies::default_future_access_enabled
                         .eq(default_future_access_enabled),
                     journal_sharing_policies::history_review_state.eq(history_review_state.to_db()),
+                    journal_sharing_policies::history_decision.eq(history_decision),
+                    journal_sharing_policies::history_reviewed_at.eq(history_reviewed_at),
                 ))
                 .execute(conn)?;
             Ok(id)
