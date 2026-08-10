@@ -1,0 +1,1 @@
+-- This migration records completed reviews and cannot safely restore the prior state.

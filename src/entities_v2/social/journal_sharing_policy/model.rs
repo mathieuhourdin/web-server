@@ -5,7 +5,8 @@ use uuid::Uuid;
 use crate::entities_v2::{journal::JournalSharingMode, user::UserPublicResponse};
 
 pub use super::enums::{
-    JournalHistoryDecision, JournalHistoryReviewState, JournalSharingPolicyStatus,
+    JournalHistoryDecision, JournalHistoryReviewState, JournalSharingPolicyCreationOrigin,
+    JournalSharingPolicyStatus,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -14,6 +15,7 @@ pub struct JournalSharingPolicy {
     pub journal_id: Uuid,
     pub owner_user_id: Uuid,
     pub grantee_user_id: Uuid,
+    pub creation_origin: JournalSharingPolicyCreationOrigin,
     pub status: JournalSharingPolicyStatus,
     pub default_future_access_enabled: bool,
     pub history_review_state: JournalHistoryReviewState,

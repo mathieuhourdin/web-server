@@ -34,6 +34,32 @@ impl JournalSharingPolicyStatus {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum JournalSharingPolicyCreationOrigin {
+    Manual,
+    NewFollower,
+    JournalSharingMode,
+}
+
+impl JournalSharingPolicyCreationOrigin {
+    pub fn to_db(self) -> &'static str {
+        match self {
+            JournalSharingPolicyCreationOrigin::Manual => "MANUAL",
+            JournalSharingPolicyCreationOrigin::NewFollower => "NEW_FOLLOWER",
+            JournalSharingPolicyCreationOrigin::JournalSharingMode => "JOURNAL_SHARING_MODE",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "NEW_FOLLOWER" => JournalSharingPolicyCreationOrigin::NewFollower,
+            "JOURNAL_SHARING_MODE" => JournalSharingPolicyCreationOrigin::JournalSharingMode,
+            _ => JournalSharingPolicyCreationOrigin::Manual,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum JournalHistoryReviewState {
     NotStarted,
     Unreviewed,

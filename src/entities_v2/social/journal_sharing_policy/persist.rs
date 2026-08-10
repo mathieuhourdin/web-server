@@ -14,7 +14,10 @@ use crate::entities_v2::{
 };
 use crate::schema::{journal_sharing_policies, journals, posts, traces};
 
-use super::enums::{JournalHistoryDecision, JournalHistoryReviewState, JournalSharingPolicyStatus};
+use super::enums::{
+    JournalHistoryDecision, JournalHistoryReviewState, JournalSharingPolicyCreationOrigin,
+    JournalSharingPolicyStatus,
+};
 use super::model::{
     JournalSharingPolicy, JournalSharingPolicyHistoryDecisionDto,
     JournalSharingPolicyPendingReview, JournalSharingPolicyReviewJournal,
@@ -26,6 +29,7 @@ type JournalSharingPolicyTuple = (
     Uuid,
     Uuid,
     Uuid,
+    String,
     String,
     bool,
     String,
@@ -41,13 +45,14 @@ fn tuple_to_policy(row: JournalSharingPolicyTuple) -> JournalSharingPolicy {
         journal_id: row.1,
         owner_user_id: row.2,
         grantee_user_id: row.3,
-        status: JournalSharingPolicyStatus::from_db(&row.4),
-        default_future_access_enabled: row.5,
-        history_review_state: JournalHistoryReviewState::from_db(&row.6),
-        history_decision: row.7.as_deref().and_then(JournalHistoryDecision::from_db),
-        history_reviewed_at: row.8,
-        created_at: row.9,
-        updated_at: row.10,
+        creation_origin: JournalSharingPolicyCreationOrigin::from_db(&row.4),
+        status: JournalSharingPolicyStatus::from_db(&row.5),
+        default_future_access_enabled: row.6,
+        history_review_state: JournalHistoryReviewState::from_db(&row.7),
+        history_decision: row.8.as_deref().and_then(JournalHistoryDecision::from_db),
+        history_reviewed_at: row.9,
+        created_at: row.10,
+        updated_at: row.11,
     }
 }
 
@@ -56,6 +61,7 @@ fn select_policy_columns() -> (
     journal_sharing_policies::journal_id,
     journal_sharing_policies::owner_user_id,
     journal_sharing_policies::grantee_user_id,
+    journal_sharing_policies::creation_origin,
     journal_sharing_policies::status,
     journal_sharing_policies::default_future_access_enabled,
     journal_sharing_policies::history_review_state,
@@ -69,6 +75,7 @@ fn select_policy_columns() -> (
         journal_sharing_policies::journal_id,
         journal_sharing_policies::owner_user_id,
         journal_sharing_policies::grantee_user_id,
+        journal_sharing_policies::creation_origin,
         journal_sharing_policies::status,
         journal_sharing_policies::default_future_access_enabled,
         journal_sharing_policies::history_review_state,
@@ -136,12 +143,7 @@ fn default_policy_values_for_sharing_mode(
             true,
             JournalHistoryReviewState::Unreviewed,
         )),
-        JournalSharingMode::SemiShared => Some((
-            JournalSharingPolicyStatus::Suggested,
-            false,
-            JournalHistoryReviewState::NotStarted,
-        )),
-        JournalSharingMode::Private => None,
+        JournalSharingMode::SemiShared | JournalSharingMode::Private => None,
     }
 }
 
@@ -152,6 +154,7 @@ fn create_policy_if_absent_with_conn(
     status: JournalSharingPolicyStatus,
     default_future_access_enabled: bool,
     history_review_state: JournalHistoryReviewState,
+    creation_origin: JournalSharingPolicyCreationOrigin,
     conn: &mut PgConnection,
 ) -> Result<(), PpdcError> {
     let existing_id = journal_sharing_policies::table
@@ -164,16 +167,36 @@ fn create_policy_if_absent_with_conn(
         return Ok(());
     }
 
+    let automatically_reviewed_empty_history = matches!(
+        creation_origin,
+        JournalSharingPolicyCreationOrigin::NewFollower
+            | JournalSharingPolicyCreationOrigin::JournalSharingMode
+    ) && status == JournalSharingPolicyStatus::Active
+        && !has_eligible_history_posts_with_conn(journal_id, owner_user_id, conn)?;
+    let (history_review_state, history_decision, history_reviewed_at) =
+        if automatically_reviewed_empty_history {
+            (
+                JournalHistoryReviewState::Reviewed,
+                Some(JournalHistoryDecision::None.to_db()),
+                Some(chrono::Utc::now().naive_utc()),
+            )
+        } else {
+            (history_review_state, None, None)
+        };
+
     diesel::insert_into(journal_sharing_policies::table)
         .values((
             journal_sharing_policies::id.eq(Uuid::new_v4()),
             journal_sharing_policies::journal_id.eq(journal_id),
             journal_sharing_policies::owner_user_id.eq(owner_user_id),
             journal_sharing_policies::grantee_user_id.eq(grantee_user_id),
+            journal_sharing_policies::creation_origin.eq(creation_origin.to_db()),
             journal_sharing_policies::status.eq(status.to_db()),
             journal_sharing_policies::default_future_access_enabled
                 .eq(default_future_access_enabled),
             journal_sharing_policies::history_review_state.eq(history_review_state.to_db()),
+            journal_sharing_policies::history_decision.eq(history_decision),
+            journal_sharing_policies::history_reviewed_at.eq(history_reviewed_at),
         ))
         .execute(conn)?;
     Ok(())
@@ -457,6 +480,8 @@ impl JournalSharingPolicy {
                     journal_sharing_policies::journal_id.eq(journal.id),
                     journal_sharing_policies::owner_user_id.eq(owner_user_id),
                     journal_sharing_policies::grantee_user_id.eq(payload.grantee_user_id),
+                    journal_sharing_policies::creation_origin
+                        .eq(JournalSharingPolicyCreationOrigin::Manual.to_db()),
                     journal_sharing_policies::status.eq(status.to_db()),
                     journal_sharing_policies::default_future_access_enabled
                         .eq(default_future_access_enabled),
@@ -806,6 +831,7 @@ impl JournalSharingPolicy {
                 status,
                 default_future_access_enabled,
                 history_review_state,
+                JournalSharingPolicyCreationOrigin::NewFollower,
                 conn,
             )?;
         }
@@ -838,6 +864,7 @@ impl JournalSharingPolicy {
                     status,
                     default_future_access_enabled,
                     history_review_state,
+                    JournalSharingPolicyCreationOrigin::JournalSharingMode,
                     conn,
                 )?;
             }

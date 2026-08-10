@@ -1,0 +1,5 @@
+ALTER TABLE journal_sharing_policies
+DROP CONSTRAINT IF EXISTS journal_sharing_policies_creation_origin_check;
+
+ALTER TABLE journal_sharing_policies
+DROP COLUMN creation_origin;

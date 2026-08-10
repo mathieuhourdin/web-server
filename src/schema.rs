@@ -184,6 +184,7 @@ diesel::table! {
         journal_id -> Uuid,
         owner_user_id -> Uuid,
         grantee_user_id -> Uuid,
+        creation_origin -> Text,
         status -> Text,
         default_future_access_enabled -> Bool,
         history_review_state -> Text,
