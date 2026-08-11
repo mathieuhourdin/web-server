@@ -441,12 +441,15 @@ pub fn create_router() -> Router {
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
-    let sessions_router = Router::new().route(
-        "/",
-        get(sessions_service::get_session_route)
-            .post(sessions_service::post_session_route)
-            .delete(sessions_service::delete_session_route),
-    );
+    let sessions_router = Router::new()
+        .route(
+            "/",
+            get(sessions_service::get_session_route)
+                .post(sessions_service::post_session_route)
+                .delete(sessions_service::delete_session_route),
+        )
+        .route("/google", post(sessions_service::post_google_session_route))
+        .route("/apple", post(sessions_service::post_apple_session_route));
     let devices_router = Router::new()
         .route("/", get(device::get_devices_route))
         .route("/current", patch(device::patch_current_device_route))
@@ -504,10 +507,28 @@ pub fn create_router() -> Router {
             "/high_level_projects",
             get(landmark::get_me_high_level_projects_route),
         )
+        .route(
+            "/auth_providers/google",
+            post(sessions_service::post_google_provider_link_route)
+                .delete(sessions_service::delete_google_provider_link_route),
+        )
+        .route(
+            "/auth_providers/apple",
+            post(sessions_service::post_apple_provider_link_route)
+                .delete(sessions_service::delete_apple_provider_link_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
         .route("/users", post(user::post_user))
+        .route(
+            "/users/google",
+            post(sessions_service::post_google_user_route),
+        )
+        .route(
+            "/users/apple",
+            post(sessions_service::post_apple_user_route),
+        )
         .nest("/users", users_router)
         .nest("/mentors", mentors_router)
         .nest("/admin", admin_router)

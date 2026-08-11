@@ -123,3 +123,34 @@ pub fn get_journal_share_link_hmac_secret() -> String {
         .or_else(|_| std::env::var("INTERNAL_CRON_TOKEN"))
         .expect("JOURNAL_SHARE_LINK_HMAC_SECRET or INTERNAL_CRON_TOKEN should be provided")
 }
+
+fn get_optional_csv_env(name: &str) -> Vec<String> {
+    dotenv().ok();
+    std::env::var(name)
+        .ok()
+        .into_iter()
+        .flat_map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+pub fn get_google_auth_client_ids() -> Vec<String> {
+    [
+        "GOOGLE_AUTH_WEB_CLIENT_ID",
+        "GOOGLE_AUTH_ANDROID_CLIENT_ID",
+        "GOOGLE_AUTH_IOS_CLIENT_ID",
+    ]
+    .into_iter()
+    .flat_map(get_optional_csv_env)
+    .collect()
+}
+
+pub fn get_apple_auth_client_ids() -> Vec<String> {
+    get_optional_csv_env("APPLE_AUTH_CLIENT_IDS")
+}

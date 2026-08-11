@@ -134,6 +134,52 @@ fn enqueue_new_user_signup_notification_email(
     Ok(email.id)
 }
 
+pub(crate) fn finalize_new_human_user_registration(
+    created_user: &User,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    if let Err(err) = ensure_user_has_default_journals(created_user.id, pool) {
+        cleanup_failed_user_registration(created_user.id, pool);
+        return Err(err);
+    }
+    if let Err(err) = ensure_user_has_meta_journal(created_user.id, pool) {
+        cleanup_failed_user_registration(created_user.id, pool);
+        return Err(err);
+    }
+    if let Err(err) = ensure_user_has_any_lens(created_user.id, pool) {
+        cleanup_failed_user_registration(created_user.id, pool);
+        return Err(err);
+    }
+    if created_user.principal_type == UserPrincipalType::Human {
+        match enqueue_new_user_signup_notification_email(created_user, pool) {
+            Ok(email_id) => {
+                let pool_for_task = pool.clone();
+                tokio::spawn(async move {
+                    let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
+                });
+            }
+            Err(err) => {
+                tracing::error!(
+                    target: "mailer",
+                    "new_user_signup_notification_failed user_id={} message={}",
+                    created_user.id,
+                    err.message
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn cleanup_failed_user_registration(user_id: Uuid, pool: &DbPool) {
+    if let Ok(mut conn) = pool.get() {
+        let _ = diesel::delete(
+            crate::schema::users::table.filter(crate::schema::users::id.eq(user_id)),
+        )
+        .execute(&mut conn);
+    }
+}
+
 #[debug_handler]
 pub async fn get_users(
     Query(params): Query<UserListParams>,
@@ -472,51 +518,7 @@ pub async fn post_user(
 ) -> Result<Json<User>, PpdcError> {
     payload.hash_password().unwrap();
     let created_user = payload.create(&pool)?;
-    if let Err(err) = ensure_user_has_default_journals(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(
-                crate::schema::users::table.filter(crate::schema::users::id.eq(created_user.id)),
-            )
-            .execute(&mut conn);
-        }
-        return Err(err);
-    }
-    if let Err(err) = ensure_user_has_meta_journal(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(
-                crate::schema::users::table.filter(crate::schema::users::id.eq(created_user.id)),
-            )
-            .execute(&mut conn);
-        }
-        return Err(err);
-    }
-    if let Err(err) = ensure_user_has_any_lens(created_user.id, &pool) {
-        if let Ok(mut conn) = pool.get() {
-            let _ = diesel::delete(
-                crate::schema::users::table.filter(crate::schema::users::id.eq(created_user.id)),
-            )
-            .execute(&mut conn);
-        }
-        return Err(err);
-    }
-    if created_user.principal_type == UserPrincipalType::Human {
-        match enqueue_new_user_signup_notification_email(&created_user, &pool) {
-            Ok(email_id) => {
-                let pool_for_task = pool.clone();
-                tokio::spawn(async move {
-                    let _ = mailer::process_pending_emails(vec![email_id], &pool_for_task).await;
-                });
-            }
-            Err(err) => {
-                tracing::error!(
-                    target: "mailer",
-                    "new_user_signup_notification_failed user_id={} message={}",
-                    created_user.id,
-                    err.message
-                );
-            }
-        }
-    }
+    finalize_new_human_user_registration(&created_user, &pool)?;
     Ok(Json(created_user))
 }
 

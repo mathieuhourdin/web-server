@@ -2,6 +2,7 @@ pub mod ai_usage_guard;
 pub mod asset;
 pub mod device;
 pub mod error;
+pub mod external_auth;
 pub mod llm_call;
 pub mod mailer;
 pub mod notification;

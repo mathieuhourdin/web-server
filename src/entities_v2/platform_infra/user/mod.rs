@@ -21,6 +21,7 @@ pub use model::{
     UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserPublicResponse,
     UserResponse, UserRoleAssignment, UserSearchParams, UserSearchResult,
 };
+pub(crate) use routes::{cleanup_failed_user_registration, finalize_new_human_user_registration};
 pub use routes::{
     get_closest_followers_route, get_me_unread_counts_route, get_mentors_route,
     get_suggested_users_route, get_user_route, get_user_search_route, get_users, patch_user_route,

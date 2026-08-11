@@ -747,6 +747,167 @@ impl User {
         Ok(user)
     }
 
+    pub fn find_by_email(email: &str, pool: &DbPool) -> Result<Option<User>, PpdcError> {
+        let mut conn = pool.get()?;
+        users::table
+            .filter(users::email.eq(email))
+            .select(User::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn find_by_email_case_insensitive(
+        email: &str,
+        pool: &DbPool,
+    ) -> Result<Option<User>, PpdcError> {
+        #[derive(QueryableByName)]
+        struct UserIdRow {
+            #[diesel(sql_type = SqlUuid)]
+            id: Uuid,
+        }
+
+        let mut conn = pool.get()?;
+        let row = sql_query("SELECT id FROM users WHERE LOWER(email) = LOWER($1)")
+            .bind::<Text, _>(email)
+            .get_result::<UserIdRow>(&mut conn)
+            .optional()?;
+        row.map(|row| Self::find(&row.id, pool)).transpose()
+    }
+
+    pub fn find_by_google_sub(google_sub: &str, pool: &DbPool) -> Result<Option<User>, PpdcError> {
+        Self::find_by_external_subject("google_sub", google_sub, pool)
+    }
+
+    pub fn find_by_apple_sub(apple_sub: &str, pool: &DbPool) -> Result<Option<User>, PpdcError> {
+        Self::find_by_external_subject("apple_sub", apple_sub, pool)
+    }
+
+    fn find_by_external_subject(
+        column: &str,
+        subject: &str,
+        pool: &DbPool,
+    ) -> Result<Option<User>, PpdcError> {
+        let mut conn = pool.get()?;
+        #[derive(QueryableByName)]
+        struct UserIdRow {
+            #[diesel(sql_type = SqlUuid)]
+            id: Uuid,
+        }
+        let query = format!("SELECT id FROM users WHERE {} = $1", column);
+        let row = sql_query(query)
+            .bind::<Text, _>(subject)
+            .get_result::<UserIdRow>(&mut conn)
+            .optional()?;
+        row.map(|row| Self::find(&row.id, pool)).transpose()
+    }
+
+    pub fn link_google_sub(&self, google_sub: &str, pool: &DbPool) -> Result<(), PpdcError> {
+        Self::link_external_subject(self.id, google_sub, true, pool)
+    }
+
+    pub fn link_apple_sub(&self, apple_sub: &str, pool: &DbPool) -> Result<(), PpdcError> {
+        Self::link_external_subject(self.id, apple_sub, false, pool)
+    }
+
+    pub fn unlink_google_sub(
+        &self,
+        password_confirmation: Option<&str>,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        Self::unlink_external_subject(self, "google_sub", "apple_sub", password_confirmation, pool)
+    }
+
+    pub fn unlink_apple_sub(
+        &self,
+        password_confirmation: Option<&str>,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        Self::unlink_external_subject(self, "apple_sub", "google_sub", password_confirmation, pool)
+    }
+
+    fn link_external_subject(
+        user_id: Uuid,
+        subject: &str,
+        is_google: bool,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        let existing = if is_google {
+            Self::find_by_google_sub(subject, pool)?
+        } else {
+            Self::find_by_apple_sub(subject, pool)?
+        };
+        if let Some(existing) = existing {
+            if existing.id == user_id {
+                return Ok(());
+            }
+            return Err(PpdcError::new(
+                409,
+                ErrorType::ApiError,
+                "This external account is already linked to another user".to_string(),
+            ));
+        }
+
+        let column = if is_google { "google_sub" } else { "apple_sub" };
+        let mut conn = pool.get()?;
+        sql_query(format!(
+            "UPDATE users SET {} = $2, updated_at = NOW() WHERE id = $1",
+            column
+        ))
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Text, _>(subject)
+        .execute(&mut conn)?;
+        Ok(())
+    }
+
+    fn unlink_external_subject(
+        user: &User,
+        column: &str,
+        alternate_provider_column: &str,
+        password_confirmation: Option<&str>,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        let mut conn = pool.get()?;
+        #[derive(QueryableByName)]
+        struct ExistsRow {
+            #[diesel(sql_type = diesel::sql_types::Bool)]
+            exists: bool,
+        }
+        let alternate_provider_exists = sql_query(format!(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND {} IS NOT NULL) AS exists",
+            alternate_provider_column
+        ))
+        .bind::<SqlUuid, _>(user.id)
+        .get_result::<ExistsRow>(&mut conn)?
+        .exists;
+
+        if !alternate_provider_exists {
+            let password_confirmation = password_confirmation.ok_or_else(|| {
+                PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Password confirmation is required to remove your final external login method"
+                        .to_string(),
+                )
+            })?;
+            if !user.verify_password(password_confirmation.as_bytes())? {
+                return Err(PpdcError::new(
+                    401,
+                    ErrorType::ApiError,
+                    "Invalid password confirmation".to_string(),
+                ));
+            }
+        }
+
+        sql_query(format!(
+            "UPDATE users SET {} = NULL, updated_at = NOW() WHERE id = $1",
+            column
+        ))
+        .bind::<SqlUuid, _>(user.id)
+        .execute(&mut conn)?;
+        Ok(())
+    }
+
     pub fn find_many(ids: &[Uuid], pool: &DbPool) -> Result<Vec<User>, PpdcError> {
         if ids.is_empty() {
             return Ok(vec![]);
