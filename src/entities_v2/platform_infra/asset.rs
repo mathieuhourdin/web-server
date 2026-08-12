@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{io::Cursor, time::Duration};
 
 use axum::{
     debug_handler,
@@ -7,6 +7,7 @@ use axum::{
 use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use diesel::prelude::*;
+use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use google_cloud_auth::credentials::Builder as CredentialsBuilder;
 use google_cloud_storage::{
     builder::storage::SignedUrlBuilder,
@@ -82,6 +83,8 @@ pub struct Asset {
     pub updated_at: NaiveDateTime,
     pub public_bucket: Option<String>,
     pub public_object_key: Option<String>,
+    pub image_width: Option<i32>,
+    pub image_height: Option<i32>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -97,6 +100,18 @@ pub struct AssetSignedUrlResponse {
     pub url: String,
     pub expires_at: NaiveDateTime,
     pub public_url: Option<String>,
+}
+
+#[derive(Debug, Clone, QueryableByName)]
+pub struct AssetImageDimensionsBackfillCandidate {
+    #[diesel(sql_type = SqlUuid)]
+    pub id: Uuid,
+    #[diesel(sql_type = Text)]
+    pub bucket: String,
+    #[diesel(sql_type = Text)]
+    pub object_key: String,
+    #[diesel(sql_type = Text)]
+    pub mime_type: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -118,6 +133,8 @@ type AssetTuple = (
     NaiveDateTime,
     Option<String>,
     Option<String>,
+    Option<i32>,
+    Option<i32>,
 );
 
 #[derive(Debug, Clone)]
@@ -132,6 +149,8 @@ struct NewAsset {
     pub status: AssetStatus,
     pub public_bucket: Option<String>,
     pub public_object_key: Option<String>,
+    pub image_width: Option<i32>,
+    pub image_height: Option<i32>,
 }
 
 fn tuple_to_asset(row: AssetTuple) -> Result<Asset, PpdcError> {
@@ -148,6 +167,8 @@ fn tuple_to_asset(row: AssetTuple) -> Result<Asset, PpdcError> {
         updated_at,
         public_bucket,
         public_object_key,
+        image_width,
+        image_height,
     ) = row;
     Ok(Asset {
         id,
@@ -162,6 +183,8 @@ fn tuple_to_asset(row: AssetTuple) -> Result<Asset, PpdcError> {
         updated_at,
         public_bucket,
         public_object_key,
+        image_width,
+        image_height,
     })
 }
 
@@ -178,6 +201,8 @@ fn select_asset_columns() -> (
     assets::updated_at,
     assets::public_bucket,
     assets::public_object_key,
+    assets::image_width,
+    assets::image_height,
 ) {
     (
         assets::id,
@@ -192,10 +217,51 @@ fn select_asset_columns() -> (
         assets::updated_at,
         assets::public_bucket,
         assets::public_object_key,
+        assets::image_width,
+        assets::image_height,
     )
 }
 
 impl Asset {
+    pub fn list_image_dimensions_backfill_batch(
+        batch_size: i64,
+        pool: &DbPool,
+    ) -> Result<Vec<AssetImageDimensionsBackfillCandidate>, PpdcError> {
+        let mut conn = pool.get()?;
+        diesel::sql_query(
+            "SELECT id, bucket, object_key, mime_type
+             FROM assets
+             WHERE mime_type IN ('image/jpeg', 'image/png', 'image/webp', 'image/gif')
+               AND (image_width IS NULL OR image_height IS NULL)
+             ORDER BY id
+             LIMIT $1",
+        )
+        .bind::<diesel::sql_types::BigInt, _>(batch_size)
+        .load::<AssetImageDimensionsBackfillCandidate>(&mut conn)
+        .map_err(Into::into)
+    }
+
+    pub fn update_image_dimensions(
+        asset_id: Uuid,
+        width: i32,
+        height: i32,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        let mut conn = pool.get()?;
+        diesel::sql_query(
+            "UPDATE assets
+             SET image_width = $2,
+                 image_height = $3,
+                 updated_at = NOW()
+             WHERE id = $1",
+        )
+        .bind::<SqlUuid, _>(asset_id)
+        .bind::<Int4, _>(width)
+        .bind::<Int4, _>(height)
+        .execute(&mut conn)?;
+        Ok(())
+    }
+
     fn find_usages_with_conn(
         asset_id: Uuid,
         conn: &mut PgConnection,
@@ -433,6 +499,8 @@ impl NewAsset {
                 assets::status.eq(self.status.to_db()),
                 assets::public_bucket.eq(self.public_bucket),
                 assets::public_object_key.eq(self.public_object_key),
+                assets::image_width.eq(self.image_width),
+                assets::image_height.eq(self.image_height),
             ))
             .returning(assets::id)
             .get_result::<Uuid>(&mut conn)?;
@@ -535,6 +603,49 @@ fn validate_image_upload(content_type: &str, size_bytes: usize) -> Result<(), Pp
     Ok(())
 }
 
+fn image_format_for_mime_type(mime_type: &str) -> Option<image::ImageFormat> {
+    match mime_type {
+        "image/jpeg" => Some(image::ImageFormat::Jpeg),
+        "image/png" => Some(image::ImageFormat::Png),
+        "image/webp" => Some(image::ImageFormat::WebP),
+        "image/gif" => Some(image::ImageFormat::Gif),
+        _ => None,
+    }
+}
+
+pub fn extract_image_dimensions(
+    mime_type: &str,
+    bytes: &[u8],
+) -> Result<Option<(i32, i32)>, PpdcError> {
+    let Some(image_format) = image_format_for_mime_type(mime_type) else {
+        return Ok(None);
+    };
+    let (width, height) = image::io::Reader::with_format(Cursor::new(bytes), image_format)
+        .into_dimensions()
+        .map_err(|_| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Uploaded image data is invalid".to_string(),
+            )
+        })?;
+    let width = i32::try_from(width).map_err(|_| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Image width is too large".to_string(),
+        )
+    })?;
+    let height = i32::try_from(height).map_err(|_| {
+        PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Image height is too large".to_string(),
+        )
+    })?;
+    Ok(Some((width, height)))
+}
+
 fn validate_upload_with_policy(
     policy: AssetUploadPolicy,
     content_type: &str,
@@ -578,6 +689,44 @@ async fn upload_object_to_gcs(
         })?;
 
     Ok(())
+}
+
+pub async fn download_asset_bytes_from_gcs(
+    bucket_name: &str,
+    object_key: &str,
+) -> Result<Vec<u8>, PpdcError> {
+    let storage = Storage::builder().build().await.map_err(|err| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            format!("Failed to build GCS client: {}", err),
+        )
+    })?;
+    let mut reader = storage
+        .read_object(
+            format!("projects/_/buckets/{}", bucket_name),
+            object_key.to_string(),
+        )
+        .send()
+        .await
+        .map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Failed to download from GCS: {}", err),
+            )
+        })?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = reader.next().await {
+        bytes.extend_from_slice(&chunk.map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Failed to read GCS object: {}", err),
+            )
+        })?);
+    }
+    Ok(bytes)
 }
 
 async fn delete_object_from_gcs(bucket_name: &str, object_key: &str) -> Result<(), PpdcError> {
@@ -644,6 +793,7 @@ async fn upload_asset_for_user_with_policy(
     }
     let mime_type = infer_content_type(&original_filename, content_type.as_deref());
     validate_upload_with_policy(policy, &mime_type, content_bytes.len())?;
+    let image_dimensions = extract_image_dimensions(&mime_type, &content_bytes)?;
 
     let asset_id = Uuid::new_v4();
     let bucket = crate::environment::get_gcs_bucket_name();
@@ -686,6 +836,8 @@ async fn upload_asset_for_user_with_policy(
         status: AssetStatus::Ready,
         public_bucket,
         public_object_key,
+        image_width: image_dimensions.map(|(width, _)| width),
+        image_height: image_dimensions.map(|(_, height)| height),
     }
     .create(&pool)?;
 

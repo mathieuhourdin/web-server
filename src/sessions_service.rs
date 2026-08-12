@@ -43,6 +43,7 @@ pub struct ExternalRegistrationDto {
     pub id_token: String,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
+    pub handle: Option<String>,
     pub timezone: Option<String>,
     pub device: Option<DeviceRegistrationDto>,
 }
@@ -180,6 +181,15 @@ fn new_external_user(
     let last_name = normalized_profile_value(payload.last_name.clone())
         .or_else(|| normalized_profile_value(identity.family_name.clone()))
         .unwrap_or_else(|| "User".to_string());
+    let handle = normalized_profile_value(payload.handle.clone())
+        .map(|handle| {
+            if handle.starts_with('@') {
+                handle
+            } else {
+                format!("@{}", handle)
+            }
+        })
+        .unwrap_or_else(|| format!("@hupo-{}", Uuid::new_v4().simple()));
 
     NewUser {
         email: identity.email.clone(),
@@ -187,7 +197,7 @@ fn new_external_user(
         mentor_id: None,
         first_name,
         last_name,
-        handle: format!("@hupo-{}", Uuid::new_v4().simple()),
+        handle,
         password: Some(Uuid::new_v4().to_string()),
         profile_picture_url: None,
         profile_picture_asset_id: None,

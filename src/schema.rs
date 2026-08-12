@@ -63,6 +63,8 @@ diesel::table! {
         updated_at -> Timestamp,
         public_bucket -> Nullable<Text>,
         public_object_key -> Nullable<Text>,
+        image_width -> Nullable<Int4>,
+        image_height -> Nullable<Int4>,
     }
 }
 
