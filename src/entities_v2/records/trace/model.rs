@@ -94,6 +94,13 @@ pub struct Trace {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TraceContentImage {
+    pub id: Uuid,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceListItem {
     pub id: Uuid,
     pub post_id: Option<Uuid>,
@@ -106,6 +113,7 @@ pub struct TraceListItem {
     pub is_encrypted: Option<bool>,
     pub encryption_metadata: Option<Value>,
     pub content_image_asset_id: Option<Uuid>,
+    pub content_image: Option<TraceContentImage>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     pub timeout_start_at: Option<DateTime<Utc>>,
     pub timeout_at: Option<DateTime<Utc>>,
@@ -904,6 +912,7 @@ impl Trace {
                     encryption_metadata: encryption_metadata
                         .and_then(|json| serde_json::from_str::<Value>(&json).ok()),
                     content_image_asset_id,
+                    content_image: None,
                     sharing_sensitivity: Some(TraceSharingSensitivity::from_db(
                         &sharing_sensitivity_raw,
                     )),
@@ -1043,6 +1052,7 @@ impl Trace {
                     is_encrypted: None,
                     encryption_metadata: None,
                     content_image_asset_id,
+                    content_image: None,
                     sharing_sensitivity: None,
                     timeout_start_at: None,
                     timeout_at: None,

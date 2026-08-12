@@ -4,7 +4,7 @@ use axum::{
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use std::cmp::Reverse;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -22,7 +22,8 @@ use crate::entities_v2::{
     platform_infra::{
         ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
         asset::{
-            upload_asset_for_user, upload_image_asset_for_user_from_multipart, AssetUploadResponse,
+            upload_asset_for_user, upload_image_asset_for_user_from_multipart, Asset,
+            AssetUploadResponse,
         },
         usage_event::{create_usage_event, UsageEventType},
     },
@@ -42,7 +43,10 @@ use crate::work_analyzer;
 use super::{
     enums::{TraceSharingSensitivity, TraceStatus},
     llm_qualify,
-    model::{NewTrace, PatchTraceDto, Trace, TraceListItem, TraceReadableView, UpdateTraceDto},
+    model::{
+        NewTrace, PatchTraceDto, Trace, TraceContentImage, TraceListItem, TraceReadableView,
+        UpdateTraceDto,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +83,37 @@ pub struct MeTracesQuery {
 
 const JOURNAL_TRACE_POSITION_BATCH_SIZE: i64 = 20;
 const JOURNAL_TRACE_SEEN_BY_PREVIEW_LIMIT: i64 = 3;
+
+fn attach_content_images_to_trace_list_items(
+    mut items: Vec<TraceListItem>,
+    pool: &DbPool,
+) -> Result<Vec<TraceListItem>, PpdcError> {
+    let asset_ids = items
+        .iter()
+        .filter_map(|item| item.content_image_asset_id)
+        .collect::<HashSet<_>>();
+    let image_by_id =
+        Asset::find_image_dimensions_by_ids(&asset_ids.into_iter().collect::<Vec<_>>(), pool)?
+            .into_iter()
+            .map(|image| {
+                (
+                    image.id,
+                    TraceContentImage {
+                        id: image.id,
+                        width: image.width,
+                        height: image.height,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+    for item in &mut items {
+        item.content_image = item
+            .content_image_asset_id
+            .and_then(|asset_id| image_by_id.get(&asset_id).cloned());
+    }
+    Ok(items)
+}
 
 fn pagination_until_rank(rank: i64) -> ValidatedPagination {
     let limit = ((rank + JOURNAL_TRACE_POSITION_BATCH_SIZE - 1)
@@ -2076,6 +2111,7 @@ pub async fn get_traces_for_journal_route(
                 is_encrypted: Some(trace.is_encrypted),
                 encryption_metadata: trace.encryption_metadata,
                 content_image_asset_id: trace.content_image_asset_id,
+                content_image: None,
                 sharing_sensitivity: Some(trace.sharing_sensitivity),
                 timeout_start_at: trace.timeout_start_at,
                 timeout_at: trace.timeout_at,
@@ -2092,6 +2128,7 @@ pub async fn get_traces_for_journal_route(
                 updated_at: trace.updated_at,
             })
             .collect::<Vec<_>>();
+        let items = attach_content_images_to_trace_list_items(items, &pool)?;
         let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
         let items = if params.include_seen_by_preview {
             attach_seen_by_preview_to_trace_list_items(user_id, items, &pool)?
@@ -2131,6 +2168,7 @@ pub async fn get_traces_for_journal_route(
     if total == 0 {
         return Err(PpdcError::unauthorized());
     }
+    let traces = attach_content_images_to_trace_list_items(traces, &pool)?;
     let traces = attach_seen_state_to_trace_list_items(user_id, traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

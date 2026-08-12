@@ -114,6 +114,13 @@ pub struct AssetImageDimensionsBackfillCandidate {
     pub mime_type: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct AssetImageDimensions {
+    pub id: Uuid,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum AssetUploadPolicy {
     Generic,
@@ -223,6 +230,27 @@ fn select_asset_columns() -> (
 }
 
 impl Asset {
+    pub fn find_image_dimensions_by_ids(
+        asset_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<Vec<AssetImageDimensions>, PpdcError> {
+        if asset_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut conn = pool.get()?;
+        assets::table
+            .filter(assets::id.eq_any(asset_ids))
+            .select((assets::id, assets::image_width, assets::image_height))
+            .load::<(Uuid, Option<i32>, Option<i32>)>(&mut conn)
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(id, width, height)| AssetImageDimensions { id, width, height })
+                    .collect()
+            })
+            .map_err(Into::into)
+    }
+
     pub fn list_image_dimensions_backfill_batch(
         batch_size: i64,
         pool: &DbPool,
