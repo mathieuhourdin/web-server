@@ -69,12 +69,29 @@ pub async fn add_session_to_request(
 }
 
 pub async fn auth_middleware_custom(
+    Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     req: Request<Body>,
     next: Next,
 ) -> impl IntoResponse {
-    if session.user_id.is_none() {
+    let Some(user_id) = session.user_id else {
         return (AxumStatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    };
+
+    let user = match User::find(&user_id, &pool) {
+        Ok(user) => user,
+        Err(_) => return (AxumStatusCode::UNAUTHORIZED, "Unauthorized").into_response(),
+    };
+    if user.first_name.trim().is_empty() || user.last_name.trim().is_empty() {
+        let own_user_path = format!("/users/{user_id}");
+        let allowed = req.uri().path() == own_user_path || req.uri().path() == "/sessions";
+        if !allowed {
+            return (
+                AxumStatusCode::FORBIDDEN,
+                "Complete your first and last name before using the platform",
+            )
+                .into_response();
+        }
     }
     next.run(req).await
 }

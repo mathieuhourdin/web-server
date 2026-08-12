@@ -1,6 +1,7 @@
 use crate::db::DbPool;
 use crate::entities_v2::{
     asset::{upload_profile_picture_asset_for_user_from_multipart, Asset, AssetUploadResponse},
+    device::{Device, DeviceRegistrationDto},
     error::{ErrorType, PpdcError},
     feed::hydrate::count_recent_unread_feed_items,
     journal::Journal,
@@ -12,8 +13,10 @@ use crate::entities_v2::{
 use crate::environment;
 use crate::pagination::PaginatedResponse;
 use axum::{
+    body::Body,
     debug_handler,
     extract::{Extension, Json, Multipart, Path, Query},
+    response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
@@ -76,6 +79,20 @@ pub struct PatchUserDto {
     pub ai_features_enabled: Option<bool>,
     pub onboarding_version: Option<i32>,
     pub external_captures_default_journal_id: Option<Option<Uuid>>,
+}
+
+#[derive(Deserialize)]
+pub struct SignupUserDto {
+    pub email: String,
+    pub password: String,
+    pub timezone: Option<String>,
+    pub device: Option<DeviceRegistrationDto>,
+}
+
+#[derive(Serialize)]
+pub struct SignupUserResponse {
+    pub user: User,
+    pub session: Session,
 }
 
 #[derive(Serialize)]
@@ -514,12 +531,71 @@ pub async fn get_mentors_route(
 #[debug_handler]
 pub async fn post_user(
     Extension(pool): Extension<DbPool>,
-    Json(mut payload): Json<NewUser>,
-) -> Result<Json<User>, PpdcError> {
-    payload.hash_password().unwrap();
-    let created_user = payload.create(&pool)?;
+    Json(payload): Json<SignupUserDto>,
+) -> Result<Response<Body>, PpdcError> {
+    let email = payload.email.trim().to_ascii_lowercase();
+    if email.is_empty() || payload.password.is_empty() {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "email and password are required".to_string(),
+        ));
+    }
+
+    let pending_suffix = Uuid::new_v4();
+    let mut new_user = NewUser {
+        email,
+        principal_type: Some(UserPrincipalType::Human),
+        mentor_id: None,
+        // The legacy schema requires profile fields before the user fills them in later.
+        first_name: String::new(),
+        last_name: String::new(),
+        handle: format!("@pending-{pending_suffix}"),
+        password: Some(payload.password),
+        profile_picture_url: None,
+        profile_picture_asset_id: None,
+        is_platform_user: None,
+        biography: None,
+        pseudonym: None,
+        pseudonymized: None,
+        high_level_projects_definition: None,
+        journal_theme: None,
+        current_lens_id: None,
+        week_analysis_weekday: None,
+        timezone: payload
+            .timezone
+            .map(|timezone| timezone.trim().to_string())
+            .filter(|timezone| !timezone.is_empty()),
+        context_anchor_at: None,
+        welcome_message: None,
+        home_focus_view: None,
+        shared_journal_activity_email_mode: None,
+        received_message_email_mode: None,
+        mentor_feedback_email_enabled: None,
+        ai_features_enabled: None,
+        ai_features_enabled_by_admin: None,
+        onboarding_version: None,
+        external_captures_default_journal_id: None,
+        mentor_specific_prompt: None,
+    };
+    new_user.hash_password()?;
+    let created_user = new_user.create(&pool)?;
     finalize_new_human_user_registration(&created_user, &pool)?;
-    Ok(Json(created_user))
+
+    let device_id = payload
+        .device
+        .map(|device| Device::upsert_for_user(created_user.id, device, &pool))
+        .transpose()?
+        .map(|device| device.id);
+    let (session, _) = Session::create_authenticated_for_device(created_user.id, device_id, &pool)?;
+
+    let mut response = Json(SignupUserResponse {
+        user: created_user,
+        session,
+    })
+    .into_response();
+    crate::sessions_service::append_auth_marker_cookie(&mut response);
+    Ok(response)
 }
 
 #[debug_handler]
