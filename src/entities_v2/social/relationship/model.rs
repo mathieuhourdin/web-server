@@ -21,6 +21,13 @@ pub struct Relationship {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Serialize, Debug, Clone)]
+pub struct FollowRelationshipSummary {
+    pub viewer_to_user: Option<RelationshipStatus>,
+    pub user_to_viewer: Option<RelationshipStatus>,
+    pub is_mutual: bool,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct NewRelationshipDto {
     pub target_user_id: Uuid,
@@ -90,6 +97,48 @@ fn select_relationship_columns() -> (
 }
 
 impl Relationship {
+    pub fn find_follow_summary_between(
+        viewer_user_id: Uuid,
+        other_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<FollowRelationshipSummary, PpdcError> {
+        let mut conn = pool.get()?;
+        let rows = relationships::table
+            .filter(relationships::relationship_type.eq(RelationshipType::Follow.to_db()))
+            .filter(
+                relationships::requester_user_id
+                    .eq(viewer_user_id)
+                    .and(relationships::target_user_id.eq(other_user_id))
+                    .or(relationships::requester_user_id
+                        .eq(other_user_id)
+                        .and(relationships::target_user_id.eq(viewer_user_id))),
+            )
+            .select((
+                relationships::requester_user_id,
+                relationships::target_user_id,
+                relationships::status,
+            ))
+            .load::<(Uuid, Uuid, String)>(&mut conn)?;
+
+        let mut viewer_to_user = None;
+        let mut user_to_viewer = None;
+        for (requester_user_id, target_user_id, status_raw) in rows {
+            let status = RelationshipStatus::from_db(&status_raw);
+            if requester_user_id == viewer_user_id && target_user_id == other_user_id {
+                viewer_to_user = Some(status);
+            } else if requester_user_id == other_user_id && target_user_id == viewer_user_id {
+                user_to_viewer = Some(status);
+            }
+        }
+
+        Ok(FollowRelationshipSummary {
+            is_mutual: viewer_to_user == Some(RelationshipStatus::Accepted)
+                && user_to_viewer == Some(RelationshipStatus::Accepted),
+            viewer_to_user,
+            user_to_viewer,
+        })
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Relationship, PpdcError> {
         let mut conn = pool.get()?;
         let row = relationships::table

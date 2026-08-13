@@ -4,6 +4,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalSharingMode, JournalType, NewJournalDto},
     lens::{LensProcessingState, NewLens},
+    relationship::FollowRelationshipSummary,
     trace::{NewTrace, TraceType},
 };
 use crate::pagination::PaginationParams;
@@ -194,6 +195,8 @@ pub struct UserPublicResponse {
     pub pseudonymized: bool,
     pub welcome_message: Option<String>,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_relationship: Option<FollowRelationshipSummary>,
 }
 
 impl From<&User> for UserPublicResponse {
@@ -209,6 +212,7 @@ impl From<&User> for UserPublicResponse {
             pseudonymized: user.pseudonymized,
             welcome_message: user.welcome_message.clone(),
             display_name: user.display_name(),
+            follow_relationship: None,
         }
     }
 }

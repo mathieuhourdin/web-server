@@ -899,7 +899,16 @@ pub async fn get_user_route(
         }
         Ok(UserResponse::PseudonymizedAuthentified(user_response))
     } else {
-        let user_response = user.public_response_with_profile_picture_display_url(&pool);
+        let mut user_response = user.public_response_with_profile_picture_display_url(&pool);
+        if let Some(viewer_user_id) = viewer_user_id {
+            user_response.follow_relationship = Some(
+                crate::entities_v2::relationship::Relationship::find_follow_summary_between(
+                    viewer_user_id,
+                    user.id,
+                    &pool,
+                )?,
+            );
+        }
         Ok(UserResponse::Public(user_response))
     }
 }
