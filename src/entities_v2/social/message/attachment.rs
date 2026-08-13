@@ -22,6 +22,7 @@ impl MessageAttachmentType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum TarotSpreadType {
     ThreeCardTimeline,
     FourCardCross,

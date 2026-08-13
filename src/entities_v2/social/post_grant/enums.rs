@@ -25,7 +25,7 @@ impl PostGrantScope {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "snake_case")]
 pub enum PostGrantAccessLevel {
     Read,
 }
@@ -46,7 +46,7 @@ impl PostGrantAccessLevel {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "snake_case")]
 pub enum PostGrantStatus {
     Active,
     Revoked,
