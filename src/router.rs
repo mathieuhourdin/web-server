@@ -69,6 +69,10 @@ pub fn create_router() -> Router {
         )
         .route("/:id/lens", get(lens::get_user_lenses_route))
         .route("/:id/traces", get(trace::get_all_traces_for_user_route))
+        .route(
+            "/:id/journals/shared",
+            get(journal::get_user_recent_shared_journals_route),
+        )
         .route("/:id/journals", get(journal::get_user_journals_route))
         .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
         .route(

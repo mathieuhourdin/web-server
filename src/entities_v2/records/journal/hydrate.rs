@@ -220,12 +220,12 @@ impl Journal {
     }
 
     pub fn find_recent_shared_for_user_paginated(
-        user_id: Uuid,
+        viewer_user_id: Uuid,
         offset: i64,
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Journal>, i64), PpdcError> {
-        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(user_id, pool)?;
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
         if visible_post_ids.is_empty() {
             return Ok((vec![], 0));
         }
@@ -245,6 +245,69 @@ impl Journal {
         let rows = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::id.eq_any(visible_post_ids))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(journals::is_encrypted.eq(false))
+            .filter(journals::status.ne(JournalStatus::Archived.to_db()))
+            .group_by((
+                journals::id,
+                journals::user_id,
+                journals::title,
+                journals::subtitle,
+                journals::content,
+                journals::is_encrypted,
+                journals::last_trace_at,
+                journals::current_draft_id,
+                journals::journal_type,
+                journals::status,
+                journals::sharing_mode,
+                journals::created_at,
+                journals::updated_at,
+            ))
+            .select(select_journal_columns())
+            .order(
+                sql::<Nullable<Timestamp>>(
+                    "MAX(COALESCE(posts.publishing_date, posts.updated_at, posts.created_at))",
+                )
+                .desc()
+                .nulls_last(),
+            )
+            .then_order_by(journals::updated_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<JournalTuple>(&mut conn)?;
+
+        Ok((rows.into_iter().map(Journal::from).collect(), total))
+    }
+
+    pub fn find_recent_shared_for_owner_paginated(
+        viewer_user_id: Uuid,
+        journal_owner_user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Journal>, i64), PpdcError> {
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
+        if visible_post_ids.is_empty() {
+            return Ok((vec![], 0));
+        }
+
+        let mut conn = pool.get()?;
+        let total = journals::table
+            .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(journals::user_id.eq(journal_owner_user_id))
+            .filter(posts::id.eq_any(&visible_post_ids))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(journals::is_encrypted.eq(false))
+            .filter(journals::status.ne(JournalStatus::Archived.to_db()))
+            .select(sql::<BigInt>("COUNT(DISTINCT journals.id)"))
+            .first::<i64>(&mut conn)?;
+
+        let rows = journals::table
+            .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(journals::user_id.eq(journal_owner_user_id))
             .filter(posts::id.eq_any(visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(journals::is_encrypted.eq(false))

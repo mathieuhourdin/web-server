@@ -22,7 +22,7 @@ impl RelationshipType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "lowercase")]
 pub enum RelationshipStatus {
     Pending,
     Accepted,

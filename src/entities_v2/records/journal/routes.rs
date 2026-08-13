@@ -88,6 +88,25 @@ pub async fn get_recent_shared_journals_route(
 }
 
 #[debug_handler]
+pub async fn get_user_recent_shared_journals_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_owner_user_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Journal>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.validate()?;
+    let (journals, total) = Journal::find_recent_shared_for_owner_paginated(
+        viewer_user_id,
+        journal_owner_user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(journals, pagination, total)))
+}
+
+#[debug_handler]
 pub async fn get_journal_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
