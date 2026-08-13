@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::Asset,
     error::PpdcError,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
@@ -27,10 +28,25 @@ fn hydrate_user_results(ids: Vec<Uuid>, pool: &DbPool) -> Result<Vec<UserSearchR
         .map(|user| (user.id, user))
         .collect::<std::collections::HashMap<Uuid, User>>();
 
-    Ok(ids
+    let mut results = ids
         .into_iter()
         .filter_map(|id| users_by_id.get(&id).map(UserSearchResult::from))
-        .collect())
+        .collect::<Vec<_>>();
+    let profile_picture_asset_ids = results
+        .iter()
+        .filter_map(|user| user.profile_picture_asset_id)
+        .collect::<std::collections::HashSet<_>>();
+    let public_urls_by_asset_id = Asset::find_public_urls_by_ids(
+        &profile_picture_asset_ids.into_iter().collect::<Vec<_>>(),
+        pool,
+    )?;
+    for user in &mut results {
+        user.profile_picture_display_url = user
+            .profile_picture_asset_id
+            .and_then(|asset_id| public_urls_by_asset_id.get(&asset_id).cloned())
+            .or_else(|| user.profile_picture_url.clone());
+    }
+    Ok(results)
 }
 
 fn enqueue_follow_request_notification_email(

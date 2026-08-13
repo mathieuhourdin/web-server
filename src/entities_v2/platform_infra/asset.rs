@@ -1,4 +1,4 @@
-use std::{io::Cursor, time::Duration};
+use std::{collections::HashMap, io::Cursor, time::Duration};
 
 use axum::{
     debug_handler,
@@ -230,6 +230,29 @@ fn select_asset_columns() -> (
 }
 
 impl Asset {
+    pub fn find_public_urls_by_ids(
+        asset_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, String>, PpdcError> {
+        if asset_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut conn = pool.get()?;
+        assets::table
+            .filter(assets::id.eq_any(asset_ids))
+            .select((assets::id, assets::public_bucket, assets::public_object_key))
+            .load::<(Uuid, Option<String>, Option<String>)>(&mut conn)
+            .map(|rows| {
+                rows.into_iter()
+                    .filter_map(|(id, public_bucket, public_object_key)| {
+                        Some((id, public_gcs_url(&public_bucket?, &public_object_key?)))
+                    })
+                    .collect()
+            })
+            .map_err(Into::into)
+    }
+
     pub fn find_image_dimensions_by_ids(
         asset_ids: &[Uuid],
         pool: &DbPool,

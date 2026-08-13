@@ -114,10 +114,25 @@ fn hydrate_user_search_results(
         .map(|user| (user.id, user))
         .collect::<std::collections::HashMap<Uuid, User>>();
 
-    Ok(ids
+    let mut results = ids
         .into_iter()
         .filter_map(|id| users_by_id.get(&id).map(UserSearchResult::from))
-        .collect())
+        .collect::<Vec<_>>();
+    let profile_picture_asset_ids = results
+        .iter()
+        .filter_map(|user| user.profile_picture_asset_id)
+        .collect::<std::collections::HashSet<_>>();
+    let public_urls_by_asset_id = Asset::find_public_urls_by_ids(
+        &profile_picture_asset_ids.into_iter().collect::<Vec<_>>(),
+        pool,
+    )?;
+    for user in &mut results {
+        user.profile_picture_display_url = user
+            .profile_picture_asset_id
+            .and_then(|asset_id| public_urls_by_asset_id.get(&asset_id).cloned())
+            .or_else(|| user.profile_picture_url.clone());
+    }
+    Ok(results)
 }
 
 #[derive(Deserialize, Debug)]
@@ -308,11 +323,26 @@ pub async fn get_user_search_route(
     .bind::<BigInt, _>(pagination.limit)
     .load::<UserSearchRow>(&mut conn)?;
 
-    Ok(Json(PaginatedResponse::new(
-        rows.into_iter().map(UserSearchResult::from).collect(),
-        pagination,
-        total,
-    )))
+    let mut results = rows
+        .into_iter()
+        .map(UserSearchResult::from)
+        .collect::<Vec<_>>();
+    let profile_picture_asset_ids = results
+        .iter()
+        .filter_map(|user| user.profile_picture_asset_id)
+        .collect::<std::collections::HashSet<_>>();
+    let public_urls_by_asset_id = Asset::find_public_urls_by_ids(
+        &profile_picture_asset_ids.into_iter().collect::<Vec<_>>(),
+        &pool,
+    )?;
+    for user in &mut results {
+        user.profile_picture_display_url = user
+            .profile_picture_asset_id
+            .and_then(|asset_id| public_urls_by_asset_id.get(&asset_id).cloned())
+            .or_else(|| user.profile_picture_url.clone());
+    }
+
+    Ok(Json(PaginatedResponse::new(results, pagination, total)))
 }
 
 #[debug_handler]

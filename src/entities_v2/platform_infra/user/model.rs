@@ -363,8 +363,11 @@ pub struct UserSearchResult {
     pub id: Uuid,
     pub handle: String,
     pub principal_type: UserPrincipalType,
-    pub profile_picture_url: Option<String>,
-    pub profile_picture_asset_id: Option<Uuid>,
+    #[serde(skip_serializing)]
+    pub(crate) profile_picture_url: Option<String>,
+    #[serde(skip_serializing)]
+    pub(crate) profile_picture_asset_id: Option<Uuid>,
+    pub profile_picture_display_url: Option<String>,
     pub display_name: String,
 }
 
@@ -393,6 +396,7 @@ impl From<UserSearchRow> for UserSearchResult {
             principal_type,
             profile_picture_url: row.profile_picture_url,
             profile_picture_asset_id: row.profile_picture_asset_id,
+            profile_picture_display_url: None,
             display_name,
         }
     }
@@ -406,6 +410,7 @@ impl From<&User> for UserSearchResult {
             principal_type: user.principal_type,
             profile_picture_url: user.profile_picture_url.clone(),
             profile_picture_asset_id: user.profile_picture_asset_id,
+            profile_picture_display_url: user.profile_picture_url.clone(),
             display_name: user.display_name(),
         }
     }
