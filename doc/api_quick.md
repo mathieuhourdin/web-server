@@ -54,7 +54,7 @@ This file is a practical quick reference for the current server contract.
   "handle": "string",
   "password": "string|null",
   "profile_picture_url": "string|null",
-  "profile_asset_id": "uuid|null",
+  "profile_picture_asset_id": "uuid|null",
   "is_platform_user": "bool|null",
   "biography": "string|null",
   "pseudonym": "string|null",

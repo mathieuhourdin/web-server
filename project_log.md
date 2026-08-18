@@ -7,6 +7,346 @@ Every day I work on this project, I take notes of :
 - Some results of expermientations
 
 
+### 2026-06-04 Work on grants
+
+I want to change how grants work.
+First, journal grants are going to be just default grants. Not grants that propagate on every posts by default.
+
+I see an issue with ALL_FOLLOWERS grants too. I dont like those grants because we cannot modulate follower by follower. We should allow ALL_FOLLOWERS grants only when explicitly set by the user, not on automatically created grants.
+
+1) So we need to split the ALL_FOLLOWERS grants to follower by follower grants for each post first.
+
+2) Then we need to make the grants adding at the journal level not propagate at the whole journal traces. We will keep a front side method that will be triggered by the user if he chooses to.
+
+3)Second thing, when a users accepts a new follower, he should have a request of "do we share all the previous traces with this new user" ? One problem : it is easy to trigger this for the user that accepts the new follower because he has focus on the app and we can open a modal used to decide what to propagate. However this is difficult to integrate in a workflow for the user that made the request first. Or we should persist somewhere the information that "I need to decide if i share the history of those journals to the new follower".
+Maybe a user_task table could help with this. I'd like to hear from GPT about this question.
+One other option would be to keep the information on the journal grant associated with the follower. The journal has a ALL_FOLLOWERS grant. But this grant does nothing alone. Except that it creates a new journal_grant on this journal for each new follower, with a status (PENDING | REVIEWED). When the user opens the app, if he has a journal_grant with pending status, a modal opens that ask if we want 1) propagate to all traces, 2) review traces for maximum granularity 3) share no traces. 
+This last option looks nice : journal_grants would be like grant default / jobs at the journal level. Not fully precise for now but good idea I think.
+
+
+### 2026-06-04 Documents and old posts
+
+We are going to introduce documents
+
+Two types of documents : 
+document_author : 
+- EDITED_BY_USER : The owner of the object writes the very content.
+- EDITED_BY_EXTERNAL : The owner has uploaded this document to his library.
+(or authorship : OWN | EXTERNAL)
+(or document_type : CREATION | REFERENCE)
+
+content_source :
+- DB_CONTENT : document content is stored in the DB, in the content field (I write my document in the app)
+- INTERNAL_ASSET : document is stored in the bucket/asset table, eg a pdf i imported, a .docx...
+- EXTERNAL_URL : document is stored as a reference to an external asset, eg a google doc, a news article page...
+
+A field author_name for references / external.
+
+The content is hold by either one of three fields : 
+- content
+- asset_id
+- external_url
+
+For every content_source we keep : 
+- title
+- subtitle
+- description
+
+
+Migrations : 
+We will use this new table as a way to record the legacy posts, interactions, users is_external.
+Posts meaning I read this resource : interactions with type 'inpt' (input) that reference external posts (user_id is not platform user) will create EXTERNAL / REFERENCE documents owned by the user of the input interaction. With author_name = 'first_name' + last_name of the owner of the post.
+Posts meaning I created this resource : interactions with type 'outp' (output) that reference internal posts with no source_trace_id will create OWN / CREATION documents owned by the user of the interactions (which is supposed to be the same as the post owner). 
+
+We will keep posts only for creation documents for now.
+
+New note : it is actually the resource table that is referenced by table interactions. Posts with no trace should correspond to resources but not sure that we can recover the missing links.
+
+
+### 2026-05-28 Journal sharing modes
+
+I will differenciate multiple journal sharing modes :
+- shared journal (close to a blog) : the user can propagate history sharing with minimal checks to new followers, publish button is displayed to perform trace finalization + publishing to journal default grants.
+- semi-shared journal (idea : we give access to some in progress work). History propagation requires checks (sensitive traces...) and user need to finalize first the trace and share it with direct grants checks
+- private : no journal-level default grants, user can decide to share a trace to specific people that he needs to select one by one. 
+
+
+### 2026-05-27 New invariants for traces and posts
+
+We are going to change some important things for traces and posts.
+Traces are going to be editable. This means we will need to work on how the trace will reflect on posts when updated. And we will need to think about how analytics deal with new versions of the same trace. How does it change the existing analysis pipeline. This is important because currently the pipeline works this way : I write a trace, then it triggers an analysis on the trace, ordered by date. Once the analysis has run, it will not be able to revert to analyse the new version of the trace. We should be able to change that by keeping the trace of all the updates on each trace.
+We will have a trace creation analysis when we create a new trace from scratch. It analysis all the trace. However, when we correct an existing trace, we can be more chill : a light analysis. One case is just minor syntax corrections and i think it shouldnt even lead to a full analysis. Maybe we could have a first llm step or diff calculation step that states if the diff is enougth to trigger a real analysis. If it is enougth, we can run a specific analysis, that mostly looks at what has changed between the two traces. When substantial changes are made we can also give it to the mentor feedback.
+
+Also a question is asked about what will happen for the posts. Currently, the posts are holding the displayed text for the user. This is used to display a different text to different users sometime. I'm not sure I want to keep this feature out actually (question is asked about old traces but I could be able to split them in different traces and show them to different people).
+So the questions asked are :
+- do we keep posts
+- do we keep multiple posts per trace
+- do we keep posts with different content than their parent trace 
+- what semantic do we choose for the API ? Do we get traces or posts ?
+
+The advices i had from llm was : keep post under name publication as holders of the way the trace is presented to other people. They can hold audience but also things about notifications, appearance in the feed or not...
+The idea was also to use the publication object as a generic object to manage the social visibility of all producted objects (traces, albums but soon maybe also documents, a heavier production entity). 
+
+
+If I do a get traces with posts that display different things for different users it will need to make a filter on the publications i have access to, then to adapt the returned trace content with either the trace content if the trace holds the content, or with the content of the post if the post has an overriding content (trace content is sensitive and the user has set a particular content for some audience).
+This is touchy. I really wonder if we are really going to want some different posts for the same trace. I am not sure people want this. They can create specific traces for the sensitive informations that they wont share to everyone and they will feel more confortable managing the rights part by part. One thing that could work if we really want to keep something like that is to create a subtrace linked to a parent trace, that will be displayed together in the user journal if needed.
+Actually I used to like a lot the idea that a user can write very honestly whatever he wants about something and then create a less polemic version that he shows to others. But I wonder if it will not be too much complexity to deal with two versions of the same text.
+
+One other thing : if we update a trace and we store the different versions of the trace, the last new version should be displayed with the date of the first version in the API and in the UI. Maybe we should have a field that says : this is an original trace or this is an updated version. All collection fetch through the API filter on original traces. And original traces have a non empty field current_version_id that points to the most up to date trace for this original trace.
+
+Actually I still like he idea to keep splitted concerns for record and for publication. However I still dont really see what I will do with publications more than a 1-1 relation with traces. It can be ok, and it will still have the role to centralize display for traces, albums and documents. Actually I can see some way to use it : maybe a user could want to start a new version of its trace or album, and share it again to everyone. There is also the idea to deal with notifications using the posts... Still need to be thought.
+
+
+### 2026-05-26 Title on traces
+
+I should use the first line of traces as title of the trace
+I could give the user a choice and a coorection option when he finalizes the trace
+
+### 2026-05-26 New entity album
+
+I want to create a new entity that allows a user to present some of he's traces in a given way to him or to other users. It is called album. Owner can 
+pick some of he's traces and add them to a given album.
+We will have : 
+
+Album : 
+- id
+- title
+- subtitle
+- content
+- owner_id
+- display_mode : CHRONOLOGICAL | MANUAL | ADDED_AT
+- maturing_state : DRAFT | FINISHED | ARCHIVED
+- publishing_state : PRIVATE | PUBLISHED
+- cover_image_id
+- updated_at
+- created_at
+
+Then I think we need a relation table :
+
+album_traces :
+- id
+- album_id
+- trace_id
+- ordering_index
+- created_at
+
+For now, we will not manage access rights at the trace/posts level, not on the album.
+Other users can see albums for which they have access to some posts and that are with publishing_state : published.
+Default albums are Chronological | Draft | Private
+The main product idea behind this entity is that journals are read from the time of writing, last trace first, while albums are read from the begining, first trace first (or an order decided by the user).
+
+
+
+### 2026-04-29 new design for email digests 
+I want to make the digest emails more alive. Instead of an eamil each morning, I have one solution : 
+- We never send an email less than 24h after another email has been sent
+- If a post is published and I have access to it, if I have not received a digest email the last 24 hours, I receive an email like a notification for this precise post but also with the digest of the other posts receieved since last digest.
+
+### 2026-04-22 Thoughts about introducing albums
+
+What I was thinking about recently is that we could have two different objects : journal that is a record entity. And something like album that is a social entity. What we share to other people are albums. And journals are only for us. We can have albums bounded to a special journal. All traces posts of this journal can go in the album. We could have albums that are curated compilations of different journals. This is the fragment journal I was talking about. And we could have albums that are subset of some journals. I can have a daily journal, and I extract some traces that are related to my trip in barcelona to create a dedicated album.
+Pros : it would be much cleaner
+Cons : it adds another entity. And do we really want a new entity ? I think the model would start to be very hard to understand for users.
+
+
+### 2026-04-21 Thoughts about some analytics
+
+I want some global analytics.
+I am interested in some very simple data first
+Some data about if everything is working properly.
+
+First, the number of failed lenses. And the number of failed analysis. At the current time. It will simply help know if everything is ok.
+Then for each day, the number of written traces and the number of followed journals opened.
+And maybe the number of users in the platform each day.
+For the last 30 days.
+I know those data are not very usefull but they help give a first sight on the platform.
+
+
+
+### 2026-04-14 Thoughts about the mentor feedback
+
+I want to increase variability in the mentor feedbacks.
+I will create different dimensions that help differentiate mentor feedbacks.
+dimensions : 
+- Scope : 
+  - user : high level feedback on the user
+  - hlp : specific to a high level project
+  - trace : specific to a given trace
+  - landmark : specific to a given landmark
+- Type : 
+  - reflection : helps taking a step back, identify a tension...
+  - guidance : give advices, helps orientate the action
+  - playful : use complicity and maybe humour with the user
+  - resource : give a resource that could be usefull for the user
+  - technical : more precise feedback on how to do things etc
+  - recognition : acknowledgement on what the user does, praise for accomplishments
+  - support : give some emotional support to the user
+- Tone
+  - warm
+  - light
+  - serious
+  - playful
+  - direct
+
+We should also add a subject field to know what each feedback was about.
+
+The mentor should choose a scope, a type, a tone and a subject before to write the feedback content.
+Everything is still done in the same call for now.
+We should store the results in a metadata field of the message entity, with a json type.
+
+the dimensions and subjects of the last 10 feedbacks are given to the llm call, and we ask him to balance the different dimensions while adapting to the current mood of the user.
+
+### 2026-04-06 Thoughts about vocal mode
+
+I want a vocal mode so that people can dictate their traces.
+They can do it piece by piece and the new text is added at the end of the current draft trace content.
+The user can still correct the text after it has been imported.
+So this is not really a vocal record that we need to store for further reading.
+
+what we can imagine is :
+- The front asks for a transcription, receives the text, writes it to the current trae. Here the transcription route is stateless and it is just a frontend helper. It could be a very good way to start.
+- The front makes a request with a given trace in the route, like patch trace with a vocal in it. Then the backend does the transcription and the persistence in the trace at the same time and returns the trace. Maybe this could add some intelligence in the transcription process, like using the rest of the trace text, or some other texts to correct some errors in transcription with a llm call.
+
+I think I am going to start with the very first implementation way : very lightwight and it will not enforce anything for now.
+
+
+### 2026-04-06 thougths about traces timeout
+
+I want trace timeout to be a product constraint to force people to work at a certain speed, to enforce velocity and small work sequence in work context.
+The idea is that the trace is related to a work sequence and it should enforce focus by giving a time limit. Setting a time limit gives a visual feedback to the user on the remaining time, that gives the user urge to work efficiently. When the timeout is reached, it should automatically finalize the trace.
+
+Constraints : 
+- It should be optional, default trace should not have timeout and be validated by the user himself.
+- We should avoid too long timeouts (like days) because it will be opposed to the principle to be a current focus
+
+Questions : 
+- Should be allow the user to add some time to the timeout if he misses some time ? I would say yes because I think it is hard to force the trace finalizing against user will, but at the same time I am perhaps missing a strong product choice by not doing it. Maybe the right thing to do is to store events when a user is forced to add some time to its trace before to complete it, and to give metrics / mentor feedbacks on this (you tend to exceed the time you set on your traces, or you start to do it better...). It endorses the needed role for a feedback on the user rythm.
+- I don't really know where to put them in the UI. Do we need to have a more "trace focus" view ? Do we need to have opened traces accessible from every screen of the app ? What I think for now is that we should add a modal view of the trace that can be opened from the home, from the tab of the draft traces. This way we could switch traces as we are working, and see all timeouts.
+
+
+Implementation : I have never implemented features like this and I really dont know how it should be done. I think we should put a timeout field on the trace, that can either be a time interval from the creation date, or a timestamp of when the trace will be finalized. 
+- The trace is not finalized until the timeout is finished. A cron job that runs every 10 seconds finalizes the traces. Or the first request to the trace after the timeout finalizes the trace and don't do the update. And in any case the frontend tries to prevent the user from updating the trace after the timeout.
+- I may need a websocket to have the state of the trace updated in the front, but maybe the simplest thing to do now is to start a time counter each time we fetch the draft traces frontend side and to display the value based on this.
+
+
+### 2026-04-06 Work of the week
+
+This week, i decided to work on : 
+- Traces timeout
+- add vocal mode
+- debugging of some users
+- work on mentor profiles
+- store some pdfs and trace attachments
+- ask question to a choosen mentor instead to default one
+- create a google developer account.
+- Can load more users in admin analytics
+
+Today, first work on traces timeout and maybe vocal mode.
+
+### 2026-04-03 Thoughts about voice mode
+
+I want a voice mode for the users to be able to dictate the content of their traces with vocal mode.
+Voice mode would be apppend only : you can record multiple vocals for the same trace, and it will just add new text at the end of the trace.
+It should be possible to correct what has been written with voice to text before to finalize the trace.
+
+### 2026-04-03 Thoughts about storage
+
+I need storage in my platform, I'm more and more convinced.
+What storage could be used for :
+- Images as profile picture
+- Images as part of the traces / posts (not 100% sure of this one because could make the product less focus on writing)
+- Images as screenshots / pictures of handwritten traces, that could be processed later to create written traces
+- Output Documents stored, like produced in the user work. The intermediate versions of my memoire. 
+- Input Documents stored, that i want to record for further reading. Eg, an article I downloaded.
+
+What do we want to do with those stored objects ?
+- Reference them in traces : add an image to a trace for followers to see it
+- Reference them in traces : Record an article you found alongside a trace that explains why you downloaded it, so that you can find the document in the recording context if you explain why you stored it
+- Index the files for retrieval : we can use a describtion of the uploaded file to be able to search rapidly for it later
+- Use the file as content for mentor agent : the mentor can open the files for feedbacks etc
+
+From this i think that i should : 
+- Have a storage with multiple files formats, per user
+- Design a complete metadata system for indexing etc
+- Guarantee the privacy of the files
+
+I need to be able to reference the files from inside the trace, to insert an image at a given position for instance. Maybe or maybe not idk.
+
+### 2026-04-01 End of the day note
+
+I have worked on many things, mainly finished a v1 of usage event analytics.
+However I have some things left
+- not finished the sync of sharings
+
+### 2026-03-31 Early loading resources
+
+We need to work on the resources that will be loaded early in the frontend (need to be loaded before to display ...)
+
+- HLP / Followed journals / Drafts, Mentor feedback, summary are important because frontline. Maybe we dont display the home until they are fetched.
+- Recent activity (4 last elements) and frequent landmarks, journals list, traces of the current journal are high priority
+- 20 first Traces of the first 4 journals, message count
+- data for the mentor page could be fetched at the end.
+- Heamap can be a placeholder until we load the data.
+
+### 2026-03-31 where are we
+
+I have accomplished most of the day todo.
+I still have the big thing to use a shared state with pinia in the front.
+I feel empty now : what do I have left ? 
+
+### 2026-03-31 Thoughts about the journal sharing
+
+I have trouble defining how the atomic journal sharing should work.
+The constraints : 
+- Don't show things to people that you don't want to show
+- Make it easy to give access to content.
+- Remove someone : If I make an error by adding the wrong person, i should be able to rollback easily.
+
+Maybe the best way to deal with all this is that journal grants should cascade to posts grants.
+The only question is maybe the kind of notification we should have in such a case. Maybe just a simple mail sent at the journal level.
+
+Another question is what happens when there is no post for the traces of the journal ? I suggest that we add posts when there is no post for a trace, but if a given trace has a aborted post, it should not create a post.
+
+### 2026-03-30 Post sharing to multiple audiences 
+I think this is going to work tonight.
+However we did not enforce strong invariants.
+The number of posts in a trace is a question.
+Maybe what would be very simple first is to have only two different posts for a trace.
+However the model allows for more. This is a deep question.
+
+### 2026-03-30 More precise ideas on posts creation from traces
+
+We still have journals that we mark to shared / with some rights.
+When we complete a trace on those journals it creates a draft post for the right audience.
+Then what we do on the trace updates the draft post(s).
+We can select a portion of the trace. And click on : 
+- hidde to everyone -> removes this portion from the post content
+- show only to -> removes this portion from the default post content and creates a new draft with the audience for the selected users.
+Then if we want to, we click on publish to set the posts status to published.
+
+
+### 2026-03-30 Thoughts about reading rights
+
+I want to work on the way the users can share their journals to a shorter audience. Let's discribe my use case (multiple) and the current situation.
+
+Current situation : client side, one can only share a journal to all followers. However, I want to be able to share a holiday journal with every followers and a private journal with just one friend.
+
+However, Maybe I dont want to have one journal per audience. It would create duplication in what I write. In many cases, I want to write everything in one journal, and decide maybe one part of things I dont share to everybody. It resemble a lot to senscritique interface, where a user can define one spoiler part of the text, and the users have to click on it to reveal the content.
+
+Maybe I could do it like this : 
+- User defines an audience for the journal.
+- User writes a trace
+- User selects a part of the trace only shared to few people (or none)
+- Then user clicks on share for the whole trace
+- It creates two new posts. The posts are related to an audience and to the trace / journal.
+- The followers only have access to the posts, so it does not have complex logic of hidding / revealing some part of the text. And users have more control on what they share, because they deliberately take an action to reveal their trace to the audience (currently it is a little bit too permissive I think)
+
+
+### 2026-03-22
+
+Still need to make the HLP page more clear for users
+And I should allow for atomic read rights on journals
+
 ###
 User observation
 - dark mode
