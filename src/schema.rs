@@ -543,6 +543,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    trace_source_assets (id) {
+        id -> Uuid,
+        trace_id -> Uuid,
+        asset_id -> Uuid,
+        position -> Int4,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     trace_mirrors (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -752,6 +762,8 @@ diesel::joinable!(sessions -> devices (device_id));
 diesel::joinable!(sessions -> users (user_id));
 diesel::joinable!(trace_attachments -> documents (document_id));
 diesel::joinable!(trace_attachments -> traces (trace_id));
+diesel::joinable!(trace_source_assets -> assets (asset_id));
+diesel::joinable!(trace_source_assets -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
@@ -801,6 +813,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     relationships,
     sessions,
     trace_attachments,
+    trace_source_assets,
     trace_mirrors,
     trace_search_documents,
     traces,

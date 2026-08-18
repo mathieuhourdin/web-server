@@ -27,12 +27,15 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
 };
-use crate::schema::{albums, assets, documents, trace_attachments, traces, users};
+use crate::schema::{
+    albums, assets, documents, trace_attachments, trace_source_assets, traces, users,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum AssetUsage {
     UserProfile,
     TraceImage { trace_id: Uuid },
+    TraceSourceAsset { trace_id: Uuid },
     DocumentCover { document_id: Uuid },
     DocumentContentAsset { document_id: Uuid },
     AlbumCover { album_id: Uuid },
@@ -253,6 +256,26 @@ impl Asset {
             .map_err(Into::into)
     }
 
+    pub fn find_by_ids(
+        asset_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, Asset>, PpdcError> {
+        if asset_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut conn = pool.get()?;
+        assets::table
+            .filter(assets::id.eq_any(asset_ids))
+            .select(select_asset_columns())
+            .load::<AssetTuple>(&mut conn)?
+            .into_iter()
+            .map(tuple_to_asset)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|assets| assets.into_iter().map(|asset| (asset.id, asset)).collect())
+            .map_err(Into::into)
+    }
+
     pub fn find_image_dimensions_by_ids(
         asset_ids: &[Uuid],
         pool: &DbPool,
@@ -337,6 +360,16 @@ impl Asset {
                 .map(|trace_id| AssetUsage::TraceImage { trace_id }),
         );
 
+        let trace_source_asset_trace_ids = trace_source_assets::table
+            .filter(trace_source_assets::asset_id.eq(asset_id))
+            .select(trace_source_assets::trace_id)
+            .load::<Uuid>(conn)?;
+        usages.extend(
+            trace_source_asset_trace_ids
+                .into_iter()
+                .map(|trace_id| AssetUsage::TraceSourceAsset { trace_id }),
+        );
+
         let document_cover_ids = documents::table
             .filter(documents::cover_image_asset_id.eq(Some(asset_id)))
             .select(documents::id)
@@ -380,6 +413,10 @@ impl Asset {
             AssetUsage::TraceImage { trace_id } => {
                 let trace = Trace::find_full_trace(trace_id, pool)?;
                 trace.user_can_read(viewer_user_id, pool)
+            }
+            AssetUsage::TraceSourceAsset { trace_id } => {
+                let trace = Trace::find_full_trace(trace_id, pool)?;
+                Ok(trace.user_id == viewer_user_id)
             }
             AssetUsage::DocumentCover { document_id }
             | AssetUsage::DocumentContentAsset { document_id } => {

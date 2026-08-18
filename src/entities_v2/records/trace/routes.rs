@@ -8,6 +8,9 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::entities_v2::records::trace_source_asset::{
+    TraceSourceAsset, TraceSourceAssetReadableView,
+};
 use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
@@ -151,6 +154,19 @@ pub struct TraceAttachmentUploadResponse {
     pub attachment: TraceAttachmentWithDocument,
     pub signed_url: String,
     pub expires_at: chrono::NaiveDateTime,
+}
+
+#[derive(Serialize)]
+pub struct TraceSourceAssetUploadResponse {
+    pub source_asset: TraceSourceAssetReadableView,
+    pub asset: crate::entities_v2::asset::Asset,
+    pub signed_url: String,
+    pub expires_at: chrono::NaiveDateTime,
+}
+
+#[derive(Deserialize)]
+pub struct ReorderTraceSourceAssetsDto {
+    pub source_asset_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -1330,6 +1346,123 @@ pub async fn post_trace_asset_route(
         signed_url,
         expires_at,
     }))
+}
+
+#[debug_handler]
+pub async fn get_trace_source_assets_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<TraceSourceAssetReadableView>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    Ok(Json(TraceSourceAsset::find_readable_for_trace(id, &pool)?))
+}
+
+#[debug_handler]
+pub async fn post_trace_source_asset_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    multipart: Multipart,
+) -> Result<Json<TraceSourceAssetUploadResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let mut trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    if trace.status == super::enums::TraceStatus::Archived {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Archived traces cannot receive source assets".to_string(),
+        ));
+    }
+
+    let AssetUploadResponse {
+        asset,
+        signed_url,
+        expires_at,
+        ..
+    } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
+    let source_asset = TraceSourceAsset::create(id, asset.id, &pool)?;
+    let source_asset = TraceSourceAsset::find_readable_for_trace(id, &pool)?
+        .into_iter()
+        .find(|candidate| candidate.id == source_asset.id)
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "Failed to hydrate trace source asset".to_string(),
+            )
+        })?;
+
+    Ok(Json(TraceSourceAssetUploadResponse {
+        source_asset,
+        asset,
+        signed_url,
+        expires_at,
+    }))
+}
+
+#[debug_handler]
+pub async fn put_trace_source_assets_order_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ReorderTraceSourceAssetsDto>,
+) -> Result<Json<Vec<TraceSourceAssetReadableView>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if trace.status == super::enums::TraceStatus::Archived {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Archived traces cannot reorder source assets".to_string(),
+        ));
+    }
+    Ok(Json(TraceSourceAsset::replace_order(
+        id,
+        payload.source_asset_ids,
+        &pool,
+    )?))
+}
+
+#[debug_handler]
+pub async fn delete_trace_source_asset_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path((trace_id, source_asset_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<TraceSourceAsset>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if trace.status == super::enums::TraceStatus::Archived {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Archived traces cannot remove source assets".to_string(),
+        ));
+    }
+    let source_asset = TraceSourceAsset::find(source_asset_id, &pool)?;
+    if source_asset.trace_id != trace_id {
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Trace source asset not found".to_string(),
+        ));
+    }
+    TraceSourceAsset::delete(source_asset_id, &pool)?;
+    Ok(Json(source_asset))
 }
 
 #[debug_handler]

@@ -5,3 +5,4 @@ pub mod journal_share_link;
 pub mod trace;
 pub mod trace_attachment;
 pub mod trace_search;
+pub mod trace_source_asset;
