@@ -570,6 +570,24 @@ impl Asset {
 
         delete_object_from_gcs(bucket, object_key).await
     }
+
+    /// Removes both the private upload and the optional public derivative.
+    /// The database row is removed separately by the account purge transaction.
+    pub async fn delete_storage_objects(&self) -> Result<(), PpdcError> {
+        delete_object_from_gcs(&self.bucket, &self.object_key).await?;
+        self.delete_public_object_if_present().await
+    }
+
+    pub fn find_all_owned_by(user_id: Uuid, pool: &DbPool) -> Result<Vec<Asset>, PpdcError> {
+        let mut conn = pool.get()?;
+        assets::table
+            .filter(assets::owner_user_id.eq(user_id))
+            .select(select_asset_columns())
+            .load::<AssetTuple>(&mut conn)?
+            .into_iter()
+            .map(tuple_to_asset)
+            .collect()
+    }
 }
 
 impl NewAsset {

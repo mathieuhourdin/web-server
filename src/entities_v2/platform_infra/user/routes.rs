@@ -7,7 +7,9 @@ use crate::entities_v2::{
     journal::Journal,
     message::Message,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
-    platform_infra::usage_event::{UsageEvent, UsageEventType},
+    platform_infra::usage_event::{
+        create_anonymous_lifecycle_usage_event, UsageEvent, UsageEventType,
+    },
     session::Session,
 };
 use crate::environment;
@@ -35,6 +37,7 @@ use super::model::{
     UserPseudonymizedResponse, UserPublicResponse, UserResponse, UserSearchParams,
     UserSearchResult, UserSearchRow,
 };
+use super::purge_user;
 
 #[derive(QueryableByName)]
 struct SuggestedUserIdRow {
@@ -183,6 +186,7 @@ pub(crate) fn finalize_new_human_user_registration(
         return Err(err);
     }
     if created_user.principal_type == UserPrincipalType::Human {
+        create_anonymous_lifecycle_usage_event(UsageEventType::AccountCreated, None, pool)?;
         match enqueue_new_user_signup_notification_email(created_user, pool) {
             Ok(email_id) => {
                 let pool_for_task = pool.clone();
@@ -201,6 +205,30 @@ pub(crate) fn finalize_new_human_user_registration(
         }
     }
     Ok(())
+}
+
+#[debug_handler]
+pub async fn delete_my_account_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+) -> Result<axum::http::StatusCode, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    purge_user(user_id, "self", &pool).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[debug_handler]
+pub async fn delete_user_account_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<axum::http::StatusCode, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if user_id != id {
+        return Err(PpdcError::unauthorized());
+    }
+    purge_user(user_id, "self", &pool).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 pub(crate) fn cleanup_failed_user_registration(user_id: Uuid, pool: &DbPool) {
@@ -359,8 +387,23 @@ pub async fn get_suggested_users_route(
 
     let ranked_user_ids = sql_query(
         r#"
+        WITH mutual_follows AS (
+            SELECT
+                candidate_follow.target_user_id AS candidate_user_id,
+                COUNT(DISTINCT my_follow.target_user_id)::bigint AS mutual_follows_count
+            FROM relationships my_follow
+            INNER JOIN relationships candidate_follow
+              ON candidate_follow.requester_user_id = my_follow.target_user_id
+             AND candidate_follow.relationship_type = 'FOLLOW'
+             AND candidate_follow.status = 'ACCEPTED'
+            WHERE my_follow.requester_user_id = $1
+              AND my_follow.relationship_type = 'FOLLOW'
+              AND my_follow.status = 'ACCEPTED'
+            GROUP BY candidate_follow.target_user_id
+        )
         SELECT u.id AS user_id
         FROM users u
+        LEFT JOIN mutual_follows mf ON mf.candidate_user_id = u.id
         LEFT JOIN posts p
           ON p.user_id = u.id
           AND p.status = 'PUBLISHED'
@@ -379,8 +422,12 @@ pub async fn get_suggested_users_route(
                 (r.requester_user_id = u.id AND r.target_user_id = $1)
               )
           )
-        GROUP BY u.id, u.created_at
-        ORDER BY COUNT(p.id) DESC, COALESCE(MAX(COALESCE(p.publishing_date, p.created_at)), u.created_at) DESC, u.created_at DESC
+        GROUP BY u.id, u.created_at, mf.mutual_follows_count
+        ORDER BY
+          COALESCE(mf.mutual_follows_count, 0) DESC,
+          COUNT(p.id) DESC,
+          COALESCE(MAX(COALESCE(p.publishing_date, p.created_at)), u.created_at) DESC,
+          u.created_at DESC
         LIMIT $3
         "#,
     )

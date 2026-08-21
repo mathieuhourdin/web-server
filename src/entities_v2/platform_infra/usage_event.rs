@@ -27,6 +27,10 @@ use crate::schema::usage_events;
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageEventType {
+    AccountCreated,
+    AccountDeleted,
+    AccountSelfDeleted,
+    AccountAdminDeleted,
     HomeVisited,
     HistoryVisited,
     FeedVisited,
@@ -48,6 +52,10 @@ pub enum UsageEventType {
 impl UsageEventType {
     pub fn to_db(self) -> &'static str {
         match self {
+            UsageEventType::AccountCreated => "ACCOUNT_CREATED",
+            UsageEventType::AccountDeleted => "ACCOUNT_DELETED",
+            UsageEventType::AccountSelfDeleted => "ACCOUNT_SELF_DELETED",
+            UsageEventType::AccountAdminDeleted => "ACCOUNT_ADMIN_DELETED",
             UsageEventType::HomeVisited => "HOME_VISITED",
             UsageEventType::HistoryVisited => "HISTORY_VISITED",
             UsageEventType::FeedVisited => "FEED_VISITED",
@@ -68,6 +76,14 @@ impl UsageEventType {
 
     pub fn from_db(value: &str) -> Result<Self, PpdcError> {
         match value {
+            "ACCOUNT_CREATED" | "account_created" => Ok(UsageEventType::AccountCreated),
+            "ACCOUNT_DELETED" | "account_deleted" => Ok(UsageEventType::AccountDeleted),
+            "ACCOUNT_SELF_DELETED" | "account_self_deleted" => {
+                Ok(UsageEventType::AccountSelfDeleted)
+            }
+            "ACCOUNT_ADMIN_DELETED" | "account_admin_deleted" => {
+                Ok(UsageEventType::AccountAdminDeleted)
+            }
             "HOME_VISITED" | "home_visited" => Ok(UsageEventType::HomeVisited),
             "HISTORY_VISITED" | "history_visited" => Ok(UsageEventType::HistoryVisited),
             "FEED_VISITED" | "feed_visited" => Ok(UsageEventType::FeedVisited),
@@ -107,7 +123,7 @@ impl UsageEventType {
 #[derive(Serialize, Debug, Clone)]
 pub struct UsageEvent {
     pub id: Uuid,
-    pub user_id: Uuid,
+    pub user_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
     pub event_type: UsageEventType,
     pub resource_id: Option<Uuid>,
@@ -126,7 +142,7 @@ pub struct NewUsageEventDto {
 #[derive(Debug, Clone)]
 struct NewUsageEvent {
     pub id: Uuid,
-    pub user_id: Uuid,
+    pub user_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
     pub event_type: UsageEventType,
     pub resource_id: Option<Uuid>,
@@ -136,7 +152,7 @@ struct NewUsageEvent {
 
 type UsageEventTuple = (
     Uuid,
-    Uuid,
+    Option<Uuid>,
     Option<Uuid>,
     String,
     Option<Uuid>,
@@ -173,7 +189,7 @@ impl TryFrom<UsageEventTuple> for UsageEvent {
 }
 
 impl NewUsageEvent {
-    fn new(payload: NewUsageEventDto, user_id: Uuid, session_id: Option<Uuid>) -> Self {
+    fn new(payload: NewUsageEventDto, user_id: Option<Uuid>, session_id: Option<Uuid>) -> Self {
         Self {
             id: Uuid::new_v4(),
             user_id,
@@ -204,7 +220,7 @@ impl NewUsageEvent {
             "#,
         )
         .bind::<SqlUuid, _>(self.id)
-        .bind::<SqlUuid, _>(self.user_id)
+        .bind::<Nullable<SqlUuid>, _>(self.user_id)
         .bind::<Nullable<SqlUuid>, _>(self.session_id)
         .bind::<Text, _>(self.event_type.to_db())
         .bind::<Nullable<SqlUuid>, _>(self.resource_id)
@@ -273,7 +289,36 @@ pub fn create_usage_event(
         context_json,
     };
     validate_usage_event_access(event_type, resource_id, user_id, pool)?;
-    NewUsageEvent::new(payload, user_id, session_id).create(pool)
+    NewUsageEvent::new(payload, Some(user_id), session_id).create(pool)
+}
+
+/// Stores a platform-wide lifecycle metric with no link back to an account.
+/// These are intentionally not accepted through the public usage-event route.
+pub fn create_anonymous_lifecycle_usage_event(
+    event_type: UsageEventType,
+    context_json: Option<Value>,
+    pool: &DbPool,
+) -> Result<UsageEvent, PpdcError> {
+    match event_type {
+        UsageEventType::AccountCreated
+        | UsageEventType::AccountDeleted
+        | UsageEventType::AccountSelfDeleted
+        | UsageEventType::AccountAdminDeleted => {}
+        _ => {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Only account lifecycle events may be anonymous".to_string(),
+            ));
+        }
+    }
+
+    let payload = NewUsageEventDto {
+        event_type,
+        resource_id: None,
+        context_json,
+    };
+    NewUsageEvent::new(payload, None, None).create(pool)
 }
 
 pub fn create_internal_usage_event(
@@ -289,7 +334,7 @@ pub fn create_internal_usage_event(
         resource_id,
         context_json,
     };
-    NewUsageEvent::new(payload, user_id, session_id).create(pool)
+    NewUsageEvent::new(payload, Some(user_id), session_id).create(pool)
 }
 
 fn validate_usage_event_access(
@@ -299,6 +344,16 @@ fn validate_usage_event_access(
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     match event_type {
+        UsageEventType::AccountCreated
+        | UsageEventType::AccountDeleted
+        | UsageEventType::AccountSelfDeleted
+        | UsageEventType::AccountAdminDeleted => {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "This usage event type is internal".to_string(),
+            ));
+        }
         UsageEventType::HomeVisited
         | UsageEventType::HistoryVisited
         | UsageEventType::FeedVisited

@@ -21,6 +21,7 @@ use super::enums::{UserPrincipalType, UserRole};
 use super::model::{
     ensure_user_has_any_lens, ensure_user_has_meta_journal, NewServiceUserDto, User,
 };
+use super::purge_user;
 
 #[derive(QueryableByName)]
 struct UserIdRow {
@@ -410,6 +411,24 @@ pub async fn patch_admin_user_ai_features_route(
         ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
         allows_ai_features: user.allows_ai_features(),
     }))
+}
+
+#[debug_handler]
+pub async fn delete_admin_user_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+) -> Result<axum::http::StatusCode, PpdcError> {
+    let admin_user = ensure_admin_session_user(&session, &pool)?;
+    if admin_user.id == id {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "An administrator cannot delete their own account through the admin route".to_string(),
+        ));
+    }
+    purge_user(id, "admin", &pool).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 #[debug_handler]

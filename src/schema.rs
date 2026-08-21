@@ -621,7 +621,7 @@ diesel::table! {
 diesel::table! {
     usage_events (id) {
         id -> Uuid,
-        user_id -> Uuid,
+        user_id -> Nullable<Uuid>,
         session_id -> Nullable<Uuid>,
         event_type -> Text,
         resource_id -> Nullable<Uuid>,
