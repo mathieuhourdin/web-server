@@ -10,6 +10,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     relationship::Relationship,
     trace::{Trace, TraceSharingSensitivity, TraceStatus, TraceType},
+    user_block::UserBlock,
     user::{User, UserPublicResponse},
 };
 use crate::schema::{journal_sharing_policies, journals, posts, traces};
@@ -386,6 +387,7 @@ impl JournalSharingPolicy {
                 "Cannot create a journal sharing policy for yourself".to_string(),
             ));
         }
+        UserBlock::ensure_can_interact(owner_user_id, payload.grantee_user_id, pool)?;
         if !Relationship::is_follow_accepted(payload.grantee_user_id, owner_user_id, pool)? {
             return Err(PpdcError::new(
                 403,

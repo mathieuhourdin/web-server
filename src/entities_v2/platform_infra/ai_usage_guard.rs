@@ -108,7 +108,11 @@ fn count_recent_ai_usage(
             FROM messages m
             INNER JOIN users recipient ON recipient.id = m.recipient_user_id
             WHERE m.sender_user_id = $1
-              AND m.message_type = 'QUESTION'
+              AND m.message_type IN (
+                  'QUESTION',
+                  'SHARED_TRACE_EXPLANATION_REQUEST',
+                  'SHARED_TRACE_TRANSLATION_REQUEST'
+              )
               AND m.created_at >= NOW() - INTERVAL '24 hours'
               AND (
                   recipient.principal_type = 'SERVICE'

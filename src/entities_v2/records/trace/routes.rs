@@ -38,6 +38,7 @@ use crate::entities_v2::{
         TraceAttachmentWithDocument,
     },
     user::{ensure_user_has_any_lens, User},
+    user_block::UserBlock,
     user_post_state::{PostSeenByPreview, PostSeenByUser, UserPostState},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams, ValidatedPagination};
@@ -2006,6 +2007,9 @@ pub async fn post_trace_message_route(
         Some(recipient) => is_service_mentor(recipient, &pool)?,
         None => false,
     };
+    if let Some(recipient) = recipient.as_ref() {
+        UserBlock::ensure_can_interact(user_id, recipient.id, &pool)?;
+    }
     let message_type = match payload.message_type {
         Some(MessageType::General) if recipient_is_service_mentor => MessageType::Question,
         Some(message_type) => message_type,

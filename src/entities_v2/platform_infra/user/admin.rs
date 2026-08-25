@@ -307,7 +307,12 @@ pub async fn get_admin_users_route(
                     SELECT COUNT(*)::bigint
                     FROM messages m
                     WHERE m.sender_user_id = u.id
-                      AND m.message_type IN ('QUESTION', 'TAROT_READING_REQUEST')
+                      AND m.message_type IN (
+                          'QUESTION',
+                          'TAROT_READING_REQUEST',
+                          'SHARED_TRACE_EXPLANATION_REQUEST',
+                          'SHARED_TRACE_TRANSLATION_REQUEST'
+                      )
                       AND m.created_at >= NOW() - INTERVAL '24 hours'
                 ), 0)
                 + COALESCE((
@@ -330,7 +335,12 @@ pub async fn get_admin_users_route(
                     SELECT COUNT(*)::bigint
                     FROM messages m
                     WHERE m.sender_user_id = u.id
-                      AND m.message_type IN ('QUESTION', 'TAROT_READING_REQUEST')
+                      AND m.message_type IN (
+                          'QUESTION',
+                          'TAROT_READING_REQUEST',
+                          'SHARED_TRACE_EXPLANATION_REQUEST',
+                          'SHARED_TRACE_TRANSLATION_REQUEST'
+                      )
                       AND m.created_at >= NOW() - INTERVAL '7 days'
                 ), 0)
                 + COALESCE((

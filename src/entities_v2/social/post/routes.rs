@@ -245,10 +245,18 @@ pub async fn get_post_route(
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let post = Post::find_full(id, &pool)?;
     if post.user_id != viewer_user_id && post.status != PostStatus::Published {
-        return Err(PpdcError::unauthorized());
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Post not found".to_string(),
+        ));
     }
     if !PostGrant::user_can_read_post(&post, viewer_user_id, &pool)? {
-        return Err(PpdcError::unauthorized());
+        return Err(PpdcError::new(
+            404,
+            ErrorType::ApiError,
+            "Post not found".to_string(),
+        ));
     }
     Ok(Json(post))
 }

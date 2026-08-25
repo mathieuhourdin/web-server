@@ -6,6 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
+use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
 use crate::schema::{post_grants, posts, users};
 
@@ -37,7 +38,20 @@ impl PostGrant {
 
         candidate_ids.sort_unstable();
         candidate_ids.dedup();
-        Ok(candidate_ids)
+        if candidate_ids.is_empty() {
+            return Ok(candidate_ids);
+        }
+
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
+        if blocked_user_ids.is_empty() {
+            return Ok(candidate_ids);
+        }
+
+        Ok(posts::table
+            .filter(posts::id.eq_any(candidate_ids))
+            .filter(posts::user_id.ne_all(blocked_user_ids))
+            .select(posts::id)
+            .load::<Uuid>(&mut conn)?)
     }
 
     fn owner_can_use_scope(
@@ -268,6 +282,7 @@ impl PostGrant {
                     "Cannot grant a post to yourself".to_string(),
                 ));
             }
+            UserBlock::ensure_can_interact(owner_user_id, grantee_user_id, pool)?;
             let accepted = Relationship::is_follow_accepted(grantee_user_id, owner_user_id, pool)?;
             if !accepted {
                 return Err(PpdcError::new(
@@ -343,6 +358,9 @@ impl PostGrant {
     ) -> Result<bool, PpdcError> {
         if post.user_id == user_id {
             return Ok(true);
+        }
+        if UserBlock::exists_in_either_direction(post.user_id, user_id, pool)? {
+            return Ok(false);
         }
 
         let grants = PostGrant::find_for_post_paginated(post.id, 0, i64::MAX / 4, pool)?.0;
@@ -473,6 +491,8 @@ impl PostGrant {
         }
 
         ids.remove(&post.user_id);
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(post.user_id, pool)?;
+        ids.retain(|user_id| !blocked_user_ids.contains(user_id));
         Ok(ids.into_iter().collect())
     }
 }

@@ -6,7 +6,8 @@ pub mod persist;
 pub mod routes;
 
 pub use attachment::{
-    MessageAttachment, MessageAttachmentType, TarotCard, TarotReadingAttachment, TarotSpreadType,
+    MessageAttachment, MessageAttachmentType, SharedTraceTranslationAttachment, TarotCard,
+    TarotReadingAttachment, TarotSpreadType,
 };
 pub use model::{
     ConversationSummary, MentorFeedbackMetadata, MentorFeedbackMode, MentorFeedbackScope,

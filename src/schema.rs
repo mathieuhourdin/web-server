@@ -644,6 +644,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    user_blocks (blocker_user_id, blocked_user_id) {
+        blocker_user_id -> Uuid,
+        blocked_user_id -> Uuid,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     user_roles (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -818,6 +826,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     trace_search_documents,
     traces,
     usage_events,
+    user_blocks,
     user_post_states,
     user_roles,
     user_secure_actions,

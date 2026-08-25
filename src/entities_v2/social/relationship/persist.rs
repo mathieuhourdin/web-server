@@ -5,6 +5,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal_sharing_policy::JournalSharingPolicy;
 use crate::entities_v2::post_grant::PostGrant;
+use crate::entities_v2::user_block::UserBlock;
 use crate::schema::relationships;
 
 use super::enums::{RelationshipStatus, RelationshipType};
@@ -118,6 +119,7 @@ impl Relationship {
                 "Cannot create a relationship with yourself".to_string(),
             ));
         }
+        UserBlock::ensure_can_interact(requester_user_id, payload.target_user_id, pool)?;
 
         let relationship_type = payload
             .relationship_type
@@ -178,6 +180,13 @@ impl Relationship {
                 400,
                 ErrorType::ApiError,
                 "Cannot update a relationship back to pending".to_string(),
+            ));
+        }
+        if status == RelationshipStatus::Blocked {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Use PUT /me/blocks/:user_id to block a user".to_string(),
             ));
         }
 

@@ -11,6 +11,7 @@ use crate::entities_v2::{
         create_anonymous_lifecycle_usage_event, UsageEvent, UsageEventType,
     },
     session::Session,
+    user_block::UserBlock,
 };
 use crate::environment;
 use crate::pagination::PaginatedResponse;
@@ -244,9 +245,12 @@ pub(crate) fn cleanup_failed_user_registration(user_id: Uuid, pool: &DbPool) {
 pub async fn get_users(
     Query(params): Query<UserListParams>,
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
 ) -> Result<Json<PaginatedResponse<UserPublicResponse>>, PpdcError> {
     let mut conn = pool.get()?;
     let pagination = params.pagination.validate()?;
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, &pool)?;
 
     let mut count_query = crate::schema::users::table.into_boxed();
     if let Some(principal_type) = params.principal_type {
@@ -256,6 +260,9 @@ pub async fn get_users(
         count_query =
             count_query.filter(crate::schema::users::is_platform_user.eq(is_platform_user));
     }
+    if !blocked_user_ids.is_empty() {
+        count_query = count_query.filter(crate::schema::users::id.ne_all(blocked_user_ids.clone()));
+    }
     let total = count_query.count().get_result::<i64>(&mut conn)?;
 
     let mut query = crate::schema::users::table.into_boxed();
@@ -264,6 +271,9 @@ pub async fn get_users(
     }
     if let Some(is_platform_user) = params.is_platform_user {
         query = query.filter(crate::schema::users::is_platform_user.eq(is_platform_user));
+    }
+    if !blocked_user_ids.is_empty() {
+        query = query.filter(crate::schema::users::id.ne_all(blocked_user_ids));
     }
 
     let results: Vec<UserPublicResponse> = query
@@ -281,8 +291,10 @@ pub async fn get_users(
 pub async fn get_user_search_route(
     Query(params): Query<UserSearchParams>,
     Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
 ) -> Result<Json<PaginatedResponse<UserSearchResult>>, PpdcError> {
     let pagination = params.pagination.validate()?;
+    let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let query = params.q.trim();
     if query.is_empty() {
         return Ok(Json(PaginatedResponse::new(vec![], pagination, 0)));
@@ -298,6 +310,12 @@ pub async fn get_user_search_route(
         SELECT COUNT(*)::bigint AS total
         FROM users
         WHERE principal_type = 'HUMAN'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM user_blocks ub
+            WHERE (ub.blocker_user_id = $2 AND ub.blocked_user_id = users.id)
+               OR (ub.blocker_user_id = users.id AND ub.blocked_user_id = $2)
+          )
           AND (
             handle ILIKE $1
             OR first_name ILIKE $1
@@ -307,6 +325,7 @@ pub async fn get_user_search_route(
         "#,
     )
     .bind::<Text, _>(contains_query.clone())
+    .bind::<SqlUuid, _>(session_user_id)
     .get_result::<CountRow>(&mut conn)?
     .total;
 
@@ -324,6 +343,12 @@ pub async fn get_user_search_route(
             pseudonym
         FROM users
         WHERE principal_type = 'HUMAN'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM user_blocks ub
+            WHERE (ub.blocker_user_id = $6 AND ub.blocked_user_id = users.id)
+               OR (ub.blocker_user_id = users.id AND ub.blocked_user_id = $6)
+          )
           AND (
             handle ILIKE $1
             OR first_name ILIKE $1
@@ -349,6 +374,7 @@ pub async fn get_user_search_route(
     .bind::<Text, _>(prefix_query)
     .bind::<BigInt, _>(pagination.offset)
     .bind::<BigInt, _>(pagination.limit)
+    .bind::<SqlUuid, _>(session_user_id)
     .load::<UserSearchRow>(&mut conn)?;
 
     let mut results = rows
@@ -411,6 +437,12 @@ pub async fn get_suggested_users_route(
         WHERE u.principal_type = 'HUMAN'
           AND u.is_platform_user = TRUE
           AND u.id <> $1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM user_blocks ub
+            WHERE (ub.blocker_user_id = $1 AND ub.blocked_user_id = u.id)
+               OR (ub.blocker_user_id = u.id AND ub.blocked_user_id = $1)
+          )
           AND NOT EXISTS (
             SELECT 1
             FROM relationships r
@@ -937,6 +969,9 @@ pub async fn get_user_route(
 ) -> Result<impl axum::response::IntoResponse, PpdcError> {
     let user = User::find(&id, &pool)?;
     let viewer_user_id = session.user_id;
+    if let Some(viewer_user_id) = viewer_user_id {
+        UserBlock::ensure_can_interact(viewer_user_id, user.id, &pool)?;
+    }
     if session.user_id == Some(id) {
         let mut user_response =
             UserPseudonymizedAuthentifiedResponse::from_viewer(&user, viewer_user_id);

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user::{User, UserPublicResponse};
 use crate::schema::{messages, users};
 
@@ -187,6 +188,14 @@ impl Message {
                  FROM messages
                  WHERE (sender_user_id = $1 OR recipient_user_id = $1)
                    AND processing_state = 'PROCESSED'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM user_blocks ub
+                     WHERE (ub.blocker_user_id = $1 AND ub.blocked_user_id =
+                               CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END)
+                        OR (ub.blocker_user_id =
+                               CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END
+                            AND ub.blocked_user_id = $1)
+                   )
                  ORDER BY partner_id, created_at DESC, id DESC
              ) latest
              ORDER BY last_created_at DESC
@@ -203,7 +212,15 @@ impl Message {
                  AS count
              FROM messages
              WHERE (sender_user_id = $1 OR recipient_user_id = $1)
-               AND processing_state = 'PROCESSED'",
+               AND processing_state = 'PROCESSED'
+               AND NOT EXISTS (
+                 SELECT 1 FROM user_blocks ub
+                 WHERE (ub.blocker_user_id = $1 AND ub.blocked_user_id =
+                           CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END)
+                    OR (ub.blocker_user_id =
+                           CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END
+                        AND ub.blocked_user_id = $1)
+               )",
         )
         .bind::<SqlUuid, _>(viewer_user_id)
         .get_result::<CountRow>(&mut conn)?
@@ -306,6 +323,14 @@ impl Message {
                  WHERE (sender_user_id = $1 OR recipient_user_id = $1)
                    AND processing_state = 'PROCESSED'
                    AND (trace_id = $2 OR ($3 IS NOT NULL AND post_id = $3))
+                   AND NOT EXISTS (
+                     SELECT 1 FROM user_blocks ub
+                     WHERE (ub.blocker_user_id = $1 AND ub.blocked_user_id =
+                               CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END)
+                        OR (ub.blocker_user_id =
+                               CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END
+                            AND ub.blocked_user_id = $1)
+                   )
                  ORDER BY partner_id, created_at DESC, id DESC
              ) latest
              ORDER BY last_created_at DESC",
@@ -501,7 +526,14 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool.get()?;
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let mut count_query = messages::table.into_boxed();
+
+        if !blocked_user_ids.is_empty() {
+            count_query = count_query
+                .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+                .filter(messages::recipient_user_id.ne_all(blocked_user_ids.clone()));
+        }
 
         if received_only || unread_only {
             count_query = count_query.filter(messages::recipient_user_id.eq(user_id));
@@ -525,6 +557,12 @@ impl Message {
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
         let mut query = messages::table.into_boxed();
+
+        if !blocked_user_ids.is_empty() {
+            query = query
+                .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+                .filter(messages::recipient_user_id.ne_all(blocked_user_ids));
+        }
 
         if received_only || unread_only {
             query = query.filter(messages::recipient_user_id.eq(user_id));
@@ -590,6 +628,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool.get()?;
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let total = messages::table
             .filter(messages::trace_id.eq(Some(trace_id)))
             .filter(
@@ -597,6 +636,8 @@ impl Message {
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
             )
+            .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+            .filter(messages::recipient_user_id.ne_all(blocked_user_ids.clone()))
             .count()
             .get_result::<i64>(&mut conn)?;
 
@@ -607,6 +648,8 @@ impl Message {
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
             )
+            .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+            .filter(messages::recipient_user_id.ne_all(blocked_user_ids))
             .select((
                 messages::id,
                 messages::sender_user_id,
@@ -643,6 +686,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool.get()?;
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
 
         let mut count_query = messages::table.into_boxed();
         count_query = match post_id {
@@ -658,6 +702,11 @@ impl Message {
                 .eq(user_id)
                 .or(messages::recipient_user_id.eq(user_id)),
         );
+        if !blocked_user_ids.is_empty() {
+            count_query = count_query
+                .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+                .filter(messages::recipient_user_id.ne_all(blocked_user_ids.clone()));
+        }
         if let Some(conversation_user_id) = conversation_user_id {
             count_query = count_query.filter(
                 messages::sender_user_id
@@ -681,6 +730,11 @@ impl Message {
                 .eq(user_id)
                 .or(messages::recipient_user_id.eq(user_id)),
         );
+        if !blocked_user_ids.is_empty() {
+            query = query
+                .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+                .filter(messages::recipient_user_id.ne_all(blocked_user_ids));
+        }
         if let Some(conversation_user_id) = conversation_user_id {
             query = query.filter(
                 messages::sender_user_id
@@ -724,6 +778,7 @@ impl Message {
         pool: &DbPool,
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool.get()?;
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let total = messages::table
             .filter(messages::post_id.eq(Some(post_id)))
             .filter(
@@ -731,6 +786,8 @@ impl Message {
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
             )
+            .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+            .filter(messages::recipient_user_id.ne_all(blocked_user_ids.clone()))
             .count()
             .get_result::<i64>(&mut conn)?;
 
@@ -741,6 +798,8 @@ impl Message {
                     .eq(user_id)
                     .or(messages::recipient_user_id.eq(user_id)),
             )
+            .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+            .filter(messages::recipient_user_id.ne_all(blocked_user_ids))
             .select((
                 messages::id,
                 messages::sender_user_id,

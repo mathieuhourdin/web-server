@@ -8,6 +8,8 @@ pub enum MessageType {
     Question,
     MentorReply,
     TarotReadingRequest,
+    SharedTraceExplanationRequest,
+    SharedTraceTranslationRequest,
 }
 
 impl MessageType {
@@ -18,6 +20,8 @@ impl MessageType {
             MessageType::Question => "QUESTION",
             MessageType::MentorReply => "MENTOR_REPLY",
             MessageType::TarotReadingRequest => "TAROT_READING_REQUEST",
+            MessageType::SharedTraceExplanationRequest => "SHARED_TRACE_EXPLANATION_REQUEST",
+            MessageType::SharedTraceTranslationRequest => "SHARED_TRACE_TRANSLATION_REQUEST",
         }
     }
 
@@ -27,6 +31,12 @@ impl MessageType {
             "QUESTION" | "question" => MessageType::Question,
             "MENTOR_REPLY" | "mentor_reply" => MessageType::MentorReply,
             "TAROT_READING_REQUEST" | "tarot_reading_request" => MessageType::TarotReadingRequest,
+            "SHARED_TRACE_EXPLANATION_REQUEST" | "shared_trace_explanation_request" => {
+                MessageType::SharedTraceExplanationRequest
+            }
+            "SHARED_TRACE_TRANSLATION_REQUEST" | "shared_trace_translation_request" => {
+                MessageType::SharedTraceTranslationRequest
+            }
             _ => MessageType::General,
         }
     }

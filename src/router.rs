@@ -16,7 +16,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     feed, journal, journal_share_link, journal_sharing_policy, landmark, landscape_analysis, lens,
     llm_call, mailer, message, post, post_grant, reference, relationship, trace, trace_mirror,
-    trace_search, transcription, url_preview, usage_event, user, user_post_state,
+    trace_search, transcription, url_preview, usage_event, user, user_block, user_post_state,
     user_secure_action,
 };
 use crate::{environment, sessions_service};
@@ -518,6 +518,11 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/account", delete(user::delete_my_account_route))
+        .route("/blocks", get(user_block::get_my_blocks_route))
+        .route(
+            "/blocks/:user_id",
+            put(user_block::put_my_block_route).delete(user_block::delete_my_block_route),
+        )
         .route("/unread_counts", get(user::get_me_unread_counts_route))
         .route("/traces", get(trace::get_me_traces_route))
         .route("/landmarks", get(landmark::get_me_landmarks_route))

@@ -15,6 +15,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     trace::Trace,
+    user_block::UserBlock,
     user::{User, UserPrincipalType, UserRole},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -81,6 +82,18 @@ pub struct MessageSeenResponse {
     pub marked_seen_count: i64,
 }
 
+fn ensure_message_visible_to_user(message: &Message, user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+    if message.sender_user_id != user_id && message.recipient_user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    let partner_id = if message.sender_user_id == user_id {
+        message.recipient_user_id
+    } else {
+        message.sender_user_id
+    };
+    UserBlock::ensure_can_interact(user_id, partner_id, pool)
+}
+
 pub(crate) fn is_service_mentor(recipient: &User, pool: &DbPool) -> Result<bool, PpdcError> {
     if recipient.principal_type == UserPrincipalType::Service {
         return Ok(true);
@@ -97,6 +110,23 @@ fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Pos
         return Ok(None);
     }
     Ok(Some(post))
+}
+
+fn is_shared_trace_mentor_request(message_type: MessageType) -> bool {
+    matches!(
+        message_type,
+        MessageType::SharedTraceExplanationRequest | MessageType::SharedTraceTranslationRequest
+    )
+}
+
+fn is_mentor_request(message_type: MessageType) -> bool {
+    matches!(
+        message_type,
+        MessageType::Question
+            | MessageType::TarotReadingRequest
+            | MessageType::SharedTraceExplanationRequest
+            | MessageType::SharedTraceTranslationRequest
+    )
 }
 
 #[debug_handler]
@@ -124,6 +154,7 @@ pub async fn get_conversation_thread_route(
     Query(params): Query<ConversationsQuery>,
 ) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    UserBlock::ensure_can_interact(user_id, partner_id, &pool)?;
     let pagination = params.pagination.validate()?;
     let (messages, total) = Message::find_thread_with_partner_paginated(
         user_id,
@@ -229,9 +260,7 @@ pub async fn get_message_route(
 ) -> Result<Json<Message>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let message = Message::find(id, &pool)?;
-    if message.sender_user_id != user_id && message.recipient_user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
+    ensure_message_visible_to_user(&message, user_id, &pool)?;
     Ok(Json(message))
 }
 
@@ -243,6 +272,7 @@ pub async fn patch_message_seen_route(
 ) -> Result<Json<Message>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let message = Message::find(id, &pool)?;
+    ensure_message_visible_to_user(&message, user_id, &pool)?;
     let message = message.mark_seen(user_id, &pool)?;
     Ok(Json(message))
 }
@@ -256,6 +286,7 @@ pub async fn put_message_seen_route(
 ) -> Result<Json<MessageSeenResponse>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let message = Message::find(id, &pool)?;
+    ensure_message_visible_to_user(&message, user_id, &pool)?;
     let payload = payload.map(|Json(payload)| payload).unwrap_or_default();
 
     if payload.trace_id.is_some() && payload.post_id.is_some() {
@@ -292,6 +323,7 @@ pub async fn post_message_route(
     let sender_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let sender_user = User::find(&sender_user_id, &pool)?;
     let recipient = User::find(&payload.recipient_user_id, &pool)?;
+    UserBlock::ensure_can_interact(sender_user_id, recipient.id, &pool)?;
     let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
     let message_type = match payload.message_type {
         Some(MessageType::General) if recipient_is_service_mentor => MessageType::Question,
@@ -305,6 +337,19 @@ pub async fn post_message_route(
             400,
             ErrorType::ApiError,
             "post_id and trace_id cannot both be provided".to_string(),
+        ));
+    }
+
+    if is_shared_trace_mentor_request(message_type)
+        && (payload.trace_id.is_none()
+            || payload.post_id.is_some()
+            || payload.landscape_analysis_id.is_some())
+    {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Shared-trace mentor requests require trace_id and do not accept post_id or landscape_analysis_id"
+                .to_string(),
         ));
     }
 
@@ -325,11 +370,32 @@ pub async fn post_message_route(
     if let Some(trace_id) = normalized_trace_id {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
         let sender_is_owner = trace.user_id == sender_user_id;
-        if recipient_is_service_mentor
-            || matches!(
-                message_type,
-                MessageType::Question | MessageType::TarotReadingRequest
-            )
+        if is_shared_trace_mentor_request(message_type) {
+            if sender_is_owner {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Use a regular mentor question for one of your own traces".to_string(),
+                ));
+            }
+            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "The trace must be published and currently shared before asking a mentor about it"
+                        .to_string(),
+                ));
+            };
+            if !PostGrant::user_can_read_post(&shared_post, sender_user_id, &pool)? {
+                return Err(PpdcError::new(
+                    403,
+                    ErrorType::ApiError,
+                    "You no longer have access to this shared trace".to_string(),
+                ));
+            }
+            normalized_post_id = Some(shared_post.id);
+        } else if recipient_is_service_mentor
+            || matches!(message_type, MessageType::Question | MessageType::TarotReadingRequest)
         {
             if !sender_is_owner {
                 return Err(PpdcError::new(
@@ -400,10 +466,7 @@ pub async fn post_message_route(
             normalized_trace_id = post.source_trace_id;
         }
     }
-    if matches!(
-        message_type,
-        MessageType::Question | MessageType::TarotReadingRequest
-    ) {
+    if is_mentor_request(message_type) {
         let ai_usage_kind = if message_type == MessageType::TarotReadingRequest {
             AiUsageKind::TarotReading
         } else {
@@ -431,6 +494,33 @@ pub async fn post_message_route(
                     400,
                     ErrorType::ApiError,
                     "tarot_reading_request requires attachment_type=tarot_reading and a tarot attachment payload".to_string(),
+                ));
+            }
+        }
+
+        if message_type == MessageType::SharedTraceExplanationRequest
+            && (payload.attachment_type.is_some() || payload.attachment.is_some())
+        {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "shared_trace_explanation_request does not accept an attachment".to_string(),
+            ));
+        }
+
+        if message_type == MessageType::SharedTraceTranslationRequest {
+            let valid_translation_attachment = matches!(
+                (payload.attachment_type, payload.attachment.as_ref()),
+                (
+                    Some(MessageAttachmentType::SharedTraceTranslation),
+                    Some(MessageAttachment::SharedTraceTranslation(attachment))
+                ) if !attachment.target_locale.trim().is_empty() && attachment.target_locale.len() <= 64
+            );
+            if !valid_translation_attachment {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "shared_trace_translation_request requires attachment_type=shared_trace_translation with a target_locale of at most 64 characters".to_string(),
                 ));
             }
         }
@@ -541,6 +631,7 @@ pub async fn post_post_message_route(
     } else {
         post.user_id
     };
+    UserBlock::ensure_can_interact(sender_user_id, recipient_user_id, &pool)?;
 
     let message = NewMessage {
         sender_user_id,

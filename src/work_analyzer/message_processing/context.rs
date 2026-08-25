@@ -23,6 +23,19 @@ pub struct TraceMessageReplyPromptContext {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SharedTraceMentorReplyPromptContext {
+    pub mentor_name: String,
+    pub mentor_biography: Option<String>,
+    pub mentor_specific_prompt: Option<String>,
+    pub reader_request: MessageContextItem,
+    pub translation_target_locale: Option<String>,
+    pub shared_trace: TraceContextItem,
+    pub reader_high_level_projects: Vec<HighLevelProjectContextItem>,
+    pub previous_messages_with_mentor: Vec<MessageContextItem>,
+    pub recent_reader_traces: Vec<TraceContextItem>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct MessageContextItem {
     pub id: Uuid,
     pub title: String,
@@ -156,6 +169,80 @@ pub fn build(
             })
             .collect(),
     })
+}
+
+pub fn build_shared_trace(
+    reply_message: &Message,
+    question_message: &Message,
+    shared_trace: &Trace,
+    mentor_user: &User,
+    reader_user: &User,
+    pool: &DbPool,
+) -> Result<SharedTraceMentorReplyPromptContext, PpdcError> {
+    let (previous_messages, _) = Message::find_thread_with_partner_paginated(
+        reader_user.id,
+        mentor_user.id,
+        0,
+        50,
+        pool,
+    )?;
+    let previous_messages_with_mentor = previous_messages
+        .into_iter()
+        .filter(|message| message.id != reply_message.id && message.id != question_message.id)
+        .map(message_context_item)
+        .collect();
+
+    let mut recent_reader_traces = Trace::get_all_for_user(reader_user.id, pool)?
+        .into_iter()
+        .take(5)
+        .collect::<Vec<_>>();
+    recent_reader_traces.reverse();
+
+    Ok(SharedTraceMentorReplyPromptContext {
+        mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
+        mentor_biography: mentor_user.biography.clone(),
+        mentor_specific_prompt: mentor_user.mentor_specific_prompt.clone(),
+        reader_request: message_context_item(question_message.clone()),
+        translation_target_locale: match question_message.attachment.as_ref() {
+            Some(crate::entities_v2::message::MessageAttachment::SharedTraceTranslation(
+                attachment,
+            )) => Some(attachment.target_locale.clone()),
+            _ => None,
+        },
+        shared_trace: trace_context_item(shared_trace),
+        reader_high_level_projects: find_current_lens_high_level_projects(reader_user, pool)?,
+        previous_messages_with_mentor,
+        recent_reader_traces: recent_reader_traces
+            .iter()
+            .map(trace_context_item)
+            .collect(),
+    })
+}
+
+fn message_context_item(message: Message) -> MessageContextItem {
+    MessageContextItem {
+        id: message.id,
+        title: message.title,
+        content: message.content,
+        attachment_type: message
+            .attachment_type
+            .map(|attachment_type| attachment_type.to_db().to_string()),
+        attachment: message
+            .attachment
+            .and_then(|attachment| serde_json::to_value(attachment).ok()),
+        created_at: message.created_at,
+    }
+}
+
+fn trace_context_item(trace: &Trace) -> TraceContextItem {
+    TraceContextItem {
+        id: trace.id,
+        interaction_date: trace.interaction_date,
+        trace_type: trace.trace_type.to_db().to_string(),
+        title: trace.title.clone(),
+        subtitle: trace.subtitle.clone(),
+        content: trace.content.clone(),
+    }
 }
 
 fn find_current_lens_high_level_projects(

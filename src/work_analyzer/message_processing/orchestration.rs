@@ -6,11 +6,13 @@ use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::message::{
     Message, MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType,
 };
+use crate::entities_v2::post::{Post, PostStatus};
+use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 
-use super::context::build as build_context;
+use super::context::{build as build_context, build_shared_trace};
 
 #[derive(Debug, Deserialize)]
 struct TraceReplyDraft {
@@ -80,6 +82,20 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
         ));
     }
 
+    if matches!(
+        question_message.message_type,
+        MessageType::SharedTraceExplanationRequest | MessageType::SharedTraceTranslationRequest
+    ) {
+        let trace = trace.as_ref().ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Shared-trace mentor requests require a trace".to_string(),
+            )
+        })?;
+        ensure_reader_can_still_access_shared_trace(trace.id, recipient_user.id, pool)?;
+    }
+
     match question_message.message_type {
         MessageType::TarotReadingRequest => {
             run_tarot_reply_pipeline(
@@ -88,6 +104,61 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
                 trace.as_ref(),
                 &mentor_user,
                 &recipient_user,
+                pool,
+            )
+            .await
+        }
+        MessageType::SharedTraceExplanationRequest => {
+            run_shared_trace_reply_pipeline(
+                &reply_message,
+                &question_message,
+                trace.as_ref().ok_or_else(|| {
+                    PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "Shared-trace explanation requests require a trace".to_string(),
+                    )
+                })?,
+                &mentor_user,
+                &recipient_user,
+                include_str!("shared_trace_explanation_system.md"),
+                "Message Processing / Shared Trace Explanation",
+                pool,
+            )
+            .await
+        }
+        MessageType::SharedTraceTranslationRequest => {
+            let has_translation_attachment = matches!(
+                (
+                    question_message.attachment_type,
+                    question_message.attachment.as_ref()
+                ),
+                (
+                    Some(MessageAttachmentType::SharedTraceTranslation),
+                    Some(MessageAttachment::SharedTraceTranslation(attachment))
+                ) if !attachment.target_locale.trim().is_empty()
+            );
+            if !has_translation_attachment {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Shared-trace translation request is missing its target locale".to_string(),
+                ));
+            }
+            run_shared_trace_reply_pipeline(
+                &reply_message,
+                &question_message,
+                trace.as_ref().ok_or_else(|| {
+                    PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "Shared-trace translation requests require a trace".to_string(),
+                    )
+                })?,
+                &mentor_user,
+                &recipient_user,
+                include_str!("shared_trace_translation_system.md"),
+                "Message Processing / Shared Trace Translation",
                 pool,
             )
             .await
@@ -104,6 +175,72 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
             .await
         }
     }
+}
+
+fn ensure_reader_can_still_access_shared_trace(
+    trace_id: Uuid,
+    reader_user_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let Some(post) = Post::find_for_trace(trace_id, pool)? else {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "The shared trace is no longer published".to_string(),
+        ));
+    };
+    if post.status != PostStatus::Published
+        || !PostGrant::user_can_read_post(&post, reader_user_id, pool)?
+    {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "The reader no longer has access to this shared trace".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn run_shared_trace_reply_pipeline(
+    reply_message: &Message,
+    question_message: &Message,
+    shared_trace: &Trace,
+    mentor_user: &User,
+    reader_user: &User,
+    system_prompt: &str,
+    display_name: &str,
+    pool: &DbPool,
+) -> Result<Message, PpdcError> {
+    let prompt_context = build_shared_trace(
+        reply_message,
+        question_message,
+        shared_trace,
+        mentor_user,
+        reader_user,
+        pool,
+    )?;
+    let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
+    let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
+    let reply = GptRequestConfig::new(
+        "gpt-5.1".to_string(),
+        system_prompt.to_string(),
+        user_prompt,
+        Some(schema),
+        None,
+    )
+    .with_reasoning_effort(GptReasoningEffort::Low)
+    .with_verbosity(GptVerbosity::Low)
+    .with_display_name(display_name)
+    .execute::<TraceReplyDraft>()
+    .await?;
+
+    let mut processed_message = Message::find(reply_message.id, pool)?;
+    processed_message.title = reply.title;
+    processed_message.content = reply.content;
+    processed_message.attachment_type = None;
+    processed_message.attachment = None;
+    processed_message.processing_state = MessageProcessingState::Processed;
+    processed_message.update(pool)
 }
 
 async fn run_standard_reply_pipeline(
