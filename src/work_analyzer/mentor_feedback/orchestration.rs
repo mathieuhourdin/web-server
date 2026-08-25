@@ -4,6 +4,7 @@ use crate::entities_v2::message::{MentorFeedbackMetadata, Message};
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::analysis_context::AnalysisContext;
+use crate::work_analyzer::MENTOR_OPENAI_MODEL;
 use serde::{Deserialize, Serialize};
 
 use super::context::build as build_context;
@@ -50,7 +51,7 @@ pub async fn send(
     })?;
 
     let feedback = GptRequestConfig::new(
-        "gpt-5.1".to_string(),
+        MENTOR_OPENAI_MODEL.to_string(),
         system_prompt,
         user_prompt,
         Some(schema),

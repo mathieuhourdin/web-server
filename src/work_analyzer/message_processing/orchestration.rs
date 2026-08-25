@@ -11,6 +11,7 @@ use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
+use crate::work_analyzer::MENTOR_OPENAI_MODEL;
 
 use super::context::{build as build_context, build_shared_trace};
 
@@ -222,7 +223,7 @@ async fn run_shared_trace_reply_pipeline(
     let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
-        "gpt-5.1".to_string(),
+        MENTOR_OPENAI_MODEL.to_string(),
         system_prompt.to_string(),
         user_prompt,
         Some(schema),
@@ -264,7 +265,7 @@ async fn run_standard_reply_pipeline(
     let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
-        "gpt-5.1".to_string(),
+        MENTOR_OPENAI_MODEL.to_string(),
         system_prompt,
         user_prompt,
         Some(schema),
@@ -327,7 +328,7 @@ async fn run_tarot_reply_pipeline(
     let schema: serde_json::Value = serde_json::from_str(include_str!("tarot_schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
-        "gpt-5.1".to_string(),
+        MENTOR_OPENAI_MODEL.to_string(),
         system_prompt,
         user_prompt,
         Some(schema),

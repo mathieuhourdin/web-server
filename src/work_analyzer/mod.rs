@@ -16,5 +16,7 @@ pub mod observability;
 pub mod period_summary;
 pub mod plausible_landmarks_context;
 
+pub const MENTOR_OPENAI_MODEL: &str = "gpt-5.6-terra";
+
 pub use analysis_queue::run_lens;
 pub use message_processing::run_message;
