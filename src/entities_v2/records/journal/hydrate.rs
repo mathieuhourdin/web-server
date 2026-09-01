@@ -123,6 +123,16 @@ impl Journal {
         Ok(items)
     }
 
+    pub fn find_all_owned_by(user_id: Uuid, pool: &DbPool) -> Result<Vec<Journal>, PpdcError> {
+        let mut conn = pool.get()?;
+        let rows = journals::table
+            .filter(journals::user_id.eq(user_id))
+            .select(select_journal_columns())
+            .order((journals::created_at.asc(), journals::id.asc()))
+            .load::<JournalTuple>(&mut conn)?;
+        Ok(rows.into_iter().map(Journal::from).collect())
+    }
+
     pub fn count_for_user(user_id: Uuid, pool: &DbPool) -> Result<i64, PpdcError> {
         let mut conn = pool.get()?;
 

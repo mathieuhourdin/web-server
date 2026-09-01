@@ -1,8 +1,10 @@
 use axum::{
     debug_handler,
     extract::{Extension, Json, Multipart, Path, Query},
+    http::{header, HeaderMap, HeaderValue},
+    response::{IntoResponse, Response},
 };
-use chrono::Utc;
+use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::json;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -14,7 +16,7 @@ use crate::entities_v2::{
     message::Message,
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
-    trace::Trace,
+    trace::{Trace, TraceStatus},
     user::{ensure_user_has_default_journals, ensure_user_has_meta_journal},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
@@ -29,6 +31,18 @@ pub struct UserJournalsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
     pub journal_type: Option<JournalType>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct AllTracesExportQuery {
+    pub format: JournalExportFormat,
+    pub from: Option<NaiveDate>,
+    pub to: Option<NaiveDate>,
+}
+
+struct DatedTraceExportItem {
+    trace: Trace,
+    journal_title: String,
 }
 
 #[debug_handler]
@@ -281,6 +295,202 @@ pub async fn post_journal_export_route(
         format: payload.format,
         content,
     }))
+}
+
+#[debug_handler]
+pub async fn get_all_my_traces_export_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<AllTracesExportQuery>,
+) -> Result<Response, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    if params.from.is_some_and(|from| params.to.is_some_and(|to| from > to)) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "from must be earlier than or equal to to".to_string(),
+        ));
+    }
+    if params.format == JournalExportFormat::Json {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "format must be md or txt".to_string(),
+        ));
+    }
+
+    let journals = Journal::find_all_owned_by(user_id, &pool)?;
+    let mut items = Vec::new();
+    for journal in journals {
+        for status in [
+            TraceStatus::Draft,
+            TraceStatus::Finalized,
+            TraceStatus::Archived,
+        ] {
+            let (traces, _) = Trace::get_for_journal_paginated(
+                journal.id,
+                user_id,
+                0,
+                i64::MAX / 4,
+                None,
+                status,
+                None,
+                &pool,
+            )?;
+            for trace in traces {
+                if trace.status == TraceStatus::Draft && trace.is_blank {
+                    continue;
+                }
+                let trace_date = trace.interaction_date.date();
+                if params.from.is_some_and(|from| trace_date < from)
+                    || params.to.is_some_and(|to| trace_date > to)
+                {
+                    continue;
+                }
+                items.push(DatedTraceExportItem {
+                    trace,
+                    journal_title: journal.title.clone(),
+                });
+            }
+        }
+    }
+    items.sort_by(|left, right| {
+        left.trace
+            .interaction_date
+            .cmp(&right.trace.interaction_date)
+            .then_with(|| left.trace.created_at.cmp(&right.trace.created_at))
+            .then_with(|| left.journal_title.cmp(&right.journal_title))
+            .then_with(|| left.trace.id.cmp(&right.trace.id))
+    });
+
+    let exported_at = Utc::now().naive_utc();
+    let (content_type, extension, content) = match params.format {
+        JournalExportFormat::Markdown => (
+            "text/markdown; charset=utf-8",
+            "md",
+            render_all_traces_markdown(&items, exported_at, params.from, params.to),
+        ),
+        JournalExportFormat::Text => (
+            "text/plain; charset=utf-8",
+            "txt",
+            render_all_traces_text(&items, exported_at, params.from, params.to),
+        ),
+        JournalExportFormat::Json => unreachable!(),
+    };
+    let filename = format!(
+        "hupo-traces-{}.{}",
+        exported_at.date().format("%Y-%m-%d"),
+        extension
+    );
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)).map_err(
+            |err| {
+                PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    format!("Failed to build export filename header: {}", err),
+                )
+            },
+        )?,
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    Ok((headers, content).into_response())
+}
+
+fn single_line(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn export_filter_description(from: Option<NaiveDate>, to: Option<NaiveDate>) -> String {
+    match (from, to) {
+        (Some(from), Some(to)) => format!("{} through {} (inclusive)", from, to),
+        (Some(from), None) => format!("from {} (inclusive)", from),
+        (None, Some(to)) => format!("through {} (inclusive)", to),
+        (None, None) => "all dates".to_string(),
+    }
+}
+
+fn render_all_traces_markdown(
+    items: &[DatedTraceExportItem],
+    exported_at: chrono::NaiveDateTime,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+) -> String {
+    let mut out = format!(
+        "# My Hupo traces\n\nexported_at: {}\ndate_filter: {}\ntrace_count: {}\n\n",
+        exported_at,
+        export_filter_description(from, to),
+        items.len()
+    );
+    let mut current_month = None;
+    for item in items {
+        let date = item.trace.interaction_date;
+        let month = (date.year(), date.month());
+        if current_month != Some(month) {
+            current_month = Some(month);
+            out.push_str(&format!("## {:04}-{:02}\n\n", month.0, month.1));
+        }
+        let title = single_line(&item.trace.title);
+        let title = if title.is_empty() {
+            "Untitled trace".to_string()
+        } else {
+            title
+        };
+        out.push_str(&format!(
+            "### {} — {}\n\n_Journal: {}_\n\n",
+            date.format("%Y-%m-%d %H:%M"),
+            title,
+            single_line(&item.journal_title)
+        ));
+        if item.trace.is_encrypted {
+            out.push_str("_Encrypted content as stored_\n\n");
+        }
+        out.push_str(&item.trace.content);
+        out.push_str("\n\n");
+    }
+    out
+}
+
+fn render_all_traces_text(
+    items: &[DatedTraceExportItem],
+    exported_at: chrono::NaiveDateTime,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+) -> String {
+    let mut out = format!(
+        "MY HUPO TRACES\nExported at: {}\nDate filter: {}\nTrace count: {}\n\n",
+        exported_at,
+        export_filter_description(from, to),
+        items.len()
+    );
+    for item in items {
+        let title = single_line(&item.trace.title);
+        let title = if title.is_empty() {
+            "Untitled trace".to_string()
+        } else {
+            title
+        };
+        out.push_str("==================================================\n");
+        out.push_str(&format!(
+            "{} — {}\nJournal: {}\n",
+            item.trace.interaction_date.format("%Y-%m-%d %H:%M"),
+            title,
+            single_line(&item.journal_title)
+        ));
+        if item.trace.is_encrypted {
+            out.push_str("Encrypted content as stored\n");
+        }
+        out.push('\n');
+        out.push_str(&item.trace.content);
+        out.push_str("\n\n");
+    }
+    out
 }
 
 fn render_markdown_export(journal: &Journal, traces: &[Trace], messages: &[Message]) -> String {

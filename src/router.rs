@@ -518,6 +518,10 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/account", delete(user::delete_my_account_route))
+        .route(
+            "/traces/export",
+            get(journal::get_all_my_traces_export_route),
+        )
         .route("/blocks", get(user_block::get_my_blocks_route))
         .route(
             "/blocks/:user_id",
