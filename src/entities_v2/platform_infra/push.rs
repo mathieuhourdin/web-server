@@ -14,6 +14,7 @@ use crate::entities_v2::{
     journal::Journal,
     message::Message,
     post::Post,
+    relationship::Relationship,
     source_projection::{load_source_projection_map, SourceProjectionKind},
     user::User,
 };
@@ -341,6 +342,63 @@ pub(crate) async fn message_received_notification(
     );
 
     Ok(PushNotification { data })
+}
+
+async fn relationship_actor_data(
+    event_type: &'static str,
+    relationship: &Relationship,
+    actor_user_id: Uuid,
+    actor_key: &'static str,
+    pool: &DbPool,
+) -> Result<PushNotification, PpdcError> {
+    let actor = User::find(&actor_user_id, pool)?;
+    let mut data = HashMap::new();
+    data.insert("event_type".to_string(), event_type.to_string());
+    data.insert("relationship_id".to_string(), relationship.id.to_string());
+    data.insert("relationship_type".to_string(), "follow".to_string());
+    data.insert(actor_key.to_string(), actor.id.to_string());
+    data.insert("actor_display_name".to_string(), actor.display_name());
+    if let Some(avatar_url) = sender_avatar_url(&actor, pool).await {
+        data.insert("actor_avatar_url".to_string(), avatar_url);
+    }
+    data.insert(
+        "event_timestamp".to_string(),
+        relationship
+            .accepted_at
+            .unwrap_or(relationship.updated_at)
+            .and_utc()
+            .timestamp_millis()
+            .to_string(),
+    );
+    Ok(PushNotification { data })
+}
+
+pub(crate) async fn follow_request_received_notification(
+    relationship: &Relationship,
+    pool: &DbPool,
+) -> Result<PushNotification, PpdcError> {
+    relationship_actor_data(
+        "follow_request_received",
+        relationship,
+        relationship.requester_user_id,
+        "requester_user_id",
+        pool,
+    )
+    .await
+}
+
+pub(crate) async fn follow_request_accepted_notification(
+    relationship: &Relationship,
+    pool: &DbPool,
+) -> Result<PushNotification, PpdcError> {
+    relationship_actor_data(
+        "follow_request_accepted",
+        relationship,
+        relationship.target_user_id,
+        "accepter_user_id",
+        pool,
+    )
+    .await
 }
 
 fn source_kind_value(source_kind: SourceProjectionKind) -> &'static str {

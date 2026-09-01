@@ -13,7 +13,8 @@ use crate::schema::{messages, users};
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
 use super::model::{
-    ConversationSummary, Message, MessageMetadata, MessageProcessingState, MessageType,
+    ConversationSummary, MentorSuggestedAction, Message, MessageMetadata, MessageProcessingState,
+    MessageType,
 };
 
 type MessageTuple = (
@@ -31,6 +32,7 @@ type MessageTuple = (
     Option<String>,
     Option<String>,
     Option<String>,
+    String,
     Option<NaiveDateTime>,
     NaiveDateTime,
     NaiveDateTime,
@@ -77,6 +79,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         attachment_type_raw,
         attachment_json,
         metadata_json,
+        suggested_actions_json,
         seen_at,
         created_at,
         updated_at,
@@ -92,6 +95,9 @@ fn tuple_to_message(row: MessageTuple) -> Message {
     let metadata = metadata_json
         .as_deref()
         .and_then(|json| serde_json::from_str::<MessageMetadata>(json).ok());
+    let suggested_actions =
+        serde_json::from_str::<Vec<MentorSuggestedAction>>(&suggested_actions_json)
+            .unwrap_or_default();
 
     Message {
         id,
@@ -107,6 +113,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         content,
         attachment_type,
         attachment,
+        suggested_actions,
         metadata,
         seen_at,
         created_at,
@@ -152,6 +159,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -262,6 +270,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -387,6 +396,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -476,6 +486,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -598,6 +609,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -665,6 +677,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -759,6 +772,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -815,6 +829,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -853,6 +868,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
@@ -889,6 +905,7 @@ impl Message {
                 messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),
                 sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,

@@ -11,7 +11,8 @@ pub use attachment::{
 };
 pub use model::{
     ConversationSummary, MentorFeedbackMetadata, MentorFeedbackMode, MentorFeedbackScope,
-    MentorFeedbackTone, Message, MessageMetadata, MessageProcessingState, MessageType, NewMessage,
+    MentorFeedbackTone, MentorSuggestedAction, MentorSuggestedActionKind, Message, MessageMetadata,
+    MessageProcessingState, MessageType, NewMessage,
     NewMessageDto,
 };
 pub use routes::{

@@ -8,6 +8,7 @@ use crate::entities_v2::{
     message::Message,
     post::{Post, PostStatus},
     post_grant::PostGrant,
+    relationship::Relationship,
     trace::Trace,
     user::{User, UserPrincipalType},
 };
@@ -193,6 +194,84 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                     "message_received_email_enqueue_failed"
                 );
             }
+        }
+    });
+}
+
+pub fn spawn_follow_request_received_push_notification(
+    relationship: Relationship,
+    pool: DbPool,
+) {
+    tokio::spawn(async move {
+        let notification =
+            match push::follow_request_received_notification(&relationship, &pool).await {
+                Ok(notification) => notification,
+                Err(err) => {
+                    warn!(
+                        target: "notification",
+                        relationship_id = %relationship.id,
+                        error = %err.message,
+                        "follow_request_received_push_build_failed"
+                    );
+                    return;
+                }
+            };
+
+        match push::send_to_user(relationship.target_user_id, notification, &pool).await {
+            Ok(result) => info!(
+                target: "notification",
+                relationship_id = %relationship.id,
+                recipient_user_id = %relationship.target_user_id,
+                push_attempted_count = result.attempted_count,
+                push_sent_count = result.sent_count,
+                "follow_request_received_push_dispatch_completed"
+            ),
+            Err(err) => warn!(
+                target: "notification",
+                relationship_id = %relationship.id,
+                recipient_user_id = %relationship.target_user_id,
+                error = %err.message,
+                "follow_request_received_push_dispatch_failed"
+            ),
+        }
+    });
+}
+
+pub fn spawn_follow_request_accepted_push_notification(
+    relationship: Relationship,
+    pool: DbPool,
+) {
+    tokio::spawn(async move {
+        let notification =
+            match push::follow_request_accepted_notification(&relationship, &pool).await {
+                Ok(notification) => notification,
+                Err(err) => {
+                    warn!(
+                        target: "notification",
+                        relationship_id = %relationship.id,
+                        error = %err.message,
+                        "follow_request_accepted_push_build_failed"
+                    );
+                    return;
+                }
+            };
+
+        match push::send_to_user(relationship.requester_user_id, notification, &pool).await {
+            Ok(result) => info!(
+                target: "notification",
+                relationship_id = %relationship.id,
+                recipient_user_id = %relationship.requester_user_id,
+                push_attempted_count = result.attempted_count,
+                push_sent_count = result.sent_count,
+                "follow_request_accepted_push_dispatch_completed"
+            ),
+            Err(err) => warn!(
+                target: "notification",
+                relationship_id = %relationship.id,
+                recipient_user_id = %relationship.requester_user_id,
+                error = %err.message,
+                "follow_request_accepted_push_dispatch_failed"
+            ),
         }
     });
 }

@@ -396,6 +396,7 @@ diesel::table! {
         seen_at -> Nullable<Timestamp>,
         post_id -> Nullable<Uuid>,
         metadata -> Nullable<Jsonb>,
+        suggested_actions -> Jsonb,
     }
 }
 

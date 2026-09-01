@@ -51,6 +51,20 @@ pub struct MessageMetadata {
     pub mentor_feedback: Option<MentorFeedbackMetadata>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MentorSuggestedActionKind {
+    MentorQuestion,
+    TarotReading,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct MentorSuggestedAction {
+    pub kind: MentorSuggestedActionKind,
+    pub label: String,
+    pub content: Option<String>,
+}
+
 impl MessageMetadata {
     pub fn mentor_feedback(metadata: MentorFeedbackMetadata) -> Self {
         Self {
@@ -74,6 +88,7 @@ pub struct Message {
     pub content: String,
     pub attachment_type: Option<MessageAttachmentType>,
     pub attachment: Option<MessageAttachment>,
+    pub suggested_actions: Vec<MentorSuggestedAction>,
     pub metadata: Option<MessageMetadata>,
     pub seen_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
@@ -117,6 +132,7 @@ pub struct NewMessage {
     pub content: String,
     pub attachment_type: Option<MessageAttachmentType>,
     pub attachment: Option<MessageAttachment>,
+    pub suggested_actions: Vec<MentorSuggestedAction>,
     pub metadata: Option<MessageMetadata>,
 }
 
@@ -135,6 +151,7 @@ impl NewMessage {
             content: payload.content,
             attachment_type: payload.attachment_type,
             attachment: payload.attachment,
+            suggested_actions: Vec::new(),
             metadata: None,
         }
     }

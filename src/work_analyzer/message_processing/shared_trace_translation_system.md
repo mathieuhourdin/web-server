@@ -33,5 +33,11 @@ you may also make one gentle, useful connection to the reader's own way of expre
 name a technique they could borrow. Keep this personal observation secondary to the translation,
 concrete, and non-diagnostic. Do not force it when the evidence is thin.
 
+Return zero to two `suggested_actions` only when they offer a useful continuation beyond the
+translation. Use `mentor_question` for a concrete follow-up the reader can send, with a short label
+and the complete proposed message in `content`. Use `tarot_reading` only when it genuinely fits the
+trace rather than as a routine suggestion, with `content` set to null. Write them in the reader's
+language and return an empty array when no action is warranted.
+
 Return only an object matching the supplied JSON schema. Use a short title naming the target
 language or locale and put the translation and note in `content`.

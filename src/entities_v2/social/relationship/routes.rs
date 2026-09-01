@@ -9,6 +9,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     asset::Asset,
     error::PpdcError,
+    notification,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider},
     session::Session,
     user::{User, UserPrincipalType, UserSearchResult},
@@ -208,6 +209,10 @@ pub async fn post_relationship_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let (relationship, should_notify) = Relationship::create_request(user_id, payload, &pool)?;
     if should_notify {
+        notification::spawn_follow_request_received_push_notification(
+            relationship.clone(),
+            pool.clone(),
+        );
         if let Some(email_id) = enqueue_follow_request_notification_email(&relationship, &pool)? {
             let pool_for_task = pool.clone();
             tokio::spawn(async move {
@@ -226,7 +231,14 @@ pub async fn put_relationship_route(
     Json(payload): Json<UpdateRelationshipDto>,
 ) -> Result<Json<Relationship>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let relationship = Relationship::update_status(id, user_id, payload.status, &pool)?;
+    let (relationship, should_notify_acceptance) =
+        Relationship::update_status(id, user_id, payload.status, &pool)?;
+    if should_notify_acceptance {
+        notification::spawn_follow_request_accepted_push_notification(
+            relationship.clone(),
+            pool.clone(),
+        );
+    }
     Ok(Json(relationship))
 }
 

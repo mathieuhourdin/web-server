@@ -174,7 +174,7 @@ impl Relationship {
         actor_user_id: Uuid,
         status: RelationshipStatus,
         pool: &DbPool,
-    ) -> Result<Relationship, PpdcError> {
+    ) -> Result<(Relationship, bool), PpdcError> {
         if status == RelationshipStatus::Pending {
             return Err(PpdcError::new(
                 400,
@@ -244,7 +244,10 @@ impl Relationship {
             }
             Ok(())
         })?;
-        Relationship::find(id, pool)
+        let should_notify_acceptance = relationship.relationship_type == RelationshipType::Follow
+            && relationship.status != RelationshipStatus::Accepted
+            && status == RelationshipStatus::Accepted;
+        Ok((Relationship::find(id, pool)?, should_notify_acceptance))
     }
 
     pub fn archive_for_actor(

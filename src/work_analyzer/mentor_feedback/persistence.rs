@@ -34,6 +34,7 @@ pub fn create_mentor_feedback(
         content,
         attachment_type: None,
         attachment: None,
+        suggested_actions: Vec::new(),
         metadata: Some(MessageMetadata::mentor_feedback(metadata)),
     }
     .create(pool)

@@ -4,7 +4,8 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::message::{
-    Message, MessageAttachment, MessageAttachmentType, MessageProcessingState, MessageType,
+    MentorSuggestedAction, MentorSuggestedActionKind, Message, MessageAttachment,
+    MessageAttachmentType, MessageProcessingState, MessageType,
 };
 use crate::entities_v2::post::{Post, PostStatus};
 use crate::entities_v2::post_grant::PostGrant;
@@ -19,12 +20,42 @@ use super::context::{build as build_context, build_shared_trace};
 struct TraceReplyDraft {
     title: String,
     content: String,
+    suggested_actions: Vec<MentorSuggestedAction>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TarotReplyDraft {
     title: String,
     content: String,
+    suggested_actions: Vec<MentorSuggestedAction>,
+}
+
+fn normalize_suggested_actions(
+    actions: Vec<MentorSuggestedAction>,
+) -> Vec<MentorSuggestedAction> {
+    actions
+        .into_iter()
+        .filter_map(|mut action| {
+            action.label = action.label.trim().to_string();
+            if action.label.is_empty() {
+                return None;
+            }
+            match action.kind {
+                MentorSuggestedActionKind::MentorQuestion => {
+                    let content = action.content?.trim().to_string();
+                    if content.is_empty() {
+                        return None;
+                    }
+                    action.content = Some(content);
+                }
+                MentorSuggestedActionKind::TarotReading => {
+                    action.content = None;
+                }
+            }
+            Some(action)
+        })
+        .take(2)
+        .collect()
 }
 
 pub async fn run_message(message_id: Uuid, pool: &DbPool) -> Result<Message, PpdcError> {
@@ -238,6 +269,7 @@ async fn run_shared_trace_reply_pipeline(
     let mut processed_message = Message::find(reply_message.id, pool)?;
     processed_message.title = reply.title;
     processed_message.content = reply.content;
+    processed_message.suggested_actions = normalize_suggested_actions(reply.suggested_actions);
     processed_message.attachment_type = None;
     processed_message.attachment = None;
     processed_message.processing_state = MessageProcessingState::Processed;
@@ -280,6 +312,7 @@ async fn run_standard_reply_pipeline(
     let mut processed_message = Message::find(reply_message.id, pool)?;
     processed_message.title = reply.title;
     processed_message.content = reply.content;
+    processed_message.suggested_actions = normalize_suggested_actions(reply.suggested_actions);
     processed_message.attachment_type = None;
     processed_message.attachment = None;
     processed_message.processing_state = MessageProcessingState::Processed;
@@ -343,6 +376,7 @@ async fn run_tarot_reply_pipeline(
     let mut processed_message = Message::find(reply_message.id, pool)?;
     processed_message.title = reply.title;
     processed_message.content = reply.content;
+    processed_message.suggested_actions = normalize_suggested_actions(reply.suggested_actions);
     processed_message.attachment_type = None;
     processed_message.attachment = None;
     processed_message.processing_state = MessageProcessingState::Processed;

@@ -7,7 +7,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 
 use super::attachment::MessageAttachment;
-use super::model::{Message, MessageMetadata, NewMessage};
+use super::model::{MentorSuggestedAction, Message, MessageMetadata, NewMessage};
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -66,12 +66,25 @@ fn serialize_metadata(metadata: Option<&MessageMetadata>) -> Result<Option<Strin
         .transpose()
 }
 
+fn serialize_suggested_actions(
+    suggested_actions: &[MentorSuggestedAction],
+) -> Result<String, PpdcError> {
+    serde_json::to_string(suggested_actions).map_err(|err| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            format!("Failed to serialize message suggested actions: {}", err),
+        )
+    })
+}
+
 impl Message {
     pub fn update(self, pool: &DbPool) -> Result<Message, PpdcError> {
         let mut conn = pool.get()?;
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
         let metadata_json = serialize_metadata(self.metadata.as_ref())?;
+        let suggested_actions_json = serialize_suggested_actions(&self.suggested_actions)?;
 
         sql_query(
             r#"
@@ -88,9 +101,10 @@ impl Message {
                 attachment_type = $10,
                 attachment = CAST($11 AS jsonb),
                 metadata = CAST($12 AS jsonb),
-                seen_at = $13,
+                suggested_actions = CAST($13 AS jsonb),
+                seen_at = $14,
                 updated_at = NOW()
-            WHERE id = $14
+            WHERE id = $15
             "#,
         )
         .bind::<SqlUuid, _>(self.recipient_user_id)
@@ -105,6 +119,7 @@ impl Message {
         .bind::<Nullable<Text>, _>(attachment_type_db)
         .bind::<Nullable<Text>, _>(attachment_json)
         .bind::<Nullable<Text>, _>(metadata_json)
+        .bind::<Text, _>(suggested_actions_json)
         .bind::<Nullable<Timestamp>, _>(self.seen_at)
         .bind::<SqlUuid, _>(self.id)
         .execute(&mut conn)?;
@@ -262,6 +277,7 @@ impl NewMessage {
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
         let metadata_json = serialize_metadata(self.metadata.as_ref())?;
+        let suggested_actions_json = serialize_suggested_actions(&self.suggested_actions)?;
 
         let id = sql_query(
             r#"
@@ -279,10 +295,11 @@ impl NewMessage {
                 attachment_type,
                 attachment,
                 metadata,
+                suggested_actions,
                 seen_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CAST($12 AS jsonb), CAST($13 AS jsonb), NULL
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CAST($12 AS jsonb), CAST($13 AS jsonb), CAST($14 AS jsonb), NULL
             )
             RETURNING id
             "#,
@@ -300,6 +317,7 @@ impl NewMessage {
         .bind::<Nullable<Text>, _>(attachment_type_db)
         .bind::<Nullable<Text>, _>(attachment_json)
         .bind::<Nullable<Text>, _>(metadata_json)
+        .bind::<Text, _>(suggested_actions_json)
         .get_result::<IdRow>(&mut conn)?
         .id;
         Message::find(id, pool)

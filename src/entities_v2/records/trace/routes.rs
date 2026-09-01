@@ -2080,6 +2080,7 @@ pub async fn post_trace_message_route(
             content: payload.content,
             attachment_type: payload.attachment_type,
             attachment: payload.attachment,
+            suggested_actions: Vec::new(),
             metadata: None,
         }
         .create(&pool)?;
@@ -2097,6 +2098,7 @@ pub async fn post_trace_message_route(
             content: String::new(),
             attachment_type: None,
             attachment: None,
+            suggested_actions: Vec::new(),
             metadata: None,
         }
         .create(&pool)?;
@@ -2170,6 +2172,7 @@ pub async fn post_trace_message_route(
         content: payload.content,
         attachment_type: payload.attachment_type,
         attachment: payload.attachment,
+        suggested_actions: Vec::new(),
         metadata: None,
     }
     .create(&pool)?;

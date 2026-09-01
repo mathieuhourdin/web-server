@@ -7,7 +7,30 @@
     },
     "content": {
       "type": "string"
+    },
+    "suggested_actions": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["mentor_question", "tarot_reading"]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "content": {
+            "type": ["string", "null"],
+            "maxLength": 1000
+          }
+        },
+        "required": ["kind", "label", "content"]
+      }
     }
   },
-  "required": ["title", "content"]
+  "required": ["title", "content", "suggested_actions"]
 }
