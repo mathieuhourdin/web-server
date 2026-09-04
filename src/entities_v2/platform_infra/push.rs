@@ -23,6 +23,8 @@ const FIREBASE_MESSAGING_SCOPE: &str = "https://www.googleapis.com/auth/firebase
 
 #[derive(Debug, Clone)]
 pub struct PushNotification {
+    pub title: String,
+    pub body: String,
     pub data: HashMap<String, String>,
 }
 
@@ -77,8 +79,14 @@ struct FcmApnsPayload {
 
 #[derive(Debug, Serialize)]
 struct FcmApsPayload {
-    #[serde(rename = "content-available")]
-    content_available: u8,
+    alert: FcmApnsAlert,
+    sound: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmApnsAlert {
+    title: String,
+    body: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,12 +156,16 @@ async fn send_fcm_to_device(
             android: FcmAndroidConfig { priority: "HIGH" },
             apns: FcmApnsConfig {
                 headers: FcmApnsHeaders {
-                    push_type: "background",
-                    priority: "5",
+                    push_type: "alert",
+                    priority: "10",
                 },
                 payload: FcmApnsPayload {
                     aps: FcmApsPayload {
-                        content_available: 1,
+                        alert: FcmApnsAlert {
+                            title: notification.title.clone(),
+                            body: notification.body.clone(),
+                        },
+                        sound: "default",
                     },
                 },
             },
@@ -341,7 +353,11 @@ pub(crate) async fn message_received_notification(
         message.created_at.and_utc().timestamp_millis().to_string(),
     );
 
-    Ok(PushNotification { data })
+    Ok(PushNotification {
+        title: sender.display_name(),
+        body: message.content.clone(),
+        data,
+    })
 }
 
 async fn relationship_actor_data(
@@ -370,7 +386,16 @@ async fn relationship_actor_data(
             .timestamp_millis()
             .to_string(),
     );
-    Ok(PushNotification { data })
+    let action = match event_type {
+        "follow_request_received" => "souhaite vous suivre",
+        "follow_request_accepted" => "a accepté votre demande",
+        _ => "Nouvelle activité",
+    };
+    Ok(PushNotification {
+        title: actor.display_name(),
+        body: action.to_string(),
+        data,
+    })
 }
 
 pub(crate) async fn follow_request_received_notification(
@@ -527,7 +552,7 @@ pub(crate) async fn post_published_notification(
             profile_picture_url,
         );
     }
-    data.insert("title".to_string(), projection.title);
+    data.insert("title".to_string(), projection.title.clone());
     data.insert(
         "content_preview".to_string(),
         content_preview(&projection.content),
@@ -546,5 +571,12 @@ pub(crate) async fn post_published_notification(
         }
     }
 
-    Ok(Some(PushNotification { data }))
+    let title = owner.display_name();
+    let body = if projection.title.trim().is_empty() {
+        "Nouvelle publication".to_string()
+    } else {
+        projection.title.clone()
+    };
+
+    Ok(Some(PushNotification { title, body, data }))
 }

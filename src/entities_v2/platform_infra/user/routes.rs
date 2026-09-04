@@ -317,6 +317,17 @@ pub async fn get_user_search_route(
                OR (ub.blocker_user_id = users.id AND ub.blocked_user_id = $2)
           )
           AND (
+            NOT $3
+            OR EXISTS (
+              SELECT 1
+              FROM relationships r
+              WHERE r.requester_user_id = $2
+                AND r.target_user_id = users.id
+                AND r.relationship_type = 'FOLLOW'
+                AND r.status = 'ACCEPTED'
+            )
+          )
+          AND (
             handle ILIKE $1
             OR first_name ILIKE $1
             OR last_name ILIKE $1
@@ -326,6 +337,7 @@ pub async fn get_user_search_route(
     )
     .bind::<Text, _>(contains_query.clone())
     .bind::<SqlUuid, _>(session_user_id)
+    .bind::<Bool, _>(params.following_only)
     .get_result::<CountRow>(&mut conn)?
     .total;
 
@@ -348,6 +360,17 @@ pub async fn get_user_search_route(
             FROM user_blocks ub
             WHERE (ub.blocker_user_id = $6 AND ub.blocked_user_id = users.id)
                OR (ub.blocker_user_id = users.id AND ub.blocked_user_id = $6)
+          )
+          AND (
+            NOT $7
+            OR EXISTS (
+              SELECT 1
+              FROM relationships r
+              WHERE r.requester_user_id = $6
+                AND r.target_user_id = users.id
+                AND r.relationship_type = 'FOLLOW'
+                AND r.status = 'ACCEPTED'
+            )
           )
           AND (
             handle ILIKE $1
@@ -375,6 +398,7 @@ pub async fn get_user_search_route(
     .bind::<BigInt, _>(pagination.offset)
     .bind::<BigInt, _>(pagination.limit)
     .bind::<SqlUuid, _>(session_user_id)
+    .bind::<Bool, _>(params.following_only)
     .load::<UserSearchRow>(&mut conn)?;
 
     let mut results = rows

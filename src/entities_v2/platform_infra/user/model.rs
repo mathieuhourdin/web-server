@@ -328,6 +328,8 @@ impl UserPseudonymizedResponse {
 #[derive(Deserialize, Debug)]
 pub struct UserSearchParams {
     pub q: String,
+    #[serde(default)]
+    pub following_only: bool,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
