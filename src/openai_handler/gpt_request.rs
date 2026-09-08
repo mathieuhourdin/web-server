@@ -11,6 +11,7 @@ pub struct GptRequestConfig {
     pub user_prompt: String,
     pub schema: Option<serde_json::Value>,
     pub analysis_id: Option<Uuid>,
+    pub message_id: Option<Uuid>,
     pub display_name: Option<String>,
     pub reasoning_effort: Option<GptReasoningEffort>,
     pub verbosity: Option<GptVerbosity>,
@@ -30,6 +31,7 @@ impl GptRequestConfig {
             user_prompt: user_prompt.into(),
             schema,
             analysis_id,
+            message_id: None,
             display_name: None,
             reasoning_effort: None,
             verbosity: None,
@@ -38,6 +40,11 @@ impl GptRequestConfig {
 
     pub fn with_display_name(mut self, display_name: impl Into<String>) -> Self {
         self.display_name = Some(display_name.into());
+        self
+    }
+
+    pub fn with_message_id(mut self, message_id: Uuid) -> Self {
+        self.message_id = Some(message_id);
         self
     }
 
@@ -64,6 +71,7 @@ impl GptRequestConfig {
             self.schema.clone(),
             self.display_name.as_deref(),
             self.analysis_id,
+            self.message_id,
         )
         .await?)
     }

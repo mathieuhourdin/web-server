@@ -43,6 +43,7 @@ Contenu : {}\n\n",
         Some(schema),
         Some("Trace / Qualification"),
         None,
+        None,
     )
     .await?;
     Ok(result)

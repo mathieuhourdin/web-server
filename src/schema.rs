@@ -373,6 +373,8 @@ diesel::table! {
         analysis_id -> Nullable<Uuid>,
         system_prompt -> Text,
         user_prompt -> Text,
+        message_id -> Nullable<Uuid>,
+        cached_input_tokens_used -> Int4,
         display_name -> Text,
     }
 }
@@ -752,6 +754,7 @@ diesel::joinable!(lens_targets -> traces (trace_id));
 diesel::joinable!(lenses -> traces (target_trace_id));
 diesel::joinable!(lenses -> users (user_id));
 diesel::joinable!(llm_calls -> landscape_analyses (analysis_id));
+diesel::joinable!(llm_calls -> messages (message_id));
 diesel::joinable!(messages -> landscape_analyses (landscape_analysis_id));
 diesel::joinable!(messages -> posts (post_id));
 diesel::joinable!(messages -> traces (trace_id));

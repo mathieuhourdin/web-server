@@ -263,6 +263,7 @@ async fn run_shared_trace_reply_pipeline(
     .with_reasoning_effort(GptReasoningEffort::Low)
     .with_verbosity(GptVerbosity::Low)
     .with_display_name(display_name)
+    .with_message_id(reply_message.id)
     .execute::<TraceReplyDraft>()
     .await?;
 
@@ -306,6 +307,7 @@ async fn run_standard_reply_pipeline(
     .with_reasoning_effort(GptReasoningEffort::Low)
     .with_verbosity(GptVerbosity::Low)
     .with_display_name("Message Processing / Mentor Reply")
+    .with_message_id(reply_message.id)
     .execute::<TraceReplyDraft>()
     .await?;
 
@@ -370,6 +372,7 @@ async fn run_tarot_reply_pipeline(
     .with_reasoning_effort(GptReasoningEffort::Low)
     .with_verbosity(GptVerbosity::Low)
     .with_display_name("Message Processing / Tarot Reading Reply")
+    .with_message_id(reply_message.id)
     .execute::<TarotReplyDraft>()
     .await?;
 

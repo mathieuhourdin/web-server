@@ -89,6 +89,29 @@ struct GPTMessage {
 struct GPTResponse {
     output: Vec<ResponseOutputItem>,
     status: String,
+    usage: Option<ResponseUsage>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ResponseUsage {
+    input_tokens: i32,
+    output_tokens: i32,
+    #[serde(default)]
+    input_tokens_details: InputTokenDetails,
+    #[serde(default)]
+    output_tokens_details: OutputTokenDetails,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct InputTokenDetails {
+    #[serde(default)]
+    cached_tokens: i32,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct OutputTokenDetails {
+    #[serde(default)]
+    reasoning_tokens: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +133,113 @@ struct ContentItem {
 #[derive(Debug, Deserialize)]
 struct ChatCompletionsResponse {
     choices: Vec<ChatCompletionChoice>,
+    usage: Option<ChatCompletionsUsage>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ChatCompletionsUsage {
+    prompt_tokens: i32,
+    completion_tokens: i32,
+    #[serde(default)]
+    prompt_tokens_details: ChatPromptTokenDetails,
+    #[serde(default)]
+    completion_tokens_details: ChatCompletionTokenDetails,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ChatPromptTokenDetails {
+    #[serde(default)]
+    cached_tokens: i32,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ChatCompletionTokenDetails {
+    #[serde(default)]
+    reasoning_tokens: i32,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct TokenUsage {
+    input_tokens: i32,
+    cached_input_tokens: i32,
+    reasoning_tokens: i32,
+    output_tokens: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ModelTokenPrices {
+    input_per_million: f64,
+    cached_input_per_million: f64,
+    output_per_million: f64,
+    long_context_threshold: Option<i32>,
+}
+
+fn extract_token_usage(body: &str) -> TokenUsage {
+    if let Ok(response) = serde_json::from_str::<GPTResponse>(body) {
+        return response
+            .usage
+            .map(|usage| TokenUsage {
+                input_tokens: usage.input_tokens.max(0),
+                cached_input_tokens: usage.input_tokens_details.cached_tokens.max(0),
+                reasoning_tokens: usage.output_tokens_details.reasoning_tokens.max(0),
+                output_tokens: usage.output_tokens.max(0),
+            })
+            .unwrap_or_default();
+    }
+
+    if let Ok(response) = serde_json::from_str::<ChatCompletionsResponse>(body) {
+        return response
+            .usage
+            .map(|usage| TokenUsage {
+                input_tokens: usage.prompt_tokens.max(0),
+                cached_input_tokens: usage.prompt_tokens_details.cached_tokens.max(0),
+                reasoning_tokens: usage.completion_tokens_details.reasoning_tokens.max(0),
+                output_tokens: usage.completion_tokens.max(0),
+            })
+            .unwrap_or_default();
+    }
+
+    TokenUsage::default()
+}
+
+fn model_token_prices(model: &str) -> Option<ModelTokenPrices> {
+    // USD per one million tokens, verified against the official OpenAI model pages on 2026-09-08.
+    if model == "gpt-5.6-terra" || model.starts_with("gpt-5.6-terra-") {
+        return Some(ModelTokenPrices {
+            input_per_million: 2.0,
+            cached_input_per_million: 0.2,
+            output_per_million: 12.0,
+            long_context_threshold: Some(272_000),
+        });
+    }
+    if model == "gpt-4.1-mini" || model.starts_with("gpt-4.1-mini-") {
+        return Some(ModelTokenPrices {
+            input_per_million: 0.4,
+            cached_input_per_million: 0.1,
+            output_per_million: 1.6,
+            long_context_threshold: None,
+        });
+    }
+    None
+}
+
+fn estimate_price_usd(model: &str, usage: &TokenUsage) -> Option<f64> {
+    let prices = model_token_prices(model)?;
+    let cached_input_tokens = usage.cached_input_tokens.clamp(0, usage.input_tokens);
+    let uncached_input_tokens = usage.input_tokens.saturating_sub(cached_input_tokens);
+    let long_context = prices
+        .long_context_threshold
+        .is_some_and(|threshold| usage.input_tokens > threshold);
+    let input_multiplier = if long_context { 2.0 } else { 1.0 };
+    let output_multiplier = if long_context { 1.5 } else { 1.0 };
+
+    Some(
+        ((uncached_input_tokens as f64 * prices.input_per_million
+            + cached_input_tokens as f64 * prices.cached_input_per_million)
+            * input_multiplier
+            + usage.output_tokens as f64 * prices.output_per_million * output_multiplier)
+            / 1_000_000.0,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +318,7 @@ pub async fn make_gpt_request<T>(
     schema: Option<serde_json::Value>,
     display_name: Option<&str>,
     analysis_id: Option<Uuid>,
+    message_id: Option<Uuid>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
 where
     T: for<'de> serde::Deserialize<'de>,
@@ -254,6 +385,15 @@ where
 
     // Try to parse response to extract output text (best effort before persistence)
     let output_text = extract_output_text(&body).unwrap_or_default();
+    let token_usage = extract_token_usage(&body);
+    let estimated_price = estimate_price_usd(&model, &token_usage).unwrap_or_else(|| {
+        tracing::warn!(
+            target: "work_analyzer",
+            "llm_price_estimate_unavailable model={}",
+            model
+        );
+        0.0
+    });
     let (output_text, output_text_nuls_removed) = strip_nul_chars(&output_text);
 
     let resolved_log_header = analysis_id
@@ -278,7 +418,7 @@ where
     }
 
     let env = environment::get_env();
-    if env != "bintest" && analysis_id.is_some() {
+    if env != "bintest" && (analysis_id.is_some() || message_id.is_some()) {
         // Persist the LLM call to database before attempting full parsing
         let pool = db::get_global_pool();
         let new_call = NewLlmCall::new(
@@ -291,14 +431,16 @@ where
             request_url.clone(),
             body.clone(),
             output_text.clone(),
-            0,                 // input_tokens_used - not available in current response structure
-            0,   // reasoning_tokens_used - not available in current response structure
-            0,   // output_tokens_used - not available in current response structure
-            0.0, // price - not available in current response structure
-            "USD".to_string(), // currency - default
-            analysis_id.unwrap(),
+            token_usage.input_tokens,
+            token_usage.reasoning_tokens,
+            token_usage.output_tokens,
+            estimated_price,
+            "USD".to_string(),
+            analysis_id,
             system_prompt,
             user_prompt,
+            message_id,
+            token_usage.cached_input_tokens,
         );
 
         // Try to persist, but don't fail the whole request if persistence fails
@@ -380,7 +522,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_json_value_nuls, strip_nul_chars};
+    use super::{
+        estimate_price_usd, extract_token_usage, sanitize_json_value_nuls, strip_nul_chars,
+        TokenUsage,
+    };
     use serde_json::json;
 
     #[test]
@@ -402,5 +547,57 @@ mod tests {
         assert_eq!(value["title"], "de9ni");
         assert_eq!(value["tags"][0], "toxicite9");
         assert_eq!(value["nested"]["content"], "psychothe9rapie");
+    }
+
+    #[test]
+    fn extracts_responses_api_token_usage() {
+        let body = json!({
+            "status": "completed",
+            "output": [],
+            "usage": {
+                "input_tokens": 12_000,
+                "input_tokens_details": { "cached_tokens": 2_000 },
+                "output_tokens": 800,
+                "output_tokens_details": { "reasoning_tokens": 300 },
+                "total_tokens": 12_800
+            }
+        })
+        .to_string();
+
+        assert_eq!(
+            extract_token_usage(&body),
+            TokenUsage {
+                input_tokens: 12_000,
+                cached_input_tokens: 2_000,
+                reasoning_tokens: 300,
+                output_tokens: 800,
+            }
+        );
+    }
+
+    #[test]
+    fn estimates_terra_price_without_double_counting_reasoning_tokens() {
+        let usage = TokenUsage {
+            input_tokens: 12_000,
+            cached_input_tokens: 2_000,
+            reasoning_tokens: 300,
+            output_tokens: 800,
+        };
+
+        let price = estimate_price_usd("gpt-5.6-terra", &usage).unwrap();
+        assert!((price - 0.03).abs() < 1e-12);
+    }
+
+    #[test]
+    fn applies_terra_long_context_multiplier() {
+        let usage = TokenUsage {
+            input_tokens: 300_000,
+            cached_input_tokens: 0,
+            reasoning_tokens: 1_000,
+            output_tokens: 10_000,
+        };
+
+        let price = estimate_price_usd("gpt-5.6-terra", &usage).unwrap();
+        assert!((price - 1.38).abs() < 1e-12);
     }
 }

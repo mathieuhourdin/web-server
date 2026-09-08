@@ -2,7 +2,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::{landscape_analysis::LandscapeAnalysis, session::Session};
 use crate::pagination::{PaginatedResponse, PaginationParams};
-use crate::schema::{landscape_analyses, llm_calls};
+use crate::schema::{landscape_analyses, llm_calls, messages};
 use axum::{
     debug_handler,
     extract::{Extension, Path, Query},
@@ -38,6 +38,8 @@ pub struct LlmCall {
     pub analysis_id: Option<Uuid>,
     pub system_prompt: String,
     pub user_prompt: String,
+    pub message_id: Option<Uuid>,
+    pub cached_input_tokens_used: i32,
 }
 
 #[derive(Insertable, AsChangeset)]
@@ -57,9 +59,11 @@ pub struct NewLlmCall {
     pub output_tokens_used: i32,
     pub price: f64,
     pub currency: String,
-    pub analysis_id: Uuid,
+    pub analysis_id: Option<Uuid>,
     pub system_prompt: String,
     pub user_prompt: String,
+    pub message_id: Option<Uuid>,
+    pub cached_input_tokens_used: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,11 +96,17 @@ impl LlmCall {
     ) -> Result<(Vec<Self>, i64), PpdcError> {
         let mut conn = db.get()?;
         let mut count_query = llm_calls::table
-            .inner_join(
+            .left_join(
                 landscape_analyses::table
                     .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
             )
-            .filter(landscape_analyses::user_id.eq(user_id))
+            .left_join(messages::table.on(llm_calls::message_id.eq(messages::id.nullable())))
+            .filter(
+                landscape_analyses::user_id
+                    .eq(user_id)
+                    .or(messages::sender_user_id.eq(user_id))
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
             .into_boxed();
         if let Some(from) = created_at_from {
             count_query = count_query.filter(llm_calls::created_at.ge(from));
@@ -106,11 +116,17 @@ impl LlmCall {
         }
         let total = count_query.count().get_result::<i64>(&mut conn)?;
         let mut query = llm_calls::table
-            .inner_join(
+            .left_join(
                 landscape_analyses::table
                     .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
             )
-            .filter(landscape_analyses::user_id.eq(user_id))
+            .left_join(messages::table.on(llm_calls::message_id.eq(messages::id.nullable())))
+            .filter(
+                landscape_analyses::user_id
+                    .eq(user_id)
+                    .or(messages::sender_user_id.eq(user_id))
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
             .into_boxed();
         if let Some(from) = created_at_from {
             query = query.filter(llm_calls::created_at.ge(from));
@@ -130,12 +146,18 @@ impl LlmCall {
     pub fn get_by_id_for_user(id: Uuid, user_id: Uuid, db: &DbPool) -> Result<Self, PpdcError> {
         let mut conn = db.get()?;
         let llm_call = llm_calls::table
-            .inner_join(
+            .left_join(
                 landscape_analyses::table
                     .on(llm_calls::analysis_id.eq(landscape_analyses::id.nullable())),
             )
+            .left_join(messages::table.on(llm_calls::message_id.eq(messages::id.nullable())))
             .filter(llm_calls::id.eq(id))
-            .filter(landscape_analyses::user_id.eq(user_id))
+            .filter(
+                landscape_analyses::user_id
+                    .eq(user_id)
+                    .or(messages::sender_user_id.eq(user_id))
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
             .select(LlmCall::as_select())
             .first::<Self>(&mut conn)?;
         Ok(llm_call)
@@ -250,9 +272,11 @@ impl NewLlmCall {
         output_tokens_used: i32,
         price: f64,
         currency: String,
-        analysis_id: Uuid,
+        analysis_id: Option<Uuid>,
         system_prompt: String,
         user_prompt: String,
+        message_id: Option<Uuid>,
+        cached_input_tokens_used: i32,
     ) -> Self {
         Self {
             status,
@@ -272,6 +296,8 @@ impl NewLlmCall {
             analysis_id,
             system_prompt,
             user_prompt,
+            message_id,
+            cached_input_tokens_used,
         }
     }
 
