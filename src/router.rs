@@ -104,6 +104,10 @@ pub fn create_router() -> Router {
             "/users/:id/ai_features",
             patch(user::patch_admin_user_ai_features_route),
         )
+        .route(
+            "/users/:id/llm_costs",
+            get(user::get_admin_user_llm_costs_route),
+        )
         .route("/users/:id", delete(user::delete_admin_user_route))
         .route(
             "/content_reports",

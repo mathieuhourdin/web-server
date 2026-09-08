@@ -13,7 +13,7 @@ use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Bool, Date, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Bool, Date, Double, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -33,6 +33,24 @@ struct UserIdRow {
 struct CountRow {
     #[diesel(sql_type = BigInt)]
     value: i64,
+}
+
+#[derive(QueryableByName)]
+struct AdminUserLlmCostRow {
+    #[diesel(sql_type = Text)]
+    model: String,
+    #[diesel(sql_type = BigInt)]
+    call_count: i64,
+    #[diesel(sql_type = BigInt)]
+    input_tokens_used: i64,
+    #[diesel(sql_type = BigInt)]
+    cached_input_tokens_used: i64,
+    #[diesel(sql_type = BigInt)]
+    reasoning_tokens_used: i64,
+    #[diesel(sql_type = BigInt)]
+    output_tokens_used: i64,
+    #[diesel(sql_type = Double)]
+    estimated_cost: f64,
 }
 
 #[derive(QueryableByName)]
@@ -218,6 +236,68 @@ pub struct AdminUserAiFeaturesResponse {
     pub ai_features_enabled: bool,
     pub ai_features_enabled_by_admin: bool,
     pub allows_ai_features: bool,
+}
+
+#[derive(Deserialize)]
+pub struct AdminUserLlmCostsQuery {
+    pub created_at_from: Option<NaiveDateTime>,
+    pub created_at_to: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Serialize, Default, PartialEq)]
+pub struct AdminUserLlmCostAggregate {
+    pub call_count: i64,
+    pub input_tokens_used: i64,
+    pub cached_input_tokens_used: i64,
+    pub reasoning_tokens_used: i64,
+    pub output_tokens_used: i64,
+    pub estimated_cost: f64,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct AdminUserLlmCostByModel {
+    pub model: String,
+    #[serde(flatten)]
+    pub aggregate: AdminUserLlmCostAggregate,
+}
+
+#[derive(Serialize)]
+pub struct AdminUserLlmCostsResponse {
+    pub user_id: Uuid,
+    pub created_at_from: Option<NaiveDateTime>,
+    pub created_at_to: Option<NaiveDateTime>,
+    pub currency: String,
+    pub total: AdminUserLlmCostAggregate,
+    pub by_model: Vec<AdminUserLlmCostByModel>,
+}
+
+fn aggregate_user_llm_cost_rows(
+    rows: Vec<AdminUserLlmCostRow>,
+) -> (AdminUserLlmCostAggregate, Vec<AdminUserLlmCostByModel>) {
+    let mut total = AdminUserLlmCostAggregate::default();
+    let by_model = rows
+        .into_iter()
+        .map(|row| {
+            total.call_count += row.call_count;
+            total.input_tokens_used += row.input_tokens_used;
+            total.cached_input_tokens_used += row.cached_input_tokens_used;
+            total.reasoning_tokens_used += row.reasoning_tokens_used;
+            total.output_tokens_used += row.output_tokens_used;
+            total.estimated_cost += row.estimated_cost;
+            AdminUserLlmCostByModel {
+                model: row.model,
+                aggregate: AdminUserLlmCostAggregate {
+                    call_count: row.call_count,
+                    input_tokens_used: row.input_tokens_used,
+                    cached_input_tokens_used: row.cached_input_tokens_used,
+                    reasoning_tokens_used: row.reasoning_tokens_used,
+                    output_tokens_used: row.output_tokens_used,
+                    estimated_cost: row.estimated_cost,
+                },
+            }
+        })
+        .collect();
+    (total, by_model)
 }
 
 fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
@@ -421,6 +501,101 @@ pub async fn patch_admin_user_ai_features_route(
         ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
         allows_ai_features: user.allows_ai_features(),
     }))
+}
+
+#[debug_handler]
+pub async fn get_admin_user_llm_costs_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(id): Path<Uuid>,
+    Query(filters): Query<AdminUserLlmCostsQuery>,
+) -> Result<Json<AdminUserLlmCostsResponse>, PpdcError> {
+    let _admin_user = ensure_admin_session_user(&session, &pool)?;
+    let _target_user = User::find(&id, &pool)?;
+    if filters
+        .created_at_from
+        .is_some_and(|from| filters.created_at_to.is_some_and(|to| from > to))
+    {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "created_at_from must be before or equal to created_at_to".to_string(),
+        ));
+    }
+
+    let mut conn = pool.get()?;
+    let rows = sql_query(
+        r#"
+        SELECT
+            lc.model,
+            COUNT(*)::bigint AS call_count,
+            COALESCE(SUM(lc.input_tokens_used), 0)::bigint AS input_tokens_used,
+            COALESCE(SUM(lc.cached_input_tokens_used), 0)::bigint AS cached_input_tokens_used,
+            COALESCE(SUM(lc.reasoning_tokens_used), 0)::bigint AS reasoning_tokens_used,
+            COALESCE(SUM(lc.output_tokens_used), 0)::bigint AS output_tokens_used,
+            COALESCE(SUM(lc.price), 0)::double precision AS estimated_cost
+        FROM llm_calls lc
+        LEFT JOIN landscape_analyses la ON la.id = lc.analysis_id
+        LEFT JOIN messages m ON m.id = lc.message_id
+        WHERE COALESCE(la.user_id, m.recipient_user_id) = $1
+          AND ($2 IS NULL OR lc.created_at >= $2)
+          AND ($3 IS NULL OR lc.created_at <= $3)
+        GROUP BY lc.model
+        ORDER BY estimated_cost DESC, lc.model ASC
+        "#,
+    )
+    .bind::<SqlUuid, _>(id)
+    .bind::<Nullable<Timestamp>, _>(filters.created_at_from)
+    .bind::<Nullable<Timestamp>, _>(filters.created_at_to)
+    .load::<AdminUserLlmCostRow>(&mut conn)?;
+
+    let (total, by_model) = aggregate_user_llm_cost_rows(rows);
+
+    Ok(Json(AdminUserLlmCostsResponse {
+        user_id: id,
+        created_at_from: filters.created_at_from,
+        created_at_to: filters.created_at_to,
+        currency: "USD".to_string(),
+        total,
+        by_model,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{aggregate_user_llm_cost_rows, AdminUserLlmCostRow};
+
+    #[test]
+    fn aggregates_user_llm_cost_rows_across_models() {
+        let (total, by_model) = aggregate_user_llm_cost_rows(vec![
+            AdminUserLlmCostRow {
+                model: "gpt-5.6-terra".to_string(),
+                call_count: 2,
+                input_tokens_used: 100,
+                cached_input_tokens_used: 20,
+                reasoning_tokens_used: 10,
+                output_tokens_used: 40,
+                estimated_cost: 0.02,
+            },
+            AdminUserLlmCostRow {
+                model: "gpt-4.1-mini".to_string(),
+                call_count: 3,
+                input_tokens_used: 200,
+                cached_input_tokens_used: 50,
+                reasoning_tokens_used: 0,
+                output_tokens_used: 60,
+                estimated_cost: 0.01,
+            },
+        ]);
+
+        assert_eq!(total.call_count, 5);
+        assert_eq!(total.input_tokens_used, 300);
+        assert_eq!(total.cached_input_tokens_used, 70);
+        assert_eq!(total.reasoning_tokens_used, 10);
+        assert_eq!(total.output_tokens_used, 100);
+        assert!((total.estimated_cost - 0.03).abs() < 1e-12);
+        assert_eq!(by_model.len(), 2);
+    }
 }
 
 #[debug_handler]
