@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
+use crate::entities_v2::journal::{Journal, JournalStatus};
 use crate::entities_v2::message::{
     MentorSuggestedAction, MentorSuggestedActionKind, Message, MessageAttachment,
     MessageAttachmentType, MessageProcessingState, MessageType,
@@ -14,7 +15,7 @@ use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::MENTOR_OPENAI_MODEL;
 
-use super::context::{build as build_context, build_shared_trace};
+use super::context::{build as build_context, build_journal, build_shared_trace};
 
 #[derive(Debug, Deserialize)]
 struct TraceReplyDraft {
@@ -30,9 +31,7 @@ struct TarotReplyDraft {
     suggested_actions: Vec<MentorSuggestedAction>,
 }
 
-fn normalize_suggested_actions(
-    actions: Vec<MentorSuggestedAction>,
-) -> Vec<MentorSuggestedAction> {
+fn normalize_suggested_actions(actions: Vec<MentorSuggestedAction>) -> Vec<MentorSuggestedAction> {
     actions
         .into_iter()
         .filter_map(|mut action| {
@@ -100,6 +99,11 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
         .trace_id
         .or(question_message.trace_id)
         .map(|trace_id| Trace::find_full_trace(trace_id, pool))
+        .transpose()?;
+    let journal = reply_message
+        .journal_id
+        .or(question_message.journal_id)
+        .map(|journal_id| Journal::find_full(journal_id, pool))
         .transpose()?;
     let mentor_user = User::find(&reply_message.sender_user_id, pool)?;
     let recipient_user = User::find(&reply_message.recipient_user_id, pool)?;
@@ -195,6 +199,34 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
             )
             .await
         }
+        MessageType::JournalFeedbackRequest => {
+            let journal = journal.as_ref().ok_or_else(|| {
+                PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Journal feedback requests require a journal".to_string(),
+                )
+            })?;
+            if journal.user_id != recipient_user.id
+                || journal.status != JournalStatus::Active
+                || journal.is_encrypted
+            {
+                return Err(PpdcError::new(
+                    403,
+                    ErrorType::ApiError,
+                    "The journal is no longer available for mentor feedback".to_string(),
+                ));
+            }
+            run_journal_reply_pipeline(
+                &reply_message,
+                &question_message,
+                journal,
+                &mentor_user,
+                &recipient_user,
+                pool,
+            )
+            .await
+        }
         _ => {
             run_standard_reply_pipeline(
                 &reply_message,
@@ -207,6 +239,46 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
             .await
         }
     }
+}
+
+async fn run_journal_reply_pipeline(
+    reply_message: &Message,
+    question_message: &Message,
+    journal: &Journal,
+    mentor_user: &User,
+    recipient_user: &User,
+    pool: &DbPool,
+) -> Result<Message, PpdcError> {
+    let prompt_context = build_journal(
+        reply_message,
+        question_message,
+        journal,
+        mentor_user,
+        recipient_user,
+        pool,
+    )?;
+    let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
+    let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
+    let reply = GptRequestConfig::new(
+        MENTOR_OPENAI_MODEL.to_string(),
+        include_str!("journal_feedback_system.md"),
+        user_prompt,
+        Some(schema),
+        None,
+    )
+    .with_reasoning_effort(GptReasoningEffort::Low)
+    .with_verbosity(GptVerbosity::Low)
+    .with_display_name("Message Processing / Journal Feedback")
+    .with_message_id(reply_message.id)
+    .execute::<TraceReplyDraft>()
+    .await?;
+
+    let mut processed_message = Message::find(reply_message.id, pool)?;
+    processed_message.title = reply.title;
+    processed_message.content = reply.content;
+    processed_message.suggested_actions = normalize_suggested_actions(reply.suggested_actions);
+    processed_message.processing_state = MessageProcessingState::Processed;
+    processed_message.update(pool)
 }
 
 fn ensure_reader_can_still_access_shared_trace(

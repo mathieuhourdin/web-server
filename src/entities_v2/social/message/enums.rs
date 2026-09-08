@@ -10,6 +10,7 @@ pub enum MessageType {
     TarotReadingRequest,
     SharedTraceExplanationRequest,
     SharedTraceTranslationRequest,
+    JournalFeedbackRequest,
 }
 
 impl MessageType {
@@ -22,6 +23,7 @@ impl MessageType {
             MessageType::TarotReadingRequest => "TAROT_READING_REQUEST",
             MessageType::SharedTraceExplanationRequest => "SHARED_TRACE_EXPLANATION_REQUEST",
             MessageType::SharedTraceTranslationRequest => "SHARED_TRACE_TRANSLATION_REQUEST",
+            MessageType::JournalFeedbackRequest => "JOURNAL_FEEDBACK_REQUEST",
         }
     }
 
@@ -36,6 +38,9 @@ impl MessageType {
             }
             "SHARED_TRACE_TRANSLATION_REQUEST" | "shared_trace_translation_request" => {
                 MessageType::SharedTraceTranslationRequest
+            }
+            "JOURNAL_FEEDBACK_REQUEST" | "journal_feedback_request" => {
+                MessageType::JournalFeedbackRequest
             }
             _ => MessageType::General,
         }
@@ -68,5 +73,24 @@ impl MessageProcessingState {
             "FAILED" | "failed" => MessageProcessingState::Failed,
             _ => MessageProcessingState::Processed,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MessageType;
+
+    #[test]
+    fn journal_feedback_request_has_stable_api_and_database_names() {
+        let json = serde_json::to_string(&MessageType::JournalFeedbackRequest).unwrap();
+        assert_eq!(json, "\"journal_feedback_request\"");
+        assert_eq!(
+            MessageType::JournalFeedbackRequest.to_db(),
+            "JOURNAL_FEEDBACK_REQUEST"
+        );
+        assert_eq!(
+            MessageType::from_db("JOURNAL_FEEDBACK_REQUEST"),
+            MessageType::JournalFeedbackRequest
+        );
     }
 }

@@ -292,6 +292,10 @@ pub fn create_router() -> Router {
         )
         .route("/:id/posts", get(post::get_journal_posts_route))
         .route(
+            "/:id/messages",
+            get(journal::get_journal_messages_route).post(journal::post_journal_message_route),
+        )
+        .route(
             "/:id/traces/finalized",
             post(trace::post_finalized_journal_trace_route),
         )

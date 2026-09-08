@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user::{User, UserPublicResponse};
+use crate::entities_v2::user_block::UserBlock;
 use crate::schema::{messages, users};
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
@@ -21,6 +21,7 @@ type MessageTuple = (
     Uuid,
     Uuid,
     Uuid,
+    Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
@@ -69,6 +70,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         sender_user_id,
         recipient_user_id,
         landscape_analysis_id,
+        journal_id,
         trace_id,
         post_id,
         reply_to_message_id,
@@ -104,6 +106,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         sender_user_id,
         recipient_user_id,
         landscape_analysis_id,
+        journal_id,
         trace_id,
         post_id,
         reply_to_message_id,
@@ -149,6 +152,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -260,6 +264,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -386,6 +391,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -476,6 +482,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -599,6 +606,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -630,6 +638,75 @@ impl Message {
         let (items, _) =
             Self::find_for_trace_conversation_paginated(user_id, trace_id, 0, limit, pool)?;
         Ok(items)
+    }
+
+    pub fn find_for_journal_conversation(
+        user_id: Uuid,
+        journal_id: Uuid,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<Vec<Message>, PpdcError> {
+        let (items, _) =
+            Self::find_for_journal_conversation_paginated(user_id, journal_id, 0, limit, pool)?;
+        Ok(items)
+    }
+
+    pub fn find_for_journal_conversation_paginated(
+        user_id: Uuid,
+        journal_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Message>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
+        let total = messages::table
+            .filter(messages::journal_id.eq(Some(journal_id)))
+            .filter(
+                messages::sender_user_id
+                    .eq(user_id)
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
+            .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+            .filter(messages::recipient_user_id.ne_all(blocked_user_ids.clone()))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+
+        let rows = messages::table
+            .filter(messages::journal_id.eq(Some(journal_id)))
+            .filter(
+                messages::sender_user_id
+                    .eq(user_id)
+                    .or(messages::recipient_user_id.eq(user_id)),
+            )
+            .filter(messages::sender_user_id.ne_all(blocked_user_ids.clone()))
+            .filter(messages::recipient_user_id.ne_all(blocked_user_ids))
+            .select((
+                messages::id,
+                messages::sender_user_id,
+                messages::recipient_user_id,
+                messages::landscape_analysis_id,
+                messages::journal_id,
+                messages::trace_id,
+                messages::post_id,
+                messages::reply_to_message_id,
+                messages::message_type,
+                messages::processing_state,
+                messages::title,
+                messages::content,
+                messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),
+                sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),
+                messages::seen_at,
+                messages::created_at,
+                messages::updated_at,
+            ))
+            .order(messages::created_at.desc())
+            .offset(offset)
+            .limit(limit.max(1))
+            .load::<MessageTuple>(&mut conn)?;
+        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
     }
 
     pub fn find_for_trace_conversation_paginated(
@@ -667,6 +744,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -762,6 +840,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -819,6 +898,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -858,6 +938,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,
@@ -895,6 +976,7 @@ impl Message {
                 messages::sender_user_id,
                 messages::recipient_user_id,
                 messages::landscape_analysis_id,
+                messages::journal_id,
                 messages::trace_id,
                 messages::post_id,
                 messages::reply_to_message_id,

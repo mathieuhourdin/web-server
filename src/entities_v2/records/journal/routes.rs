@@ -13,17 +13,22 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal_sharing_policy::JournalSharingPolicy,
-    message::Message,
+    message::{
+        routes::is_service_mentor, Message, MessageProcessingState, MessageType, NewMessage,
+    },
+    platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
     trace::{Trace, TraceStatus},
-    user::{ensure_user_has_default_journals, ensure_user_has_meta_journal},
+    user::{ensure_user_has_default_journals, ensure_user_has_meta_journal, User},
+    user_block::UserBlock,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
+use crate::work_analyzer;
 
 use super::model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalType,
-    NewJournalDto, UpdateJournalDto,
+    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalStatus,
+    JournalType, NewJournalDto, UpdateJournalDto,
 };
 
 #[derive(serde::Deserialize)]
@@ -40,9 +45,138 @@ pub struct AllTracesExportQuery {
     pub to: Option<NaiveDate>,
 }
 
+#[derive(serde::Deserialize)]
+pub struct NewJournalMentorMessageDto {
+    pub recipient_user_id: Uuid,
+    pub title: Option<String>,
+    pub content: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct JournalMentorMessageCreationResponse {
+    pub question_message: Message,
+    pub pending_reply_message: Message,
+}
+
 struct DatedTraceExportItem {
     trace: Trace,
     journal_title: String,
+}
+
+#[debug_handler]
+pub async fn get_journal_messages_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Message>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    let pagination = params.validate()?;
+    let (messages, total) = Message::find_for_journal_conversation_paginated(
+        user_id,
+        journal_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(messages, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn post_journal_message_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Json(payload): Json<NewJournalMentorMessageDto>,
+) -> Result<Json<JournalMentorMessageCreationResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let sender_user = User::find(&user_id, &pool)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    if journal.status != JournalStatus::Active {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Archived journals cannot be sent to a mentor".to_string(),
+        ));
+    }
+    if journal.is_encrypted {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Encrypted journals cannot be sent to a mentor".to_string(),
+        ));
+    }
+
+    let mentor = User::find(&payload.recipient_user_id, &pool)?;
+    if !is_service_mentor(&mentor, &pool)? {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "recipient_user_id must belong to a service mentor".to_string(),
+        ));
+    }
+    UserBlock::ensure_can_interact(user_id, mentor.id, &pool)?;
+    ensure_ai_usage_allowed(
+        &sender_user,
+        Some(session.id),
+        AiUsageKind::MentorQuestion,
+        &pool,
+    )?;
+
+    let question_message = NewMessage {
+        sender_user_id: user_id,
+        recipient_user_id: mentor.id,
+        landscape_analysis_id: None,
+        journal_id: Some(journal_id),
+        trace_id: None,
+        post_id: None,
+        reply_to_message_id: None,
+        message_type: MessageType::JournalFeedbackRequest,
+        processing_state: MessageProcessingState::Processed,
+        title: payload.title.unwrap_or_default(),
+        content: payload.content,
+        attachment_type: None,
+        attachment: None,
+        suggested_actions: Vec::new(),
+        metadata: None,
+    }
+    .create(&pool)?;
+    let pending_reply_message = NewMessage {
+        sender_user_id: mentor.id,
+        recipient_user_id: user_id,
+        landscape_analysis_id: None,
+        journal_id: Some(journal_id),
+        trace_id: None,
+        post_id: None,
+        reply_to_message_id: Some(question_message.id),
+        message_type: MessageType::MentorReply,
+        processing_state: MessageProcessingState::Pending,
+        title: String::new(),
+        content: String::new(),
+        attachment_type: None,
+        attachment: None,
+        suggested_actions: Vec::new(),
+        metadata: None,
+    }
+    .create(&pool)?;
+
+    let pool_for_task = pool.clone();
+    let pending_reply_id = pending_reply_message.id;
+    tokio::spawn(async move {
+        let _ = work_analyzer::run_message(pending_reply_id, &pool_for_task).await;
+    });
+
+    Ok(Json(JournalMentorMessageCreationResponse {
+        question_message,
+        pending_reply_message,
+    }))
 }
 
 #[debug_handler]
@@ -304,7 +438,10 @@ pub async fn get_all_my_traces_export_route(
     Query(params): Query<AllTracesExportQuery>,
 ) -> Result<Response, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    if params.from.is_some_and(|from| params.to.is_some_and(|to| from > to)) {
+    if params
+        .from
+        .is_some_and(|from| params.to.is_some_and(|to| from > to))
+    {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,

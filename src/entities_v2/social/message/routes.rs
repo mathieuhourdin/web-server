@@ -332,6 +332,15 @@ pub async fn post_message_route(
         None => MessageType::General,
     };
 
+    if message_type == MessageType::JournalFeedbackRequest {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "journal_feedback_request must be created through /journals/:id/messages"
+                .to_string(),
+        ));
+    }
+
     if payload.post_id.is_some() && payload.trace_id.is_some() {
         return Err(PpdcError::new(
             400,
@@ -529,6 +538,7 @@ pub async fn post_message_route(
             sender_user_id,
             recipient_user_id: payload.recipient_user_id,
             landscape_analysis_id: payload.landscape_analysis_id,
+            journal_id: None,
             trace_id: normalized_trace_id,
             post_id: normalized_post_id,
             reply_to_message_id: None,
@@ -546,6 +556,7 @@ pub async fn post_message_route(
             sender_user_id: question_message.recipient_user_id,
             recipient_user_id: sender_user_id,
             landscape_analysis_id: question_message.landscape_analysis_id,
+            journal_id: None,
             trace_id: question_message.trace_id,
             post_id: None,
             reply_to_message_id: Some(question_message.id),
@@ -575,6 +586,7 @@ pub async fn post_message_route(
         sender_user_id,
         recipient_user_id: payload.recipient_user_id,
         landscape_analysis_id: payload.landscape_analysis_id,
+        journal_id: None,
         trace_id: normalized_trace_id,
         post_id: normalized_post_id,
         reply_to_message_id: None,
@@ -640,6 +652,7 @@ pub async fn post_post_message_route(
         sender_user_id,
         recipient_user_id,
         landscape_analysis_id: None,
+        journal_id: None,
         trace_id: post.source_trace_id,
         post_id: Some(post_id),
         reply_to_message_id: None,
@@ -703,6 +716,14 @@ pub async fn put_message_route(
         let trace = Trace::find_full_trace(trace_id, &pool)?;
         let sender_is_owner = trace.user_id == sender_user_id;
         let effective_message_type = payload.message_type.unwrap_or(message.message_type);
+        if effective_message_type == MessageType::JournalFeedbackRequest {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "journal_feedback_request must be created through /journals/:id/messages"
+                    .to_string(),
+            ));
+        }
         if recipient_is_service_mentor
             || matches!(
                 effective_message_type,

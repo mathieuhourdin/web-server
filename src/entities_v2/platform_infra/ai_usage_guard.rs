@@ -111,7 +111,8 @@ fn count_recent_ai_usage(
               AND m.message_type IN (
                   'QUESTION',
                   'SHARED_TRACE_EXPLANATION_REQUEST',
-                  'SHARED_TRACE_TRANSLATION_REQUEST'
+                  'SHARED_TRACE_TRANSLATION_REQUEST',
+                  'JOURNAL_FEEDBACK_REQUEST'
               )
               AND m.created_at >= NOW() - INTERVAL '24 hours'
               AND (

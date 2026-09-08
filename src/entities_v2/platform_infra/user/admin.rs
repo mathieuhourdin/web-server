@@ -391,7 +391,8 @@ pub async fn get_admin_users_route(
                           'QUESTION',
                           'TAROT_READING_REQUEST',
                           'SHARED_TRACE_EXPLANATION_REQUEST',
-                          'SHARED_TRACE_TRANSLATION_REQUEST'
+                          'SHARED_TRACE_TRANSLATION_REQUEST',
+                          'JOURNAL_FEEDBACK_REQUEST'
                       )
                       AND m.created_at >= NOW() - INTERVAL '24 hours'
                 ), 0)
@@ -419,7 +420,8 @@ pub async fn get_admin_users_route(
                           'QUESTION',
                           'TAROT_READING_REQUEST',
                           'SHARED_TRACE_EXPLANATION_REQUEST',
-                          'SHARED_TRACE_TRANSLATION_REQUEST'
+                          'SHARED_TRACE_TRANSLATION_REQUEST',
+                          'JOURNAL_FEEDBACK_REQUEST'
                       )
                       AND m.created_at >= NOW() - INTERVAL '7 days'
                 ), 0)

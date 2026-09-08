@@ -3,11 +3,12 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::journal::Journal;
 use crate::entities_v2::landmark::LandmarkType;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::lens::Lens;
 use crate::entities_v2::message::Message;
-use crate::entities_v2::trace::Trace;
+use crate::entities_v2::trace::{Trace, TraceStatus};
 use crate::entities_v2::user::User;
 
 #[derive(Debug, Serialize)]
@@ -36,6 +37,26 @@ pub struct SharedTraceMentorReplyPromptContext {
 }
 
 #[derive(Debug, Serialize)]
+pub struct JournalMentorReplyPromptContext {
+    pub mentor_name: String,
+    pub mentor_biography: Option<String>,
+    pub mentor_specific_prompt: Option<String>,
+    pub user_request: MessageContextItem,
+    pub journal: JournalContextItem,
+    pub journal_traces: Vec<TraceContextItem>,
+    pub previous_messages_for_journal: Vec<MessageContextItem>,
+    pub current_user_high_level_projects: Vec<HighLevelProjectContextItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JournalContextItem {
+    pub id: Uuid,
+    pub title: String,
+    pub subtitle: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct MessageContextItem {
     pub id: Uuid,
     pub title: String,
@@ -50,6 +71,7 @@ pub struct TraceContextItem {
     pub id: Uuid,
     pub interaction_date: chrono::NaiveDateTime,
     pub trace_type: String,
+    pub status: String,
     pub title: String,
     pub subtitle: String,
     pub content: String,
@@ -151,6 +173,7 @@ pub fn build(
             id: trace.id,
             interaction_date: trace.interaction_date,
             trace_type: trace.trace_type.to_db().to_string(),
+            status: trace.status.to_db().to_string(),
             title: trace.title.clone(),
             subtitle: trace.subtitle.clone(),
             content: trace.content.clone(),
@@ -163,6 +186,7 @@ pub fn build(
                 id: trace.id,
                 interaction_date: trace.interaction_date,
                 trace_type: trace.trace_type.to_db().to_string(),
+                status: trace.status.to_db().to_string(),
                 title: trace.title,
                 subtitle: trace.subtitle,
                 content: trace.content,
@@ -179,13 +203,8 @@ pub fn build_shared_trace(
     reader_user: &User,
     pool: &DbPool,
 ) -> Result<SharedTraceMentorReplyPromptContext, PpdcError> {
-    let (previous_messages, _) = Message::find_thread_with_partner_paginated(
-        reader_user.id,
-        mentor_user.id,
-        0,
-        50,
-        pool,
-    )?;
+    let (previous_messages, _) =
+        Message::find_thread_with_partner_paginated(reader_user.id, mentor_user.id, 0, 50, pool)?;
     let previous_messages_with_mentor = previous_messages
         .into_iter()
         .filter(|message| message.id != reply_message.id && message.id != question_message.id)
@@ -219,6 +238,72 @@ pub fn build_shared_trace(
     })
 }
 
+pub fn build_journal(
+    reply_message: &Message,
+    question_message: &Message,
+    journal: &Journal,
+    mentor_user: &User,
+    recipient_user: &User,
+    pool: &DbPool,
+) -> Result<JournalMentorReplyPromptContext, PpdcError> {
+    let previous_messages_for_journal =
+        Message::find_for_journal_conversation(recipient_user.id, journal.id, 50, pool)?
+            .into_iter()
+            .filter(|message| {
+                message.id != reply_message.id
+                    && message.id != question_message.id
+                    && ((message.sender_user_id == mentor_user.id
+                        && message.recipient_user_id == recipient_user.id)
+                        || (message.sender_user_id == recipient_user.id
+                            && message.recipient_user_id == mentor_user.id))
+            })
+            .map(message_context_item)
+            .collect();
+
+    let (mut draft_traces, _) = Trace::get_for_journal_paginated(
+        journal.id,
+        recipient_user.id,
+        0,
+        i64::MAX / 4,
+        None,
+        TraceStatus::Draft,
+        None,
+        pool,
+    )?;
+    let (finalized_traces, _) = Trace::get_for_journal_paginated(
+        journal.id,
+        recipient_user.id,
+        0,
+        i64::MAX / 4,
+        None,
+        TraceStatus::Finalized,
+        None,
+        pool,
+    )?;
+    draft_traces.extend(finalized_traces);
+    draft_traces.retain(|trace| !trace.is_blank);
+    draft_traces.sort_by_key(|trace| (trace.interaction_date, trace.created_at));
+
+    Ok(JournalMentorReplyPromptContext {
+        mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
+        mentor_biography: mentor_user.biography.clone(),
+        mentor_specific_prompt: mentor_user.mentor_specific_prompt.clone(),
+        user_request: message_context_item(question_message.clone()),
+        journal: JournalContextItem {
+            id: journal.id,
+            title: journal.title.clone(),
+            subtitle: journal.subtitle.clone(),
+            content: journal.content.clone(),
+        },
+        journal_traces: draft_traces.iter().map(trace_context_item).collect(),
+        previous_messages_for_journal,
+        current_user_high_level_projects: find_current_lens_high_level_projects(
+            recipient_user,
+            pool,
+        )?,
+    })
+}
+
 fn message_context_item(message: Message) -> MessageContextItem {
     MessageContextItem {
         id: message.id,
@@ -239,6 +324,7 @@ fn trace_context_item(trace: &Trace) -> TraceContextItem {
         id: trace.id,
         interaction_date: trace.interaction_date,
         trace_type: trace.trace_type.to_db().to_string(),
+        status: trace.status.to_db().to_string(),
         title: trace.title.clone(),
         subtitle: trace.subtitle.clone(),
         content: trace.content.clone(),

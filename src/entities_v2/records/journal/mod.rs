@@ -9,7 +9,8 @@ pub use model::{
     JournalStatus, JournalType, NewJournalDto, UpdateJournalDto,
 };
 pub use routes::{
-    get_all_my_traces_export_route, get_journal_route, get_recent_shared_journals_route,
-    get_shared_journals_route, get_user_journals_route, get_user_recent_shared_journals_route,
-    post_journal_export_route, post_journal_import_route, post_journal_route, put_journal_route,
+    get_all_my_traces_export_route, get_journal_messages_route, get_journal_route,
+    get_recent_shared_journals_route, get_shared_journals_route, get_user_journals_route,
+    get_user_recent_shared_journals_route, post_journal_export_route, post_journal_import_route,
+    post_journal_message_route, post_journal_route, put_journal_route,
 };

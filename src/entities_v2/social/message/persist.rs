@@ -91,24 +91,26 @@ impl Message {
             UPDATE messages
             SET recipient_user_id = $1,
                 landscape_analysis_id = $2,
-                trace_id = $3,
-                post_id = $4,
-                reply_to_message_id = $5,
-                message_type = $6,
-                processing_state = $7,
-                title = $8,
-                content = $9,
-                attachment_type = $10,
-                attachment = CAST($11 AS jsonb),
-                metadata = CAST($12 AS jsonb),
-                suggested_actions = CAST($13 AS jsonb),
-                seen_at = $14,
+                journal_id = $3,
+                trace_id = $4,
+                post_id = $5,
+                reply_to_message_id = $6,
+                message_type = $7,
+                processing_state = $8,
+                title = $9,
+                content = $10,
+                attachment_type = $11,
+                attachment = CAST($12 AS jsonb),
+                metadata = CAST($13 AS jsonb),
+                suggested_actions = CAST($14 AS jsonb),
+                seen_at = $15,
                 updated_at = NOW()
-            WHERE id = $15
+            WHERE id = $16
             "#,
         )
         .bind::<SqlUuid, _>(self.recipient_user_id)
         .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
+        .bind::<Nullable<SqlUuid>, _>(self.journal_id)
         .bind::<Nullable<SqlUuid>, _>(self.trace_id)
         .bind::<Nullable<SqlUuid>, _>(self.post_id)
         .bind::<Nullable<SqlUuid>, _>(self.reply_to_message_id)
@@ -285,6 +287,7 @@ impl NewMessage {
                 sender_user_id,
                 recipient_user_id,
                 landscape_analysis_id,
+                journal_id,
                 trace_id,
                 post_id,
                 reply_to_message_id,
@@ -299,7 +302,7 @@ impl NewMessage {
                 seen_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CAST($12 AS jsonb), CAST($13 AS jsonb), CAST($14 AS jsonb), NULL
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CAST($13 AS jsonb), CAST($14 AS jsonb), CAST($15 AS jsonb), NULL
             )
             RETURNING id
             "#,
@@ -307,6 +310,7 @@ impl NewMessage {
         .bind::<SqlUuid, _>(self.sender_user_id)
         .bind::<SqlUuid, _>(self.recipient_user_id)
         .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
+        .bind::<Nullable<SqlUuid>, _>(self.journal_id)
         .bind::<Nullable<SqlUuid>, _>(self.trace_id)
         .bind::<Nullable<SqlUuid>, _>(self.post_id)
         .bind::<Nullable<SqlUuid>, _>(self.reply_to_message_id)

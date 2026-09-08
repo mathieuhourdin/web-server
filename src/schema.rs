@@ -399,6 +399,7 @@ diesel::table! {
         post_id -> Nullable<Uuid>,
         metadata -> Nullable<Jsonb>,
         suggested_actions -> Jsonb,
+        journal_id -> Nullable<Uuid>,
     }
 }
 
@@ -756,6 +757,7 @@ diesel::joinable!(lenses -> users (user_id));
 diesel::joinable!(llm_calls -> landscape_analyses (analysis_id));
 diesel::joinable!(llm_calls -> messages (message_id));
 diesel::joinable!(messages -> landscape_analyses (landscape_analysis_id));
+diesel::joinable!(messages -> journals (journal_id));
 diesel::joinable!(messages -> posts (post_id));
 diesel::joinable!(messages -> traces (trace_id));
 diesel::joinable!(notification_digests -> outbound_emails (outbound_email_id));

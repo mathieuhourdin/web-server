@@ -2017,6 +2017,15 @@ pub async fn post_trace_message_route(
         None => MessageType::General,
     };
 
+    if message_type == MessageType::JournalFeedbackRequest {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "journal_feedback_request must be created through /journals/:id/messages"
+                .to_string(),
+        ));
+    }
+
     if matches!(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
@@ -2071,6 +2080,7 @@ pub async fn post_trace_message_route(
             sender_user_id: user_id,
             recipient_user_id: mentor.id,
             landscape_analysis_id: None,
+            journal_id: None,
             trace_id: Some(trace_id),
             post_id: None,
             reply_to_message_id: None,
@@ -2089,6 +2099,7 @@ pub async fn post_trace_message_route(
             sender_user_id: mentor.id,
             recipient_user_id: user_id,
             landscape_analysis_id: None,
+            journal_id: None,
             trace_id: Some(trace_id),
             post_id: None,
             reply_to_message_id: Some(question_message.id),
@@ -2163,6 +2174,7 @@ pub async fn post_trace_message_route(
         sender_user_id: user_id,
         recipient_user_id,
         landscape_analysis_id: None,
+        journal_id: None,
         trace_id: Some(trace_id),
         post_id: shared_post.as_ref().map(|post| post.id),
         reply_to_message_id: None,

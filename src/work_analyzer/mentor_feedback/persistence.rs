@@ -25,6 +25,7 @@ pub fn create_mentor_feedback(
         sender_user_id,
         recipient_user_id: analysis.user_id,
         landscape_analysis_id: Some(analysis_id),
+        journal_id: None,
         trace_id: None,
         post_id: None,
         reply_to_message_id: None,
