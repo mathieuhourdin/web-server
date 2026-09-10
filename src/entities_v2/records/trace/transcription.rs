@@ -7,6 +7,7 @@ use diesel::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tracing::{error, info};
 use uuid::Uuid;
 
 use super::model::{Trace, TraceStatus};
@@ -150,24 +151,33 @@ pub async fn post_transcription_job_route(
 }
 
 async fn process_job(job_id: Uuid, pool: DbPool) {
+    info!(job_id = %job_id, "handwriting transcription job started");
     let result = async {
         set_job_status(job_id, "RUNNING", &pool)?;
         let job = get_job(job_id, &pool)?;
         let ids: Vec<Uuid> = serde_json::from_value(job.source_asset_ids.clone()).map_err(|e| PpdcError::new(500, ErrorType::InternalError, e.to_string()))?;
         let assets = Asset::find_by_ids(&ids, &pool)?;
+        info!(job_id = %job_id, asset_count = ids.len(), "source assets loaded");
         let mut images = Vec::new();
         for id in ids { let asset = assets.get(&id).ok_or_else(|| PpdcError::new(500, ErrorType::InternalError, "Source asset missing".into()))?; images.push(asset.signed_read_url(3600).await?.0); }
         let key = crate::environment::get_openai_api_key();
         let base = crate::environment::get_openai_api_base_url().trim_end_matches('/').to_string();
         let url = if base.ends_with("/v1") { format!("{base}/responses") } else { format!("{base}/v1/responses") };
         let content: Vec<serde_json::Value> = std::iter::once(json!({"type":"input_text","text":"Transcribe these handwritten diary pages faithfully. Return only the transcription."})).chain(images.into_iter().map(|u| json!({"type":"input_image","image_url":u,"detail":"high"}))).collect();
-        let response: serde_json::Value = reqwest::Client::new().post(url).bearer_auth(key).json(&json!({"model":"gpt-4.1-mini","input":[{"role":"user","content":content}],"store":false,"max_output_tokens":12000})).send().await.map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?.json().await.map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;
-        let text = response.get("output_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let response = reqwest::Client::new().post(url).bearer_auth(key).json(&json!({"model":"gpt-4.1-mini","input":[{"role":"user","content":content}],"store":false,"max_output_tokens":12000})).send().await.map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;
+        let http_status = response.status();
+        let response_body = response.text().await.map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;
+        info!(job_id = %job_id, status = %http_status, response_bytes = response_body.len(), "OpenAI response received");
+        if !http_status.is_success() { return Err(PpdcError::new(502, ErrorType::InternalError, format!("OpenAI returned HTTP {http_status}"))); }
+        let response: serde_json::Value = serde_json::from_str(&response_body).map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;
+        let text = response.get("output_text").and_then(|v| v.as_str()).map(str::to_owned).filter(|v| !v.trim().is_empty()).or_else(|| response.get("output").and_then(|v| v.as_array()).map(|items| items.iter().filter_map(|item| item.get("content").and_then(|v| v.as_array())).flatten().filter_map(|part| part.get("text").and_then(|v| v.as_str())).collect::<Vec<_>>().join(""))).unwrap_or_default();
         if text.is_empty() { return Err(PpdcError::new(502, ErrorType::InternalError, "OpenAI returned no transcription".into())); }
         update_job_result(job_id, &text, response.get("usage").cloned().unwrap_or(json!({})), &pool)?;
+        info!(job_id = %job_id, text_bytes = text.len(), "handwriting transcription job completed");
         Ok::<(), PpdcError>(())
     }.await;
     if let Err(error) = result {
+        error!(job_id = %job_id, error = %error, "handwriting transcription job failed");
         let _ = fail_job(job_id, &error.to_string(), &pool);
     }
 }
