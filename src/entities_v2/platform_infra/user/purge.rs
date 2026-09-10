@@ -19,10 +19,7 @@ struct ExistsRow {
     exists: bool,
 }
 
-fn table_exists(
-    table_name: &str,
-    conn: &mut diesel::PgConnection,
-) -> diesel::QueryResult<bool> {
+fn table_exists(table_name: &str, conn: &mut diesel::PgConnection) -> diesel::QueryResult<bool> {
     Ok(sql_query("SELECT to_regclass($1) IS NOT NULL AS exists")
         .bind::<Text, _>(table_name)
         .get_result::<ExistsRow>(conn)?

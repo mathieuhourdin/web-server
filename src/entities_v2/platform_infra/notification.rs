@@ -198,10 +198,7 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
     });
 }
 
-pub fn spawn_follow_request_received_push_notification(
-    relationship: Relationship,
-    pool: DbPool,
-) {
+pub fn spawn_follow_request_received_push_notification(relationship: Relationship, pool: DbPool) {
     tokio::spawn(async move {
         let notification =
             match push::follow_request_received_notification(&relationship, &pool).await {
@@ -237,10 +234,7 @@ pub fn spawn_follow_request_received_push_notification(
     });
 }
 
-pub fn spawn_follow_request_accepted_push_notification(
-    relationship: Relationship,
-    pool: DbPool,
-) {
+pub fn spawn_follow_request_accepted_push_notification(relationship: Relationship, pool: DbPool) {
     tokio::spawn(async move {
         let notification =
             match push::follow_request_accepted_notification(&relationship, &pool).await {

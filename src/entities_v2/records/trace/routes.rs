@@ -1376,11 +1376,11 @@ pub async fn post_trace_source_asset_route(
         return Err(PpdcError::unauthorized());
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
-    if trace.status == super::enums::TraceStatus::Archived {
+    if trace.status != super::enums::TraceStatus::Draft {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Archived traces cannot receive source assets".to_string(),
+            "Only draft traces can receive source assets".to_string(),
         ));
     }
 
@@ -2021,8 +2021,7 @@ pub async fn post_trace_message_route(
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "journal_feedback_request must be created through /journals/:id/messages"
-                .to_string(),
+            "journal_feedback_request must be created through /journals/:id/messages".to_string(),
         ));
     }
 

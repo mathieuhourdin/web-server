@@ -7,6 +7,24 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    transcription_jobs (id) {
+        id -> Uuid,
+        trace_id -> Uuid,
+        source_asset_ids -> Jsonb,
+        status -> Text,
+        pipeline -> Text,
+        canonical_text -> Nullable<Text>,
+        challenges -> Jsonb,
+        estimated_cost_usd -> Nullable<Float8>,
+        error_message -> Nullable<Text>,
+        created_at -> Timestamp,
+        started_at -> Nullable<Timestamp>,
+        completed_at -> Nullable<Timestamp>,
+        confirmed_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
     album_items (id) {
         id -> Uuid,
         album_id -> Uuid,

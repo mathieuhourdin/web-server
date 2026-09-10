@@ -117,14 +117,16 @@ impl UserBlock {
                 .do_nothing()
                 .execute(conn)?;
 
-            diesel::delete(relationships::table.filter(
-                relationships::requester_user_id
-                    .eq(blocker_user_id)
-                    .and(relationships::target_user_id.eq(blocked_user_id))
-                    .or(relationships::requester_user_id
-                        .eq(blocked_user_id)
-                        .and(relationships::target_user_id.eq(blocker_user_id))),
-            ))
+            diesel::delete(
+                relationships::table.filter(
+                    relationships::requester_user_id
+                        .eq(blocker_user_id)
+                        .and(relationships::target_user_id.eq(blocked_user_id))
+                        .or(relationships::requester_user_id
+                            .eq(blocked_user_id)
+                            .and(relationships::target_user_id.eq(blocker_user_id))),
+                ),
+            )
             .execute(conn)?;
 
             PostGrant::revoke_all_direct_between_users_with_conn(
@@ -133,14 +135,16 @@ impl UserBlock {
                 conn,
             )?;
 
-            diesel::update(journal_sharing_policies::table.filter(
-                journal_sharing_policies::owner_user_id
-                    .eq(blocker_user_id)
-                    .and(journal_sharing_policies::grantee_user_id.eq(blocked_user_id))
-                    .or(journal_sharing_policies::owner_user_id
-                        .eq(blocked_user_id)
-                        .and(journal_sharing_policies::grantee_user_id.eq(blocker_user_id))),
-            ))
+            diesel::update(
+                journal_sharing_policies::table.filter(
+                    journal_sharing_policies::owner_user_id
+                        .eq(blocker_user_id)
+                        .and(journal_sharing_policies::grantee_user_id.eq(blocked_user_id))
+                        .or(journal_sharing_policies::owner_user_id
+                            .eq(blocked_user_id)
+                            .and(journal_sharing_policies::grantee_user_id.eq(blocker_user_id))),
+                ),
+            )
             .set((
                 journal_sharing_policies::status.eq("REVOKED"),
                 journal_sharing_policies::default_future_access_enabled.eq(false),

@@ -1,5 +1,4 @@
 pub mod album;
-pub mod user_block;
 pub mod content_report;
 pub mod feed;
 pub mod journal_sharing_policy;
@@ -8,4 +7,5 @@ pub mod post;
 pub mod post_grant;
 pub mod relationship;
 pub mod source_projection;
+pub mod user_block;
 pub mod user_post_state;

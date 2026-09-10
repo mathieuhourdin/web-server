@@ -5,6 +5,7 @@ pub mod llm_qualify;
 pub mod model;
 pub mod persist;
 pub mod routes;
+pub mod transcription;
 
 pub use heatmap::get_user_heatmap_route;
 pub use model::{
@@ -21,4 +22,7 @@ pub use routes::{
     post_trace_asset_route, post_trace_attachment_route, post_trace_document_attachment_route,
     post_trace_extend_timeout_route, post_trace_message_route, post_trace_source_asset_route,
     put_trace_route, put_trace_seen_route, put_trace_source_assets_order_route,
+};
+pub use transcription::{
+    confirm_transcription_job_route, get_transcription_job_route, post_transcription_job_route,
 };

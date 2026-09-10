@@ -164,6 +164,18 @@ pub fn create_router() -> Router {
                 .layer(DefaultBodyLimit::max(30 * 1024 * 1024)),
         )
         .route(
+            "/:trace_id/transcription_jobs",
+            post(trace::post_transcription_job_route),
+        )
+        .route(
+            "/:trace_id/transcription_jobs/:job_id",
+            get(trace::get_transcription_job_route),
+        )
+        .route(
+            "/:trace_id/transcription_jobs/:job_id/confirm",
+            post(trace::confirm_transcription_job_route),
+        )
+        .route(
             "/:trace_id/source_assets/:source_asset_id",
             delete(trace::delete_trace_source_asset_route),
         )

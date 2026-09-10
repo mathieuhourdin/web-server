@@ -15,8 +15,8 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     trace::Trace,
-    user_block::UserBlock,
     user::{User, UserPrincipalType, UserRole},
+    user_block::UserBlock,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
@@ -82,7 +82,11 @@ pub struct MessageSeenResponse {
     pub marked_seen_count: i64,
 }
 
-fn ensure_message_visible_to_user(message: &Message, user_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
+fn ensure_message_visible_to_user(
+    message: &Message,
+    user_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
     if message.sender_user_id != user_id && message.recipient_user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
@@ -336,8 +340,7 @@ pub async fn post_message_route(
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "journal_feedback_request must be created through /journals/:id/messages"
-                .to_string(),
+            "journal_feedback_request must be created through /journals/:id/messages".to_string(),
         ));
     }
 
@@ -404,7 +407,10 @@ pub async fn post_message_route(
             }
             normalized_post_id = Some(shared_post.id);
         } else if recipient_is_service_mentor
-            || matches!(message_type, MessageType::Question | MessageType::TarotReadingRequest)
+            || matches!(
+                message_type,
+                MessageType::Question | MessageType::TarotReadingRequest
+            )
         {
             if !sender_is_owner {
                 return Err(PpdcError::new(

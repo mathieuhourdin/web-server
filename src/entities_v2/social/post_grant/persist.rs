@@ -6,8 +6,8 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
-use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
+use crate::entities_v2::user_block::UserBlock;
 use crate::schema::{post_grants, posts, users};
 
 use super::enums::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};

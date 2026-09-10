@@ -24,12 +24,11 @@ pub use model::{
     UserPseudonymizedAuthentifiedResponse, UserPseudonymizedResponse, UserPublicResponse,
     UserResponse, UserRoleAssignment, UserSearchParams, UserSearchResult,
 };
-pub(crate) use routes::{cleanup_failed_user_registration, finalize_new_human_user_registration};
 pub(crate) use purge::purge_user;
+pub(crate) use routes::{cleanup_failed_user_registration, finalize_new_human_user_registration};
 pub use routes::{
-    get_closest_followers_route, get_me_unread_counts_route, get_mentors_route,
-    get_suggested_users_route, get_user_route, get_user_search_route, get_users, patch_user_route,
-    post_user, post_user_profile_picture_asset_route, put_user_route, delete_my_account_route,
-    delete_user_account_route,
-    MeUnreadCountsResponse,
+    delete_my_account_route, delete_user_account_route, get_closest_followers_route,
+    get_me_unread_counts_route, get_mentors_route, get_suggested_users_route, get_user_route,
+    get_user_search_route, get_users, patch_user_route, post_user,
+    post_user_profile_picture_asset_route, put_user_route, MeUnreadCountsResponse,
 };

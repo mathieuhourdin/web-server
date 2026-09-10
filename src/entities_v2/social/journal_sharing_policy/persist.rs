@@ -10,8 +10,8 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     relationship::Relationship,
     trace::{Trace, TraceSharingSensitivity, TraceStatus, TraceType},
-    user_block::UserBlock,
     user::{User, UserPublicResponse},
+    user_block::UserBlock,
 };
 use crate::schema::{journal_sharing_policies, journals, posts, traces};
 
