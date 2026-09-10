@@ -37,6 +37,22 @@ pub fn get_openai_api_base_url() -> String {
     std::env::var("OPENAI_API_BASE_URL").unwrap_or_else(|_| "https://api.openai.com".to_string())
 }
 
+pub fn get_google_cloud_project() -> String {
+    dotenv().ok();
+    std::env::var("GOOGLE_CLOUD_PROJECT").expect("GOOGLE_CLOUD_PROJECT should be provided")
+}
+
+pub fn get_google_document_ai_location() -> String {
+    dotenv().ok();
+    std::env::var("GOOGLE_DOCUMENT_AI_LOCATION").unwrap_or_else(|_| "eu".to_string())
+}
+
+pub fn get_google_document_ai_processor_id() -> String {
+    dotenv().ok();
+    std::env::var("GOOGLE_DOCUMENT_AI_PROCESSOR_ID")
+        .expect("GOOGLE_DOCUMENT_AI_PROCESSOR_ID should be provided")
+}
+
 pub fn get_resend_api_key() -> String {
     dotenv().ok();
     std::env::var("RESEND_API_KEY")

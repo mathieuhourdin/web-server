@@ -6,6 +6,7 @@ pub mod model;
 pub mod persist;
 pub mod routes;
 pub mod transcription;
+mod transcription_pipeline;
 
 pub use heatmap::get_user_heatmap_route;
 pub use model::{

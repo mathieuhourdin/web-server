@@ -158,8 +158,9 @@ async fn process_job(job_id: Uuid, pool: DbPool) {
         let ids: Vec<Uuid> = serde_json::from_value(job.source_asset_ids.clone()).map_err(|e| PpdcError::new(500, ErrorType::InternalError, e.to_string()))?;
         let assets = Asset::find_by_ids(&ids, &pool)?;
         info!(job_id = %job_id, asset_count = ids.len(), "source assets loaded");
+        let ordered_assets = ids.iter().map(|id| assets.get(id).cloned().ok_or_else(|| PpdcError::new(500, ErrorType::InternalError, "Source asset missing".into()))).collect::<Result<Vec<_>,_>>()?;
         let mut images = Vec::new();
-        for id in ids { let asset = assets.get(&id).ok_or_else(|| PpdcError::new(500, ErrorType::InternalError, "Source asset missing".into()))?; images.push(asset.signed_read_url(3600).await?.0); }
+        for asset in &ordered_assets { images.push(asset.signed_read_url(3600).await?.0); }
         let key = crate::environment::get_openai_api_key();
         let base = crate::environment::get_openai_api_base_url().trim_end_matches('/').to_string();
         let url = if base.ends_with("/v1") { format!("{base}/responses") } else { format!("{base}/v1/responses") };
@@ -172,7 +173,9 @@ async fn process_job(job_id: Uuid, pool: DbPool) {
         let response: serde_json::Value = serde_json::from_str(&response_body).map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;
         let text = response.get("output_text").and_then(|v| v.as_str()).map(str::to_owned).filter(|v| !v.trim().is_empty()).or_else(|| response.get("output").and_then(|v| v.as_array()).map(|items| items.iter().filter_map(|item| item.get("content").and_then(|v| v.as_array())).flatten().filter_map(|part| part.get("text").and_then(|v| v.as_str())).collect::<Vec<_>>().join(""))).unwrap_or_default();
         if text.is_empty() { return Err(PpdcError::new(502, ErrorType::InternalError, "OpenAI returned no transcription".into())); }
-        update_job_result(job_id, &text, response.get("usage").cloned().unwrap_or(json!({})), &pool)?;
+        info!(job_id = %job_id, "Google OCR and Luna adjudication started");
+        let enriched = super::transcription_pipeline::enrich(&text, &ordered_assets, response.get("usage").unwrap_or(&serde_json::Value::Null)).await?;
+        update_job_result(job_id, &text, &enriched.challenges, enriched.estimated_cost_usd, &pool)?;
         info!(job_id = %job_id, text_bytes = text.len(), "handwriting transcription job completed");
         Ok::<(), PpdcError>(())
     }.await;
@@ -195,12 +198,12 @@ fn set_job_status(id: Uuid, status: &str, pool: &DbPool) -> Result<(), PpdcError
 fn update_job_result(
     id: Uuid,
     text: &str,
-    usage: serde_json::Value,
+    challenges: &serde_json::Value,
+    estimated_cost: f64,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     let mut c = pool.get()?;
-    diesel::sql_query("UPDATE transcription_jobs SET status='REVIEW',canonical_text=$2,challenges='[]'::jsonb,completed_at=NOW() WHERE id=$1").bind::<SqlUuid,_>(id).bind::<Text,_>(text).execute(&mut c)?;
-    let _ = usage;
+    diesel::sql_query("UPDATE transcription_jobs SET status='REVIEW',canonical_text=$2,challenges=CAST($3 AS jsonb),estimated_cost_usd=$4,completed_at=NOW() WHERE id=$1").bind::<SqlUuid,_>(id).bind::<Text,_>(text).bind::<Text,_>(challenges.to_string()).bind::<diesel::sql_types::Float8,_>(estimated_cost).execute(&mut c)?;
     Ok(())
 }
 fn fail_job(id: Uuid, message: &str, pool: &DbPool) -> Result<(), PpdcError> {
