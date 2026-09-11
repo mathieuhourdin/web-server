@@ -296,7 +296,7 @@ pub async fn get_user_search_route(
     let pagination = params.pagination.validate()?;
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let query = params.q.trim();
-    if query.is_empty() {
+    if query.is_empty() && !params.messageable_only {
         return Ok(Json(PaginatedResponse::new(vec![], pagination, 0)));
     }
 
@@ -309,7 +309,8 @@ pub async fn get_user_search_route(
         r#"
         SELECT COUNT(*)::bigint AS total
         FROM users
-        WHERE principal_type = 'HUMAN'
+        WHERE (NOT $4 OR users.id <> $2)
+          AND (principal_type = 'HUMAN' OR $4)
           AND NOT EXISTS (
             SELECT 1
             FROM user_blocks ub
@@ -328,6 +329,23 @@ pub async fn get_user_search_route(
             )
           )
           AND (
+            NOT $4
+            OR principal_type = 'SERVICE'
+            OR EXISTS (
+              SELECT 1 FROM user_roles ur
+              WHERE ur.user_id = users.id AND ur.role = 'MENTOR'
+            )
+            OR EXISTS (
+              SELECT 1 FROM relationships r
+              WHERE r.relationship_type = 'FOLLOW'
+                AND r.status = 'ACCEPTED'
+                AND (
+                  (r.requester_user_id = $2 AND r.target_user_id = users.id)
+                  OR (r.requester_user_id = users.id AND r.target_user_id = $2)
+                )
+            )
+          )
+          AND (
             handle ILIKE $1
             OR first_name ILIKE $1
             OR last_name ILIKE $1
@@ -338,6 +356,7 @@ pub async fn get_user_search_route(
     .bind::<Text, _>(contains_query.clone())
     .bind::<SqlUuid, _>(session_user_id)
     .bind::<Bool, _>(params.following_only)
+    .bind::<Bool, _>(params.messageable_only)
     .get_result::<CountRow>(&mut conn)?
     .total;
 
@@ -354,7 +373,8 @@ pub async fn get_user_search_route(
             pseudonymized,
             pseudonym
         FROM users
-        WHERE principal_type = 'HUMAN'
+        WHERE (NOT $8 OR users.id <> $6)
+          AND (principal_type = 'HUMAN' OR $8)
           AND NOT EXISTS (
             SELECT 1
             FROM user_blocks ub
@@ -370,6 +390,23 @@ pub async fn get_user_search_route(
                 AND r.target_user_id = users.id
                 AND r.relationship_type = 'FOLLOW'
                 AND r.status = 'ACCEPTED'
+            )
+          )
+          AND (
+            NOT $8
+            OR principal_type = 'SERVICE'
+            OR EXISTS (
+              SELECT 1 FROM user_roles ur
+              WHERE ur.user_id = users.id AND ur.role = 'MENTOR'
+            )
+            OR EXISTS (
+              SELECT 1 FROM relationships r
+              WHERE r.relationship_type = 'FOLLOW'
+                AND r.status = 'ACCEPTED'
+                AND (
+                  (r.requester_user_id = $6 AND r.target_user_id = users.id)
+                  OR (r.requester_user_id = users.id AND r.target_user_id = $6)
+                )
             )
           )
           AND (
@@ -399,6 +436,7 @@ pub async fn get_user_search_route(
     .bind::<BigInt, _>(pagination.limit)
     .bind::<SqlUuid, _>(session_user_id)
     .bind::<Bool, _>(params.following_only)
+    .bind::<Bool, _>(params.messageable_only)
     .load::<UserSearchRow>(&mut conn)?;
 
     let mut results = rows

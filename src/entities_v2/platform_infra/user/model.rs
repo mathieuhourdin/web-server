@@ -330,6 +330,8 @@ pub struct UserSearchParams {
     pub q: String,
     #[serde(default)]
     pub following_only: bool,
+    #[serde(default)]
+    pub messageable_only: bool,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
