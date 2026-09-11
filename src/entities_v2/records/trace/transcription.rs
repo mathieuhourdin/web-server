@@ -20,6 +20,8 @@ use crate::{
     },
 };
 
+const CANONICAL_TRANSCRIPTION_PROMPT: &str = "Transcribe these handwritten diary pages faithfully. Preserve intentional structural line breaks created by the writer, such as paragraph boundaries, blank lines, headings, dialogue turns, lists, verse, or a clearly separated closing/signature. Do not reproduce line breaks that merely result from reaching the physical edge of the page: join those wrapped lines into the same paragraph so the text can reflow naturally on screens of different widths. Never invent paragraph breaks. Return only the transcription.";
+
 #[derive(Debug, Serialize, Clone)]
 pub struct TranscriptionJob {
     pub id: Uuid,
@@ -184,7 +186,7 @@ async fn process_job(job_id: Uuid, pool: DbPool) {
         let key = crate::environment::get_openai_api_key();
         let base = crate::environment::get_openai_api_base_url().trim_end_matches('/').to_string();
         let url = if base.ends_with("/v1") { format!("{base}/responses") } else { format!("{base}/v1/responses") };
-        let content: Vec<serde_json::Value> = std::iter::once(json!({"type":"input_text","text":"Transcribe these handwritten diary pages faithfully. Return only the transcription."})).chain(images.into_iter().map(|u| json!({"type":"input_image","image_url":u,"detail":"high"}))).collect();
+        let content: Vec<serde_json::Value> = std::iter::once(json!({"type":"input_text","text":CANONICAL_TRANSCRIPTION_PROMPT})).chain(images.into_iter().map(|u| json!({"type":"input_image","image_url":u,"detail":"high"}))).collect();
         let response = reqwest::Client::new().post(url).bearer_auth(key).json(&json!({"model":"gpt-4.1-mini","input":[{"role":"user","content":content}],"store":false,"max_output_tokens":12000})).send().await.map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;
         let http_status = response.status();
         let response_body = response.text().await.map_err(|e| PpdcError::new(502, ErrorType::InternalError, e.to_string()))?;

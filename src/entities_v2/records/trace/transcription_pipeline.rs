@@ -23,7 +23,7 @@ pub async fn enrich(
     canonical_usage: &Value,
 ) -> Result<PipelineResult, PpdcError> {
     let (ocr_text, low_confidence, pages) = google_ocr(assets).await?;
-    let prompt = format!("You are an uncertainty adjudicator, not a re-transcriber. You do not have the images. GPT-4.1 is the canonical reading. Compare it with Google OCR and report only important disagreements or low-confidence readings. Return at most 12 concise challenges and at most 3 alternatives each.\n\nGOOGLE OCR:\n{ocr_text}\n\nGPT-4.1 CANONICAL:\n{canonical}\n\nLOW CONFIDENCE OCR TOKENS:\n{}", low_confidence.join("\n"));
+    let prompt = format!("You are an uncertainty adjudicator, not a re-transcriber. You do not have the images. GPT-4.1 is the canonical reading. Compare it with Google OCR and report only important disagreements or low-confidence readings. Return at most 12 concise challenges and at most 3 alternatives each. Every suggested alternative must be a real, linguistically plausible reading in the sentence context. Eliminate OCR-like gibberish, malformed near-words, impossible grammar, and alternatives that plainly contradict the surrounding sentence. Do not include a challenge merely because Google produced a low-confidence token: omit it when the canonical reading is clearly correct and there is no credible alternative. Prefer fewer, useful challenges over speculative ones. Preserve plausible proper names, abbreviations, slang, dialect, period vocabulary, and deliberate misspellings; uncommon does not automatically mean invalid. Never invent an alternative just to fill the list. Treat line wrapping carefully: physical page-width wraps are not paragraph breaks, while deliberate blank lines, paragraph boundaries, headings, lists, dialogue turns, verse, and separated closings may be meaningful. Do not suggest adding or removing a line break unless the two candidates provide credible evidence of an intentional structural break. Never rewrite or reflow the canonical transcription yourself.\n\nGOOGLE OCR:\n{ocr_text}\n\nGPT-4.1 CANONICAL:\n{canonical}\n\nLOW CONFIDENCE OCR TOKENS:\n{}", low_confidence.join("\n"));
     let schema = json!({"type":"object","additionalProperties":false,"required":["challenges"],"properties":{"challenges":{"type":"array","maxItems":12,"items":{"type":"object","additionalProperties":false,"required":["page_number","transcribed_text","surrounding_context","confidence","alternatives","reason"],"properties":{"page_number":{"type":"integer","minimum":1},"transcribed_text":{"type":"string","maxLength":120},"surrounding_context":{"type":"string","maxLength":240},"confidence":{"type":"string","enum":["low","medium"]},"alternatives":{"type":"array","maxItems":3,"items":{"type":"string","maxLength":120}},"reason":{"type":"string","maxLength":240}}}}}});
     let response = openai(json!({"model":"gpt-5.6-luna","reasoning":{"effort":"low"},"input":[{"role":"user","content":prompt}],"text":{"format":{"type":"json_schema","name":"handwriting_challenges","strict":true,"schema":schema}},"store":false,"max_output_tokens":4000})).await?;
     let text =
@@ -91,9 +91,11 @@ async fn google_ocr(assets: &[Asset]) -> Result<(String, Vec<String>, usize), Pp
             {
                 let confidence = token["layout"]["confidence"].as_f64().unwrap_or(0.0);
                 if confidence < 0.8 {
+                    let token_text = anchor_text(text, &token["layout"]["textAnchor"]);
                     low.push(format!(
-                        "page {}: confidence {:.0}%",
+                        "page {}: {:?} (confidence {:.0}%)",
                         index + 1,
+                        token_text.trim(),
                         confidence * 100.0
                     ));
                 }
@@ -101,6 +103,39 @@ async fn google_ocr(assets: &[Asset]) -> Result<(String, Vec<String>, usize), Pp
         }
     }
     Ok((texts.join("\n\n"), low, assets.len()))
+}
+
+fn anchor_text(document_text: &str, anchor: &Value) -> String {
+    anchor["textSegments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|segment| {
+            let start = json_index(segment.get("startIndex")).unwrap_or(0);
+            let end = json_index(segment.get("endIndex"))?;
+            document_text
+                .get(start..end)
+                .map(str::to_owned)
+                .or_else(|| {
+                    Some(
+                        document_text
+                            .chars()
+                            .skip(start)
+                            .take(end - start)
+                            .collect(),
+                    )
+                })
+        })
+        .collect()
+}
+
+fn json_index(value: Option<&Value>) -> Option<usize> {
+    value.and_then(|value| {
+        value
+            .as_u64()
+            .map(|number| number as usize)
+            .or_else(|| value.as_str()?.parse().ok())
+    })
 }
 
 async fn openai(body: Value) -> Result<Value, PpdcError> {
@@ -160,5 +195,11 @@ mod tests {
     fn computes_openai_cost() {
         let usage = json!({"input_tokens":1_000_000,"output_tokens":1_000_000});
         assert!((openai_cost(&usage, 0.4, 1.6) - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn extracts_google_token_anchor() {
+        let anchor = json!({"textSegments":[{"startIndex":"6","endIndex":"13"}]});
+        assert_eq!(anchor_text("hello proprio", &anchor), "proprio");
     }
 }
