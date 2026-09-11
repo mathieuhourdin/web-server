@@ -25,5 +25,6 @@ pub use routes::{
     put_trace_route, put_trace_seen_route, put_trace_source_assets_order_route,
 };
 pub use transcription::{
-    confirm_transcription_job_route, get_transcription_job_route, post_transcription_job_route,
+    confirm_transcription_job_route, get_transcription_job_route, get_transcription_jobs_route,
+    post_transcription_job_route,
 };

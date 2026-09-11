@@ -165,7 +165,7 @@ pub fn create_router() -> Router {
         )
         .route(
             "/:trace_id/transcription_jobs",
-            post(trace::post_transcription_job_route),
+            get(trace::get_transcription_jobs_route).post(trace::post_transcription_job_route),
         )
         .route(
             "/:trace_id/transcription_jobs/:job_id",

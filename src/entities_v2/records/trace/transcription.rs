@@ -67,25 +67,34 @@ struct JobDbRow {
     confirmed_at: Option<NaiveDateTime>,
 }
 
+impl JobDbRow {
+    fn into_job(self) -> TranscriptionJob {
+        TranscriptionJob {
+            id: self.id,
+            trace_id: self.trace_id,
+            source_asset_ids: serde_json::from_str(&self.source_asset_ids).unwrap_or(json!([])),
+            status: self.status,
+            pipeline: self.pipeline,
+            canonical_text: self.canonical_text,
+            challenges: serde_json::from_str(&self.challenges).unwrap_or(json!([])),
+            estimated_cost_usd: self.estimated_cost_usd,
+            error_message: self.error_message,
+            created_at: self.created_at,
+            started_at: self.started_at,
+            completed_at: self.completed_at,
+            confirmed_at: self.confirmed_at,
+        }
+    }
+}
+
+const JOB_SELECT: &str = "SELECT id,trace_id,source_asset_ids::text,status,pipeline,canonical_text,challenges::text,estimated_cost_usd,error_message,created_at,started_at,completed_at,confirmed_at FROM transcription_jobs";
+
 fn get_job(id: Uuid, pool: &DbPool) -> Result<TranscriptionJob, PpdcError> {
     let mut c = pool.get()?;
-    diesel::sql_query("SELECT id,trace_id,source_asset_ids::text,status,pipeline,canonical_text,challenges::text,estimated_cost_usd,error_message,created_at,started_at,completed_at,confirmed_at FROM transcription_jobs WHERE id=$1")
-        .bind::<SqlUuid,_>(id).get_result::<JobDbRow>(&mut c)
-        .map(|r| TranscriptionJob {
-            id: r.id,
-            trace_id: r.trace_id,
-            source_asset_ids: serde_json::from_str(&r.source_asset_ids).unwrap_or(json!([])),
-            status: r.status,
-            pipeline: r.pipeline,
-            canonical_text: r.canonical_text,
-            challenges: serde_json::from_str(&r.challenges).unwrap_or(json!([])),
-            estimated_cost_usd: r.estimated_cost_usd,
-            error_message: r.error_message,
-            created_at: r.created_at,
-            started_at: r.started_at,
-            completed_at: r.completed_at,
-            confirmed_at: r.confirmed_at,
-        })
+    diesel::sql_query(format!("{JOB_SELECT} WHERE id=$1"))
+        .bind::<SqlUuid, _>(id)
+        .get_result::<JobDbRow>(&mut c)
+        .map(JobDbRow::into_job)
         .map_err(|e| match e {
             diesel::result::Error::NotFound => PpdcError::new(
                 404,
@@ -94,6 +103,17 @@ fn get_job(id: Uuid, pool: &DbPool) -> Result<TranscriptionJob, PpdcError> {
             ),
             other => other.into(),
         })
+}
+
+fn get_jobs_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Vec<TranscriptionJob>, PpdcError> {
+    let mut c = pool.get()?;
+    diesel::sql_query(format!(
+        "{JOB_SELECT} WHERE trace_id=$1 ORDER BY created_at DESC, id DESC"
+    ))
+    .bind::<SqlUuid, _>(trace_id)
+    .load::<JobDbRow>(&mut c)
+    .map(|rows| rows.into_iter().map(JobDbRow::into_job).collect())
+    .map_err(Into::into)
 }
 
 #[derive(Deserialize)]
@@ -231,6 +251,19 @@ pub async fn get_transcription_job_route(
         ));
     }
     Ok(Json(job))
+}
+
+pub async fn get_transcription_jobs_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+) -> Result<Json<Vec<TranscriptionJob>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if trace.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    Ok(Json(get_jobs_for_trace(trace_id, &pool)?))
 }
 
 pub async fn confirm_transcription_job_route(
