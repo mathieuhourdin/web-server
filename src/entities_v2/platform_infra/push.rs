@@ -26,6 +26,7 @@ pub struct PushNotification {
     pub title: String,
     pub body: String,
     pub data: HashMap<String, String>,
+    pub thread_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -81,6 +82,10 @@ struct FcmApnsPayload {
 struct FcmApsPayload {
     alert: FcmApnsAlert,
     sound: &'static str,
+    #[serde(rename = "mutable-content")]
+    mutable_content: u8,
+    #[serde(rename = "thread-id", skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -166,6 +171,8 @@ async fn send_fcm_to_device(
                             body: notification.body.clone(),
                         },
                         sound: "default",
+                        mutable_content: 1,
+                        thread_id: notification.thread_id.clone(),
                     },
                 },
             },
@@ -357,6 +364,7 @@ pub(crate) async fn message_received_notification(
         title: sender.display_name(),
         body: message.content.clone(),
         data,
+        thread_id: Some(message.sender_user_id.to_string()),
     })
 }
 
@@ -395,6 +403,7 @@ async fn relationship_actor_data(
         title: actor.display_name(),
         body: action.to_string(),
         data,
+        thread_id: None,
     })
 }
 
@@ -578,5 +587,47 @@ pub(crate) async fn post_published_notification(
         projection.title.clone()
     };
 
-    Ok(Some(PushNotification { title, body, data }))
+    Ok(Some(PushNotification {
+        title,
+        body,
+        data,
+        thread_id: None,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_apns_thread_id_when_present() {
+        let payload = FcmApsPayload {
+            alert: FcmApnsAlert {
+                title: "Sender".to_string(),
+                body: "Message".to_string(),
+            },
+            sound: "default",
+            mutable_content: 1,
+            thread_id: Some("user-id".to_string()),
+        };
+        let value = serde_json::to_value(payload).unwrap();
+        assert_eq!(value["thread-id"], "user-id");
+        assert_eq!(value["mutable-content"], 1);
+    }
+
+    #[test]
+    fn omits_apns_thread_id_when_absent() {
+        let payload = FcmApsPayload {
+            alert: FcmApnsAlert {
+                title: "Title".to_string(),
+                body: "Body".to_string(),
+            },
+            sound: "default",
+            mutable_content: 1,
+            thread_id: None,
+        };
+        let value = serde_json::to_value(payload).unwrap();
+        assert!(value.get("thread-id").is_none());
+        assert_eq!(value["mutable-content"], 1);
+    }
 }
