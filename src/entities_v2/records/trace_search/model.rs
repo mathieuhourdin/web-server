@@ -240,14 +240,14 @@ impl TraceSearchDocument {
                 reference_text,
                 landmark_text,
                 high_level_project_landmark_text,
-                setweight(to_tsvector('simple', title), 'A') ||
-                setweight(to_tsvector('simple', content), 'A') ||
-                setweight(to_tsvector('simple', tag_text), 'A') ||
-                setweight(to_tsvector('simple', mirror_text), 'B') ||
-                setweight(to_tsvector('simple', element_text), 'C') ||
-                setweight(to_tsvector('simple', reference_text), 'C') ||
-                setweight(to_tsvector('simple', landmark_text), 'C') ||
-                setweight(to_tsvector('simple', high_level_project_landmark_text), 'C'),
+                setweight(to_tsvector('simple', unaccent(title)), 'A') ||
+                setweight(to_tsvector('simple', unaccent(content)), 'A') ||
+                setweight(to_tsvector('simple', unaccent(tag_text)), 'A') ||
+                setweight(to_tsvector('simple', unaccent(mirror_text)), 'B') ||
+                setweight(to_tsvector('simple', unaccent(element_text)), 'C') ||
+                setweight(to_tsvector('simple', unaccent(reference_text)), 'C') ||
+                setweight(to_tsvector('simple', unaccent(landmark_text)), 'C') ||
+                setweight(to_tsvector('simple', unaccent(high_level_project_landmark_text)), 'C'),
                 NOW()
             FROM doc
             ON CONFLICT (trace_id) DO UPDATE
@@ -303,12 +303,23 @@ impl TraceSearchDocument {
         let mut conn = pool.get()?;
         let total = sql_query(
             r#"
-            WITH q AS (SELECT websearch_to_tsquery('simple', $2) AS query)
+            WITH q AS (
+                SELECT
+                    websearch_to_tsquery('simple', unaccent($2)) AS query,
+                    LOWER(unaccent($2)) AS normalized_query,
+                    char_length(unaccent($2)) >= 3 AS can_fuzzy_match
+            )
             SELECT COUNT(*)::bigint AS count
             FROM trace_search_documents tsd, q
             WHERE tsd.user_id = $1
               AND (cardinality($3::uuid[]) = 0 OR tsd.journal_id = ANY($3))
-              AND tsd.search_vector @@ q.query
+              AND (
+                tsd.search_vector @@ q.query
+                OR (
+                    q.can_fuzzy_match
+                    AND similarity(LOWER(unaccent(tsd.title)), q.normalized_query) >= 0.4
+                )
+              )
               AND (
                 cardinality($4::uuid[]) = 0
                 OR EXISTS (
@@ -365,26 +376,46 @@ impl TraceSearchDocument {
 
         let rows = sql_query(
             r#"
-            WITH q AS (SELECT websearch_to_tsquery('simple', $2) AS query)
+            WITH q AS (
+                SELECT
+                    websearch_to_tsquery('simple', unaccent($2)) AS query,
+                    LOWER(unaccent($2)) AS normalized_query,
+                    char_length(unaccent($2)) >= 3 AS can_fuzzy_match
+            )
             SELECT
                 tsd.trace_id,
-                ts_rank_cd(tsd.search_vector, q.query)::real AS score,
+                (
+                    CASE
+                        WHEN tsd.search_vector @@ q.query
+                            THEN 1.0::real + ts_rank_cd(tsd.search_vector, q.query)
+                        ELSE 0.0::real
+                    END
+                    + CASE
+                        WHEN q.can_fuzzy_match
+                            THEN 0.2::real * similarity(LOWER(unaccent(tsd.title)), q.normalized_query)
+                        ELSE 0.0::real
+                    END
+                )::real AS score,
                 ARRAY_TO_STRING(
                     ARRAY_REMOVE(ARRAY[
-                        CASE WHEN setweight(to_tsvector('simple', tsd.title), 'A') @@ q.query
-                               OR setweight(to_tsvector('simple', tsd.content), 'A') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.title)), 'A') @@ q.query
+                               OR setweight(to_tsvector('simple', unaccent(tsd.content)), 'A') @@ q.query
+                               OR (
+                                    q.can_fuzzy_match
+                                    AND similarity(LOWER(unaccent(tsd.title)), q.normalized_query) >= 0.4
+                                  )
                              THEN 'trace' END,
-                        CASE WHEN setweight(to_tsvector('simple', tsd.tag_text), 'A') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.tag_text)), 'A') @@ q.query
                              THEN 'tag' END,
-                        CASE WHEN setweight(to_tsvector('simple', tsd.mirror_text), 'B') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.mirror_text)), 'B') @@ q.query
                              THEN 'trace_mirror' END,
-                        CASE WHEN setweight(to_tsvector('simple', tsd.element_text), 'C') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.element_text)), 'C') @@ q.query
                              THEN 'element' END,
-                        CASE WHEN setweight(to_tsvector('simple', tsd.reference_text), 'C') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.reference_text)), 'C') @@ q.query
                              THEN 'reference' END,
-                        CASE WHEN setweight(to_tsvector('simple', tsd.landmark_text), 'C') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.landmark_text)), 'C') @@ q.query
                              THEN 'landmark' END,
-                        CASE WHEN setweight(to_tsvector('simple', tsd.high_level_project_landmark_text), 'C') @@ q.query
+                        CASE WHEN setweight(to_tsvector('simple', unaccent(tsd.high_level_project_landmark_text)), 'C') @@ q.query
                              THEN 'high_level_project_landmark' END
                     ], NULL),
                     ','
@@ -392,7 +423,13 @@ impl TraceSearchDocument {
             FROM trace_search_documents tsd, q
             WHERE tsd.user_id = $1
               AND (cardinality($3::uuid[]) = 0 OR tsd.journal_id = ANY($3))
-              AND tsd.search_vector @@ q.query
+              AND (
+                tsd.search_vector @@ q.query
+                OR (
+                    q.can_fuzzy_match
+                    AND similarity(LOWER(unaccent(tsd.title)), q.normalized_query) >= 0.4
+                )
+              )
               AND (
                 cardinality($4::uuid[]) = 0
                 OR EXISTS (
@@ -663,7 +700,7 @@ impl TraceSearchDocument {
             ),
             q AS (
                 SELECT
-                    websearch_to_tsquery('simple', $3) AS query,
+                    websearch_to_tsquery('simple', unaccent($3)) AS query,
                     NULLIF(BTRIM($3), '') IS NOT NULL AS has_query
             ),
             candidates AS (
@@ -713,15 +750,15 @@ impl TraceSearchDocument {
                     g.landmark_type = 'HIGH_LEVEL_PROJECT' AS is_high_level_project,
                     CASE
                         WHEN q.has_query THEN (
-                            setweight(to_tsvector('simple', g.title), 'A') ||
-                            setweight(to_tsvector('simple', g.subtitle), 'B')
+                            setweight(to_tsvector('simple', unaccent(g.title)), 'A') ||
+                            setweight(to_tsvector('simple', unaccent(g.subtitle)), 'B')
                         ) @@ q.query
                         ELSE FALSE
                     END AS matched_query,
                     CASE
                         WHEN q.has_query THEN ts_rank_cd(
-                            setweight(to_tsvector('simple', g.title), 'A') ||
-                            setweight(to_tsvector('simple', g.subtitle), 'B'),
+                            setweight(to_tsvector('simple', unaccent(g.title)), 'A') ||
+                            setweight(to_tsvector('simple', unaccent(g.subtitle)), 'B'),
                             q.query
                         )::real
                         ELSE 0::real

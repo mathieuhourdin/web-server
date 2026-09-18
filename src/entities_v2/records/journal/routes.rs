@@ -14,7 +14,8 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal_sharing_policy::JournalSharingPolicy,
     message::{
-        routes::is_service_mentor, Message, MessageProcessingState, MessageType, NewMessage,
+        routes::{is_service_mentor, resolve_reply_context, MessageContextIds},
+        Message, MessageProcessingState, MessageType, NewMessage,
     },
     platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
@@ -48,6 +49,7 @@ pub struct AllTracesExportQuery {
 #[derive(serde::Deserialize)]
 pub struct NewJournalMentorMessageDto {
     pub recipient_user_id: Uuid,
+    pub reply_to_message_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
 }
@@ -130,14 +132,27 @@ pub async fn post_journal_message_route(
         &pool,
     )?;
 
+    let reply_context = resolve_reply_context(
+        payload.reply_to_message_id,
+        user_id,
+        mentor.id,
+        MessageContextIds {
+            landscape_analysis_id: None,
+            journal_id: Some(journal_id),
+            trace_id: None,
+            post_id: None,
+        },
+        &pool,
+    )?;
+
     let question_message = NewMessage {
         sender_user_id: user_id,
         recipient_user_id: mentor.id,
-        landscape_analysis_id: None,
-        journal_id: Some(journal_id),
-        trace_id: None,
-        post_id: None,
-        reply_to_message_id: None,
+        landscape_analysis_id: reply_context.landscape_analysis_id,
+        journal_id: reply_context.journal_id,
+        trace_id: reply_context.trace_id,
+        post_id: reply_context.post_id,
+        reply_to_message_id: payload.reply_to_message_id,
         message_type: MessageType::JournalFeedbackRequest,
         processing_state: MessageProcessingState::Processed,
         title: payload.title.unwrap_or_default(),
@@ -151,10 +166,10 @@ pub async fn post_journal_message_route(
     let pending_reply_message = NewMessage {
         sender_user_id: mentor.id,
         recipient_user_id: user_id,
-        landscape_analysis_id: None,
-        journal_id: Some(journal_id),
-        trace_id: None,
-        post_id: None,
+        landscape_analysis_id: question_message.landscape_analysis_id,
+        journal_id: question_message.journal_id,
+        trace_id: question_message.trace_id,
+        post_id: question_message.post_id,
         reply_to_message_id: Some(question_message.id),
         message_type: MessageType::MentorReply,
         processing_state: MessageProcessingState::Pending,

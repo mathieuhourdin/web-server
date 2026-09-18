@@ -346,10 +346,22 @@ pub async fn get_user_search_route(
             )
           )
           AND (
-            handle ILIKE $1
-            OR first_name ILIKE $1
-            OR last_name ILIKE $1
-            OR CONCAT_WS(' ', first_name, last_name) ILIKE $1
+            unaccent(handle) ILIKE unaccent($1)
+            OR unaccent(first_name) ILIKE unaccent($1)
+            OR unaccent(last_name) ILIKE unaccent($1)
+            OR unaccent(pseudonym) ILIKE unaccent($1)
+            OR unaccent(CONCAT_WS(' ', first_name, last_name)) ILIKE unaccent($1)
+            OR (
+              char_length(unaccent($5)) >= 3
+              AND GREATEST(
+                similarity(LOWER(unaccent(handle)), LOWER(unaccent($5))),
+                similarity(LOWER(unaccent(pseudonym)), LOWER(unaccent($5))),
+                similarity(
+                  LOWER(unaccent(CONCAT_WS(' ', first_name, last_name))),
+                  LOWER(unaccent($5))
+                )
+              ) >= 0.4
+            )
           )
         "#,
     )
@@ -357,6 +369,7 @@ pub async fn get_user_search_route(
     .bind::<SqlUuid, _>(session_user_id)
     .bind::<Bool, _>(params.following_only)
     .bind::<Bool, _>(params.messageable_only)
+    .bind::<Text, _>(query.to_string())
     .get_result::<CountRow>(&mut conn)?
     .total;
 
@@ -410,19 +423,47 @@ pub async fn get_user_search_route(
             )
           )
           AND (
-            handle ILIKE $1
-            OR first_name ILIKE $1
-            OR last_name ILIKE $1
-            OR CONCAT_WS(' ', first_name, last_name) ILIKE $1
+            unaccent(handle) ILIKE unaccent($1)
+            OR unaccent(first_name) ILIKE unaccent($1)
+            OR unaccent(last_name) ILIKE unaccent($1)
+            OR unaccent(pseudonym) ILIKE unaccent($1)
+            OR unaccent(CONCAT_WS(' ', first_name, last_name)) ILIKE unaccent($1)
+            OR (
+              char_length(unaccent($9)) >= 3
+              AND GREATEST(
+                similarity(LOWER(unaccent(handle)), LOWER(unaccent($9))),
+                similarity(LOWER(unaccent(pseudonym)), LOWER(unaccent($9))),
+                similarity(
+                  LOWER(unaccent(CONCAT_WS(' ', first_name, last_name))),
+                  LOWER(unaccent($9))
+                )
+              ) >= 0.4
+            )
           )
         ORDER BY
           CASE
-            WHEN LOWER(handle) = LOWER($2) THEN 0
-            WHEN handle ILIKE $3 THEN 1
-            WHEN first_name ILIKE $3 OR last_name ILIKE $3 THEN 2
-            WHEN CONCAT_WS(' ', first_name, last_name) ILIKE $3 THEN 3
-            ELSE 4
+            WHEN LOWER(unaccent(handle)) = LOWER(unaccent($2))
+              OR LOWER(unaccent(pseudonym)) = LOWER(unaccent($2)) THEN 0
+            WHEN unaccent(handle) ILIKE unaccent($3)
+              OR unaccent(pseudonym) ILIKE unaccent($3) THEN 1
+            WHEN unaccent(first_name) ILIKE unaccent($3)
+              OR unaccent(last_name) ILIKE unaccent($3) THEN 2
+            WHEN unaccent(CONCAT_WS(' ', first_name, last_name)) ILIKE unaccent($3) THEN 3
+            WHEN unaccent(handle) ILIKE unaccent($1)
+              OR unaccent(first_name) ILIKE unaccent($1)
+              OR unaccent(last_name) ILIKE unaccent($1)
+              OR unaccent(pseudonym) ILIKE unaccent($1)
+              OR unaccent(CONCAT_WS(' ', first_name, last_name)) ILIKE unaccent($1) THEN 4
+            ELSE 5
           END,
+          GREATEST(
+            similarity(LOWER(unaccent(handle)), LOWER(unaccent($9))),
+            similarity(LOWER(unaccent(pseudonym)), LOWER(unaccent($9))),
+            similarity(
+              LOWER(unaccent(CONCAT_WS(' ', first_name, last_name))),
+              LOWER(unaccent($9))
+            )
+          ) DESC,
           updated_at DESC NULLS LAST,
           created_at DESC
         OFFSET $4
@@ -437,6 +478,7 @@ pub async fn get_user_search_route(
     .bind::<SqlUuid, _>(session_user_id)
     .bind::<Bool, _>(params.following_only)
     .bind::<Bool, _>(params.messageable_only)
+    .bind::<Text, _>(query.to_string())
     .load::<UserSearchRow>(&mut conn)?;
 
     let mut results = rows

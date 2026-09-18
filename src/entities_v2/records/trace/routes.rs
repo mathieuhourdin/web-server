@@ -18,8 +18,9 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
-        routes::is_service_mentor, ConversationSummary, Message, MessageAttachment,
-        MessageAttachmentType, MessageProcessingState, MessageType, NewMessage,
+        routes::{is_service_mentor, resolve_reply_context, MessageContextIds},
+        ConversationSummary, Message, MessageAttachment, MessageAttachmentType,
+        MessageProcessingState, MessageType, NewMessage,
     },
     notification,
     platform_infra::{
@@ -129,6 +130,7 @@ fn pagination_until_rank(rank: i64) -> ValidatedPagination {
 #[derive(Deserialize)]
 pub struct NewTraceMessageDto {
     pub recipient_user_id: Option<Uuid>,
+    pub reply_to_message_id: Option<Uuid>,
     pub title: Option<String>,
     pub content: String,
     pub message_type: Option<MessageType>,
@@ -2075,14 +2077,27 @@ pub async fn post_trace_message_route(
             }
         }
 
+        let reply_context = resolve_reply_context(
+            payload.reply_to_message_id,
+            user_id,
+            mentor.id,
+            MessageContextIds {
+                landscape_analysis_id: None,
+                journal_id: None,
+                trace_id: Some(trace_id),
+                post_id: None,
+            },
+            &pool,
+        )?;
+
         let question_message = NewMessage {
             sender_user_id: user_id,
             recipient_user_id: mentor.id,
-            landscape_analysis_id: None,
-            journal_id: None,
-            trace_id: Some(trace_id),
-            post_id: None,
-            reply_to_message_id: None,
+            landscape_analysis_id: reply_context.landscape_analysis_id,
+            journal_id: reply_context.journal_id,
+            trace_id: reply_context.trace_id,
+            post_id: reply_context.post_id,
+            reply_to_message_id: payload.reply_to_message_id,
             message_type,
             processing_state: MessageProcessingState::Processed,
             title: payload.title.unwrap_or_default(),
@@ -2097,10 +2112,10 @@ pub async fn post_trace_message_route(
         let pending_reply_message = NewMessage {
             sender_user_id: mentor.id,
             recipient_user_id: user_id,
-            landscape_analysis_id: None,
-            journal_id: None,
-            trace_id: Some(trace_id),
-            post_id: None,
+            landscape_analysis_id: question_message.landscape_analysis_id,
+            journal_id: question_message.journal_id,
+            trace_id: question_message.trace_id,
+            post_id: question_message.post_id,
             reply_to_message_id: Some(question_message.id),
             message_type: MessageType::MentorReply,
             processing_state: MessageProcessingState::Pending,
@@ -2169,14 +2184,31 @@ pub async fn post_trace_message_route(
         trace.user_id
     };
 
+    let reply_context = resolve_reply_context(
+        payload.reply_to_message_id,
+        user_id,
+        recipient_user_id,
+        MessageContextIds {
+            landscape_analysis_id: None,
+            journal_id: None,
+            trace_id: Some(trace_id),
+            post_id: if payload.reply_to_message_id.is_some() {
+                None
+            } else {
+                shared_post.as_ref().map(|post| post.id)
+            },
+        },
+        &pool,
+    )?;
+
     let message = NewMessage {
         sender_user_id: user_id,
         recipient_user_id,
-        landscape_analysis_id: None,
-        journal_id: None,
-        trace_id: Some(trace_id),
-        post_id: shared_post.as_ref().map(|post| post.id),
-        reply_to_message_id: None,
+        landscape_analysis_id: reply_context.landscape_analysis_id,
+        journal_id: reply_context.journal_id,
+        trace_id: reply_context.trace_id,
+        post_id: reply_context.post_id,
+        reply_to_message_id: payload.reply_to_message_id,
         message_type,
         processing_state: MessageProcessingState::Processed,
         title: payload.title.unwrap_or_default(),

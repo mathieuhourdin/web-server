@@ -58,6 +58,20 @@ pub struct PostMessagesQuery {
 #[derive(Deserialize)]
 pub struct NewPostMessageDto {
     pub recipient_user_id: Option<Uuid>,
+    pub reply_to_message_id: Option<Uuid>,
+    pub title: Option<String>,
+    pub content: String,
+    pub attachment_type: Option<MessageAttachmentType>,
+    pub attachment: Option<MessageAttachment>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateMessageDto {
+    pub recipient_user_id: Uuid,
+    pub landscape_analysis_id: Option<Uuid>,
+    pub trace_id: Option<Uuid>,
+    pub post_id: Option<Uuid>,
+    pub message_type: Option<MessageType>,
     pub title: Option<String>,
     pub content: String,
     pub attachment_type: Option<MessageAttachmentType>,
@@ -96,6 +110,103 @@ fn ensure_message_visible_to_user(
         message.sender_user_id
     };
     UserBlock::ensure_can_interact(user_id, partner_id, pool)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct MessageContextIds {
+    pub landscape_analysis_id: Option<Uuid>,
+    pub journal_id: Option<Uuid>,
+    pub trace_id: Option<Uuid>,
+    pub post_id: Option<Uuid>,
+}
+
+fn ensure_reply_context_matches(
+    field_name: &str,
+    requested: Option<Uuid>,
+    inherited: Option<Uuid>,
+) -> Result<(), PpdcError> {
+    if requested.is_some() && requested != inherited {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            format!(
+                "{} must match the message identified by reply_to_message_id",
+                field_name
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn is_same_conversation(
+    message_sender_user_id: Uuid,
+    message_recipient_user_id: Uuid,
+    sender_user_id: Uuid,
+    recipient_user_id: Uuid,
+) -> bool {
+    (message_sender_user_id == sender_user_id && message_recipient_user_id == recipient_user_id)
+        || (message_sender_user_id == recipient_user_id
+            && message_recipient_user_id == sender_user_id)
+}
+
+pub(crate) fn resolve_reply_context(
+    reply_to_message_id: Option<Uuid>,
+    sender_user_id: Uuid,
+    recipient_user_id: Uuid,
+    requested: MessageContextIds,
+    pool: &DbPool,
+) -> Result<MessageContextIds, PpdcError> {
+    let Some(reply_to_message_id) = reply_to_message_id else {
+        return Ok(requested);
+    };
+
+    let reply_target = Message::find(reply_to_message_id, pool)?;
+    if reply_target.sender_user_id != sender_user_id
+        && reply_target.recipient_user_id != sender_user_id
+    {
+        return Err(PpdcError::unauthorized());
+    }
+    if !is_same_conversation(
+        reply_target.sender_user_id,
+        reply_target.recipient_user_id,
+        sender_user_id,
+        recipient_user_id,
+    ) {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "reply_to_message_id must identify a message in the same conversation".to_string(),
+        ));
+    }
+    if reply_target.processing_state != MessageProcessingState::Processed {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Only processed messages can be replied to".to_string(),
+        ));
+    }
+
+    let trace_journal_id = match reply_target.trace_id {
+        Some(trace_id) => Trace::find_full_trace(trace_id, pool)?.journal_id,
+        None => None,
+    };
+    let inherited = MessageContextIds {
+        landscape_analysis_id: reply_target.landscape_analysis_id,
+        journal_id: reply_target.journal_id.or(trace_journal_id),
+        trace_id: reply_target.trace_id,
+        post_id: reply_target.post_id,
+    };
+
+    ensure_reply_context_matches(
+        "landscape_analysis_id",
+        requested.landscape_analysis_id,
+        inherited.landscape_analysis_id,
+    )?;
+    ensure_reply_context_matches("journal_id", requested.journal_id, inherited.journal_id)?;
+    ensure_reply_context_matches("trace_id", requested.trace_id, inherited.trace_id)?;
+    ensure_reply_context_matches("post_id", requested.post_id, inherited.post_id)?;
+
+    Ok(inherited)
 }
 
 pub(crate) fn is_service_mentor(recipient: &User, pool: &DbPool) -> Result<bool, PpdcError> {
@@ -352,8 +463,21 @@ pub async fn post_message_route(
         ));
     }
 
+    let reply_context = resolve_reply_context(
+        payload.reply_to_message_id,
+        sender_user_id,
+        payload.recipient_user_id,
+        MessageContextIds {
+            landscape_analysis_id: payload.landscape_analysis_id,
+            journal_id: None,
+            trace_id: payload.trace_id,
+            post_id: payload.post_id,
+        },
+        &pool,
+    )?;
+
     if is_shared_trace_mentor_request(message_type)
-        && (payload.trace_id.is_none()
+        && (reply_context.trace_id.is_none()
             || payload.post_id.is_some()
             || payload.landscape_analysis_id.is_some())
     {
@@ -376,8 +500,10 @@ pub async fn post_message_route(
         }
     }
 
-    let mut normalized_trace_id = payload.trace_id;
-    let mut normalized_post_id = payload.post_id;
+    let normalized_landscape_analysis_id = reply_context.landscape_analysis_id;
+    let normalized_journal_id = reply_context.journal_id;
+    let mut normalized_trace_id = reply_context.trace_id;
+    let mut normalized_post_id = reply_context.post_id;
 
     if let Some(trace_id) = normalized_trace_id {
         let trace = Trace::find_full_trace(trace_id, &pool)?;
@@ -466,16 +592,19 @@ pub async fn post_message_route(
         }
     }
 
-    if let Some(post_id) = payload.post_id {
+    if let Some(post_id) = normalized_post_id {
         let post = Post::find_full(post_id, &pool)?;
-        if !PostGrant::user_can_read_post(&post, sender_user_id, &pool)?
-            || !PostGrant::user_can_read_post(&post, payload.recipient_user_id, &pool)?
-        {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Sender and recipient must currently have access to the linked post".to_string(),
-            ));
+        if payload.post_id.is_some() || normalized_trace_id.is_none() {
+            if !PostGrant::user_can_read_post(&post, sender_user_id, &pool)?
+                || !PostGrant::user_can_read_post(&post, payload.recipient_user_id, &pool)?
+            {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Sender and recipient must currently have access to the linked post"
+                        .to_string(),
+                ));
+            }
         }
         if normalized_trace_id.is_none() {
             normalized_trace_id = post.source_trace_id;
@@ -543,11 +672,11 @@ pub async fn post_message_route(
         let question_message = NewMessage {
             sender_user_id,
             recipient_user_id: payload.recipient_user_id,
-            landscape_analysis_id: payload.landscape_analysis_id,
-            journal_id: None,
+            landscape_analysis_id: normalized_landscape_analysis_id,
+            journal_id: normalized_journal_id,
             trace_id: normalized_trace_id,
             post_id: normalized_post_id,
-            reply_to_message_id: None,
+            reply_to_message_id: payload.reply_to_message_id,
             message_type,
             processing_state: MessageProcessingState::Processed,
             title: payload.title.unwrap_or_default(),
@@ -562,9 +691,9 @@ pub async fn post_message_route(
             sender_user_id: question_message.recipient_user_id,
             recipient_user_id: sender_user_id,
             landscape_analysis_id: question_message.landscape_analysis_id,
-            journal_id: None,
+            journal_id: question_message.journal_id,
             trace_id: question_message.trace_id,
-            post_id: None,
+            post_id: question_message.post_id,
             reply_to_message_id: Some(question_message.id),
             message_type: MessageType::MentorReply,
             processing_state: MessageProcessingState::Pending,
@@ -591,11 +720,11 @@ pub async fn post_message_route(
     let message = NewMessage {
         sender_user_id,
         recipient_user_id: payload.recipient_user_id,
-        landscape_analysis_id: payload.landscape_analysis_id,
-        journal_id: None,
+        landscape_analysis_id: normalized_landscape_analysis_id,
+        journal_id: normalized_journal_id,
         trace_id: normalized_trace_id,
         post_id: normalized_post_id,
-        reply_to_message_id: None,
+        reply_to_message_id: payload.reply_to_message_id,
         message_type,
         processing_state: MessageProcessingState::Processed,
         title: payload.title.unwrap_or_default(),
@@ -654,14 +783,27 @@ pub async fn post_post_message_route(
     };
     UserBlock::ensure_can_interact(sender_user_id, recipient_user_id, &pool)?;
 
+    let reply_context = resolve_reply_context(
+        payload.reply_to_message_id,
+        sender_user_id,
+        recipient_user_id,
+        MessageContextIds {
+            landscape_analysis_id: None,
+            journal_id: None,
+            trace_id: post.source_trace_id,
+            post_id: Some(post_id),
+        },
+        &pool,
+    )?;
+
     let message = NewMessage {
         sender_user_id,
         recipient_user_id,
-        landscape_analysis_id: None,
-        journal_id: None,
-        trace_id: post.source_trace_id,
-        post_id: Some(post_id),
-        reply_to_message_id: None,
+        landscape_analysis_id: reply_context.landscape_analysis_id,
+        journal_id: reply_context.journal_id,
+        trace_id: reply_context.trace_id,
+        post_id: reply_context.post_id,
+        reply_to_message_id: payload.reply_to_message_id,
         message_type: MessageType::General,
         processing_state: MessageProcessingState::Processed,
         title: payload.title.unwrap_or_default(),
@@ -686,7 +828,7 @@ pub async fn put_message_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<NewMessageDto>,
+    Json(payload): Json<UpdateMessageDto>,
 ) -> Result<Json<Message>, PpdcError> {
     let sender_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let mut message = Message::find(id, &pool)?;
@@ -817,4 +959,64 @@ pub async fn put_message_route(
     message.attachment = payload.attachment;
     let message = message.update(&pool)?;
     Ok(Json(message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_message_payload_accepts_reply_to_message_id() {
+        let recipient_user_id = Uuid::new_v4();
+        let reply_to_message_id = Uuid::new_v4();
+        let payload: NewMessageDto = serde_json::from_value(serde_json::json!({
+            "recipient_user_id": recipient_user_id,
+            "reply_to_message_id": reply_to_message_id,
+            "content": "A reply"
+        }))
+        .unwrap();
+
+        assert_eq!(payload.reply_to_message_id, Some(reply_to_message_id));
+    }
+
+    #[test]
+    fn reply_accepts_both_conversation_directions() {
+        let first_user_id = Uuid::new_v4();
+        let second_user_id = Uuid::new_v4();
+
+        assert!(is_same_conversation(
+            first_user_id,
+            second_user_id,
+            first_user_id,
+            second_user_id,
+        ));
+        assert!(is_same_conversation(
+            first_user_id,
+            second_user_id,
+            second_user_id,
+            first_user_id,
+        ));
+    }
+
+    #[test]
+    fn reply_rejects_a_different_conversation() {
+        assert!(!is_same_conversation(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        ));
+    }
+
+    #[test]
+    fn reply_context_rejects_an_explicit_conflict() {
+        assert!(ensure_reply_context_matches("trace_id", None, Some(Uuid::new_v4())).is_ok());
+
+        let trace_id = Uuid::new_v4();
+        assert!(ensure_reply_context_matches("trace_id", Some(trace_id), Some(trace_id)).is_ok());
+        assert!(
+            ensure_reply_context_matches("trace_id", Some(trace_id), Some(Uuid::new_v4()),)
+                .is_err()
+        );
+    }
 }
