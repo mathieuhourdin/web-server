@@ -310,7 +310,14 @@ pub async fn get_user_search_route(
         SELECT COUNT(*)::bigint AS total
         FROM users
         WHERE (NOT $4 OR users.id <> $2)
-          AND (principal_type = 'HUMAN' OR $4)
+          AND (
+            principal_type = 'HUMAN'
+            OR is_platform_user = TRUE
+            OR EXISTS (
+              SELECT 1 FROM user_roles ur
+              WHERE ur.user_id = users.id AND ur.role = 'MENTOR'
+            )
+          )
           AND NOT EXISTS (
             SELECT 1
             FROM user_blocks ub
@@ -387,7 +394,14 @@ pub async fn get_user_search_route(
             pseudonym
         FROM users
         WHERE (NOT $8 OR users.id <> $6)
-          AND (principal_type = 'HUMAN' OR $8)
+          AND (
+            principal_type = 'HUMAN'
+            OR is_platform_user = TRUE
+            OR EXISTS (
+              SELECT 1 FROM user_roles ur
+              WHERE ur.user_id = users.id AND ur.role = 'MENTOR'
+            )
+          )
           AND NOT EXISTS (
             SELECT 1
             FROM user_blocks ub
