@@ -327,6 +327,7 @@ pub async fn make_gpt_request<T>(
     display_name: Option<&str>,
     analysis_id: Option<Uuid>,
     message_id: Option<Uuid>,
+    user_id: Option<Uuid>,
 ) -> Result<T, Box<dyn std::error::Error + Send + Sync>>
 where
     T: for<'de> serde::Deserialize<'de>,
@@ -433,7 +434,7 @@ where
     }
 
     let env = environment::get_env();
-    if env != "bintest" && (analysis_id.is_some() || message_id.is_some()) {
+    if env != "bintest" && (analysis_id.is_some() || message_id.is_some() || user_id.is_some()) {
         // Persist the LLM call to database before attempting full parsing
         let pool = db::get_global_pool();
         let new_call = NewLlmCall::new(
@@ -456,6 +457,7 @@ where
             user_prompt,
             message_id,
             token_usage.cached_input_tokens,
+            user_id,
         );
 
         // Try to persist, but don't fail the whole request if persistence fails

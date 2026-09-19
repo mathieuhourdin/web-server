@@ -379,8 +379,8 @@ pub async fn get_admin_users_route(
             COALESCE((
                 SELECT COUNT(lc.id)::bigint
                 FROM llm_calls lc
-                INNER JOIN landscape_analyses la ON la.id = lc.analysis_id
-                WHERE la.user_id = u.id
+                LEFT JOIN landscape_analyses la ON la.id = lc.analysis_id
+                WHERE la.user_id = u.id OR lc.user_id = u.id
             ), 0)::bigint AS llm_calls_count,
             (
                 COALESCE((
@@ -539,7 +539,9 @@ pub async fn get_admin_user_llm_costs_route(
         FROM llm_calls lc
         LEFT JOIN landscape_analyses la ON la.id = lc.analysis_id
         LEFT JOIN messages m ON m.id = lc.message_id
-        WHERE COALESCE(la.user_id, m.recipient_user_id) = $1
+        WHERE lc.user_id = $1
+           OR la.user_id = $1
+           OR m.recipient_user_id = $1
           AND ($2 IS NULL OR lc.created_at >= $2)
           AND ($3 IS NULL OR lc.created_at <= $3)
         GROUP BY lc.model

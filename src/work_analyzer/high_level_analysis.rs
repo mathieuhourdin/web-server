@@ -96,6 +96,7 @@ pub async fn get_high_level_analysis_from_gpt(
         Some("Analysis / High-Level Summary"),
         Some(analysis_id),
         None,
+        None,
     )
     .await?;
     Ok(high_level_analysis)

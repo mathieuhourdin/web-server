@@ -117,6 +117,7 @@ pub async fn post_wal_compilation_route(
         None,
     )
     .with_display_name("WAL / Dual Compilation")
+    .with_user_id(user_id)
     .execute::<WalCompilationDraft>()
     .await?;
 

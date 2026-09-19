@@ -394,6 +394,7 @@ diesel::table! {
         message_id -> Nullable<Uuid>,
         cached_input_tokens_used -> Int4,
         display_name -> Text,
+        user_id -> Nullable<Uuid>,
     }
 }
 

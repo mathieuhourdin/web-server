@@ -40,6 +40,7 @@ pub struct LlmCall {
     pub user_prompt: String,
     pub message_id: Option<Uuid>,
     pub cached_input_tokens_used: i32,
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Insertable, AsChangeset)]
@@ -64,6 +65,7 @@ pub struct NewLlmCall {
     pub user_prompt: String,
     pub message_id: Option<Uuid>,
     pub cached_input_tokens_used: i32,
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,7 +107,8 @@ impl LlmCall {
                 landscape_analyses::user_id
                     .eq(user_id)
                     .or(messages::sender_user_id.eq(user_id))
-                    .or(messages::recipient_user_id.eq(user_id)),
+                    .or(messages::recipient_user_id.eq(user_id))
+                    .or(llm_calls::user_id.eq(user_id)),
             )
             .into_boxed();
         if let Some(from) = created_at_from {
@@ -125,7 +128,8 @@ impl LlmCall {
                 landscape_analyses::user_id
                     .eq(user_id)
                     .or(messages::sender_user_id.eq(user_id))
-                    .or(messages::recipient_user_id.eq(user_id)),
+                    .or(messages::recipient_user_id.eq(user_id))
+                    .or(llm_calls::user_id.eq(user_id)),
             )
             .into_boxed();
         if let Some(from) = created_at_from {
@@ -156,7 +160,8 @@ impl LlmCall {
                 landscape_analyses::user_id
                     .eq(user_id)
                     .or(messages::sender_user_id.eq(user_id))
-                    .or(messages::recipient_user_id.eq(user_id)),
+                    .or(messages::recipient_user_id.eq(user_id))
+                    .or(llm_calls::user_id.eq(user_id)),
             )
             .select(LlmCall::as_select())
             .first::<Self>(&mut conn)?;
@@ -277,6 +282,7 @@ impl NewLlmCall {
         user_prompt: String,
         message_id: Option<Uuid>,
         cached_input_tokens_used: i32,
+        user_id: Option<Uuid>,
     ) -> Self {
         Self {
             status,
@@ -298,6 +304,7 @@ impl NewLlmCall {
             user_prompt,
             message_id,
             cached_input_tokens_used,
+            user_id,
         }
     }
 
