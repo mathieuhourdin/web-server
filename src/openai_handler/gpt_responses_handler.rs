@@ -212,6 +212,14 @@ fn model_token_prices(model: &str) -> Option<ModelTokenPrices> {
             long_context_threshold: Some(272_000),
         });
     }
+    if model == "gpt-5.6-luna" || model.starts_with("gpt-5.6-luna-") {
+        return Some(ModelTokenPrices {
+            input_per_million: 0.2,
+            cached_input_per_million: 0.02,
+            output_per_million: 1.2,
+            long_context_threshold: Some(272_000),
+        });
+    }
     if model == "gpt-4.1-mini" || model.starts_with("gpt-4.1-mini-") {
         return Some(ModelTokenPrices {
             input_per_million: 0.4,
@@ -344,7 +352,14 @@ where
             },
         ],
         max_output_tokens: 22500,
-        temperature: if reasoning.is_some() { None } else { Some(0.1) },
+        // GPT-5 family models reject `temperature`, including when no explicit
+        // reasoning configuration is sent. Older non-reasoning models retain the
+        // existing deterministic default.
+        temperature: if reasoning.is_some() || model.starts_with("gpt-5") {
+            None
+        } else {
+            Some(0.1)
+        },
         reasoning,
         text: GPTText {
             format: schema.clone().map(|schema| GPTTextFormat {

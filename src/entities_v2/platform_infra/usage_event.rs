@@ -47,6 +47,7 @@ pub enum UsageEventType {
     TraceTimeoutExtended,
     TraceTimeoutAutoFinalized,
     AiTranscriptionRequested,
+    AiWalCompilationRequested,
 }
 
 impl UsageEventType {
@@ -71,6 +72,7 @@ impl UsageEventType {
             UsageEventType::TraceTimeoutExtended => "TRACE_TIMEOUT_EXTENDED",
             UsageEventType::TraceTimeoutAutoFinalized => "TRACE_TIMEOUT_AUTO_FINALIZED",
             UsageEventType::AiTranscriptionRequested => "AI_TRANSCRIPTION_REQUESTED",
+            UsageEventType::AiWalCompilationRequested => "AI_WAL_COMPILATION_REQUESTED",
         }
     }
 
@@ -110,6 +112,9 @@ impl UsageEventType {
             }
             "AI_TRANSCRIPTION_REQUESTED" | "ai_transcription_requested" => {
                 Ok(UsageEventType::AiTranscriptionRequested)
+            }
+            "AI_WAL_COMPILATION_REQUESTED" | "ai_wal_compilation_requested" => {
+                Ok(UsageEventType::AiWalCompilationRequested)
             }
             _ => Err(PpdcError::new(
                 400,
@@ -440,7 +445,7 @@ fn validate_usage_event_access(
                 return Err(PpdcError::unauthorized());
             }
         }
-        UsageEventType::AiTranscriptionRequested => {
+        UsageEventType::AiTranscriptionRequested | UsageEventType::AiWalCompilationRequested => {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,

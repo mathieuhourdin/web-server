@@ -73,6 +73,10 @@ pub struct User {
     pub onboarding_version: i32,
     pub external_captures_default_journal_id: Option<Uuid>,
     pub mentor_specific_prompt: Option<String>,
+    #[serde(skip_serializing)]
+    pub wal_content: String,
+    #[serde(skip_serializing)]
+    pub wal_compiled: serde_json::Value,
 }
 
 pub enum UserResponse {
@@ -1337,6 +1341,8 @@ mod tests {
             onboarding_version: 0,
             external_captures_default_journal_id: None,
             mentor_specific_prompt: None,
+            wal_content: String::new(),
+            wal_compiled: serde_json::json!({}),
         }
     }
 

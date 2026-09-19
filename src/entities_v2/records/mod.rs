@@ -6,3 +6,4 @@ pub mod trace;
 pub mod trace_attachment;
 pub mod trace_search;
 pub mod trace_source_asset;
+pub mod wal;

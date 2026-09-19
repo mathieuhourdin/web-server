@@ -18,6 +18,7 @@ pub enum AiUsageKind {
     TarotReading,
     Transcription,
     LandscapeAnalysis,
+    WalCompilation,
 }
 
 impl AiUsageKind {
@@ -27,6 +28,7 @@ impl AiUsageKind {
             AiUsageKind::TarotReading => "tarot_reading",
             AiUsageKind::Transcription => "transcription",
             AiUsageKind::LandscapeAnalysis => "landscape_analysis",
+            AiUsageKind::WalCompilation => "wal_compilation",
         }
     }
 
@@ -36,6 +38,7 @@ impl AiUsageKind {
             AiUsageKind::TarotReading => 10,
             AiUsageKind::Transcription => 20,
             AiUsageKind::LandscapeAnalysis => 5,
+            AiUsageKind::WalCompilation => 20,
         }
     }
 }
@@ -80,15 +83,13 @@ pub fn ensure_ai_usage_allowed(
         })));
     }
 
-    if matches!(kind, AiUsageKind::Transcription) {
-        create_internal_usage_event(
-            user.id,
-            session_id,
-            UsageEventType::AiTranscriptionRequested,
-            None,
-            None,
-            pool,
-        )?;
+    let event_type = match kind {
+        AiUsageKind::Transcription => Some(UsageEventType::AiTranscriptionRequested),
+        AiUsageKind::WalCompilation => Some(UsageEventType::AiWalCompilationRequested),
+        _ => None,
+    };
+    if let Some(event_type) = event_type {
+        create_internal_usage_event(user.id, session_id, event_type, None, None, pool)?;
     }
 
     Ok(())
@@ -151,6 +152,15 @@ fn count_recent_ai_usage(
             WHERE la.user_id = $1
               AND la.landscape_analysis_type IN ('TRACE_INCREMENTAL', 'HLP', 'BIO')
               AND la.created_at >= NOW() - INTERVAL '24 hours'
+            "#
+        }
+        AiUsageKind::WalCompilation => {
+            r#"
+            SELECT COUNT(*)::bigint AS value
+            FROM usage_events ue
+            WHERE ue.user_id = $1
+              AND ue.event_type = 'AI_WAL_COMPILATION_REQUESTED'
+              AND ue.occurred_at >= NOW() - INTERVAL '24 hours'
             "#
         }
     };

@@ -732,6 +732,8 @@ diesel::table! {
         ai_features_enabled_by_admin -> Bool,
         external_captures_default_journal_id -> Nullable<Uuid>,
         mentor_specific_prompt -> Nullable<Text>,
+        wal_content -> Text,
+        wal_compiled -> Jsonb,
     }
 }
 

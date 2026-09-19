@@ -1,0 +1,3 @@
+ALTER TABLE users
+ADD COLUMN wal_content TEXT NOT NULL DEFAULT '',
+ADD COLUMN wal_compiled JSONB NOT NULL DEFAULT '{}'::jsonb;

@@ -17,7 +17,7 @@ use crate::entities_v2::{
     feed, journal, journal_share_link, journal_sharing_policy, landmark, landscape_analysis, lens,
     llm_call, mailer, message, post, post_grant, reference, relationship, trace, trace_mirror,
     trace_search, transcription, url_preview, usage_event, user, user_block, user_post_state,
-    user_secure_action,
+    user_secure_action, wal,
 };
 use crate::{environment, sessions_service};
 
@@ -538,6 +538,16 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/account", delete(user::delete_my_account_route))
+        .route(
+            "/wal",
+            get(wal::get_wal_route)
+                .put(wal::put_wal_route)
+                .post(wal::post_wal_route),
+        )
+        .route(
+            "/wal/compilation",
+            get(wal::get_wal_compilation_route).post(wal::post_wal_compilation_route),
+        )
         .route(
             "/traces/export",
             get(journal::get_all_my_traces_export_route),

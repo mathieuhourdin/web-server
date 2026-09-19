@@ -14,6 +14,7 @@ pub use platform_infra::{
 };
 pub use records::{
     document, journal, journal_import, journal_share_link, trace, trace_attachment, trace_search,
+    wal,
 };
 pub use shared::MaturingState;
 pub use social::{
