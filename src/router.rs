@@ -1,6 +1,6 @@
 use axum::{
     extract::DefaultBodyLimit,
-    http::{request::Parts as RequestParts, HeaderValue, Method, StatusCode},
+    http::{request::Parts as RequestParts, HeaderName, HeaderValue, Method, StatusCode},
     middleware::from_fn,
     response::IntoResponse,
     routing::{delete, get, patch, post, put, Router},
@@ -19,7 +19,7 @@ use crate::entities_v2::{
     trace_search, transcription, url_preview, usage_event, user, user_block, user_post_state,
     user_secure_action, wal,
 };
-use crate::{environment, sessions_service};
+use crate::{environment, logging, sessions_service};
 
 pub fn create_router() -> Router {
     let allow_origin_regex =
@@ -42,6 +42,7 @@ pub fn create_router() -> Router {
             Method::DELETE,
         ])
         .allow_headers(AllowHeaders::mirror_request())
+        .expose_headers([HeaderName::from_static(logging::REQUEST_ID_HEADER)])
         .allow_credentials(true);
 
     let users_router = Router::new()
@@ -619,6 +620,7 @@ pub fn create_router() -> Router {
         .nest("/shared", shared_router)
         .fallback(fallback_handler)
         .route("/", get(root_handler))
+        .layer(from_fn(logging::request_context_middleware))
         .layer(from_fn(sessions_service::add_session_to_request))
         .nest_service("/public", ServeDir::new("public"))
         .layer(cors)

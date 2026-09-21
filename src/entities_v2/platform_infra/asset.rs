@@ -908,7 +908,17 @@ async fn upload_asset_for_user_with_policy(
         user_id, asset_id, original_filename
     );
 
-    upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone()).await?;
+    upload_object_to_gcs(&bucket, &object_key, &mime_type, content_bytes.clone())
+        .await
+        .map_err(|error| {
+            error
+                .with_context("upload_asset_to_gcs")
+                .with_log_field("user_id", user_id)
+                .with_log_field("asset_id", asset_id)
+                .with_log_field("bucket", &bucket)
+                .with_log_field("mime_type", &mime_type)
+                .with_log_field("size_bytes", content_bytes.len())
+        })?;
     let requested_public_object_key = public_object_key;
     let public_bucket = if requested_public_object_key.is_some() {
         crate::environment::get_gcs_public_assets_bucket_name()
@@ -928,7 +938,16 @@ async fn upload_asset_for_user_with_policy(
             &mime_type,
             content_bytes.clone(),
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            error
+                .with_context("upload_public_asset_to_gcs")
+                .with_log_field("user_id", user_id)
+                .with_log_field("asset_id", asset_id)
+                .with_log_field("bucket", public_bucket)
+                .with_log_field("mime_type", &mime_type)
+                .with_log_field("size_bytes", content_bytes.len())
+        })?;
     }
 
     let asset = NewAsset {

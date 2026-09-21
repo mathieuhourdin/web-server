@@ -7,7 +7,7 @@ use diesel::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{error, info};
+use tracing::info;
 use uuid::Uuid;
 
 use super::model::{Trace, TraceStatus};
@@ -202,7 +202,10 @@ async fn process_job(job_id: Uuid, pool: DbPool) {
         Ok::<(), PpdcError>(())
     }.await;
     if let Err(error) = result {
-        error!(job_id = %job_id, error = %error, "handwriting transcription job failed");
+        let error = error
+            .with_context("process_handwriting_transcription_job")
+            .with_log_field("job_id", job_id);
+        error.log("background_job_failed");
         let _ = fail_job(job_id, &error.to_string(), &pool);
     }
 }
