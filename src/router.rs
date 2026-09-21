@@ -89,6 +89,13 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let admin_analytics_router = Router::new()
+        .route("/summary", get(user::get_admin_analytics_summary_route))
+        .route(
+            "/platform_series",
+            get(user::get_admin_platform_series_route),
+        )
+        .route("/users", get(user::get_admin_analytics_users_route))
+        .route("/users/:id/series", get(user::get_admin_user_series_route))
         .route(
             "/platform_overview",
             get(user::get_admin_platform_overview_route),
