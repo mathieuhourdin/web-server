@@ -562,7 +562,7 @@ impl JournalSharingPolicy {
         owner_user_id: Uuid,
         payload: JournalSharingPolicyHistoryDecisionDto,
         pool: &DbPool,
-    ) -> Result<JournalSharingPolicy, PpdcError> {
+    ) -> Result<(JournalSharingPolicy, usize), PpdcError> {
         let journal = Journal::find_full(journal_id, pool)?;
         if journal.user_id != owner_user_id {
             return Err(PpdcError::unauthorized());
@@ -602,7 +602,7 @@ impl JournalSharingPolicy {
         }
 
         let mut conn = pool.get()?;
-        conn.transaction::<(), PpdcError, _>(|conn| {
+        let newly_shared_post_count = conn.transaction::<usize, PpdcError, _>(|conn| {
             let post_ids = match payload.decision {
                 JournalHistoryDecision::None => {
                     if payload.post_ids.is_some() {
@@ -672,7 +672,7 @@ impl JournalSharingPolicy {
                 }
             };
 
-            PostGrant::upsert_direct_grants_for_posts_with_conn(
+            let newly_shared_post_count = PostGrant::upsert_direct_grants_for_posts_with_conn(
                 &post_ids,
                 owner_user_id,
                 policy.grantee_user_id,
@@ -692,10 +692,10 @@ impl JournalSharingPolicy {
             ))
             .execute(conn)?;
 
-            Ok(())
+            Ok(newly_shared_post_count)
         })?;
 
-        Self::find(policy_id, pool)
+        Ok((Self::find(policy_id, pool)?, newly_shared_post_count))
     }
 
     fn find_history_post_ids_for_policy_with_conn(

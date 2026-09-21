@@ -5,7 +5,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::{error::PpdcError, journal::Journal, session::Session};
+use crate::entities_v2::{error::PpdcError, journal::Journal, notification, session::Session};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
@@ -96,8 +96,17 @@ pub async fn post_journal_sharing_policy_history_decision_route(
     Json(payload): Json<JournalSharingPolicyHistoryDecisionDto>,
 ) -> Result<Json<JournalSharingPolicy>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let policy = JournalSharingPolicy::apply_history_decision(
+    let (policy, newly_shared_post_count) = JournalSharingPolicy::apply_history_decision(
         journal_id, policy_id, user_id, payload, &pool,
     )?;
+    if newly_shared_post_count > 0 {
+        notification::spawn_journal_history_shared_push_notification(
+            journal_id,
+            user_id,
+            policy.grantee_user_id,
+            newly_shared_post_count,
+            pool.clone(),
+        );
+    }
     Ok(Json(policy))
 }

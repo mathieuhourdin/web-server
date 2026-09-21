@@ -484,32 +484,6 @@ async fn signed_asset_url(asset_id: Uuid, pool: &DbPool, target: &'static str) -
     }
 }
 
-fn user_profile_picture_public_url(user: &User, pool: &DbPool) -> Option<String> {
-    if let Some(asset_id) = user.profile_picture_asset_id {
-        match Asset::find(asset_id, pool) {
-            Ok(asset) => {
-                if let Some(public_url) = asset.public_url() {
-                    return Some(public_url);
-                }
-            }
-            Err(err) => {
-                warn!(
-                    target: "push",
-                    user_id = %user.id,
-                    asset_id = %asset_id,
-                    error = %err.message,
-                    "user_profile_picture_asset_lookup_failed"
-                );
-            }
-        }
-    }
-
-    user.profile_picture_url
-        .as_ref()
-        .map(|url| url.trim().to_string())
-        .filter(|url| !url.is_empty())
-}
-
 pub(crate) async fn post_published_notification(
     post: &Post,
     pool: &DbPool,
@@ -555,7 +529,7 @@ pub(crate) async fn post_published_notification(
     }
     data.insert("publisher_user_id".to_string(), post.user_id.to_string());
     data.insert("publisher_display_name".to_string(), owner.display_name());
-    if let Some(profile_picture_url) = user_profile_picture_public_url(&owner, pool) {
+    if let Some(profile_picture_url) = sender_avatar_url(&owner, pool).await {
         data.insert(
             "publisher_profile_picture_url".to_string(),
             profile_picture_url,
@@ -593,6 +567,53 @@ pub(crate) async fn post_published_notification(
         data,
         thread_id: None,
     }))
+}
+
+pub(crate) async fn journal_history_shared_notification(
+    journal: &Journal,
+    owner: &User,
+    shared_trace_count: usize,
+    pool: &DbPool,
+) -> PushNotification {
+    let owner_display_name = owner.display_name();
+    let mut data = HashMap::new();
+    data.insert(
+        "event_type".to_string(),
+        "journal_history_shared".to_string(),
+    );
+    data.insert("journal_id".to_string(), journal.id.to_string());
+    data.insert("journal_title".to_string(), journal.title.clone());
+    data.insert("publisher_user_id".to_string(), owner.id.to_string());
+    data.insert(
+        "publisher_display_name".to_string(),
+        owner_display_name.clone(),
+    );
+    data.insert("publisher_handle".to_string(), owner.handle.clone());
+    data.insert(
+        "shared_trace_count".to_string(),
+        shared_trace_count.to_string(),
+    );
+    if let Some(profile_picture_url) = sender_avatar_url(owner, pool).await {
+        data.insert(
+            "publisher_profile_picture_url".to_string(),
+            profile_picture_url,
+        );
+    }
+
+    let trace_label = if shared_trace_count == 1 {
+        "1 trace".to_string()
+    } else {
+        format!("{} traces", shared_trace_count)
+    };
+    PushNotification {
+        title: owner_display_name,
+        body: format!(
+            "a partagé {} du journal « {} » avec vous",
+            trace_label, journal.title
+        ),
+        data,
+        thread_id: Some(journal.id.to_string()),
+    }
 }
 
 #[cfg(test)]

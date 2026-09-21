@@ -179,11 +179,11 @@ impl PostGrant {
         owner_user_id: Uuid,
         grantee_user_id: Uuid,
         conn: &mut PgConnection,
-    ) -> Result<(), PpdcError> {
+    ) -> Result<usize, PpdcError> {
         use std::collections::HashSet;
 
         if post_ids.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let existing_rows = post_grants::table
@@ -191,13 +191,20 @@ impl PostGrant {
             .filter(post_grants::owner_user_id.eq(owner_user_id))
             .filter(post_grants::grantee_user_id.eq(Some(grantee_user_id)))
             .filter(post_grants::grantee_scope.is_null())
-            .select((post_grants::id, post_grants::post_id))
-            .load::<(Uuid, Uuid)>(conn)?;
+            .select((post_grants::id, post_grants::post_id, post_grants::status))
+            .load::<(Uuid, Uuid, String)>(conn)?;
 
-        let existing_ids = existing_rows.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+        let reactivated_count = existing_rows
+            .iter()
+            .filter(|(_, _, status)| status != PostGrantStatus::Active.to_db())
+            .count();
+        let existing_ids = existing_rows
+            .iter()
+            .map(|(id, _, _)| *id)
+            .collect::<Vec<_>>();
         let existing_post_ids = existing_rows
             .into_iter()
-            .map(|(_, post_id)| post_id)
+            .map(|(_, post_id, _)| post_id)
             .collect::<HashSet<_>>();
 
         if !existing_ids.is_empty() {
@@ -228,11 +235,11 @@ impl PostGrant {
 
         if !new_values.is_empty() {
             diesel::insert_into(post_grants::table)
-                .values(new_values)
+                .values(&new_values)
                 .execute(conn)?;
         }
 
-        Ok(())
+        Ok(reactivated_count + new_values.len())
     }
 
     pub(crate) fn revoke_all_direct_between_users_with_conn(

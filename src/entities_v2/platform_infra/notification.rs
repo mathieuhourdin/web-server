@@ -346,3 +346,80 @@ pub fn spawn_post_published_push_notification(post: Post, pool: DbPool) {
         }
     });
 }
+
+pub fn spawn_journal_history_shared_push_notification(
+    journal_id: Uuid,
+    owner_user_id: Uuid,
+    recipient_user_id: Uuid,
+    shared_trace_count: usize,
+    pool: DbPool,
+) {
+    if shared_trace_count == 0 || owner_user_id == recipient_user_id {
+        return;
+    }
+
+    tokio::spawn(async move {
+        let recipient = match User::find(&recipient_user_id, &pool) {
+            Ok(recipient) if recipient.principal_type == UserPrincipalType::Human => recipient,
+            Ok(_) => return,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    journal_id = %journal_id,
+                    recipient_user_id = %recipient_user_id,
+                    error = %err.message,
+                    "journal_history_shared_push_recipient_lookup_failed"
+                );
+                return;
+            }
+        };
+        let journal = match crate::entities_v2::journal::Journal::find_full(journal_id, &pool) {
+            Ok(journal) => journal,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    journal_id = %journal_id,
+                    error = %err.message,
+                    "journal_history_shared_push_journal_lookup_failed"
+                );
+                return;
+            }
+        };
+        let owner = match User::find(&owner_user_id, &pool) {
+            Ok(owner) => owner,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    journal_id = %journal_id,
+                    owner_user_id = %owner_user_id,
+                    error = %err.message,
+                    "journal_history_shared_push_owner_lookup_failed"
+                );
+                return;
+            }
+        };
+        let notification =
+            push::journal_history_shared_notification(&journal, &owner, shared_trace_count, &pool)
+                .await;
+
+        match push::send_to_mobile_user(recipient.id, notification, &pool).await {
+            Ok(result) => info!(
+                target: "notification",
+                journal_id = %journal_id,
+                recipient_user_id = %recipient.id,
+                shared_trace_count,
+                push_attempted_count = result.attempted_count,
+                push_sent_count = result.sent_count,
+                "journal_history_shared_push_dispatch_completed"
+            ),
+            Err(err) => warn!(
+                target: "notification",
+                journal_id = %journal_id,
+                recipient_user_id = %recipient.id,
+                shared_trace_count,
+                error = %err.message,
+                "journal_history_shared_push_dispatch_failed"
+            ),
+        }
+    });
+}
