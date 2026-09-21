@@ -4,6 +4,7 @@ pub mod platform_infra;
 pub mod records;
 pub mod shared;
 pub mod social;
+pub mod working_memory;
 
 // Backward-compatible re-exports for existing imports across the codebase.
 pub use analysis_orchestration::{landscape_analysis, lens};
@@ -14,10 +15,10 @@ pub use platform_infra::{
 };
 pub use records::{
     document, journal, journal_import, journal_share_link, trace, trace_attachment, trace_search,
-    wal,
 };
 pub use shared::MaturingState;
 pub use social::{
     album, content_report, feed, journal_sharing_policy, message, post, post_grant, relationship,
     source_projection, user_block, user_post_state,
 };
+pub use working_memory::wal;

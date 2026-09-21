@@ -539,12 +539,8 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/account", delete(user::delete_my_account_route))
-        .route(
-            "/wal",
-            get(wal::get_wal_route)
-                .put(wal::put_wal_route)
-                .post(wal::post_wal_route),
-        )
+        .route("/wal", get(wal::get_wal_route).post(wal::post_wal_route))
+        .route("/wals", get(wal::get_wals_route))
         .route(
             "/wal/compilation",
             get(wal::get_wal_compilation_route).post(wal::post_wal_compilation_route),

@@ -700,6 +700,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    wal_days (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        local_date -> Date,
+        input -> Text,
+        context -> Text,
+        compiled_operational -> Nullable<Text>,
+        compiled_thematic -> Nullable<Text>,
+        compiled_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         email -> Text,
@@ -813,6 +828,7 @@ diesel::joinable!(user_post_states -> posts (post_id));
 diesel::joinable!(user_post_states -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
+diesel::joinable!(wal_days -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     album_items,
@@ -858,4 +874,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_roles,
     user_secure_actions,
     users,
+    wal_days,
 );
