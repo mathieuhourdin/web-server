@@ -7,12 +7,12 @@ use crate::entities_v2::{error::PpdcError, session::Session, user::User};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
-    WalCarryoverResponse, WalCompilationViews, WalDay, WalDayDetailResponse, WalDayResponse,
-    WalProjection, WalResponse,
+    WalCarryoverResolution, WalCarryoverResponse, WalCompilationViews, WalDay,
+    WalDayDetailResponse, WalDayResponse, WalProjection, WalResponse,
 };
 use super::service::{
     append_today, apply_today_carryover, compile_today, get_day_detail, get_or_create_today,
-    get_today_carryover, get_today_response,
+    get_today_carryover, get_today_response, resolve_today_carryover,
 };
 
 #[derive(Debug, Deserialize)]
@@ -23,6 +23,11 @@ pub struct AppendWalDto {
 #[derive(Debug, Deserialize)]
 pub struct ApplyWalCarryoverDto {
     pub item_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveWalCarryoverDto {
+    pub resolution: WalCarryoverResolution,
 }
 
 fn current_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
@@ -131,6 +136,22 @@ pub async fn post_apply_wal_carryover_route(
         &user,
         projection_id,
         &payload.item_ids,
+        &pool,
+    )?))
+}
+
+#[debug_handler]
+pub async fn post_resolve_wal_carryover_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(projection_id): Path<Uuid>,
+    Json(payload): Json<ResolveWalCarryoverDto>,
+) -> Result<Json<WalCarryoverResponse>, PpdcError> {
+    let user = current_user(&session, &pool)?;
+    Ok(Json(resolve_today_carryover(
+        &user,
+        projection_id,
+        payload.resolution,
         &pool,
     )?))
 }

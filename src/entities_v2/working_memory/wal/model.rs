@@ -361,6 +361,15 @@ pub enum WalCarryoverApplicationStatus {
     Accepted,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WalCarryoverResolution {
+    #[default]
+    Pending,
+    Performed,
+    Dismissed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalCarryoverApplication {
     pub status: WalCarryoverApplicationStatus,
@@ -384,6 +393,10 @@ pub struct WalCarryoverContent {
     pub schema_version: i32,
     pub source_date: NaiveDate,
     pub target_date: NaiveDate,
+    #[serde(default)]
+    pub resolution: WalCarryoverResolution,
+    #[serde(default)]
+    pub resolved_at: Option<NaiveDateTime>,
     pub items: Vec<WalCarryoverItem>,
 }
 
@@ -393,6 +406,9 @@ pub struct WalCarryoverResponse {
     pub source_date: NaiveDate,
     pub target_date: NaiveDate,
     pub status: WalCarryoverResponseStatus,
+    pub resolution: Option<WalCarryoverResolution>,
+    pub resolved_at: Option<NaiveDateTime>,
+    pub should_suggest: bool,
     pub items: Vec<WalCarryoverItem>,
     pub error_message: Option<String>,
 }
@@ -419,5 +435,24 @@ impl From<WalProjectionStatus> for WalCarryoverResponseStatus {
             WalProjectionStatus::SkippedAiDisabled => Self::SkippedAiDisabled,
             WalProjectionStatus::Stale => Self::Stale,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_carryover_content_defaults_to_pending_resolution() {
+        let content: WalCarryoverContent = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "source_date": "2026-09-21",
+            "target_date": "2026-09-22",
+            "items": []
+        }))
+        .unwrap();
+
+        assert_eq!(content.resolution, WalCarryoverResolution::Pending);
+        assert_eq!(content.resolved_at, None);
     }
 }

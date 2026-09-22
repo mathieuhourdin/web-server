@@ -20,10 +20,10 @@ use crate::openai_handler::GptRequestConfig;
 
 use super::model::{
     WalCarryoverApplication, WalCarryoverApplicationStatus, WalCarryoverAssessment,
-    WalCarryoverContent, WalCarryoverItem, WalCarryoverResponse, WalCarryoverResponseStatus,
-    WalCompilationViews, WalDay, WalDayDetailResponse, WalEntry, WalProjection, WalProjectionItem,
-    WalProjectionItemStatus, WalProjectionSection, WalProjectionStatus, WalResponse,
-    WalStructuredProjection,
+    WalCarryoverContent, WalCarryoverItem, WalCarryoverResolution, WalCarryoverResponse,
+    WalCarryoverResponseStatus, WalCompilationViews, WalDay, WalDayDetailResponse, WalEntry,
+    WalProjection, WalProjectionItem, WalProjectionItemStatus, WalProjectionSection,
+    WalProjectionStatus, WalResponse, WalStructuredProjection,
 };
 
 const WAL_OPENAI_MODEL: &str = "gpt-5.6-luna";
@@ -371,6 +371,8 @@ fn normalize_carryover(
         schema_version: WAL_PROJECTION_SCHEMA_VERSION,
         source_date,
         target_date,
+        resolution: WalCarryoverResolution::Pending,
+        resolved_at: None,
         items,
     })
 }
@@ -697,10 +699,15 @@ fn carryover_response_from_projection(
     target_date: NaiveDate,
 ) -> Result<WalCarryoverResponse, PpdcError> {
     let status = WalProjectionStatus::from_db(&projection.status)?;
-    let items = projection
-        .carryover_content()?
-        .map(|content| content.items)
-        .unwrap_or_default();
+    let content = projection.carryover_content()?;
+    let resolution = content.as_ref().map(|content| content.resolution);
+    let resolved_at = content.as_ref().and_then(|content| content.resolved_at);
+    let items = content.map(|content| content.items).unwrap_or_default();
+    let should_suggest = status == WalProjectionStatus::Ready
+        && resolution == Some(WalCarryoverResolution::Pending)
+        && items
+            .iter()
+            .any(|item| item.application.status == WalCarryoverApplicationStatus::Pending);
     let error_message =
         (status == WalProjectionStatus::Failed).then(|| "Carryover generation failed".to_string());
     Ok(WalCarryoverResponse {
@@ -708,6 +715,9 @@ fn carryover_response_from_projection(
         source_date,
         target_date,
         status: status.into(),
+        resolution,
+        resolved_at,
+        should_suggest,
         items,
         error_message,
     })
@@ -738,6 +748,9 @@ pub fn get_today_carryover(user: &User, pool: &DbPool) -> Result<WalCarryoverRes
             source_date,
             target_date,
             status: WalCarryoverResponseStatus::NotApplicable,
+            resolution: None,
+            resolved_at: None,
+            should_suggest: false,
             items: Vec::new(),
             error_message: None,
         });
@@ -748,6 +761,9 @@ pub fn get_today_carryover(user: &User, pool: &DbPool) -> Result<WalCarryoverRes
             source_date,
             target_date,
             status: WalCarryoverResponseStatus::SkippedAiDisabled,
+            resolution: None,
+            resolved_at: None,
+            should_suggest: false,
             items: Vec::new(),
             error_message: None,
         });
@@ -759,6 +775,9 @@ pub fn get_today_carryover(user: &User, pool: &DbPool) -> Result<WalCarryoverRes
             source_date,
             target_date,
             status: WalCarryoverResponseStatus::Pending,
+            resolution: None,
+            resolved_at: None,
+            should_suggest: false,
             items: Vec::new(),
             error_message: None,
         });
@@ -783,6 +802,26 @@ pub fn apply_today_carryover(
     )?;
     let entries = wal.entries(pool)?;
     Ok(WalResponse::new(&wal, entries))
+}
+
+pub fn resolve_today_carryover(
+    user: &User,
+    projection_id: Uuid,
+    resolution: WalCarryoverResolution,
+    pool: &DbPool,
+) -> Result<WalCarryoverResponse, PpdcError> {
+    if resolution == WalCarryoverResolution::Pending {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Carryover resolution must be performed or dismissed".to_string(),
+        ));
+    }
+    let target_date = local_date_at(&user.timezone, Utc::now());
+    let source_date = target_date - Duration::days(1);
+    let projection =
+        WalProjection::resolve_carryover(projection_id, user.id, target_date, resolution, pool)?;
+    carryover_response_from_projection(projection, source_date, target_date)
 }
 
 #[cfg(test)]

@@ -563,6 +563,10 @@ pub fn create_router() -> Router {
             post(wal::post_apply_wal_carryover_route),
         )
         .route(
+            "/wal/carryover/:projection_id/resolution",
+            post(wal::post_resolve_wal_carryover_route),
+        )
+        .route(
             "/traces/export",
             get(journal::get_all_my_traces_export_route),
         )

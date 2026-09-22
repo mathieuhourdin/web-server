@@ -13,8 +13,8 @@ use crate::schema::{wal_days, wal_entries, wal_projections};
 
 use super::model::{
     NewWalDay, NewWalEntry, WalCarryoverApplicationStatus, WalCarryoverContent,
-    WalCompilationViews, WalDay, WalEntry, WalProjection, WalProjectionStatus, WalProjectionType,
-    WalProjectionView, WalStructuredProjection,
+    WalCarryoverResolution, WalCompilationViews, WalDay, WalEntry, WalProjection,
+    WalProjectionStatus, WalProjectionType, WalProjectionView, WalStructuredProjection,
 };
 
 #[derive(QueryableByName)]
@@ -740,6 +740,13 @@ impl WalProjection {
                     "Ready WAL carryover has no content".to_string(),
                 )
             })?;
+            if content.resolution == WalCarryoverResolution::Dismissed {
+                return Err(PpdcError::new(
+                    409,
+                    ErrorType::ApiError,
+                    "This WAL carryover has been dismissed".to_string(),
+                ));
+            }
             let available_ids = content
                 .items
                 .iter()
@@ -750,6 +757,18 @@ impl WalProjection {
                     400,
                     ErrorType::ApiError,
                     "One or more carryover item IDs are invalid".to_string(),
+                ));
+            }
+
+            let has_new_items = content.items.iter().any(|item| {
+                requested_ids.contains(&item.id)
+                    && item.application.status == WalCarryoverApplicationStatus::Pending
+            });
+            if content.resolution == WalCarryoverResolution::Performed && has_new_items {
+                return Err(PpdcError::new(
+                    409,
+                    ErrorType::ApiError,
+                    "This WAL carryover has already been resolved".to_string(),
                 ));
             }
 
@@ -778,10 +797,73 @@ impl WalProjection {
                 item.application.status = WalCarryoverApplicationStatus::Accepted;
                 item.application.target_entry_id = Some(created_entry.id);
             }
+            if content.resolution == WalCarryoverResolution::Pending {
+                content.resolution = WalCarryoverResolution::Performed;
+                content.resolved_at = Some(Utc::now().naive_utc());
+            }
             diesel::update(wal_projections::table.filter(wal_projections::id.eq(projection.id)))
                 .set(wal_projections::content.eq(Some(serde_json::to_value(content)?)))
                 .execute(conn)?;
             Ok(target_wal)
+        })
+    }
+
+    pub fn resolve_carryover(
+        projection_id: Uuid,
+        user_id: Uuid,
+        target_date: NaiveDate,
+        resolution: WalCarryoverResolution,
+        pool: &DbPool,
+    ) -> Result<Self, PpdcError> {
+        let mut conn = pool.get()?;
+        conn.transaction::<_, PpdcError, _>(|conn| {
+            let projection = wal_projections::table
+                .filter(wal_projections::id.eq(projection_id))
+                .for_update()
+                .select(Self::as_select())
+                .first::<Self>(conn)?;
+            let _source_wal = wal_days::table
+                .filter(wal_days::id.eq(projection.wal_day_id))
+                .filter(wal_days::user_id.eq(user_id))
+                .select(WalDay::as_select())
+                .first::<WalDay>(conn)?;
+            if projection.projection_type != WalProjectionType::Carryover.to_db()
+                || projection.target_date != Some(target_date)
+                || projection.status != WalProjectionStatus::Ready.to_db()
+            {
+                return Err(PpdcError::new(
+                    409,
+                    ErrorType::ApiError,
+                    "This WAL carryover is not ready for the current day".to_string(),
+                ));
+            }
+            let mut content = projection.carryover_content()?.ok_or_else(|| {
+                PpdcError::new(
+                    500,
+                    ErrorType::InternalError,
+                    "Ready WAL carryover has no content".to_string(),
+                )
+            })?;
+            if content.resolution == resolution {
+                return Ok(projection);
+            }
+            if content.resolution != WalCarryoverResolution::Pending {
+                return Err(PpdcError::new(
+                    409,
+                    ErrorType::ApiError,
+                    "This WAL carryover has already been resolved".to_string(),
+                ));
+            }
+            content.resolution = resolution;
+            content.resolved_at = Some(Utc::now().naive_utc());
+            Ok(
+                diesel::update(
+                    wal_projections::table.filter(wal_projections::id.eq(projection.id)),
+                )
+                .set(wal_projections::content.eq(Some(serde_json::to_value(content)?)))
+                .returning(Self::as_returning())
+                .get_result::<Self>(conn)?,
+            )
         })
     }
 }
