@@ -1,4 +1,5 @@
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Duration, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -10,6 +11,7 @@ use crate::entities_v2::landmark::LandmarkType;
 use crate::entities_v2::landscape_analysis::model::LandscapeAnalysisType;
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::trace::{Trace, TraceType};
+use crate::entities_v2::user::User;
 use crate::work_analyzer::analysis_context::AnalysisContext;
 
 #[derive(Debug, Serialize)]
@@ -72,6 +74,8 @@ pub fn build(
     context: &AnalysisContext,
     analysis: &LandscapeAnalysis,
 ) -> Result<WeekSummaryPromptContext, PpdcError> {
+    let user = User::find(&analysis.user_id, &context.pool)?;
+    let timezone = user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC);
     let scoped_lenses = analysis.get_scoped_lenses(&context.pool)?;
     let current_lens = scoped_lenses
         .iter()
@@ -82,7 +86,7 @@ pub fn build(
         if let Some(current_lens) = current_lens {
             let all_scope_analyses = current_lens.get_analysis_scope(&context.pool)?;
             (
-                build_daily_analysis_map(&all_scope_analyses, analysis),
+                build_daily_analysis_map(&all_scope_analyses, analysis, timezone),
                 find_previous_weeks_summaries(analysis, &all_scope_analyses, &context.pool, 2)?,
                 find_current_lens_high_level_projects(
                     current_lens.current_landscape_id,
@@ -98,22 +102,17 @@ pub fn build(
         None
     };
 
-    let mut user_traces_by_day = find_user_traces_by_day_for_period(
-        analysis.user_id,
-        analysis.period_start,
-        analysis.period_end,
-        &context.pool,
-    )?;
+    let mut user_traces_by_day =
+        find_covered_user_traces_by_day(analysis, timezone, &context.pool)?;
 
     let mut days = Vec::new();
     let mut days_without_traces_count = 0usize;
-    let mut cursor = analysis.period_start.date();
-    let end_day = analysis.period_end.date();
+    let mut cursor = local_date_for_utc(analysis.period_start, timezone);
+    let end_day = local_date_for_utc(analysis.period_end, timezone);
     while cursor < end_day {
-        let day_start = cursor
-            .and_hms_opt(0, 0, 0)
-            .expect("valid start of day datetime");
-        let day_end = day_start + Duration::days(1);
+        let day_start = local_midnight_utc(timezone, cursor)?.max(analysis.period_start);
+        let day_end =
+            local_midnight_utc(timezone, cursor + Duration::days(1))?.min(analysis.period_end);
         let user_traces = user_traces_by_day.remove(&cursor).unwrap_or_default();
         let has_written_traces = !user_traces.is_empty();
 
@@ -181,6 +180,7 @@ pub fn build(
 fn build_daily_analysis_map(
     scope_analyses: &[LandscapeAnalysis],
     current_week_analysis: &LandscapeAnalysis,
+    timezone: Tz,
 ) -> HashMap<NaiveDate, LandscapeAnalysis> {
     let mut by_day = HashMap::new();
     for analysis in scope_analyses
@@ -189,7 +189,7 @@ fn build_daily_analysis_map(
         .filter(|analysis| analysis.period_start >= current_week_analysis.period_start)
         .filter(|analysis| analysis.period_end <= current_week_analysis.period_end)
     {
-        let day = analysis.period_start.date();
+        let day = local_date_for_utc(analysis.period_start, timezone);
         let should_replace = by_day
             .get(&day)
             .map(|existing: &LandscapeAnalysis| existing.updated_at < analysis.updated_at)
@@ -269,24 +269,36 @@ fn find_current_lens_high_level_projects(
     Ok(hlps)
 }
 
-fn find_user_traces_by_day_for_period(
-    user_id: Uuid,
-    period_start: NaiveDateTime,
-    period_end: NaiveDateTime,
+fn find_covered_user_traces_by_day(
+    analysis: &LandscapeAnalysis,
+    timezone: Tz,
     pool: &DbPool,
 ) -> Result<HashMap<NaiveDate, Vec<WeekDayUserTraceContextItem>>, PpdcError> {
-    let user_traces = Trace::get_all_for_user(user_id, pool)?
+    let trace_ids = analysis
+        .get_inputs(pool)?
         .into_iter()
-        .filter(|trace| trace.trace_type == TraceType::UserTrace)
-        .filter(|trace| {
-            trace.interaction_date >= period_start && trace.interaction_date < period_end
+        .filter(|input| {
+            input.input_type
+                == crate::entities_v2::landscape_analysis::LandscapeAnalysisInputType::Covered
         })
+        .filter_map(|input| input.trace_id)
         .collect::<Vec<_>>();
 
     let mut by_day: HashMap<NaiveDate, Vec<WeekDayUserTraceContextItem>> = HashMap::new();
-    for trace in user_traces {
+    for trace_id in trace_ids {
+        let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.user_id != analysis.user_id
+            || trace.is_encrypted
+            || trace.status != crate::entities_v2::trace::TraceStatus::Finalized
+            || !matches!(
+                trace.trace_type,
+                TraceType::UserTrace | TraceType::WorkspaceTrace
+            )
+        {
+            continue;
+        }
         by_day
-            .entry(trace.interaction_date.date())
+            .entry(local_date_for_utc(trace.interaction_date, timezone))
             .or_default()
             .push(WeekDayUserTraceContextItem {
                 id: trace.id,
@@ -300,4 +312,70 @@ fn find_user_traces_by_day_for_period(
         traces.sort_by_key(|trace| (trace.interaction_date, trace.id));
     }
     Ok(by_day)
+}
+
+fn local_date_for_utc(datetime: NaiveDateTime, timezone: Tz) -> NaiveDate {
+    DateTime::<Utc>::from_naive_utc_and_offset(datetime, Utc)
+        .with_timezone(&timezone)
+        .date_naive()
+}
+
+fn local_midnight_utc(timezone: Tz, date: NaiveDate) -> Result<NaiveDateTime, PpdcError> {
+    let local_midnight = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+        PpdcError::new(
+            500,
+            crate::entities_v2::error::ErrorType::InternalError,
+            "Failed to build local midnight for weekly recap".to_string(),
+        )
+    })?;
+    let resolved = match timezone.from_local_datetime(&local_midnight) {
+        LocalResult::Single(datetime) => datetime,
+        LocalResult::Ambiguous(earliest, _) => earliest,
+        LocalResult::None => {
+            let mut candidate = local_midnight + Duration::hours(1);
+            loop {
+                match timezone.from_local_datetime(&candidate) {
+                    LocalResult::Single(datetime) => break datetime,
+                    LocalResult::Ambiguous(earliest, _) => break earliest,
+                    LocalResult::None => candidate += Duration::hours(1),
+                }
+            }
+        }
+    };
+    Ok(resolved.with_timezone(&Utc).naive_utc())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{local_date_for_utc, local_midnight_utc};
+    use chrono::{NaiveDate, TimeZone, Utc};
+
+    #[test]
+    fn groups_week_days_in_the_user_timezone() {
+        let timezone = chrono_tz::Europe::Paris;
+        let utc = Utc.with_ymd_and_hms(2026, 9, 5, 22, 30, 0).unwrap();
+
+        assert_eq!(
+            local_date_for_utc(utc.naive_utc(), timezone),
+            NaiveDate::from_ymd_opt(2026, 9, 6).unwrap()
+        );
+    }
+
+    #[test]
+    fn local_midnight_preserves_dst_aware_week_boundaries() {
+        let timezone = chrono_tz::Europe::Paris;
+
+        assert_eq!(
+            local_midnight_utc(timezone, NaiveDate::from_ymd_opt(2026, 3, 29).unwrap()).unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 28, 23, 0, 0)
+                .unwrap()
+                .naive_utc()
+        );
+        assert_eq!(
+            local_midnight_utc(timezone, NaiveDate::from_ymd_opt(2026, 3, 30).unwrap()).unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 29, 22, 0, 0)
+                .unwrap()
+                .naive_utc()
+        );
+    }
 }

@@ -11,6 +11,7 @@ use crate::entities_v2::landscape_analysis::{
 };
 use crate::entities_v2::message::Message;
 use crate::entities_v2::platform_infra::mailer::{self, NewOutboundEmail, OutboundEmailProvider};
+use crate::entities_v2::platform_infra::notification;
 use crate::entities_v2::user::User;
 use crate::environment;
 
@@ -206,8 +207,9 @@ impl PeriodAnalysisProcessor {
             &self.context.pool,
         )?;
 
-        let _summary = period_summary::run_day(&self.context, &current_landscape).await?;
-        let _feedback = mentor_feedback::send(&self.context, &current_landscape).await?;
+        let summary = period_summary::run_day(&self.context, &current_landscape).await?;
+        let _feedback =
+            mentor_feedback::send_day(&self.context, &current_landscape, &summary).await?;
         let current_landscape =
             LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
         let _linked_landmarks = active_context_filtering::run(
@@ -290,7 +292,9 @@ impl PeriodAnalysisProcessor {
             &self.context.pool,
         )?;
 
-        let _summary = period_summary::run_week(&self.context, &current_landscape).await?;
+        let summary = period_summary::run_week(&self.context, &current_landscape).await?;
+        let feedback =
+            mentor_feedback::send_week(&self.context, &current_landscape, &summary).await?;
         let current_landscape =
             LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
         let _linked_landmarks = active_context_filtering::run(
@@ -303,6 +307,17 @@ impl PeriodAnalysisProcessor {
         let mut analysis =
             LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
         analysis.processing_state = LandscapeProcessingState::Completed;
-        analysis.update(&self.context.pool)
+        let analysis = analysis.update(&self.context.pool)?;
+
+        if let Some(feedback) = feedback {
+            notification::spawn_weekly_recap_feedback_notification(
+                analysis.clone(),
+                summary,
+                feedback,
+                self.context.pool.clone(),
+            );
+        }
+
+        Ok(analysis)
     }
 }

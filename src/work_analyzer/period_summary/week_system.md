@@ -41,7 +41,7 @@ Return JSON only, with exactly these fields:
 - `title`: short weekly title
 - `short_content`: very short weekly recap in about 2 to 3 sentences
 - `content`: full weekly recap
-- `meaningful_event`: one object describing the most meaningful event of the week with:
+- `meaningful_event`: either `null` or one object describing the most meaningful event of the week with:
   - `title`
   - `description`
   - `event_date`
@@ -50,5 +50,5 @@ Writing rules:
 
 - Write in the same language as the user traces/summaries.
 - Write in singular first person (`I` style), not third person (`the user`, `he`, `she`, `they`).
-- `meaningful_event` must capture a concrete, specific moment/turning point from the week. Choose only one event on one subject, don't mix multiple events. If any, focus on transformative events (user realizing things, new project start, new user habit...)
+- Return `meaningful_event: null` when the evidence contains no concrete meaningful event. Otherwise it must capture one specific moment or turning point from the week. Choose only one event on one subject and do not mix multiple events. Prefer transformative events such as a realization, a project start, or a new habit, but never invent one.
 - Do not mention internal field names.

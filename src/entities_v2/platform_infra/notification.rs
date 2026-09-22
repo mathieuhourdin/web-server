@@ -4,7 +4,9 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    analysis_summary::AnalysisSummary,
     error::PpdcError,
+    landscape_analysis::LandscapeAnalysis,
     message::Message,
     post::{Post, PostStatus},
     post_grant::PostGrant,
@@ -124,6 +126,58 @@ fn enqueue_received_message_notification_email(
     Ok(Some(email.id))
 }
 
+fn notification_preview(content: &str, max_chars: usize) -> String {
+    let trimmed = content.trim();
+    let preview = trimmed.chars().take(max_chars).collect::<String>();
+    if trimmed.chars().count() > max_chars {
+        format!("{}...", preview)
+    } else {
+        preview
+    }
+}
+
+fn enqueue_weekly_recap_feedback_email(
+    analysis: &LandscapeAnalysis,
+    summary: &AnalysisSummary,
+    feedback: &Message,
+    pool: &DbPool,
+) -> Result<Option<Uuid>, PpdcError> {
+    let recipient = User::find(&analysis.user_id, pool)?;
+    if recipient.email.trim().is_empty() || !recipient.allows_mentor_feedback_email() {
+        return Ok(None);
+    }
+    let mentor = User::find(&feedback.sender_user_id, pool)?;
+    let recap_url = format!(
+        "{}/me/home?feedback=open&analysis_id={}",
+        environment::get_app_base_url().trim_end_matches('/'),
+        analysis.id
+    );
+    let template = mailer::weekly_recap_email(
+        &recipient.display_name(),
+        &mentor.display_name(),
+        &feedback.title,
+        &notification_preview(&feedback.content, 220),
+        &summary.title,
+        &notification_preview(&summary.short_content, 180),
+        &recap_url,
+    );
+    let email = NewOutboundEmail::new(
+        Some(recipient.id),
+        "WEEKLY_RECAP_FEEDBACK_EMAIL".to_string(),
+        Some("LANDSCAPE_ANALYSIS".to_string()),
+        Some(analysis.id),
+        recipient.email,
+        crate::environment::get_resend_from_email(),
+        template.subject,
+        template.text_body,
+        template.html_body,
+        OutboundEmailProvider::Resend,
+        Some(Utc::now().naive_utc()),
+    )
+    .create(pool)?;
+    Ok(Some(email.id))
+}
+
 pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
     if message.sender_user_id == message.recipient_user_id {
         return;
@@ -192,6 +246,93 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                     recipient_user_id = %message.recipient_user_id,
                     error = %err.message,
                     "message_received_email_enqueue_failed"
+                );
+            }
+        }
+    });
+}
+
+pub fn spawn_weekly_recap_feedback_notification(
+    analysis: LandscapeAnalysis,
+    summary: AnalysisSummary,
+    feedback: Message,
+    pool: DbPool,
+) {
+    tokio::spawn(async move {
+        let push_sent = match push::message_received_notification(&feedback, &pool).await {
+            Ok(notification) => {
+                match push::send_to_user(feedback.recipient_user_id, notification, &pool).await {
+                    Ok(result) => {
+                        info!(
+                            target: "notification",
+                            analysis_id = %analysis.id,
+                            message_id = %feedback.id,
+                            recipient_user_id = %feedback.recipient_user_id,
+                            push_attempted_count = result.attempted_count,
+                            push_sent_count = result.sent_count,
+                            "weekly_recap_feedback_push_dispatch_completed"
+                        );
+                        result.any_sent()
+                    }
+                    Err(err) => {
+                        warn!(
+                            target: "notification",
+                            analysis_id = %analysis.id,
+                            message_id = %feedback.id,
+                            recipient_user_id = %feedback.recipient_user_id,
+                            error = %err.message,
+                            "weekly_recap_feedback_push_dispatch_failed"
+                        );
+                        false
+                    }
+                }
+            }
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    analysis_id = %analysis.id,
+                    message_id = %feedback.id,
+                    error = %err.message,
+                    "weekly_recap_feedback_push_build_failed"
+                );
+                false
+            }
+        };
+
+        if push_sent {
+            return;
+        }
+
+        match enqueue_weekly_recap_feedback_email(&analysis, &summary, &feedback, &pool) {
+            Ok(Some(email_id)) => {
+                if let Err(err) = mailer::process_pending_emails(vec![email_id], &pool).await {
+                    warn!(
+                        target: "notification",
+                        analysis_id = %analysis.id,
+                        message_id = %feedback.id,
+                        email_id = %email_id,
+                        error = %err.message,
+                        "weekly_recap_feedback_email_processing_failed"
+                    );
+                }
+            }
+            Ok(None) => {
+                info!(
+                    target: "notification",
+                    analysis_id = %analysis.id,
+                    message_id = %feedback.id,
+                    recipient_user_id = %feedback.recipient_user_id,
+                    "weekly_recap_feedback_email_skipped"
+                );
+            }
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    analysis_id = %analysis.id,
+                    message_id = %feedback.id,
+                    recipient_user_id = %feedback.recipient_user_id,
+                    error = %err.message,
+                    "weekly_recap_feedback_email_enqueue_failed"
                 );
             }
         }

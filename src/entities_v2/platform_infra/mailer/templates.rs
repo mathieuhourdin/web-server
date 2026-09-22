@@ -23,6 +23,8 @@ const JOURNAL_ACCESS_GRANTED_TEXT: &str = include_str!("templates/journal_access
 const JOURNAL_ACCESS_GRANTED_HTML: &str = include_str!("templates/journal_access_granted.html");
 const DAILY_RECAP_FEEDBACK_TEXT: &str = include_str!("templates/daily_recap_feedback.txt");
 const DAILY_RECAP_FEEDBACK_HTML: &str = include_str!("templates/daily_recap_feedback.html");
+const WEEKLY_RECAP_FEEDBACK_TEXT: &str = include_str!("templates/weekly_recap_feedback.txt");
+const WEEKLY_RECAP_FEEDBACK_HTML: &str = include_str!("templates/weekly_recap_feedback.html");
 const SHARED_JOURNAL_DAILY_DIGEST_TEXT: &str =
     include_str!("templates/shared_journal_daily_digest.txt");
 const SHARED_JOURNAL_DAILY_DIGEST_HTML: &str =
@@ -467,6 +469,56 @@ pub fn daily_recap_email(
     );
     let html_body = render_template(
         DAILY_RECAP_FEEDBACK_HTML,
+        &[
+            (
+                "recipient_display_name",
+                escape_html(recipient_display_name),
+            ),
+            ("mentor_display_name", escape_html(mentor_display_name)),
+            ("feedback_preview_html", escape_html(feedback_preview)),
+            ("recap_title", escape_html(recap_title)),
+            ("recap_preview_html", escape_html(recap_preview)),
+            ("recap_url", escape_html(recap_url)),
+        ],
+    );
+
+    append_contact_preferences_footer(EmailTemplate {
+        subject,
+        text_body: Some(text_body),
+        html_body: Some(html_body),
+    })
+}
+
+pub fn weekly_recap_email(
+    recipient_display_name: &str,
+    mentor_display_name: &str,
+    feedback_title: &str,
+    feedback_preview: &str,
+    recap_title: &str,
+    recap_preview: &str,
+    recap_url: &str,
+) -> EmailTemplate {
+    let subject = if feedback_title.trim().is_empty() {
+        format!("Votre retour de la semaine de {}", mentor_display_name)
+    } else {
+        format!(
+            "{} vous a laissé un retour : {}",
+            mentor_display_name, feedback_title
+        )
+    };
+    let text_body = render_template(
+        WEEKLY_RECAP_FEEDBACK_TEXT,
+        &[
+            ("recipient_display_name", recipient_display_name.to_string()),
+            ("mentor_display_name", mentor_display_name.to_string()),
+            ("feedback_preview", feedback_preview.to_string()),
+            ("recap_title", recap_title.to_string()),
+            ("recap_preview", recap_preview.to_string()),
+            ("recap_url", recap_url.to_string()),
+        ],
+    );
+    let html_body = render_template(
+        WEEKLY_RECAP_FEEDBACK_HTML,
         &[
             (
                 "recipient_display_name",

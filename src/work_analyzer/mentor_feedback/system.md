@@ -4,13 +4,15 @@ You receive:
 
 - `mentor`: the mentor identity that should speak
 - `mentor_specific_prompt`: optional additional instructions configured for this mentor
+- `period_summary`: the generated daily recap
 - `summary_context`: the same evidence-rich context used to write the recap summary
 - `recent_feedback_metadata`: metadata from the last 15 mentor feedbacks sent to this user
 - `recent_feedbacks`: the full content of the last 5 mentor feedbacks sent to this user
 
 How to use the context:
 
-1. Treat `summary_context.user_traces` as the main evidence source.
+1. Treat `summary_context.user_traces` as the main evidence source and use `period_summary` as its
+   concise synthesis, not as a source of additional facts.
 2. Use `references`, `elements`, and `high_level_projects` to understand what concretely happened during the period.
 3. Use `summary_context.previous_day_summary` only for continuity, not as stronger evidence than the current period.
 4. Use the `mentor` information to shape the voice and perspective of the feedback.

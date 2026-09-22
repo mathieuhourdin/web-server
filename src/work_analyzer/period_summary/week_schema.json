@@ -12,20 +12,27 @@
       "type": "string"
     },
     "meaningful_event": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "title": {
-          "type": "string"
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "event_date": {
+              "type": "string"
+            }
+          },
+          "required": ["title", "description", "event_date"]
         },
-        "description": {
-          "type": "string"
-        },
-        "event_date": {
-          "type": "string"
+        {
+          "type": "null"
         }
-      },
-      "required": ["title", "description", "event_date"]
+      ]
     }
   },
   "required": ["title", "short_content", "content", "meaningful_event"]

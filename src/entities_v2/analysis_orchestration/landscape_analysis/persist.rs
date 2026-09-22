@@ -364,6 +364,8 @@ SELECT EXISTS (
     FROM traces t
     WHERE t.user_id = $1
       AND t.status = 'FINALIZED'
+      AND t.is_encrypted = FALSE
+      AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
       AND t.interaction_date >= $2
       AND t.interaction_date < $3
       AND NOT EXISTS (
@@ -979,6 +981,8 @@ SELECT t.id
 FROM traces t
 WHERE t.user_id = $1
   AND t.status = 'FINALIZED'
+  AND t.is_encrypted = FALSE
+  AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
   AND t.interaction_date >= $2
   AND t.interaction_date < $3
 ORDER BY t.interaction_date ASC, t.created_at ASC
@@ -1010,6 +1014,9 @@ INNER JOIN traces t
     ON t.id = tm.trace_id
 WHERE las.lens_id = $1
   AND t.user_id = $2
+  AND t.status = 'FINALIZED'
+  AND t.is_encrypted = FALSE
+  AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
   AND t.interaction_date >= $3
   AND t.interaction_date < $4
 ORDER BY tm.id ASC
