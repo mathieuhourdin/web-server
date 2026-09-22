@@ -4,8 +4,11 @@ use uuid::Uuid;
 
 use crate::entities_v2::post::{Post, PostSourceRef};
 use crate::entities_v2::{
-    album::AlbumCompletionStatus, document::DocumentStatus, error::PpdcError, post::PostType,
-    trace::TraceStatus,
+    album::AlbumCompletionStatus,
+    document::DocumentStatus,
+    error::PpdcError,
+    post::PostType,
+    trace::{TraceStatus, TraceType},
 };
 use crate::schema::{albums, documents, traces};
 
@@ -47,33 +50,109 @@ pub fn load_source_projection_map(
 
     if !trace_ids.is_empty() {
         let rows = traces::table
-            .filter(traces::id.eq_any(trace_ids))
+            .filter(traces::id.eq_any(&trace_ids))
             .select((
                 traces::id,
                 traces::journal_id.nullable(),
+                traces::user_id,
                 traces::title,
                 traces::subtitle,
                 traces::content,
                 traces::content_image_asset_id,
                 traces::status,
+                traces::trace_type,
+                traces::linked_source_trace_id,
             ))
             .load::<(
                 Uuid,
                 Option<Uuid>,
+                Uuid,
                 String,
                 String,
                 String,
                 Option<Uuid>,
                 String,
+                String,
+                Option<Uuid>,
             )>(conn)?;
 
-        projections.extend(rows.into_iter().map(
-            |(id, journal_id, title, subtitle, content, cover_image_asset_id, status_raw)| {
-                (
+        let linked_source_ids = rows
+            .iter()
+            .filter_map(|row| {
+                (TraceType::from_db(&row.8) == TraceType::LinkedTrace)
+                    .then_some(row.9)
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        let source_rows = if linked_source_ids.is_empty() {
+            HashMap::new()
+        } else {
+            traces::table
+                .filter(traces::id.eq_any(linked_source_ids))
+                .select((
+                    traces::id,
+                    traces::user_id,
+                    traces::title,
+                    traces::subtitle,
+                    traces::content,
+                    traces::content_image_asset_id,
+                    traces::status,
+                ))
+                .load::<(Uuid, Uuid, String, String, String, Option<Uuid>, String)>(conn)?
+                .into_iter()
+                .map(|row| (row.0, row))
+                .collect::<HashMap<_, _>>()
+        };
+
+        projections.extend(rows.into_iter().filter_map(
+            |(
+                id,
+                journal_id,
+                _user_id,
+                title,
+                subtitle,
+                content,
+                cover_image_asset_id,
+                status_raw,
+                trace_type_raw,
+                linked_source_trace_id,
+            )| {
+                if TraceType::from_db(&trace_type_raw) == TraceType::LinkedTrace {
+                    let source_id = linked_source_trace_id?;
+                    let (
+                        _,
+                        original_author_user_id,
+                        title,
+                        subtitle,
+                        content,
+                        cover_image_asset_id,
+                        status_raw,
+                    ) = source_rows.get(&source_id)?.clone();
+                    return Some((
+                        PostSourceRef::Trace(id),
+                        SourceProjection {
+                            source_kind: SourceProjectionKind::Trace,
+                            source_id: id,
+                            original_source_id: Some(source_id),
+                            original_author_user_id: Some(original_author_user_id),
+                            journal_id,
+                            title,
+                            subtitle,
+                            content,
+                            cover_image_asset_id,
+                            default_post_type: PostType::Idea,
+                            state: SourceProjectionState::Trace(TraceStatus::from_db(&status_raw)),
+                        },
+                    ));
+                }
+
+                Some((
                     PostSourceRef::Trace(id),
                     SourceProjection {
                         source_kind: SourceProjectionKind::Trace,
                         source_id: id,
+                        original_source_id: None,
+                        original_author_user_id: None,
                         journal_id,
                         title,
                         subtitle,
@@ -82,7 +161,7 @@ pub fn load_source_projection_map(
                         default_post_type: PostType::Idea,
                         state: SourceProjectionState::Trace(TraceStatus::from_db(&status_raw)),
                     },
-                )
+                ))
             },
         ));
     }
@@ -127,6 +206,8 @@ pub fn load_source_projection_map(
                     SourceProjection {
                         source_kind: SourceProjectionKind::Document,
                         source_id: id,
+                        original_source_id: None,
+                        original_author_user_id: None,
                         journal_id: None,
                         title,
                         subtitle,
@@ -165,6 +246,8 @@ pub fn load_source_projection_map(
                     SourceProjection {
                         source_kind: SourceProjectionKind::Album,
                         source_id: id,
+                        original_source_id: None,
+                        original_author_user_id: None,
                         journal_id: None,
                         title,
                         subtitle,

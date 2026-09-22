@@ -8,8 +8,9 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
-use crate::entities_v2::post::PostStatus;
+use crate::entities_v2::post::{PostSourceRef, PostStatus};
 use crate::entities_v2::post_grant::PostGrant;
+use crate::entities_v2::source_projection::load_source_projection_map;
 use crate::entities_v2::trace_mention::{TraceMention, TraceMentionInput, TraceMentionUser};
 use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user_post_state::PostSeenByPreview;
@@ -267,16 +268,31 @@ impl Trace {
         if UserBlock::exists_in_either_direction(self.user_id, viewer_user_id, pool)? {
             return Ok(false);
         }
-        if TraceMention::active_grant_exists(self.id, viewer_user_id, pool)? {
+        if TraceMention::active_mention_exists(self.id, viewer_user_id, pool)? {
             return Ok(true);
         }
         let Some(post) = crate::entities_v2::post::Post::find_for_trace(self.id, pool)? else {
-            return Ok(false);
+            return super::linked::LinkedTraceResponse::source_is_readable_via_reshare(
+                self.id,
+                viewer_user_id,
+                pool,
+            );
         };
         if post.status != PostStatus::Published {
-            return Ok(false);
+            return super::linked::LinkedTraceResponse::source_is_readable_via_reshare(
+                self.id,
+                viewer_user_id,
+                pool,
+            );
         }
-        PostGrant::user_can_read_post(&post, viewer_user_id, pool)
+        if PostGrant::user_can_read_post(&post, viewer_user_id, pool)? {
+            return Ok(true);
+        }
+        super::linked::LinkedTraceResponse::source_is_readable_via_reshare(
+            self.id,
+            viewer_user_id,
+            pool,
+        )
     }
 
     pub fn effective_datetime(&self) -> NaiveDateTime {
@@ -1061,7 +1077,7 @@ impl Trace {
                 NaiveDateTime,
             )>(&mut conn)?;
 
-        let traces = rows
+        let mut trace_items = rows
             .into_iter()
             .map(
                 |(
@@ -1107,9 +1123,31 @@ impl Trace {
                     updated_at,
                 },
             )
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok((traces, total))
+        let source_refs = trace_items
+            .iter()
+            .map(|item| PostSourceRef::Trace(item.id))
+            .collect::<Vec<_>>();
+        let projections = load_source_projection_map(&source_refs, &mut conn)?;
+        for item in &mut trace_items {
+            let Some(projection) = projections.get(&PostSourceRef::Trace(item.id)) else {
+                continue;
+            };
+            let Some(original_source_id) = projection.original_source_id else {
+                continue;
+            };
+            item.source_trace_id = Some(original_source_id);
+            item.title = projection.title.clone();
+            item.subtitle = Some(projection.subtitle.clone());
+            item.content = projection.content.clone();
+            item.content_image_asset_id = projection.cover_image_asset_id;
+            item.user_id = projection.original_author_user_id;
+            item.trace_type = Some(TraceType::LinkedTrace);
+            item.status = Some(TraceStatus::Finalized);
+        }
+
+        Ok((trace_items, total))
     }
 
     pub fn find_shared_rank_for_journal(

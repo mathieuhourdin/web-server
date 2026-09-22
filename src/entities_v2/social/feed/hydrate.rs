@@ -11,8 +11,9 @@ use crate::entities_v2::{
     post::{PostSourceRef, PostStatus},
     post_grant::PostGrant,
     source_projection::{load_source_projection_map, SourceProjectionKind},
+    user::User,
 };
-use crate::schema::{journals, posts, user_post_states, users};
+use crate::schema::{journals, posts, user_post_states};
 
 use super::model::{FeedItem, FeedSourceKind};
 
@@ -130,33 +131,30 @@ pub fn find_feed_items_paginated(
         })
         .collect::<Vec<_>>();
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
+    drop(conn);
 
-    let owner_user_ids: Vec<Uuid> = rows
+    let mut displayed_user_ids: Vec<Uuid> = rows
         .iter()
         .map(|row| row.1)
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
-    let display_name_map: HashMap<Uuid, String> = users::table
-        .filter(users::id.eq_any(&owner_user_ids))
-        .select((
-            users::id,
-            users::first_name,
-            users::last_name,
-            users::pseudonym,
-            users::pseudonymized,
-        ))
-        .load::<(Uuid, String, String, String, bool)>(&mut conn)?
-        .into_iter()
-        .map(|(id, first_name, last_name, pseudonym, pseudonymized)| {
-            let name = if pseudonymized {
-                pseudonym
-            } else {
-                format!("{} {}", first_name, last_name)
-            };
-            (id, name)
-        })
-        .collect();
+    displayed_user_ids.extend(
+        projections
+            .values()
+            .filter_map(|projection| projection.original_author_user_id),
+    );
+    displayed_user_ids.sort_unstable();
+    displayed_user_ids.dedup();
+    let displayed_users = User::find_many(&displayed_user_ids, pool)?;
+    let display_name_map = displayed_users
+        .iter()
+        .map(|user| (user.id, user.display_name()))
+        .collect::<HashMap<_, _>>();
+    let profile_picture_map = displayed_users
+        .iter()
+        .map(|user| (user.id, user.profile_picture_display_url(pool)))
+        .collect::<HashMap<_, _>>();
 
     let journal_ids: Vec<Uuid> = projections
         .values()
@@ -168,6 +166,7 @@ pub fn find_feed_items_paginated(
     let journal_title_map: HashMap<Uuid, String> = if journal_ids.is_empty() {
         HashMap::new()
     } else {
+        let mut conn = pool.get()?;
         journals::table
             .filter(journals::id.eq_any(&journal_ids))
             .select((journals::id, journals::title))
@@ -218,6 +217,14 @@ pub fn find_feed_items_paginated(
                         SourceProjectionKind::Album => FeedSourceKind::Album,
                     },
                     source_id: projection.source_id,
+                    original_source_id: projection.original_source_id,
+                    original_author_user_id: projection.original_author_user_id,
+                    original_author_display_name: projection
+                        .original_author_user_id
+                        .and_then(|id| display_name_map.get(&id).cloned()),
+                    original_author_profile_picture_display_url: projection
+                        .original_author_user_id
+                        .and_then(|id| profile_picture_map.get(&id).cloned().flatten()),
                     owner_user_id,
                     journal_id: projection.journal_id,
                     status: PostStatus::from_db(&status_raw),

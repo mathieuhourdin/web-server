@@ -23,14 +23,14 @@ pub struct TraceMentionUser {
     pub handle: String,
     pub display_name: String,
     pub profile_picture_display_url: Option<String>,
-    pub grants_trace_access: bool,
+    pub allows_reshare: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TraceMentionInput {
     pub user_id: Uuid,
     #[serde(default)]
-    pub grants_trace_access: bool,
+    pub allows_reshare: bool,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -38,7 +38,7 @@ pub struct TraceMentionInput {
 pub struct TraceMention {
     pub trace_id: Uuid,
     pub mentioned_user_id: Uuid,
-    pub grants_trace_access: bool,
+    pub allows_reshare: bool,
     pub notified_at: Option<NaiveDateTime>,
     pub removed_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
@@ -56,15 +56,18 @@ impl TraceMention {
             .map(|mention| mention.user_id)
             .collect::<Vec<_>>();
         let validated_ids = Self::validate_targets(owner_user_id, &user_ids, pool)?;
-        let grants_by_user_id = mentions
+        let allows_reshare_by_user_id = mentions
             .iter()
-            .map(|mention| (mention.user_id, mention.grants_trace_access))
+            .map(|mention| (mention.user_id, mention.allows_reshare))
             .collect::<HashMap<_, _>>();
         Ok(validated_ids
             .into_iter()
             .map(|user_id| TraceMentionInput {
                 user_id,
-                grants_trace_access: grants_by_user_id.get(&user_id).copied().unwrap_or(false),
+                allows_reshare: allows_reshare_by_user_id
+                    .get(&user_id)
+                    .copied()
+                    .unwrap_or(false),
             })
             .collect())
     }
@@ -146,12 +149,12 @@ impl TraceMention {
                 .on_conflict((trace_mentions::trace_id, trace_mentions::mentioned_user_id))
                 .do_update()
                 .set((
-                    // Legacy ID-only payloads preserve an active grant. A mention being restored
-                    // after removal starts without direct access until the owner explicitly grants it.
-                    trace_mentions::grants_trace_access.eq(diesel::dsl::sql::<
+                    // Legacy ID-only payloads preserve reshare permission for an active mention.
+                    // A restored mention starts without reshare permission.
+                    trace_mentions::allows_reshare.eq(diesel::dsl::sql::<
                         diesel::sql_types::Bool,
                     >(
-                        "CASE WHEN trace_mentions.removed_at IS NULL THEN trace_mentions.grants_trace_access ELSE FALSE END",
+                        "CASE WHEN trace_mentions.removed_at IS NULL THEN trace_mentions.allows_reshare ELSE FALSE END",
                     )),
                     trace_mentions::notified_at.eq(diesel::dsl::sql::<
                         diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
@@ -192,12 +195,12 @@ impl TraceMention {
                 .values((
                     trace_mentions::trace_id.eq(trace_id),
                     trace_mentions::mentioned_user_id.eq(mention.user_id),
-                    trace_mentions::grants_trace_access.eq(mention.grants_trace_access),
+                    trace_mentions::allows_reshare.eq(mention.allows_reshare),
                 ))
                 .on_conflict((trace_mentions::trace_id, trace_mentions::mentioned_user_id))
                 .do_update()
                 .set((
-                    trace_mentions::grants_trace_access.eq(mention.grants_trace_access),
+                    trace_mentions::allows_reshare.eq(mention.allows_reshare),
                     trace_mentions::removed_at.eq::<Option<NaiveDateTime>>(None),
                     trace_mentions::notified_at.eq(diesel::dsl::sql::<
                         diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
@@ -235,22 +238,6 @@ impl TraceMention {
         Ok(())
     }
 
-    pub fn active_grant_exists(
-        trace_id: Uuid,
-        mentioned_user_id: Uuid,
-        pool: &DbPool,
-    ) -> Result<bool, PpdcError> {
-        let mut conn = pool.get()?;
-        Ok(diesel::select(diesel::dsl::exists(
-            trace_mentions::table
-                .filter(trace_mentions::trace_id.eq(trace_id))
-                .filter(trace_mentions::mentioned_user_id.eq(mentioned_user_id))
-                .filter(trace_mentions::removed_at.is_null())
-                .filter(trace_mentions::grants_trace_access.eq(true)),
-        ))
-        .get_result::<bool>(&mut conn)?)
-    }
-
     pub fn active_mention_exists(
         trace_id: Uuid,
         mentioned_user_id: Uuid,
@@ -266,6 +253,22 @@ impl TraceMention {
         .get_result::<bool>(&mut conn)?)
     }
 
+    pub fn active_reshare_exists(
+        trace_id: Uuid,
+        mentioned_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(diesel::select(diesel::dsl::exists(
+            trace_mentions::table
+                .filter(trace_mentions::trace_id.eq(trace_id))
+                .filter(trace_mentions::mentioned_user_id.eq(mentioned_user_id))
+                .filter(trace_mentions::removed_at.is_null())
+                .filter(trace_mentions::allows_reshare.eq(true)),
+        ))
+        .get_result::<bool>(&mut conn)?)
+    }
+
     pub fn find_active_inputs_for_trace(
         trace_id: Uuid,
         pool: &DbPool,
@@ -276,28 +279,15 @@ impl TraceMention {
             .filter(trace_mentions::removed_at.is_null())
             .select((
                 trace_mentions::mentioned_user_id,
-                trace_mentions::grants_trace_access,
+                trace_mentions::allows_reshare,
             ))
             .load::<(Uuid, bool)>(&mut conn)?
             .into_iter()
-            .map(|(user_id, grants_trace_access)| TraceMentionInput {
+            .map(|(user_id, allows_reshare)| TraceMentionInput {
                 user_id,
-                grants_trace_access,
+                allows_reshare,
             })
             .collect())
-    }
-
-    pub fn find_active_granting_user_ids_for_trace(
-        trace_id: Uuid,
-        pool: &DbPool,
-    ) -> Result<Vec<Uuid>, PpdcError> {
-        let mut conn = pool.get()?;
-        Ok(trace_mentions::table
-            .filter(trace_mentions::trace_id.eq(trace_id))
-            .filter(trace_mentions::removed_at.is_null())
-            .filter(trace_mentions::grants_trace_access.eq(true))
-            .select(trace_mentions::mentioned_user_id)
-            .load::<Uuid>(&mut conn)?)
     }
 
     pub fn find_active_user_ids_for_trace(
@@ -353,9 +343,9 @@ impl TraceMention {
             .iter()
             .map(|mention| mention.user_id)
             .collect::<Vec<_>>();
-        let grants_by_user_id = mentions
+        let allows_reshare_by_user_id = mentions
             .iter()
-            .map(|mention| (mention.user_id, mention.grants_trace_access))
+            .map(|mention| (mention.user_id, mention.allows_reshare))
             .collect::<HashMap<_, _>>();
         let mut users = User::find_many(&ids, pool)?;
         users.sort_by_key(|user| {
@@ -370,7 +360,10 @@ impl TraceMention {
                 handle: user.handle.clone(),
                 display_name: user.display_name(),
                 profile_picture_display_url: user.profile_picture_display_url(pool),
-                grants_trace_access: grants_by_user_id.get(&user.id).copied().unwrap_or(false),
+                allows_reshare: allows_reshare_by_user_id
+                    .get(&user.id)
+                    .copied()
+                    .unwrap_or(false),
             })
             .collect())
     }
@@ -390,7 +383,7 @@ impl TraceMention {
             .select((
                 trace_mentions::trace_id,
                 trace_mentions::mentioned_user_id,
-                trace_mentions::grants_trace_access,
+                trace_mentions::allows_reshare,
                 trace_mentions::created_at,
             ))
             .order((trace_mentions::trace_id, trace_mentions::created_at))
@@ -409,7 +402,7 @@ impl TraceMention {
             .collect::<HashMap<_, _>>();
 
         let mut mentions_by_trace_id = HashMap::<Uuid, Vec<TraceMentionUser>>::new();
-        for (trace_id, user_id, grants_trace_access, _) in rows {
+        for (trace_id, user_id, allows_reshare, _) in rows {
             if let Some(user) = summaries_by_user_id.get(&user_id) {
                 mentions_by_trace_id
                     .entry(trace_id)
@@ -419,7 +412,7 @@ impl TraceMention {
                         handle: user.handle.clone(),
                         display_name: user.display_name(),
                         profile_picture_display_url: user.profile_picture_display_url(pool),
-                        grants_trace_access,
+                        allows_reshare,
                     });
             }
         }

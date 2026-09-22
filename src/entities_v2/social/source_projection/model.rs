@@ -25,6 +25,8 @@ pub enum SourceProjectionState {
 pub struct SourceProjection {
     pub source_kind: SourceProjectionKind,
     pub source_id: Uuid,
+    pub original_source_id: Option<Uuid>,
+    pub original_author_user_id: Option<Uuid>,
     pub journal_id: Option<Uuid>,
     pub title: String,
     pub subtitle: String,
@@ -39,6 +41,8 @@ impl SourceProjection {
         Self {
             source_kind: SourceProjectionKind::Trace,
             source_id: trace.id,
+            original_source_id: None,
+            original_author_user_id: None,
             journal_id: trace.journal_id,
             title: trace.title.clone(),
             subtitle: trace.subtitle.clone(),
@@ -53,6 +57,8 @@ impl SourceProjection {
         Self {
             source_kind: SourceProjectionKind::Document,
             source_id: document.id,
+            original_source_id: None,
+            original_author_user_id: None,
             journal_id: None,
             title: document.title.clone(),
             subtitle: document.subtitle.clone(),
@@ -70,6 +76,8 @@ impl SourceProjection {
         Self {
             source_kind: SourceProjectionKind::Album,
             source_id: album.id,
+            original_source_id: None,
+            original_author_user_id: None,
             journal_id: None,
             title: album.title.clone(),
             subtitle: album.subtitle.clone(),

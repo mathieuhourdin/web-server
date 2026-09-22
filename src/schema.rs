@@ -618,7 +618,7 @@ diesel::table! {
     trace_mentions (trace_id, mentioned_user_id) {
         trace_id -> Uuid,
         mentioned_user_id -> Uuid,
-        grants_trace_access -> Bool,
+        allows_reshare -> Bool,
         notified_at -> Nullable<Timestamp>,
         removed_at -> Nullable<Timestamp>,
         created_at -> Timestamp,

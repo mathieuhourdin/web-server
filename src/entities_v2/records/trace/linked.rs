@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{
-    BigInt, Bool, Int4, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid,
+    Array, BigInt, Bool, Int4, Nullable, Text, Timestamp, Timestamptz, Uuid as SqlUuid,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -52,6 +52,12 @@ struct IdRow {
 struct CountRow {
     #[diesel(sql_type = BigInt)]
     count: i64,
+}
+
+#[derive(QueryableByName)]
+struct BoolRow {
+    #[diesel(sql_type = Bool)]
+    value: bool,
 }
 
 #[derive(QueryableByName)]
@@ -155,7 +161,6 @@ const JOURNAL_CANDIDATES_SQL: &str = r#"
               WHERE mention.trace_id = source.id
                 AND mention.mentioned_user_id = $2
                 AND mention.removed_at IS NULL
-                AND mention.grants_trace_access = TRUE
           )
           OR EXISTS (
               SELECT 1
@@ -181,6 +186,216 @@ const JOURNAL_CANDIDATES_SQL: &str = r#"
 "#;
 
 impl LinkedTraceResponse {
+    pub fn reshare_is_active(
+        linked_trace_id: Uuid,
+        resharer_user_id: Uuid,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(sql_query(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM traces proxy
+                INNER JOIN traces source ON source.id = proxy.linked_source_trace_id
+                INNER JOIN trace_mentions mention
+                    ON mention.trace_id = source.id
+                   AND mention.mentioned_user_id = proxy.user_id
+                   AND mention.removed_at IS NULL
+                   AND mention.allows_reshare = TRUE
+                WHERE proxy.id = $1
+                  AND proxy.user_id = $2
+                  AND proxy.trace_type = 'LINKED_TRACE'
+                  AND proxy.status = 'FINALIZED'
+                  AND source.trace_type = 'USER_TRACE'
+                  AND source.status = 'FINALIZED'
+                  AND source.is_encrypted = FALSE
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_blocks block
+                      WHERE (block.blocker_user_id = source.user_id AND block.blocked_user_id = $2)
+                         OR (block.blocker_user_id = $2 AND block.blocked_user_id = source.user_id)
+                         OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = $3)
+                         OR (block.blocker_user_id = $3 AND block.blocked_user_id = source.user_id)
+                  )
+            ) AS value
+            "#,
+        )
+        .bind::<SqlUuid, _>(linked_trace_id)
+        .bind::<SqlUuid, _>(resharer_user_id)
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .get_result::<BoolRow>(&mut conn)?
+        .value)
+    }
+
+    pub fn filter_eligible_reshare_post_ids(
+        post_ids: &[Uuid],
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        if post_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        #[derive(QueryableByName)]
+        struct PostIdRow {
+            #[diesel(sql_type = SqlUuid)]
+            id: Uuid,
+        }
+        let mut conn = pool.get()?;
+        Ok(sql_query(
+            r#"
+            SELECT post.id
+            FROM posts post
+            LEFT JOIN traces proxy ON proxy.id = post.source_trace_id
+            LEFT JOIN traces source ON source.id = proxy.linked_source_trace_id
+            WHERE post.id = ANY($1)
+              AND (
+                  proxy.trace_type IS DISTINCT FROM 'LINKED_TRACE'
+                  OR (
+                      proxy.user_id = post.user_id
+                      AND proxy.status = 'FINALIZED'
+                      AND source.trace_type = 'USER_TRACE'
+                      AND source.status = 'FINALIZED'
+                      AND source.is_encrypted = FALSE
+                      AND EXISTS (
+                          SELECT 1 FROM trace_mentions mention
+                          WHERE mention.trace_id = source.id
+                            AND mention.mentioned_user_id = proxy.user_id
+                            AND mention.removed_at IS NULL
+                            AND mention.allows_reshare = TRUE
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM user_blocks block
+                          WHERE (block.blocker_user_id = source.user_id AND block.blocked_user_id = proxy.user_id)
+                             OR (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = source.user_id)
+                             OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = $2)
+                             OR (block.blocker_user_id = $2 AND block.blocked_user_id = source.user_id)
+                      )
+                  )
+              )
+            "#,
+        )
+        .bind::<Array<SqlUuid>, _>(post_ids)
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .load::<PostIdRow>(&mut conn)?
+        .into_iter()
+        .map(|row| row.id)
+        .collect())
+    }
+
+    pub fn filter_eligible_reshare_viewers(
+        linked_trace_id: Uuid,
+        resharer_user_id: Uuid,
+        viewer_user_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        if viewer_user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        #[derive(QueryableByName)]
+        struct UserIdRow {
+            #[diesel(sql_type = SqlUuid)]
+            id: Uuid,
+        }
+        let mut conn = pool.get()?;
+        Ok(sql_query(
+            r#"
+            SELECT viewer.id
+            FROM unnest($3::uuid[]) AS viewer(id)
+            WHERE EXISTS (
+                SELECT 1
+                FROM traces proxy
+                INNER JOIN traces source ON source.id = proxy.linked_source_trace_id
+                INNER JOIN trace_mentions mention
+                    ON mention.trace_id = source.id
+                   AND mention.mentioned_user_id = proxy.user_id
+                   AND mention.removed_at IS NULL
+                   AND mention.allows_reshare = TRUE
+                WHERE proxy.id = $1
+                  AND proxy.user_id = $2
+                  AND proxy.trace_type = 'LINKED_TRACE'
+                  AND proxy.status = 'FINALIZED'
+                  AND source.trace_type = 'USER_TRACE'
+                  AND source.status = 'FINALIZED'
+                  AND source.is_encrypted = FALSE
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_blocks block
+                      WHERE (block.blocker_user_id = source.user_id AND block.blocked_user_id = $2)
+                         OR (block.blocker_user_id = $2 AND block.blocked_user_id = source.user_id)
+                         OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = viewer.id)
+                         OR (block.blocker_user_id = viewer.id AND block.blocked_user_id = source.user_id)
+                  )
+            )
+            "#,
+        )
+        .bind::<SqlUuid, _>(linked_trace_id)
+        .bind::<SqlUuid, _>(resharer_user_id)
+        .bind::<Array<SqlUuid>, _>(viewer_user_ids)
+        .load::<UserIdRow>(&mut conn)?
+        .into_iter()
+        .map(|row| row.id)
+        .collect())
+    }
+
+    pub fn source_is_readable_via_reshare(
+        source_trace_id: Uuid,
+        viewer_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(sql_query(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM traces source
+                INNER JOIN traces proxy ON proxy.linked_source_trace_id = source.id
+                INNER JOIN posts post
+                    ON post.source_trace_id = proxy.id
+                   AND post.status = 'PUBLISHED'
+                INNER JOIN post_grants grant_row
+                    ON grant_row.post_id = post.id
+                   AND grant_row.status = 'ACTIVE'
+                INNER JOIN trace_mentions mention
+                    ON mention.trace_id = source.id
+                   AND mention.mentioned_user_id = proxy.user_id
+                   AND mention.removed_at IS NULL
+                   AND mention.allows_reshare = TRUE
+                WHERE source.id = $1
+                  AND source.trace_type = 'USER_TRACE'
+                  AND source.status = 'FINALIZED'
+                  AND source.is_encrypted = FALSE
+                  AND proxy.trace_type = 'LINKED_TRACE'
+                  AND proxy.status = 'FINALIZED'
+                  AND (
+                      grant_row.grantee_user_id = $2
+                      OR (
+                          grant_row.grantee_scope = 'ALL_PLATFORM_USERS'
+                          AND EXISTS (
+                              SELECT 1 FROM users viewer
+                              WHERE viewer.id = $2
+                                AND viewer.is_platform_user = TRUE
+                                AND viewer.principal_type = 'HUMAN'
+                          )
+                      )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_blocks block
+                      WHERE (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = $2)
+                         OR (block.blocker_user_id = $2 AND block.blocked_user_id = proxy.user_id)
+                         OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = proxy.user_id)
+                         OR (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = source.user_id)
+                         OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = $2)
+                         OR (block.blocker_user_id = $2 AND block.blocked_user_id = source.user_id)
+                  )
+            ) AS value
+            "#,
+        )
+        .bind::<SqlUuid, _>(source_trace_id)
+        .bind::<SqlUuid, _>(viewer_user_id)
+        .get_result::<BoolRow>(&mut conn)?
+        .value)
+    }
+
     pub fn create_or_move(
         journal_id: Uuid,
         source_trace_id: Uuid,
@@ -283,6 +498,28 @@ impl LinkedTraceResponse {
 
             if let Some(previous_journal_id) = previous.and_then(|row| row.journal_id) {
                 if previous_journal_id != journal_id {
+                    let has_post = sql_query(
+                        "SELECT EXISTS (
+                            SELECT 1
+                            FROM traces proxy
+                            INNER JOIN posts post ON post.source_trace_id = proxy.id
+                            WHERE proxy.user_id = $1
+                              AND proxy.linked_source_trace_id = $2
+                              AND proxy.trace_type = 'LINKED_TRACE'
+                        ) AS value",
+                    )
+                    .bind::<SqlUuid, _>(user_id)
+                    .bind::<SqlUuid, _>(source_trace_id)
+                    .get_result::<BoolRow>(conn)?
+                    .value;
+                    if has_post {
+                        return Err(PpdcError::new(
+                            409,
+                            ErrorType::ApiError,
+                            "A linked trace with a staged or published post cannot be moved between journals"
+                                .to_string(),
+                        ));
+                    }
                     recalculate_journal_last_trace_at(conn, previous_journal_id)?;
                 }
             }
@@ -307,6 +544,22 @@ impl LinkedTraceResponse {
                 .bind::<SqlUuid, _>(source_trace_id)
                 .get_result::<IdRow>(conn)
                 .optional()?;
+            sql_query(
+                "UPDATE posts
+                 SET status = 'ARCHIVED', updated_at = NOW()
+                 WHERE source_trace_id IN (
+                     SELECT id FROM traces
+                     WHERE journal_id = $1
+                       AND user_id = $2
+                       AND linked_source_trace_id = $3
+                       AND trace_type = 'LINKED_TRACE'
+                 )",
+            )
+            .bind::<SqlUuid, _>(journal_id)
+            .bind::<SqlUuid, _>(user_id)
+            .bind::<SqlUuid, _>(source_trace_id)
+            .execute(conn)?;
+
             let deleted = sql_query(
                 "DELETE FROM traces
                  WHERE journal_id = $1
@@ -338,6 +591,21 @@ impl LinkedTraceResponse {
         Ok(traces::table
             .filter(traces::id.eq(linked_trace_id))
             .filter(traces::user_id.eq(owner_user_id))
+            .filter(traces::trace_type.eq(TraceType::LinkedTrace.to_db()))
+            .select(traces::linked_source_trace_id)
+            .first::<Option<Uuid>>(&mut conn)
+            .optional()?
+            .flatten())
+    }
+
+    pub fn find_source_trace_id_unscoped(
+        linked_trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Uuid>, PpdcError> {
+        use crate::schema::traces;
+        let mut conn = pool.get()?;
+        Ok(traces::table
+            .filter(traces::id.eq(linked_trace_id))
             .filter(traces::trace_type.eq(TraceType::LinkedTrace.to_db()))
             .select(traces::linked_source_trace_id)
             .first::<Option<Uuid>>(&mut conn)

@@ -320,20 +320,19 @@ pub(crate) fn dispatch_trace_mention_notifications(
             return;
         }
     };
-    let granting_mentions =
-        match TraceMention::find_active_granting_user_ids_for_trace(trace_id, pool) {
-            Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
-            Err(err) => {
-                tracing::warn!(
-                    target: "notification",
-                    post_id = %post.id,
-                    trace_id = %trace_id,
-                    error = %err.message,
-                    "trace_mention_access_grant_lookup_failed"
-                );
-                return;
-            }
-        };
+    let active_mentions = match TraceMention::find_active_user_ids_for_trace(trace_id, pool) {
+        Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
+        Err(err) => {
+            tracing::warn!(
+                target: "notification",
+                post_id = %post.id,
+                trace_id = %trace_id,
+                error = %err.message,
+                "trace_mention_lookup_failed"
+            );
+            return;
+        }
+    };
     let blocked = match UserBlock::blocked_user_ids_in_either_direction(post.user_id, pool) {
         Ok(ids) => ids,
         Err(err) => {
@@ -353,7 +352,7 @@ pub(crate) fn dispatch_trace_mention_notifications(
         .filter(|user_id| {
             unnotified.contains(user_id)
                 && !blocked.contains(user_id)
-                && (readable.contains(user_id) || granting_mentions.contains(user_id))
+                && (readable.contains(user_id) || active_mentions.contains(user_id))
         })
         .collect::<Vec<_>>();
     if recipient_ids.is_empty() {
@@ -550,13 +549,6 @@ pub async fn get_trace_post_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    if trace.trace_type == TraceType::LinkedTrace {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Linked traces cannot be published".to_string(),
-        ));
-    }
 
     Ok(Json(Post::find_for_trace(trace_id, &pool)?))
 }
@@ -616,15 +608,27 @@ pub async fn put_trace_post_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+
+    let existing_post = Post::find_for_trace(trace_id, &pool)?;
+    let requested_status = payload
+        .status
+        .or_else(|| existing_post.as_ref().map(|post| post.status))
+        .unwrap_or(PostStatus::Draft);
     if trace.trace_type == TraceType::LinkedTrace {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Linked traces cannot be published".to_string(),
-        ));
+        let reshare_is_active =
+            crate::entities_v2::trace::linked::LinkedTraceResponse::reshare_is_active(
+                trace.id, user_id, user_id, &pool,
+            )?;
+        // A stale post can always be archived after the original author revokes
+        // permission. Creating or (re)publishing it requires an active delegation.
+        if !reshare_is_active
+            && (existing_post.is_none() || requested_status != PostStatus::Archived)
+        {
+            return Err(PpdcError::unauthorized());
+        }
     }
 
-    let mut post = if let Some(existing_post) = Post::find_for_trace(trace_id, &pool)? {
+    let mut post = if let Some(existing_post) = existing_post {
         existing_post
     } else {
         let post = NewPost {
@@ -664,7 +668,15 @@ pub async fn put_trace_post_route(
         post.audience_role = audience_role;
     }
     if post.status == PostStatus::Published {
-        ensure_source_permits_published_post(trace.status.permits_published_post())?;
+        if trace.trace_type == TraceType::LinkedTrace {
+            if !crate::entities_v2::trace::linked::LinkedTraceResponse::reshare_is_active(
+                trace.id, user_id, user_id, &pool,
+            )? {
+                return Err(PpdcError::unauthorized());
+            }
+        } else {
+            ensure_source_permits_published_post(trace.status.permits_published_post())?;
+        }
     }
     if previous_status != PostStatus::Published
         && post.status == PostStatus::Published
@@ -691,7 +703,7 @@ pub async fn delete_trace_post_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
-    if trace.status != TraceStatus::Draft {
+    if trace.status != TraceStatus::Draft && trace.trace_type != TraceType::LinkedTrace {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,

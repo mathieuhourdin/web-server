@@ -597,12 +597,20 @@ fn resolve_readable_source_trace(
     pool: &DbPool,
 ) -> Result<Trace, PpdcError> {
     let source = if trace.trace_type == TraceType::LinkedTrace {
-        if trace.user_id != user_id {
+        let source_trace_id = LinkedTraceResponse::find_source_trace_id_unscoped(trace.id, pool)?
+            .ok_or_else(PpdcError::unauthorized)?;
+        let source = Trace::find_full_trace(source_trace_id, pool)?;
+        let can_read = if trace.user_id == user_id {
+            source.user_can_read(user_id, pool)?
+        } else if let Some(post) = find_published_trace_post(trace.id, pool)? {
+            crate::entities_v2::post_grant::PostGrant::user_can_read_post(&post, user_id, pool)?
+        } else {
+            false
+        };
+        if !can_read {
             return Err(PpdcError::unauthorized());
         }
-        let source_trace_id = LinkedTraceResponse::find_source_trace_id(trace.id, user_id, pool)?
-            .ok_or_else(PpdcError::unauthorized)?;
-        Trace::find_full_trace(source_trace_id, pool)?
+        source
     } else {
         trace
     };
@@ -620,7 +628,13 @@ fn attach_seen_state_to_trace_list_items(
 ) -> Result<Vec<TraceListItem>, PpdcError> {
     let trace_ids = items
         .iter()
-        .map(|item| item.source_trace_id.unwrap_or(item.id))
+        .map(|item| {
+            if item.trace_type == Some(TraceType::LinkedTrace) {
+                item.id
+            } else {
+                item.source_trace_id.unwrap_or(item.id)
+            }
+        })
         .collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -628,8 +642,12 @@ fn attach_seen_state_to_trace_list_items(
     Ok(items
         .into_iter()
         .map(|mut item| {
-            let source_trace_id = item.source_trace_id.unwrap_or(item.id);
-            item.last_seen_at = last_seen_at_by_trace_id.get(&source_trace_id).copied();
+            let seen_trace_id = if item.trace_type == Some(TraceType::LinkedTrace) {
+                item.id
+            } else {
+                item.source_trace_id.unwrap_or(item.id)
+            };
+            item.last_seen_at = last_seen_at_by_trace_id.get(&seen_trace_id).copied();
             item.seen = item.last_seen_at.is_some();
             item
         })
@@ -643,7 +661,13 @@ fn attach_seen_by_preview_to_trace_list_items(
 ) -> Result<Vec<TraceListItem>, PpdcError> {
     let trace_ids = items
         .iter()
-        .map(|item| item.source_trace_id.unwrap_or(item.id))
+        .map(|item| {
+            if item.trace_type == Some(TraceType::LinkedTrace) {
+                item.id
+            } else {
+                item.source_trace_id.unwrap_or(item.id)
+            }
+        })
         .collect::<Vec<_>>();
     let previews = UserPostState::find_seen_by_preview_by_trace_ids(
         owner_user_id,
@@ -655,9 +679,14 @@ fn attach_seen_by_preview_to_trace_list_items(
     Ok(items
         .into_iter()
         .map(|mut item| {
+            let seen_trace_id = if item.trace_type == Some(TraceType::LinkedTrace) {
+                item.id
+            } else {
+                item.source_trace_id.unwrap_or(item.id)
+            };
             item.seen_by_preview = Some(
                 previews
-                    .get(&item.source_trace_id.unwrap_or(item.id))
+                    .get(&seen_trace_id)
                     .cloned()
                     .unwrap_or_else(PostSeenByPreview::default),
             );
@@ -673,7 +702,13 @@ fn attach_seen_state_to_trace_readable_views(
 ) -> Result<Vec<TraceReadableView>, PpdcError> {
     let trace_ids = items
         .iter()
-        .map(|item| item.source_trace_id.unwrap_or(item.id))
+        .map(|item| {
+            if item.trace_type == Some(TraceType::LinkedTrace) {
+                item.id
+            } else {
+                item.source_trace_id.unwrap_or(item.id)
+            }
+        })
         .collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -681,8 +716,12 @@ fn attach_seen_state_to_trace_readable_views(
     Ok(items
         .into_iter()
         .map(|mut item| {
-            let source_trace_id = item.source_trace_id.unwrap_or(item.id);
-            item.last_seen_at = last_seen_at_by_trace_id.get(&source_trace_id).copied();
+            let seen_trace_id = if item.trace_type == Some(TraceType::LinkedTrace) {
+                item.id
+            } else {
+                item.source_trace_id.unwrap_or(item.id)
+            };
+            item.last_seen_at = last_seen_at_by_trace_id.get(&seen_trace_id).copied();
             item.seen = item.last_seen_at.is_some();
             item
         })
@@ -1708,25 +1747,9 @@ pub async fn get_trace_attachments_route(
 ) -> Result<Json<Vec<TraceAttachmentReadableView>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
-    let source_trace_id = if trace.trace_type == TraceType::LinkedTrace {
-        if trace.user_id != user_id {
-            return Err(PpdcError::unauthorized());
-        }
-        LinkedTraceResponse::find_source_trace_id(id, user_id, &pool)?
-            .ok_or_else(PpdcError::unauthorized)?
-    } else {
-        id
-    };
-    let source = if source_trace_id == id {
-        trace
-    } else {
-        Trace::find_full_trace(source_trace_id, &pool)?
-    };
-    if source.user_id != user_id && !source.user_can_read(user_id, &pool)? {
-        return Err(PpdcError::unauthorized());
-    }
+    let source = resolve_readable_source_trace(trace, user_id, &pool)?;
 
-    let attachments = TraceAttachment::find_readable_for_trace(source_trace_id, &pool)?;
+    let attachments = TraceAttachment::find_readable_for_trace(source.id, &pool)?;
     Ok(Json(attachments))
 }
 
@@ -1816,26 +1839,31 @@ pub async fn put_trace_seen_route(
 ) -> Result<Json<TraceSeenStateResponse>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
-    let source_trace_id = if trace.trace_type == TraceType::LinkedTrace {
-        if trace.user_id != user_id {
+    let (readable_trace, post) = if trace.trace_type == TraceType::LinkedTrace {
+        let source = resolve_readable_source_trace(trace.clone(), user_id, &pool)?;
+        let post = find_published_trace_post(trace.id, &pool)?.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Linked trace cannot be marked seen without a published post".to_string(),
+            )
+        })?;
+        (source, post)
+    } else {
+        let source = trace;
+        if !source.user_can_read(user_id, &pool)? {
             return Err(PpdcError::unauthorized());
         }
-        LinkedTraceResponse::find_source_trace_id(id, user_id, &pool)?
-            .ok_or_else(PpdcError::unauthorized)?
-    } else {
-        id
+        let post = find_published_trace_post(source.id, &pool)?.ok_or_else(|| {
+            PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Trace cannot be marked seen without a published post".to_string(),
+            )
+        })?;
+        (source, post)
     };
-    let source = Trace::find_full_trace(source_trace_id, &pool)?;
-    if !source.user_can_read(user_id, &pool)? {
-        return Err(PpdcError::unauthorized());
-    }
-    let post = find_published_trace_post(source_trace_id, &pool)?.ok_or_else(|| {
-        PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Trace cannot be marked seen without a published post".to_string(),
-        )
-    })?;
+    let _ = readable_trace;
     let state = UserPostState::create_or_mark_seen(user_id, post.id, &pool)?;
     let _ = create_usage_event(
         user_id,
@@ -2122,14 +2150,22 @@ pub async fn get_trace_route(
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
     if trace.trace_type == TraceType::LinkedTrace {
-        if trace.user_id != session_user_id {
-            return Err(PpdcError::unauthorized());
-        }
-        let source_trace_id =
-            LinkedTraceResponse::find_source_trace_id(trace.id, session_user_id, &pool)?
-                .ok_or_else(PpdcError::unauthorized)?;
+        let source_trace_id = LinkedTraceResponse::find_source_trace_id_unscoped(trace.id, &pool)?
+            .ok_or_else(PpdcError::unauthorized)?;
         let source = Trace::find_full_trace(source_trace_id, &pool)?;
-        if !source.user_can_read(session_user_id, &pool)? {
+        let can_read = if trace.user_id == session_user_id {
+            source.user_can_read(session_user_id, &pool)?
+        } else if let Some(post) = Post::find_for_trace(trace.id, &pool)? {
+            post.status == PostStatus::Published
+                && crate::entities_v2::post_grant::PostGrant::user_can_read_post(
+                    &post,
+                    session_user_id,
+                    &pool,
+                )?
+        } else {
+            false
+        };
+        if !can_read {
             return Err(PpdcError::unauthorized());
         }
         let source = attach_mentions_to_traces(vec![source], &pool)?.remove(0);

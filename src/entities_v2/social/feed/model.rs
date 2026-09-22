@@ -17,6 +17,14 @@ pub struct FeedItem {
     pub post_id: Uuid,
     pub source_kind: FeedSourceKind,
     pub source_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_source_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_author_user_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_author_display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_author_profile_picture_display_url: Option<String>,
     pub owner_user_id: Uuid,
     pub journal_id: Option<Uuid>,
     pub status: PostStatus,

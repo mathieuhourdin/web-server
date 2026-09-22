@@ -6,6 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
+use crate::entities_v2::trace::{linked::LinkedTraceResponse, Trace, TraceType};
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
 use crate::entities_v2::user_block::UserBlock;
 use crate::schema::{post_grants, posts, users};
@@ -43,15 +44,17 @@ impl PostGrant {
         }
 
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
-        if blocked_user_ids.is_empty() {
-            return Ok(candidate_ids);
-        }
-
-        Ok(posts::table
-            .filter(posts::id.eq_any(candidate_ids))
-            .filter(posts::user_id.ne_all(blocked_user_ids))
-            .select(posts::id)
-            .load::<Uuid>(&mut conn)?)
+        let candidate_ids = if blocked_user_ids.is_empty() {
+            candidate_ids
+        } else {
+            posts::table
+                .filter(posts::id.eq_any(candidate_ids))
+                .filter(posts::user_id.ne_all(blocked_user_ids))
+                .select(posts::id)
+                .load::<Uuid>(&mut conn)?
+        };
+        drop(conn);
+        LinkedTraceResponse::filter_eligible_reshare_post_ids(&candidate_ids, user_id, pool)
     }
 
     fn owner_can_use_scope(
@@ -363,6 +366,14 @@ impl PostGrant {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<bool, PpdcError> {
+        if let Some(trace_id) = post.source_trace_id {
+            let trace = Trace::find_full_trace(trace_id, pool)?;
+            if trace.trace_type == TraceType::LinkedTrace
+                && !LinkedTraceResponse::reshare_is_active(trace.id, post.user_id, user_id, pool)?
+            {
+                return Ok(false);
+            }
+        }
         if post.user_id == user_id {
             return Ok(true);
         }
@@ -509,6 +520,14 @@ impl PostGrant {
         ids.remove(&post.user_id);
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(post.user_id, pool)?;
         ids.retain(|user_id| !blocked_user_ids.contains(user_id));
-        Ok(ids.into_iter().collect())
+        let ids = ids.into_iter().collect::<Vec<_>>();
+        let Some(trace_id) = post.source_trace_id else {
+            return Ok(ids);
+        };
+        let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.trace_type != TraceType::LinkedTrace {
+            return Ok(ids);
+        }
+        LinkedTraceResponse::filter_eligible_reshare_viewers(trace.id, post.user_id, &ids, pool)
     }
 }

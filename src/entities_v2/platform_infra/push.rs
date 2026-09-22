@@ -647,6 +647,30 @@ pub(crate) async fn post_published_notification(
         source_kind_value(projection.source_kind).to_string(),
     );
     data.insert("source_id".to_string(), projection.source_id.to_string());
+    if let Some(original_source_id) = projection.original_source_id {
+        data.insert(
+            "original_source_id".to_string(),
+            original_source_id.to_string(),
+        );
+    }
+    if let Some(original_author_user_id) = projection.original_author_user_id {
+        data.insert(
+            "original_author_user_id".to_string(),
+            original_author_user_id.to_string(),
+        );
+        if let Ok(original_author) = User::find(&original_author_user_id, pool) {
+            data.insert(
+                "original_author_display_name".to_string(),
+                original_author.display_name(),
+            );
+            if let Some(profile_picture_url) = sender_avatar_url(&original_author, pool).await {
+                data.insert(
+                    "original_author_profile_picture_url".to_string(),
+                    profile_picture_url,
+                );
+            }
+        }
+    }
     if let Some(journal_id) = projection.journal_id {
         data.insert("journal_id".to_string(), journal_id.to_string());
         match Journal::find_full(journal_id, pool) {
