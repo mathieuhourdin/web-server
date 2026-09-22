@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{NaiveDate, NaiveDateTime, Utc};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -626,6 +626,54 @@ pub fn spawn_journal_history_shared_push_notification(
                 shared_trace_count,
                 error = %err.message,
                 "journal_history_shared_push_dispatch_failed"
+            ),
+        }
+    });
+}
+
+pub fn spawn_wal_compilation_ready_silent_push(
+    user_id: Uuid,
+    wal_day_id: Uuid,
+    local_date: NaiveDate,
+    source_revision: i64,
+    generated_at: NaiveDateTime,
+    pool: DbPool,
+) {
+    tokio::spawn(async move {
+        let mut data = std::collections::HashMap::new();
+        data.insert(
+            "event_type".to_string(),
+            "wal_compilation_ready".to_string(),
+        );
+        data.insert("wal_day_id".to_string(), wal_day_id.to_string());
+        data.insert("wal_date".to_string(), local_date.to_string());
+        data.insert("source_revision".to_string(), source_revision.to_string());
+        data.insert(
+            "generated_at".to_string(),
+            generated_at.and_utc().timestamp_millis().to_string(),
+        );
+        let notification = push::SilentPush {
+            data,
+            collapse_key: format!("wal-compilation-{wal_day_id}"),
+        };
+
+        match push::send_silent_to_mobile_user(user_id, notification, &pool).await {
+            Ok(result) => info!(
+                target: "notification",
+                wal_day_id = %wal_day_id,
+                user_id = %user_id,
+                source_revision,
+                push_attempted_count = result.attempted_count,
+                push_sent_count = result.sent_count,
+                "wal_compilation_ready_silent_push_dispatch_completed"
+            ),
+            Err(error) => warn!(
+                target: "notification",
+                wal_day_id = %wal_day_id,
+                user_id = %user_id,
+                source_revision,
+                error = %error.message,
+                "wal_compilation_ready_silent_push_dispatch_failed"
             ),
         }
     });

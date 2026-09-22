@@ -14,6 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     conn.run_pending_migrations(MIGRATIONS)?;
 
     web_server::entities_v2::wal::start_carryover_worker(pool.clone());
+    web_server::entities_v2::wal::start_compilation_worker(pool.clone());
 
     let app = web_server::router::create_router().layer(Extension(pool.clone()));
 

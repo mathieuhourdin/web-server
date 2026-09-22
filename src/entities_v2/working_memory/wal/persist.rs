@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use chrono::{NaiveDate, NaiveDateTime, Utc};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
@@ -81,6 +81,7 @@ impl WalDay {
     fn append_entry_with_conn(
         current: Self,
         entry: String,
+        schedule_compilation: bool,
         conn: &mut PgConnection,
     ) -> Result<(Self, WalEntry), PpdcError> {
         let next_position = wal_entries::table
@@ -105,17 +106,22 @@ impl WalDay {
             format!("{}\n{}", current.input, entry)
         };
 
-        let updated = diesel::update(wal_days::table.filter(wal_days::id.eq(current.id)))
-            .set((
-                wal_days::input.eq(input),
-                wal_days::input_revision.eq(current.input_revision + 1),
-                wal_days::compiled_operational.eq::<Option<String>>(None),
-                wal_days::compiled_thematic.eq::<Option<String>>(None),
-                wal_days::compiled_at.eq::<Option<NaiveDateTime>>(None),
-                wal_days::updated_at.eq(diesel::dsl::now),
-            ))
-            .returning(WalDay::as_returning())
-            .get_result::<WalDay>(conn)?;
+        let updated =
+            diesel::update(wal_days::table.filter(wal_days::id.eq(current.id)))
+                .set((
+                    wal_days::input.eq(input),
+                    wal_days::input_revision.eq(current.input_revision + 1),
+                    wal_days::compiled_operational.eq::<Option<String>>(None),
+                    wal_days::compiled_thematic.eq::<Option<String>>(None),
+                    wal_days::compiled_at.eq::<Option<NaiveDateTime>>(None),
+                    wal_days::compilation_due_at
+                        .eq(schedule_compilation
+                            .then(|| Utc::now().naive_utc() + Duration::minutes(1))),
+                    wal_days::compilation_last_error.eq::<Option<String>>(None),
+                    wal_days::updated_at.eq(diesel::dsl::now),
+                ))
+                .returning(WalDay::as_returning())
+                .get_result::<WalDay>(conn)?;
 
         diesel::update(
             wal_projections::table
@@ -135,6 +141,7 @@ impl WalDay {
         user_id: Uuid,
         local_date: NaiveDate,
         entry: String,
+        schedule_compilation: bool,
         pool: &DbPool,
     ) -> Result<(Self, WalEntry), PpdcError> {
         let mut conn = pool.get()?;
@@ -146,7 +153,7 @@ impl WalDay {
                 .for_update()
                 .select(WalDay::as_select())
                 .first::<WalDay>(conn)?;
-            Self::append_entry_with_conn(current, entry, conn)
+            Self::append_entry_with_conn(current, entry, schedule_compilation, conn)
         })
     }
 
@@ -226,6 +233,188 @@ impl WalDay {
             .collect())
     }
 
+    pub fn claim_due_compilations(
+        limit: i64,
+        lease_seconds: i64,
+        pool: &DbPool,
+    ) -> Result<Vec<Self>, PpdcError> {
+        if limit <= 0 {
+            return Ok(Vec::new());
+        }
+        let mut conn = pool.get()?;
+        conn.transaction::<Vec<Self>, PpdcError, _>(|conn| {
+            let claimed_ids = sql_query(
+                r#"
+                WITH candidates AS (
+                    SELECT wd.id
+                    FROM wal_days wd
+                    INNER JOIN users u ON u.id = wd.user_id
+                    WHERE BTRIM(wd.input) <> ''
+                      AND u.ai_features_enabled = TRUE
+                      AND u.ai_features_enabled_by_admin = TRUE
+                      AND (
+                            (
+                                wd.compilation_due_at <= NOW()
+                                AND wd.compilation_processing_revision IS NULL
+                            )
+                            OR
+                            (
+                                wd.compilation_processing_revision IS NOT NULL
+                                AND wd.compilation_started_at <= NOW() - make_interval(secs => $2::double precision)
+                            )
+                          )
+                    ORDER BY COALESCE(wd.compilation_due_at, wd.compilation_started_at), wd.id
+                    FOR UPDATE OF wd SKIP LOCKED
+                    LIMIT $1
+                ), claimed AS (
+                    UPDATE wal_days wd
+                    SET compilation_due_at = NULL,
+                        compilation_started_at = NOW(),
+                        compilation_processing_revision = wd.input_revision,
+                        compilation_last_error = NULL,
+                        updated_at = NOW()
+                    FROM candidates c
+                    WHERE wd.id = c.id
+                    RETURNING wd.id
+                )
+                SELECT id FROM claimed
+                "#,
+            )
+            .bind::<BigInt, _>(limit)
+            .bind::<BigInt, _>(lease_seconds)
+            .load::<IdRow>(conn)?
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>();
+
+            if claimed_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+            diesel::update(
+                wal_projections::table
+                    .filter(wal_projections::wal_day_id.eq_any(&claimed_ids))
+                    .filter(wal_projections::projection_type.eq_any([
+                        WalProjectionType::Operational.to_db(),
+                        WalProjectionType::Thematic.to_db(),
+                    ])),
+            )
+            .set((
+                wal_projections::status.eq(WalProjectionStatus::Processing.to_db()),
+                wal_projections::error_message.eq::<Option<String>>(None),
+                wal_projections::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)?;
+
+            Ok(wal_days::table
+                .filter(wal_days::id.eq_any(claimed_ids))
+                .select(Self::as_select())
+                .load::<Self>(conn)?)
+        })
+    }
+
+    pub fn claim_for_immediate_compilation(
+        &self,
+        lease_seconds: i64,
+        pool: &DbPool,
+    ) -> Result<Self, PpdcError> {
+        let mut conn = pool.get()?;
+        conn.transaction::<Self, PpdcError, _>(|conn| {
+            let current = wal_days::table
+                .filter(wal_days::id.eq(self.id))
+                .filter(wal_days::user_id.eq(self.user_id))
+                .for_update()
+                .select(Self::as_select())
+                .first::<Self>(conn)?;
+            let claim_is_active = current
+                .compilation_started_at
+                .map(|started_at| {
+                    started_at > Utc::now().naive_utc() - Duration::seconds(lease_seconds)
+                })
+                .unwrap_or(false)
+                && current.compilation_processing_revision.is_some();
+            if claim_is_active {
+                return Err(PpdcError::new(
+                    409,
+                    ErrorType::ApiError,
+                    "WAL compilation is already processing".to_string(),
+                )
+                .with_details(serde_json::json!({
+                    "code": "wal_compilation_already_processing",
+                    "processing_revision": current.compilation_processing_revision,
+                })));
+            }
+
+            let claimed = diesel::update(wal_days::table.filter(wal_days::id.eq(current.id)))
+                .set((
+                    wal_days::compilation_due_at.eq::<Option<NaiveDateTime>>(None),
+                    wal_days::compilation_started_at.eq(Some(Utc::now().naive_utc())),
+                    wal_days::compilation_processing_revision.eq(Some(current.input_revision)),
+                    wal_days::compilation_last_error.eq::<Option<String>>(None),
+                    wal_days::updated_at.eq(diesel::dsl::now),
+                ))
+                .returning(Self::as_returning())
+                .get_result::<Self>(conn)?;
+            diesel::update(
+                wal_projections::table
+                    .filter(wal_projections::wal_day_id.eq(current.id))
+                    .filter(wal_projections::projection_type.eq_any([
+                        WalProjectionType::Operational.to_db(),
+                        WalProjectionType::Thematic.to_db(),
+                    ])),
+            )
+            .set((
+                wal_projections::status.eq(WalProjectionStatus::Processing.to_db()),
+                wal_projections::error_message.eq::<Option<String>>(None),
+                wal_projections::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)?;
+            Ok(claimed)
+        })
+    }
+
+    pub fn release_compilation_claim(
+        &self,
+        error_message: Option<&str>,
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        let Some(claimed_revision) = self.compilation_processing_revision else {
+            return Ok(());
+        };
+        let mut conn = pool.get()?;
+        conn.transaction::<(), PpdcError, _>(|conn| {
+            let affected = diesel::update(
+                wal_days::table
+                    .filter(wal_days::id.eq(self.id))
+                    .filter(wal_days::compilation_processing_revision.eq(Some(claimed_revision))),
+            )
+            .set((
+                wal_days::compilation_started_at.eq::<Option<NaiveDateTime>>(None),
+                wal_days::compilation_processing_revision.eq::<Option<i64>>(None),
+                wal_days::compilation_last_error.eq(error_message.map(str::to_string)),
+                wal_days::updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)?;
+
+            if affected > 0 && error_message.is_some() {
+                diesel::update(
+                    wal_projections::table
+                        .filter(wal_projections::wal_day_id.eq(self.id))
+                        .filter(wal_projections::projection_type.eq_any([
+                            WalProjectionType::Operational.to_db(),
+                            WalProjectionType::Thematic.to_db(),
+                        ])),
+                )
+                .set((
+                    wal_projections::status.eq(WalProjectionStatus::Failed.to_db()),
+                    wal_projections::error_message.eq(error_message.map(str::to_string)),
+                    wal_projections::updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn save_compilations_if_unchanged(
         &self,
         operational_content: String,
@@ -257,6 +446,10 @@ impl WalDay {
                     wal_days::compiled_operational.eq(Some(operational_content)),
                     wal_days::compiled_thematic.eq(Some(thematic_content)),
                     wal_days::compiled_at.eq(Some(compiled_at)),
+                    wal_days::compilation_due_at.eq::<Option<NaiveDateTime>>(None),
+                    wal_days::compilation_started_at.eq::<Option<NaiveDateTime>>(None),
+                    wal_days::compilation_processing_revision.eq::<Option<i64>>(None),
+                    wal_days::compilation_last_error.eq::<Option<String>>(None),
                     wal_days::updated_at.eq(diesel::dsl::now),
                 ))
                 .returning(WalDay::as_returning())
@@ -500,6 +693,7 @@ impl WalProjection {
         user_id: Uuid,
         target_date: NaiveDate,
         item_ids: &[Uuid],
+        schedule_compilation: bool,
         pool: &DbPool,
     ) -> Result<WalDay, PpdcError> {
         let requested_ids = item_ids.iter().copied().collect::<HashSet<_>>();
@@ -563,6 +757,7 @@ impl WalProjection {
                 let (updated_wal, created_entry) = WalDay::append_entry_with_conn(
                     target_wal,
                     item.content.trim().to_string(),
+                    schedule_compilation,
                     conn,
                 )?;
                 target_wal = updated_wal;

@@ -29,6 +29,12 @@ pub struct PushNotification {
     pub thread_id: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SilentPush {
+    pub data: HashMap<String, String>,
+    pub collapse_key: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PushDispatchResult {
     pub attempted_count: usize,
@@ -94,6 +100,52 @@ struct FcmApnsAlert {
     body: String,
 }
 
+#[derive(Debug, Serialize)]
+struct FcmSilentRequest<'a> {
+    message: FcmSilentMessage<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmSilentMessage<'a> {
+    token: &'a str,
+    data: &'a HashMap<String, String>,
+    android: FcmSilentAndroidConfig<'a>,
+    apns: FcmSilentApnsConfig<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmSilentAndroidConfig<'a> {
+    priority: &'static str,
+    collapse_key: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmSilentApnsConfig<'a> {
+    headers: FcmSilentApnsHeaders<'a>,
+    payload: FcmSilentApnsPayload,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmSilentApnsHeaders<'a> {
+    #[serde(rename = "apns-push-type")]
+    push_type: &'static str,
+    #[serde(rename = "apns-priority")]
+    priority: &'static str,
+    #[serde(rename = "apns-collapse-id")]
+    collapse_id: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmSilentApnsPayload {
+    aps: FcmSilentApsPayload,
+}
+
+#[derive(Debug, Serialize)]
+struct FcmSilentApsPayload {
+    #[serde(rename = "content-available")]
+    content_available: u8,
+}
+
 #[derive(Debug, Deserialize)]
 struct FcmErrorResponse {
     error: Option<FcmError>,
@@ -150,10 +202,6 @@ async fn send_fcm_to_device(
     let Some(push_token) = device.push_token.as_deref() else {
         return Ok(false);
     };
-    let url = format!(
-        "https://fcm.googleapis.com/v1/projects/{}/messages:send",
-        project_id
-    );
     let payload = FcmRequest {
         message: FcmMessage {
             token: push_token,
@@ -178,6 +226,57 @@ async fn send_fcm_to_device(
             },
         },
     };
+
+    execute_fcm_request(device, &payload, access_token, project_id, pool).await
+}
+
+async fn send_silent_fcm_to_device(
+    device: &Device,
+    notification: &SilentPush,
+    access_token: &str,
+    project_id: &str,
+    pool: &DbPool,
+) -> Result<bool, PpdcError> {
+    let Some(push_token) = device.push_token.as_deref() else {
+        return Ok(false);
+    };
+    let payload = FcmSilentRequest {
+        message: FcmSilentMessage {
+            token: push_token,
+            data: &notification.data,
+            android: FcmSilentAndroidConfig {
+                priority: "NORMAL",
+                collapse_key: &notification.collapse_key,
+            },
+            apns: FcmSilentApnsConfig {
+                headers: FcmSilentApnsHeaders {
+                    push_type: "background",
+                    priority: "5",
+                    collapse_id: &notification.collapse_key,
+                },
+                payload: FcmSilentApnsPayload {
+                    aps: FcmSilentApsPayload {
+                        content_available: 1,
+                    },
+                },
+            },
+        },
+    };
+
+    execute_fcm_request(device, &payload, access_token, project_id, pool).await
+}
+
+async fn execute_fcm_request<T: Serialize>(
+    device: &Device,
+    payload: &T,
+    access_token: &str,
+    project_id: &str,
+    pool: &DbPool,
+) -> Result<bool, PpdcError> {
+    let url = format!(
+        "https://fcm.googleapis.com/v1/projects/{}/messages:send",
+        project_id
+    );
 
     let response = reqwest::Client::new()
         .post(url)
@@ -256,6 +355,44 @@ pub async fn send_to_mobile_user(
 ) -> Result<PushDispatchResult, PpdcError> {
     let devices = Device::find_active_mobile_fcm_targets_for_user(user_id, pool)?;
     send_to_devices(devices, notification, pool).await
+}
+
+pub async fn send_silent_to_mobile_user(
+    user_id: Uuid,
+    notification: SilentPush,
+    pool: &DbPool,
+) -> Result<PushDispatchResult, PpdcError> {
+    let devices = Device::find_active_mobile_fcm_targets_for_user(user_id, pool)?;
+    let mut result = PushDispatchResult {
+        attempted_count: devices.len(),
+        sent_count: 0,
+    };
+    if devices.is_empty() {
+        return Ok(result);
+    }
+
+    let project_id = crate::environment::get_firebase_project_id();
+    let access_token = firebase_access_token().await?;
+    let mut fatal_error: Option<PpdcError> = None;
+    for device in devices {
+        match send_silent_fcm_to_device(&device, &notification, &access_token, &project_id, pool)
+            .await
+        {
+            Ok(true) => result.sent_count += 1,
+            Ok(false) => {}
+            Err(error) => {
+                fatal_error = Some(error);
+                break;
+            }
+        }
+    }
+    if result.any_sent() {
+        return Ok(result);
+    }
+    if let Some(error) = fatal_error {
+        return Err(error);
+    }
+    Ok(result)
 }
 
 async fn send_to_devices(
@@ -691,5 +828,28 @@ mod tests {
         let value = serde_json::to_value(payload).unwrap();
         assert!(value.get("thread-id").is_none());
         assert_eq!(value["mutable-content"], 1);
+    }
+
+    #[test]
+    fn serializes_silent_apns_payload_without_visible_alert() {
+        let payload = FcmSilentApnsConfig {
+            headers: FcmSilentApnsHeaders {
+                push_type: "background",
+                priority: "5",
+                collapse_id: "wal-compilation-id",
+            },
+            payload: FcmSilentApnsPayload {
+                aps: FcmSilentApsPayload {
+                    content_available: 1,
+                },
+            },
+        };
+        let value = serde_json::to_value(payload).unwrap();
+
+        assert_eq!(value["headers"]["apns-push-type"], "background");
+        assert_eq!(value["headers"]["apns-priority"], "5");
+        assert_eq!(value["payload"]["aps"]["content-available"], 1);
+        assert!(value["payload"]["aps"].get("alert").is_none());
+        assert!(value["payload"]["aps"].get("sound").is_none());
     }
 }

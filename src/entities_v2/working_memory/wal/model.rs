@@ -21,6 +21,10 @@ pub struct WalDay {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub input_revision: i64,
+    pub compilation_due_at: Option<NaiveDateTime>,
+    pub compilation_started_at: Option<NaiveDateTime>,
+    pub compilation_processing_revision: Option<i64>,
+    pub compilation_last_error: Option<String>,
 }
 
 #[derive(Debug, Insertable)]
@@ -197,6 +201,29 @@ pub struct WalCompilationViews {
     pub thematic: Option<WalCompilation>,
     pub operational_projection: Option<WalProjectionView>,
     pub thematic_projection: Option<WalProjectionView>,
+    pub automation: WalCompilationAutomation,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WalCompilationAutomationStatus {
+    Empty,
+    Scheduled,
+    Processing,
+    Ready,
+    Failed,
+    #[default]
+    Idle,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct WalCompilationAutomation {
+    pub status: WalCompilationAutomationStatus,
+    pub input_revision: i64,
+    pub scheduled_for: Option<NaiveDateTime>,
+    pub processing_revision: Option<i64>,
+    pub started_at: Option<NaiveDateTime>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -249,6 +276,30 @@ pub struct WalDayResponse {
 }
 
 impl WalDay {
+    pub fn compilation_automation(&self) -> WalCompilationAutomation {
+        let status = if self.input.trim().is_empty() {
+            WalCompilationAutomationStatus::Empty
+        } else if self.compilation_processing_revision.is_some() {
+            WalCompilationAutomationStatus::Processing
+        } else if self.compilation_due_at.is_some() {
+            WalCompilationAutomationStatus::Scheduled
+        } else if self.compilation_last_error.is_some() {
+            WalCompilationAutomationStatus::Failed
+        } else if self.compiled_at.is_some() {
+            WalCompilationAutomationStatus::Ready
+        } else {
+            WalCompilationAutomationStatus::Idle
+        };
+        WalCompilationAutomation {
+            status,
+            input_revision: self.input_revision,
+            scheduled_for: self.compilation_due_at,
+            processing_revision: self.compilation_processing_revision,
+            started_at: self.compilation_started_at,
+            last_error: self.compilation_last_error.clone(),
+        }
+    }
+
     pub fn legacy_compilation_views(&self) -> WalCompilationViews {
         WalCompilationViews {
             operational: self
@@ -267,6 +318,7 @@ impl WalDay {
             ),
             operational_projection: None,
             thematic_projection: None,
+            automation: self.compilation_automation(),
         }
     }
 }

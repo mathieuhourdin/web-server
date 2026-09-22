@@ -723,6 +723,10 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         input_revision -> Int8,
+        compilation_due_at -> Nullable<Timestamp>,
+        compilation_started_at -> Nullable<Timestamp>,
+        compilation_processing_revision -> Nullable<Int8>,
+        compilation_last_error -> Nullable<Text>,
     }
 }
 

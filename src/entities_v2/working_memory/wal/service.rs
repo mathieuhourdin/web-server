@@ -1,15 +1,17 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde::Deserialize;
 use serde_json::json;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind};
-use crate::entities_v2::{error::PpdcError, user::User};
+use crate::entities_v2::{error::PpdcError, notification, user::User};
 use crate::openai_handler::GptRequestConfig;
 
 use super::model::{
@@ -26,6 +28,9 @@ const WAL_COMPILATION_PROMPT_VERSION: &str = "structured-v1";
 const WAL_CARRYOVER_PROMPT_VERSION: &str = "carryover-v1";
 const CARRYOVER_SCAN_INTERVAL_SECONDS: u64 = 60;
 const CARRYOVER_SCAN_LIMIT: i64 = 20;
+const COMPILATION_SCAN_INTERVAL_SECONDS: u64 = 10;
+const COMPILATION_CLAIM_LEASE_SECONDS: i64 = 10 * 60;
+const COMPILATION_MAX_CONCURRENCY: usize = 2;
 
 #[derive(Debug, Deserialize)]
 struct WalCompilationDraft {
@@ -378,7 +383,13 @@ pub fn get_today_response(user: &User, pool: &DbPool) -> Result<WalResponse, Ppd
 
 pub fn append_today(user: &User, entry: String, pool: &DbPool) -> Result<WalResponse, PpdcError> {
     let local_date = local_date_at(&user.timezone, Utc::now());
-    let (wal, _) = WalDay::append(user.id, local_date, entry, pool)?;
+    let (wal, _) = WalDay::append(
+        user.id,
+        local_date,
+        entry,
+        user.ai_features_enabled && user.ai_features_enabled_by_admin,
+        pool,
+    )?;
     let entries = wal.entries(pool)?;
     Ok(WalResponse::new(&wal, entries))
 }
@@ -388,8 +399,66 @@ pub async fn compile_today(
     session_id: Uuid,
     pool: &DbPool,
 ) -> Result<WalCompilationViews, PpdcError> {
-    ensure_ai_usage_allowed(user, Some(session_id), AiUsageKind::WalCompilation, pool)?;
     let wal = get_or_create_today(user, pool)?;
+    if wal.input.trim().is_empty() {
+        return Err(PpdcError::new(
+            400,
+            crate::entities_v2::error::ErrorType::ApiError,
+            "Cannot compile an empty WAL".to_string(),
+        ));
+    }
+    let claimed = wal.claim_for_immediate_compilation(COMPILATION_CLAIM_LEASE_SECONDS, pool)?;
+    compile_claimed_wal(user, Some(session_id), claimed, pool).await
+}
+
+async fn compile_claimed_wal(
+    user: &User,
+    session_id: Option<Uuid>,
+    wal: WalDay,
+    pool: &DbPool,
+) -> Result<WalCompilationViews, PpdcError> {
+    let result = compile_claimed_wal_inner(user, session_id, &wal, pool).await;
+    match result {
+        Ok(views) => {
+            let generated_at = views
+                .operational
+                .as_ref()
+                .map(|compilation| compilation.compiled_at)
+                .unwrap_or_else(|| Utc::now().naive_utc());
+            notification::spawn_wal_compilation_ready_silent_push(
+                user.id,
+                wal.id,
+                wal.local_date,
+                wal.input_revision,
+                generated_at,
+                pool.clone(),
+            );
+            Ok(views)
+        }
+        Err(error) => {
+            let superseded = error.status_code == 409;
+            if let Err(release_error) = wal.release_compilation_claim(
+                if superseded {
+                    None
+                } else {
+                    Some(error.message.as_str())
+                },
+                pool,
+            ) {
+                release_error.log("wal_compilation_claim_release_failed");
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn compile_claimed_wal_inner(
+    user: &User,
+    session_id: Option<Uuid>,
+    wal: &WalDay,
+    pool: &DbPool,
+) -> Result<WalCompilationViews, PpdcError> {
+    ensure_ai_usage_allowed(user, session_id, AiUsageKind::WalCompilation, pool)?;
     let entries = wal.entries(pool)?;
     if entries.is_empty() {
         return Err(PpdcError::new(
@@ -441,6 +510,73 @@ pub async fn compile_today(
         WAL_COMPILATION_PROMPT_VERSION,
         pool,
     )
+}
+
+pub async fn run_compilation_scan(
+    pool: &DbPool,
+    semaphore: Arc<Semaphore>,
+) -> Result<usize, PpdcError> {
+    let available = semaphore.available_permits();
+    if available == 0 {
+        return Ok(0);
+    }
+    let claimed =
+        WalDay::claim_due_compilations(available as i64, COMPILATION_CLAIM_LEASE_SECONDS, pool)?;
+    let started = claimed.len();
+    for wal in claimed {
+        let user = User::find(&wal.user_id, pool)?;
+        let worker_pool = pool.clone();
+        let permit = semaphore.clone().acquire_owned().await.map_err(|error| {
+            PpdcError::new(
+                500,
+                crate::entities_v2::error::ErrorType::InternalError,
+                format!("Failed to acquire WAL compilation worker permit: {error}"),
+            )
+        })?;
+        tokio::spawn(async move {
+            let _permit = permit;
+            match compile_claimed_wal(&user, None, wal.clone(), &worker_pool).await {
+                Ok(_) => tracing::info!(
+                    target: "wal",
+                    wal_day_id = %wal.id,
+                    user_id = %wal.user_id,
+                    input_revision = wal.input_revision,
+                    "wal_compilation_background_completed"
+                ),
+                Err(error) if error.status_code == 409 => tracing::info!(
+                    target: "wal",
+                    wal_day_id = %wal.id,
+                    user_id = %wal.user_id,
+                    input_revision = wal.input_revision,
+                    "wal_compilation_background_superseded"
+                ),
+                Err(error) => error.log("wal_compilation_background_failed"),
+            }
+        });
+    }
+    Ok(started)
+}
+
+pub fn start_compilation_worker(pool: DbPool) {
+    tokio::spawn(async move {
+        let semaphore = Arc::new(Semaphore::new(COMPILATION_MAX_CONCURRENCY));
+        let mut interval =
+            tokio::time::interval(StdDuration::from_secs(COMPILATION_SCAN_INTERVAL_SECONDS));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            match run_compilation_scan(&pool, semaphore.clone()).await {
+                Ok(started) if started > 0 => tracing::info!(
+                    target: "wal",
+                    started,
+                    available_permits = semaphore.available_permits(),
+                    "wal_compilation_background_jobs_started"
+                ),
+                Ok(_) => {}
+                Err(error) => error.log("wal_compilation_background_scan_failed"),
+            }
+        }
+    });
 }
 
 async fn generate_carryover(
@@ -596,8 +732,14 @@ pub fn apply_today_carryover(
     pool: &DbPool,
 ) -> Result<WalResponse, PpdcError> {
     let target_date = local_date_at(&user.timezone, Utc::now());
-    let wal =
-        WalProjection::apply_carryover_items(projection_id, user.id, target_date, item_ids, pool)?;
+    let wal = WalProjection::apply_carryover_items(
+        projection_id,
+        user.id,
+        target_date,
+        item_ids,
+        user.ai_features_enabled && user.ai_features_enabled_by_admin,
+        pool,
+    )?;
     let entries = wal.entries(pool)?;
     Ok(WalResponse::new(&wal, entries))
 }
