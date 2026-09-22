@@ -16,6 +16,7 @@ use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus, JournalType},
+    journal_sharing_policy::JournalSharingPolicy,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
@@ -2459,6 +2460,13 @@ pub async fn get_traces_for_journal_route(
         return Err(PpdcError::unauthorized());
     }
 
+    // Access must be checked independently from the filtered trace result. An authorized reader
+    // can legitimately have zero matching rows, notably with `seen=false` after reading every
+    // shared trace in the journal.
+    if !JournalSharingPolicy::user_can_read_journal(&journal, user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
+
     let pagination = if let Some(until_trace_id) = params.until_trace_id {
         let rank =
             Trace::find_shared_rank_for_journal(user_id, id, until_trace_id, params.seen, &pool)?
@@ -2482,9 +2490,6 @@ pub async fn get_traces_for_journal_route(
         params.seen,
         &pool,
     )?;
-    if total == 0 {
-        return Err(PpdcError::unauthorized());
-    }
     let traces = attach_content_images_to_trace_list_items(traces, &pool)?;
     let traces = attach_mentions_to_trace_list_items(traces, &pool)?;
     let traces = attach_seen_state_to_trace_list_items(user_id, traces, &pool)?;
