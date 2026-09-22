@@ -370,21 +370,30 @@ impl PostGrant {
             return Ok(false);
         }
 
-        let grants = PostGrant::find_for_post_paginated(post.id, 0, i64::MAX / 4, pool)?.0;
-        for grant in grants
-            .into_iter()
-            .filter(|grant| grant.status == PostGrantStatus::Active)
-        {
-            if grant.grantee_user_id == Some(user_id) {
-                return Ok(true);
-            }
+        let mut conn = pool.get()?;
+        let has_direct_grant = diesel::select(diesel::dsl::exists(
+            post_grants::table
+                .filter(post_grants::post_id.eq(post.id))
+                .filter(post_grants::grantee_user_id.eq(Some(user_id)))
+                .filter(post_grants::status.eq(PostGrantStatus::Active.to_db())),
+        ))
+        .get_result::<bool>(&mut conn)?;
+        if has_direct_grant {
+            return Ok(true);
+        }
 
-            if grant.grantee_scope == Some(PostGrantScope::AllPlatformUsers) {
-                let user = User::find(&user_id, pool)?;
-                if user.is_platform_user && user.principal_type == UserPrincipalType::Human {
-                    return Ok(true);
-                }
-            }
+        let has_platform_grant = diesel::select(diesel::dsl::exists(
+            post_grants::table
+                .filter(post_grants::post_id.eq(post.id))
+                .filter(
+                    post_grants::grantee_scope.eq(Some(PostGrantScope::AllPlatformUsers.to_db())),
+                )
+                .filter(post_grants::status.eq(PostGrantStatus::Active.to_db())),
+        ))
+        .get_result::<bool>(&mut conn)?;
+        if has_platform_grant {
+            let user = User::find(&user_id, pool)?;
+            return Ok(user.is_platform_user && user.principal_type == UserPrincipalType::Human);
         }
 
         Ok(false)

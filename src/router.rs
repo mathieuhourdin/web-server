@@ -329,6 +329,10 @@ pub fn create_router() -> Router {
             post(journal_sharing_policy::post_journal_sharing_policy_history_decision_route),
         )
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
+        .route(
+            "/:journal_id/linked_traces/:source_trace_id",
+            put(trace::put_linked_trace_route).delete(trace::delete_linked_trace_route),
+        )
         .route("/:id/imports", post(journal::post_journal_import_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 

@@ -23,6 +23,14 @@ pub struct TraceMentionUser {
     pub handle: String,
     pub display_name: String,
     pub profile_picture_display_url: Option<String>,
+    pub grants_trace_access: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TraceMentionInput {
+    pub user_id: Uuid,
+    #[serde(default)]
+    pub grants_trace_access: bool,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -30,6 +38,7 @@ pub struct TraceMentionUser {
 pub struct TraceMention {
     pub trace_id: Uuid,
     pub mentioned_user_id: Uuid,
+    pub grants_trace_access: bool,
     pub notified_at: Option<NaiveDateTime>,
     pub removed_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
@@ -37,6 +46,29 @@ pub struct TraceMention {
 }
 
 impl TraceMention {
+    pub fn validate_inputs(
+        owner_user_id: Uuid,
+        mentions: &[TraceMentionInput],
+        pool: &DbPool,
+    ) -> Result<Vec<TraceMentionInput>, PpdcError> {
+        let user_ids = mentions
+            .iter()
+            .map(|mention| mention.user_id)
+            .collect::<Vec<_>>();
+        let validated_ids = Self::validate_targets(owner_user_id, &user_ids, pool)?;
+        let grants_by_user_id = mentions
+            .iter()
+            .map(|mention| (mention.user_id, mention.grants_trace_access))
+            .collect::<HashMap<_, _>>();
+        Ok(validated_ids
+            .into_iter()
+            .map(|user_id| TraceMentionInput {
+                user_id,
+                grants_trace_access: grants_by_user_id.get(&user_id).copied().unwrap_or(false),
+            })
+            .collect())
+    }
+
     pub fn validate_targets(
         owner_user_id: Uuid,
         mentioned_user_ids: &[Uuid],
@@ -114,7 +146,64 @@ impl TraceMention {
                 .on_conflict((trace_mentions::trace_id, trace_mentions::mentioned_user_id))
                 .do_update()
                 .set((
+                    // Legacy ID-only payloads preserve an active grant. A mention being restored
+                    // after removal starts without direct access until the owner explicitly grants it.
+                    trace_mentions::grants_trace_access.eq(diesel::dsl::sql::<
+                        diesel::sql_types::Bool,
+                    >(
+                        "CASE WHEN trace_mentions.removed_at IS NULL THEN trace_mentions.grants_trace_access ELSE FALSE END",
+                    )),
+                    trace_mentions::notified_at.eq(diesel::dsl::sql::<
+                        diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                    >(
+                        "CASE WHEN trace_mentions.removed_at IS NULL THEN trace_mentions.notified_at ELSE NULL END",
+                    )),
                     trace_mentions::removed_at.eq::<Option<NaiveDateTime>>(None),
+                    trace_mentions::updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn replace_active_inputs_with_conn(
+        trace_id: Uuid,
+        mentions: &[TraceMentionInput],
+        conn: &mut PgConnection,
+    ) -> Result<(), diesel::result::Error> {
+        let mentioned_user_ids = mentions
+            .iter()
+            .map(|mention| mention.user_id)
+            .collect::<Vec<_>>();
+        diesel::update(
+            trace_mentions::table
+                .filter(trace_mentions::trace_id.eq(trace_id))
+                .filter(trace_mentions::removed_at.is_null())
+                .filter(trace_mentions::mentioned_user_id.ne_all(&mentioned_user_ids)),
+        )
+        .set((
+            trace_mentions::removed_at.eq(diesel::dsl::now.nullable()),
+            trace_mentions::updated_at.eq(diesel::dsl::now),
+        ))
+        .execute(conn)?;
+
+        for mention in mentions {
+            diesel::insert_into(trace_mentions::table)
+                .values((
+                    trace_mentions::trace_id.eq(trace_id),
+                    trace_mentions::mentioned_user_id.eq(mention.user_id),
+                    trace_mentions::grants_trace_access.eq(mention.grants_trace_access),
+                ))
+                .on_conflict((trace_mentions::trace_id, trace_mentions::mentioned_user_id))
+                .do_update()
+                .set((
+                    trace_mentions::grants_trace_access.eq(mention.grants_trace_access),
+                    trace_mentions::removed_at.eq::<Option<NaiveDateTime>>(None),
+                    trace_mentions::notified_at.eq(diesel::dsl::sql::<
+                        diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                    >(
+                        "CASE WHEN trace_mentions.removed_at IS NULL THEN trace_mentions.notified_at ELSE NULL END",
+                    )),
                     trace_mentions::updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;
@@ -132,6 +221,83 @@ impl TraceMention {
             Self::replace_active_with_conn(trace_id, mentioned_user_ids, conn)
         })?;
         Ok(())
+    }
+
+    pub fn replace_active_inputs(
+        trace_id: Uuid,
+        mentions: &[TraceMentionInput],
+        pool: &DbPool,
+    ) -> Result<(), PpdcError> {
+        let mut conn = pool.get()?;
+        conn.transaction::<(), diesel::result::Error, _>(|conn| {
+            Self::replace_active_inputs_with_conn(trace_id, mentions, conn)
+        })?;
+        Ok(())
+    }
+
+    pub fn active_grant_exists(
+        trace_id: Uuid,
+        mentioned_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(diesel::select(diesel::dsl::exists(
+            trace_mentions::table
+                .filter(trace_mentions::trace_id.eq(trace_id))
+                .filter(trace_mentions::mentioned_user_id.eq(mentioned_user_id))
+                .filter(trace_mentions::removed_at.is_null())
+                .filter(trace_mentions::grants_trace_access.eq(true)),
+        ))
+        .get_result::<bool>(&mut conn)?)
+    }
+
+    pub fn active_mention_exists(
+        trace_id: Uuid,
+        mentioned_user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(diesel::select(diesel::dsl::exists(
+            trace_mentions::table
+                .filter(trace_mentions::trace_id.eq(trace_id))
+                .filter(trace_mentions::mentioned_user_id.eq(mentioned_user_id))
+                .filter(trace_mentions::removed_at.is_null()),
+        ))
+        .get_result::<bool>(&mut conn)?)
+    }
+
+    pub fn find_active_inputs_for_trace(
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<TraceMentionInput>, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(trace_mentions::table
+            .filter(trace_mentions::trace_id.eq(trace_id))
+            .filter(trace_mentions::removed_at.is_null())
+            .select((
+                trace_mentions::mentioned_user_id,
+                trace_mentions::grants_trace_access,
+            ))
+            .load::<(Uuid, bool)>(&mut conn)?
+            .into_iter()
+            .map(|(user_id, grants_trace_access)| TraceMentionInput {
+                user_id,
+                grants_trace_access,
+            })
+            .collect())
+    }
+
+    pub fn find_active_granting_user_ids_for_trace(
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(trace_mentions::table
+            .filter(trace_mentions::trace_id.eq(trace_id))
+            .filter(trace_mentions::removed_at.is_null())
+            .filter(trace_mentions::grants_trace_access.eq(true))
+            .select(trace_mentions::mentioned_user_id)
+            .load::<Uuid>(&mut conn)?)
     }
 
     pub fn find_active_user_ids_for_trace(
@@ -182,7 +348,15 @@ impl TraceMention {
         trace_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<TraceMentionUser>, PpdcError> {
-        let ids = Self::find_active_user_ids_for_trace(trace_id, pool)?;
+        let mentions = Self::find_active_inputs_for_trace(trace_id, pool)?;
+        let ids = mentions
+            .iter()
+            .map(|mention| mention.user_id)
+            .collect::<Vec<_>>();
+        let grants_by_user_id = mentions
+            .iter()
+            .map(|mention| (mention.user_id, mention.grants_trace_access))
+            .collect::<HashMap<_, _>>();
         let mut users = User::find_many(&ids, pool)?;
         users.sort_by_key(|user| {
             ids.iter()
@@ -196,6 +370,7 @@ impl TraceMention {
                 handle: user.handle.clone(),
                 display_name: user.display_name(),
                 profile_picture_display_url: user.profile_picture_display_url(pool),
+                grants_trace_access: grants_by_user_id.get(&user.id).copied().unwrap_or(false),
             })
             .collect())
     }
@@ -215,40 +390,37 @@ impl TraceMention {
             .select((
                 trace_mentions::trace_id,
                 trace_mentions::mentioned_user_id,
+                trace_mentions::grants_trace_access,
                 trace_mentions::created_at,
             ))
             .order((trace_mentions::trace_id, trace_mentions::created_at))
-            .load::<(Uuid, Uuid, NaiveDateTime)>(&mut conn)?;
+            .load::<(Uuid, Uuid, bool, NaiveDateTime)>(&mut conn)?;
         drop(conn);
 
         let user_ids = rows
             .iter()
-            .map(|(_, user_id, _)| *user_id)
+            .map(|(_, user_id, _, _)| *user_id)
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
         let summaries_by_user_id = User::find_many(&user_ids, pool)?
             .into_iter()
-            .map(|user| {
-                (
-                    user.id,
-                    TraceMentionUser {
-                        user_id: user.id,
-                        handle: user.handle.clone(),
-                        display_name: user.display_name(),
-                        profile_picture_display_url: user.profile_picture_display_url(pool),
-                    },
-                )
-            })
+            .map(|user| (user.id, user))
             .collect::<HashMap<_, _>>();
 
         let mut mentions_by_trace_id = HashMap::<Uuid, Vec<TraceMentionUser>>::new();
-        for (trace_id, user_id, _) in rows {
-            if let Some(summary) = summaries_by_user_id.get(&user_id) {
+        for (trace_id, user_id, grants_trace_access, _) in rows {
+            if let Some(user) = summaries_by_user_id.get(&user_id) {
                 mentions_by_trace_id
                     .entry(trace_id)
                     .or_default()
-                    .push(summary.clone());
+                    .push(TraceMentionUser {
+                        user_id,
+                        handle: user.handle.clone(),
+                        display_name: user.display_name(),
+                        profile_picture_display_url: user.profile_picture_display_url(pool),
+                        grants_trace_access,
+                    });
             }
         }
         Ok(mentions_by_trace_id)

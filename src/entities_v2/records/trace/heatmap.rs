@@ -34,6 +34,7 @@ pub fn heatmap_sum_trace_content_len(
 
     let rows = traces::table
         .filter(traces::user_id.eq(user_id))
+        .filter(traces::trace_type.ne("LINKED_TRACE"))
         .filter(traces::interaction_date.ge(from_dt))
         .filter(traces::interaction_date.lt(to_exclusive_dt))
         .select((traces::interaction_date, traces::content))

@@ -10,7 +10,8 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
-use crate::entities_v2::trace_mention::TraceMentionUser;
+use crate::entities_v2::trace_mention::{TraceMention, TraceMentionInput, TraceMentionUser};
+use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user_post_state::PostSeenByPreview;
 use crate::schema::{posts, traces};
 
@@ -38,6 +39,8 @@ pub struct NewTraceDto {
     pub timeout_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub mentioned_user_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub mentions: Option<Vec<TraceMentionInput>>,
 }
 
 #[derive(Deserialize)]
@@ -55,6 +58,7 @@ pub struct UpdateTraceDto {
     #[serde(alias = "expected_version")]
     pub expected_version_integer: Option<i32>,
     pub mentioned_user_ids: Option<Vec<Uuid>>,
+    pub mentions: Option<Vec<TraceMentionInput>>,
 }
 
 #[derive(Deserialize)]
@@ -70,6 +74,7 @@ pub struct PatchTraceDto {
     #[serde(alias = "expected_version")]
     pub expected_version_integer: Option<i32>,
     pub mentioned_user_ids: Option<Vec<Uuid>>,
+    pub mentions: Option<Vec<TraceMentionInput>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -110,6 +115,8 @@ pub struct TraceContentImage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceListItem {
     pub id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_trace_id: Option<Uuid>,
     pub post_id: Option<Uuid>,
     pub version_integer: Option<i32>,
     pub journal_id: Uuid,
@@ -142,6 +149,8 @@ pub struct TraceListItem {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceReadableView {
     pub id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_trace_id: Option<Uuid>,
     pub journal_id: Option<Uuid>,
     pub version_integer: Option<i32>,
     pub title: String,
@@ -252,8 +261,14 @@ impl Trace {
         if self.user_id == viewer_user_id {
             return Ok(true);
         }
-        if self.status != TraceStatus::Finalized {
+        if self.status != TraceStatus::Finalized || self.is_encrypted {
             return Ok(false);
+        }
+        if UserBlock::exists_in_either_direction(self.user_id, viewer_user_id, pool)? {
+            return Ok(false);
+        }
+        if TraceMention::active_grant_exists(self.id, viewer_user_id, pool)? {
+            return Ok(true);
         }
         let Some(post) = crate::entities_v2::post::Post::find_for_trace(self.id, pool)? else {
             return Ok(false);
@@ -322,6 +337,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
+               AND trace_type <> 'LINKED_TRACE'
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
              LIMIT 1",
         )
@@ -350,6 +366,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
+               AND trace_type <> 'LINKED_TRACE'
                AND interaction_date BETWEEN $2 AND $3
              ORDER BY interaction_date ASC, created_at ASC",
         )
@@ -375,6 +392,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
+               AND trace_type <> 'LINKED_TRACE'
                AND interaction_date <= $2
              ORDER BY interaction_date ASC, created_at ASC",
         )
@@ -492,7 +510,8 @@ impl Trace {
         let total = diesel::sql_query(
             "SELECT COUNT(*)::bigint AS count
              FROM traces
-             WHERE user_id = $1",
+             WHERE user_id = $1
+               AND trace_type <> 'LINKED_TRACE'",
         )
         .bind::<SqlUuid, _>(user_id)
         .get_result::<CountRow>(&mut conn)?
@@ -502,6 +521,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
+               AND trace_type <> 'LINKED_TRACE'
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
              OFFSET $2
              LIMIT $3",
@@ -575,6 +595,7 @@ impl Trace {
 
         let mut count_query = traces::table
             .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
             .filter(traces::status.eq(status.to_db()))
             .into_boxed();
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
@@ -595,6 +616,7 @@ impl Trace {
 
         let mut query = traces::table
             .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
             .filter(traces::status.eq(status.to_db()))
             .into_boxed();
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
@@ -721,6 +743,7 @@ impl Trace {
 
         let mut query = traces::table
             .filter(traces::journal_id.eq(journal_id))
+            .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
             .filter(traces::status.eq(status.to_db()))
             .into_boxed();
         if let Some(sharing_sensitivity_filter) = sharing_sensitivity {
@@ -912,6 +935,7 @@ impl Trace {
                     updated_at,
                 )| TraceListItem {
                     id,
+                    source_trace_id: None,
                     post_id,
                     version_integer: Some(version_integer),
                     journal_id,
@@ -1054,6 +1078,7 @@ impl Trace {
                     updated_at,
                 )| TraceListItem {
                     id,
+                    source_trace_id: None,
                     post_id: Some(post_id),
                     version_integer: None,
                     journal_id,

@@ -6,7 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
 use crate::entities_v2::post::{enforce_publication_invariant_for_source, PostSourceRef};
-use crate::entities_v2::trace_mention::TraceMention;
+use crate::entities_v2::trace_mention::{TraceMention, TraceMentionInput};
 use crate::entities_v2::trace_search::TraceSearchDocument;
 use crate::schema::trace_attachments;
 
@@ -30,7 +30,7 @@ struct VersionIntegerRow {
     version_integer: i32,
 }
 
-fn recalculate_journal_last_trace_at(
+pub(super) fn recalculate_journal_last_trace_at(
     conn: &mut diesel::PgConnection,
     journal_id: uuid::Uuid,
 ) -> Result<(), diesel::result::Error> {
@@ -99,12 +99,53 @@ impl Trace {
         self.update_internal(Some(expected_version_integer), Some(&validated), pool)
     }
 
+    pub fn update_with_mention_inputs_and_expected_version(
+        self,
+        expected_version_integer: i32,
+        mentions: &[TraceMentionInput],
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        let validated = TraceMention::validate_inputs(self.user_id, mentions, pool)?;
+        self.update_internal_with_mention_inputs(
+            Some(expected_version_integer),
+            Some(&validated),
+            pool,
+        )
+    }
+
     fn update_internal(
-        mut self,
+        self,
         expected_version_integer: Option<i32>,
         mentioned_user_ids: Option<&[uuid::Uuid]>,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
+        self.update_internal_impl(expected_version_integer, mentioned_user_ids, None, pool)
+    }
+
+    fn update_internal_with_mention_inputs(
+        self,
+        expected_version_integer: Option<i32>,
+        mentions: Option<&[TraceMentionInput]>,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        self.update_internal_impl(expected_version_integer, None, mentions, pool)
+    }
+
+    fn update_internal_impl(
+        mut self,
+        expected_version_integer: Option<i32>,
+        mentioned_user_ids: Option<&[uuid::Uuid]>,
+        mentions: Option<&[TraceMentionInput]>,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        if self.trace_type == super::enums::TraceType::LinkedTrace {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Linked traces can only be moved or removed through the linked trace API"
+                    .to_string(),
+            ));
+        }
         if self.is_encrypted && self.encryption_metadata.is_none() {
             return Err(PpdcError::new(
                 400,
@@ -237,6 +278,9 @@ impl Trace {
 
             if let Some(mentioned_user_ids) = mentioned_user_ids {
                 TraceMention::replace_active_with_conn(self.id, mentioned_user_ids, conn)?;
+            }
+            if let Some(mentions) = mentions {
+                TraceMention::replace_active_inputs_with_conn(self.id, mentions, conn)?;
             }
 
             enforce_publication_invariant_for_source(

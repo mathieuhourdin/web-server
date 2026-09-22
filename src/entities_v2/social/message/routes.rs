@@ -516,22 +516,14 @@ pub async fn post_message_route(
                     "Use a regular mentor question for one of your own traces".to_string(),
                 ));
             }
-            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "The trace must be published and currently shared before asking a mentor about it"
-                        .to_string(),
-                ));
-            };
-            if !PostGrant::user_can_read_post(&shared_post, sender_user_id, &pool)? {
+            if !trace.user_can_read(sender_user_id, &pool)? {
                 return Err(PpdcError::new(
                     403,
                     ErrorType::ApiError,
                     "You no longer have access to this shared trace".to_string(),
                 ));
             }
-            normalized_post_id = Some(shared_post.id);
+            normalized_post_id = find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
         } else if recipient_is_service_mentor
             || matches!(
                 message_type,
@@ -546,15 +538,7 @@ pub async fn post_message_route(
                 ));
             }
         } else if sender_is_owner {
-            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "Recipient must currently have access to a published shared trace post"
-                        .to_string(),
-                ));
-            };
-            if !PostGrant::user_can_read_post(&shared_post, payload.recipient_user_id, &pool)? {
+            if !trace.user_can_read(payload.recipient_user_id, &pool)? {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -562,18 +546,11 @@ pub async fn post_message_route(
                 ));
             }
             if normalized_post_id.is_none() {
-                normalized_post_id = Some(shared_post.id);
+                normalized_post_id =
+                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
             }
         } else if trace.user_id == payload.recipient_user_id {
-            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "Sender must currently have access to a published shared trace post"
-                        .to_string(),
-                ));
-            };
-            if !PostGrant::user_can_read_post(&shared_post, sender_user_id, &pool)? {
+            if !trace.user_can_read(sender_user_id, &pool)? {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -581,7 +558,8 @@ pub async fn post_message_route(
                 ));
             }
             if normalized_post_id.is_none() {
-                normalized_post_id = Some(shared_post.id);
+                normalized_post_id =
+                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
             }
         } else {
             return Err(PpdcError::new(
@@ -872,7 +850,23 @@ pub async fn put_message_route(
                     .to_string(),
             ));
         }
-        if recipient_is_service_mentor
+        if is_shared_trace_mentor_request(effective_message_type) {
+            if sender_is_owner {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Use a regular mentor question for one of your own traces".to_string(),
+                ));
+            }
+            if !trace.user_can_read(sender_user_id, &pool)? {
+                return Err(PpdcError::new(
+                    403,
+                    ErrorType::ApiError,
+                    "You no longer have access to this shared trace".to_string(),
+                ));
+            }
+            normalized_post_id = find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+        } else if recipient_is_service_mentor
             || matches!(
                 effective_message_type,
                 MessageType::Question | MessageType::TarotReadingRequest
@@ -886,15 +880,7 @@ pub async fn put_message_route(
                 ));
             }
         } else if sender_is_owner {
-            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "Recipient must currently have access to a published shared trace post"
-                        .to_string(),
-                ));
-            };
-            if !PostGrant::user_can_read_post(&shared_post, payload.recipient_user_id, &pool)? {
+            if !trace.user_can_read(payload.recipient_user_id, &pool)? {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -902,18 +888,11 @@ pub async fn put_message_route(
                 ));
             }
             if normalized_post_id.is_none() {
-                normalized_post_id = Some(shared_post.id);
+                normalized_post_id =
+                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
             }
         } else if trace.user_id == payload.recipient_user_id {
-            let Some(shared_post) = find_published_trace_post(trace_id, &pool)? else {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "Sender must currently have access to a published shared trace post"
-                        .to_string(),
-                ));
-            };
-            if !PostGrant::user_can_read_post(&shared_post, sender_user_id, &pool)? {
+            if !trace.user_can_read(sender_user_id, &pool)? {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
@@ -921,7 +900,8 @@ pub async fn put_message_route(
                 ));
             }
             if normalized_post_id.is_none() {
-                normalized_post_id = Some(shared_post.id);
+                normalized_post_id =
+                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
             }
         } else {
             return Err(PpdcError::new(

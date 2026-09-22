@@ -6,6 +6,7 @@ pub enum TraceType {
     BioTrace,
     WorkspaceTrace,
     UserTrace,
+    LinkedTrace,
     HighLevelProjectsDefinition,
 }
 
@@ -13,6 +14,7 @@ impl TraceType {
     pub fn to_db(self) -> &'static str {
         match self {
             TraceType::UserTrace => "USER_TRACE",
+            TraceType::LinkedTrace => "LINKED_TRACE",
             TraceType::BioTrace => "BIO_TRACE",
             TraceType::WorkspaceTrace => "WORKSPACE_TRACE",
             TraceType::HighLevelProjectsDefinition => "HIGH_LEVEL_PROJECTS_DEFINITION",
@@ -27,6 +29,7 @@ impl TraceType {
                 TraceType::HighLevelProjectsDefinition
             }
             "USER_TRACE" | "trce" | "TRCE" => TraceType::UserTrace,
+            "LINKED_TRACE" => TraceType::LinkedTrace,
             _ => TraceType::UserTrace,
         }
     }

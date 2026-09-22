@@ -8,8 +8,6 @@ use crate::entities_v2::message::{
     MentorSuggestedAction, MentorSuggestedActionKind, Message, MessageAttachment,
     MessageAttachmentType, MessageProcessingState, MessageType,
 };
-use crate::entities_v2::post::{Post, PostStatus};
-use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
@@ -286,16 +284,8 @@ fn ensure_reader_can_still_access_shared_trace(
     reader_user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    let Some(post) = Post::find_for_trace(trace_id, pool)? else {
-        return Err(PpdcError::new(
-            403,
-            ErrorType::ApiError,
-            "The shared trace is no longer published".to_string(),
-        ));
-    };
-    if post.status != PostStatus::Published
-        || !PostGrant::user_can_read_post(&post, reader_user_id, pool)?
-    {
+    let trace = Trace::find_full_trace(trace_id, pool)?;
+    if !trace.user_can_read(reader_user_id, pool)? {
         return Err(PpdcError::new(
             403,
             ErrorType::ApiError,

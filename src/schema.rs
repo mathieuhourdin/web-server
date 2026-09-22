@@ -618,6 +618,7 @@ diesel::table! {
     trace_mentions (trace_id, mentioned_user_id) {
         trace_id -> Uuid,
         mentioned_user_id -> Uuid,
+        grants_trace_access -> Bool,
         notified_at -> Nullable<Timestamp>,
         removed_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
@@ -647,6 +648,7 @@ diesel::table! {
         timeout_start_at -> Nullable<Timestamptz>,
         sharing_sensitivity -> Text,
         derived_from_trace_id -> Nullable<Uuid>,
+        linked_source_trace_id -> Nullable<Uuid>,
         is_blank -> Bool,
         version_integer -> Int4,
     }

@@ -775,6 +775,8 @@ WITH candidate AS (
             FROM traces t
             WHERE t.user_id = la.user_id
               AND t.status = 'FINALIZED'
+              AND t.is_encrypted = FALSE
+              AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
               AND t.interaction_date >= la.period_start
               AND t.interaction_date < la.period_end
               AND NOT EXISTS (

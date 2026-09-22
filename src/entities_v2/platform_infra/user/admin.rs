@@ -818,6 +818,7 @@ fn load_user_metric_points(
                         FROM traces t
                         WHERE t.user_id = $1
                           AND t.finalized_at IS NOT NULL
+                          AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
                           AND COALESCE(t.interaction_date, t.created_at) >= ($2::date - interval '1 day')
                           AND COALESCE(t.interaction_date, t.created_at) < ($3::date + interval '2 days')
                         GROUP BY 1
@@ -1601,6 +1602,7 @@ pub async fn get_admin_recent_user_activity_route(
                     FROM traces t
                     WHERE t.user_id = $1
                       AND t.finalized_at IS NOT NULL
+                      AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
                       AND timezone($4, COALESCE(t.interaction_date, t.created_at) AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS trace_count,
                 COALESCE((

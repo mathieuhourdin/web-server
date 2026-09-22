@@ -17,10 +17,11 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     source_projection::SourceProjection,
-    trace::{Trace, TraceStatus},
+    trace::{Trace, TraceStatus, TraceType},
     trace_attachment::TraceAttachment,
     trace_mention::TraceMention,
     user::{User, UserPrincipalType},
+    user_block::UserBlock,
     user_post_state::{PostSeenByUser, UserPostState},
 };
 use crate::environment;
@@ -319,10 +320,41 @@ pub(crate) fn dispatch_trace_mention_notifications(
             return;
         }
     };
+    let granting_mentions =
+        match TraceMention::find_active_granting_user_ids_for_trace(trace_id, pool) {
+            Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
+            Err(err) => {
+                tracing::warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    trace_id = %trace_id,
+                    error = %err.message,
+                    "trace_mention_access_grant_lookup_failed"
+                );
+                return;
+            }
+        };
+    let blocked = match UserBlock::blocked_user_ids_in_either_direction(post.user_id, pool) {
+        Ok(ids) => ids,
+        Err(err) => {
+            tracing::warn!(
+                target: "notification",
+                post_id = %post.id,
+                trace_id = %trace_id,
+                error = %err.message,
+                "trace_mention_block_lookup_failed"
+            );
+            return;
+        }
+    };
     let recipient_ids = candidate_recipient_ids
         .iter()
         .copied()
-        .filter(|user_id| unnotified.contains(user_id) && readable.contains(user_id))
+        .filter(|user_id| {
+            unnotified.contains(user_id)
+                && !blocked.contains(user_id)
+                && (readable.contains(user_id) || granting_mentions.contains(user_id))
+        })
         .collect::<Vec<_>>();
     if recipient_ids.is_empty() {
         return;
@@ -518,6 +550,13 @@ pub async fn get_trace_post_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    if trace.trace_type == TraceType::LinkedTrace {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Linked traces cannot be published".to_string(),
+        ));
+    }
 
     Ok(Json(Post::find_for_trace(trace_id, &pool)?))
 }
@@ -576,6 +615,13 @@ pub async fn put_trace_post_route(
     let trace = Trace::find_full_trace(trace_id, &pool)?;
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
+    }
+    if trace.trace_type == TraceType::LinkedTrace {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Linked traces cannot be published".to_string(),
+        ));
     }
 
     let mut post = if let Some(existing_post) = Post::find_for_trace(trace_id, &pool)? {
