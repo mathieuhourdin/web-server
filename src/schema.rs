@@ -711,6 +711,35 @@ diesel::table! {
         compiled_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        input_revision -> Int8,
+    }
+}
+
+diesel::table! {
+    wal_entries (id) {
+        id -> Uuid,
+        wal_day_id -> Uuid,
+        position -> Int4,
+        content -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    wal_projections (id) {
+        id -> Uuid,
+        wal_day_id -> Uuid,
+        projection_type -> Text,
+        target_date -> Nullable<Date>,
+        status -> Text,
+        source_revision -> Int8,
+        schema_version -> Int4,
+        prompt_version -> Text,
+        content -> Nullable<Jsonb>,
+        error_message -> Nullable<Text>,
+        generated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -829,6 +858,8 @@ diesel::joinable!(user_post_states -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
 diesel::joinable!(wal_days -> users (user_id));
+diesel::joinable!(wal_entries -> wal_days (wal_day_id));
+diesel::joinable!(wal_projections -> wal_days (wal_day_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     album_items,
@@ -875,4 +906,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_secure_actions,
     users,
     wal_days,
+    wal_entries,
+    wal_projections,
 );

@@ -13,6 +13,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get()?;
     conn.run_pending_migrations(MIGRATIONS)?;
 
+    web_server::entities_v2::wal::start_carryover_worker(pool.clone());
+
     let app = web_server::router::create_router().layer(Extension(pool.clone()));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;

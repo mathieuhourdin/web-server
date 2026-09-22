@@ -552,6 +552,11 @@ pub fn create_router() -> Router {
             "/wal/compilation",
             get(wal::get_wal_compilation_route).post(wal::post_wal_compilation_route),
         )
+        .route("/wal/carryover", get(wal::get_wal_carryover_route))
+        .route(
+            "/wal/carryover/:projection_id/apply",
+            post(wal::post_apply_wal_carryover_route),
+        )
         .route(
             "/traces/export",
             get(journal::get_all_my_traces_export_route),
