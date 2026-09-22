@@ -7,11 +7,12 @@ use crate::entities_v2::{error::PpdcError, session::Session, user::User};
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::model::{
-    WalCarryoverResponse, WalCompilationViews, WalDay, WalDayResponse, WalProjection, WalResponse,
+    WalCarryoverResponse, WalCompilationViews, WalDay, WalDayDetailResponse, WalDayResponse,
+    WalProjection, WalResponse,
 };
 use super::service::{
-    append_today, apply_today_carryover, compile_today, get_or_create_today, get_today_carryover,
-    get_today_response,
+    append_today, apply_today_carryover, compile_today, get_day_detail, get_or_create_today,
+    get_today_carryover, get_today_response,
 };
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +72,16 @@ pub async fn get_wals_route(
         pagination,
         total,
     )))
+}
+
+#[debug_handler]
+pub async fn get_wal_day_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(wal_day_id): Path<Uuid>,
+) -> Result<Json<WalDayDetailResponse>, PpdcError> {
+    let user = current_user(&session, &pool)?;
+    Ok(Json(get_day_detail(&user, wal_day_id, &pool)?))
 }
 
 #[debug_handler]

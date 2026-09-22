@@ -51,6 +51,15 @@ is meaningful.
 
 Coverage and completion rules for both views:
 
+- Interpret raw entries in the order provided. A completion, resolution, cancellation, or other
+  status statement normally applies only to matching entries that appear before it, unless the
+  user explicitly gives it a different temporal scope. Never use such a statement to mark a later
+  entry done merely because that later entry fits the same description or category.
+- A collective status statement such as "I did all the small tasks" may resolve several preceding
+  entries. Infer its scope from the preceding raw entries and from the same semantic
+  classifications you are producing in this compilation. Do not require or imagine a previous
+  compiled view. Apply it only where the match is reasonably clear; preserve ambiguous items as
+  active.
 - Every distinct raw WAL entry must remain represented in both views. Related entries may be
   synthesized together, but no todo, direction, question, idea, problem, research lead, reminder,
   or completion may disappear.
@@ -59,6 +68,10 @@ Coverage and completion rules for both views:
   completion detail.
 - In the thematic view, keep the original intention and its completion together in the same
   thematic item, making clear both what was to be done and that it is now done.
+- When a later status entry changes one or several earlier items, include the status entry's
+  `source_ref` together with every affected earlier `source_ref` in the resulting display item or
+  items. The status entry must not disappear as if the completion had been inferred without
+  evidence.
 - Mark an item done only when completion is explicit and the entries clearly refer to the same
   matter. If the match or status is ambiguous, preserve it as active.
 

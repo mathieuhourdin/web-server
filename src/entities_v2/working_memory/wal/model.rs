@@ -275,6 +275,13 @@ pub struct WalDayResponse {
     pub updated_at: NaiveDateTime,
 }
 
+#[derive(Debug, Serialize)]
+pub struct WalDayDetailResponse {
+    pub wal: WalResponse,
+    pub compilation: WalCompilationViews,
+    pub carryover: Option<WalCarryoverResponse>,
+}
+
 impl WalDay {
     pub fn compilation_automation(&self) -> WalCompilationAutomation {
         let status = if self.input.trim().is_empty() {

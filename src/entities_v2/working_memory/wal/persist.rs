@@ -78,6 +78,20 @@ impl WalDay {
             .optional()?)
     }
 
+    pub fn find_for_user_by_id(
+        user_id: Uuid,
+        wal_day_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Self>, PpdcError> {
+        let mut conn = pool.get()?;
+        Ok(wal_days::table
+            .filter(wal_days::id.eq(wal_day_id))
+            .filter(wal_days::user_id.eq(user_id))
+            .select(WalDay::as_select())
+            .first::<Self>(&mut conn)
+            .optional()?)
+    }
+
     fn append_entry_with_conn(
         current: Self,
         entry: String,

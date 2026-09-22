@@ -552,6 +552,7 @@ pub fn create_router() -> Router {
         .route("/account", delete(user::delete_my_account_route))
         .route("/wal", get(wal::get_wal_route).post(wal::post_wal_route))
         .route("/wals", get(wal::get_wals_route))
+        .route("/wals/:wal_day_id", get(wal::get_wal_day_route))
         .route(
             "/wal/compilation",
             get(wal::get_wal_compilation_route).post(wal::post_wal_compilation_route),

@@ -11,13 +11,17 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind};
-use crate::entities_v2::{error::PpdcError, notification, user::User};
+use crate::entities_v2::{
+    error::{ErrorType, PpdcError},
+    notification,
+    user::User,
+};
 use crate::openai_handler::GptRequestConfig;
 
 use super::model::{
     WalCarryoverApplication, WalCarryoverApplicationStatus, WalCarryoverAssessment,
     WalCarryoverContent, WalCarryoverItem, WalCarryoverResponse, WalCarryoverResponseStatus,
-    WalCompilationViews, WalDay, WalEntry, WalProjection, WalProjectionItem,
+    WalCompilationViews, WalDay, WalDayDetailResponse, WalEntry, WalProjection, WalProjectionItem,
     WalProjectionItemStatus, WalProjectionSection, WalProjectionStatus, WalResponse,
     WalStructuredProjection,
 };
@@ -381,6 +385,23 @@ pub fn get_today_response(user: &User, pool: &DbPool) -> Result<WalResponse, Ppd
     Ok(WalResponse::new(&wal, entries))
 }
 
+pub fn get_day_detail(
+    user: &User,
+    wal_day_id: Uuid,
+    pool: &DbPool,
+) -> Result<WalDayDetailResponse, PpdcError> {
+    let wal = WalDay::find_for_user_by_id(user.id, wal_day_id, pool)?
+        .ok_or_else(|| PpdcError::new(404, ErrorType::ApiError, "WAL day not found".to_string()))?;
+    let entries = wal.entries(pool)?;
+    let compilation = WalProjection::compilation_views(&wal, pool)?;
+    let carryover = get_persisted_carryover_for_day(user.id, &wal, pool)?;
+    Ok(WalDayDetailResponse {
+        wal: WalResponse::new(&wal, entries),
+        compilation,
+        carryover,
+    })
+}
+
 pub fn append_today(user: &User, entry: String, pool: &DbPool) -> Result<WalResponse, PpdcError> {
     let local_date = local_date_at(&user.timezone, Utc::now());
     let (wal, _) = WalDay::append(
@@ -670,6 +691,40 @@ pub fn start_carryover_worker(pool: DbPool) {
     });
 }
 
+fn carryover_response_from_projection(
+    projection: WalProjection,
+    source_date: NaiveDate,
+    target_date: NaiveDate,
+) -> Result<WalCarryoverResponse, PpdcError> {
+    let status = WalProjectionStatus::from_db(&projection.status)?;
+    let items = projection
+        .carryover_content()?
+        .map(|content| content.items)
+        .unwrap_or_default();
+    let error_message =
+        (status == WalProjectionStatus::Failed).then(|| "Carryover generation failed".to_string());
+    Ok(WalCarryoverResponse {
+        projection_id: Some(projection.id),
+        source_date,
+        target_date,
+        status: status.into(),
+        items,
+        error_message,
+    })
+}
+
+fn get_persisted_carryover_for_day(
+    user_id: Uuid,
+    wal: &WalDay,
+    pool: &DbPool,
+) -> Result<Option<WalCarryoverResponse>, PpdcError> {
+    let source_date = wal.local_date;
+    let target_date = source_date + Duration::days(1);
+    WalProjection::find_carryover(user_id, source_date, target_date, pool)?
+        .map(|projection| carryover_response_from_projection(projection, source_date, target_date))
+        .transpose()
+}
+
 pub fn get_today_carryover(user: &User, pool: &DbPool) -> Result<WalCarryoverResponse, PpdcError> {
     let target_date = local_date_at(&user.timezone, Utc::now());
     let source_date = target_date - Duration::days(1);
@@ -708,21 +763,7 @@ pub fn get_today_carryover(user: &User, pool: &DbPool) -> Result<WalCarryoverRes
             error_message: None,
         });
     };
-    let status = WalProjectionStatus::from_db(&projection.status)?;
-    let items = projection
-        .carryover_content()?
-        .map(|content| content.items)
-        .unwrap_or_default();
-    let error_message =
-        (status == WalProjectionStatus::Failed).then(|| "Carryover generation failed".to_string());
-    Ok(WalCarryoverResponse {
-        projection_id: Some(projection.id),
-        source_date,
-        target_date,
-        status: status.into(),
-        items,
-        error_message,
-    })
+    carryover_response_from_projection(projection, source_date, target_date)
 }
 
 pub fn apply_today_carryover(
