@@ -11,6 +11,8 @@ pub struct EmailTemplate {
 
 const SHARED_TRACE_FINALIZED_TEXT: &str = include_str!("templates/shared_trace_finalized.txt");
 const SHARED_TRACE_FINALIZED_HTML: &str = include_str!("templates/shared_trace_finalized.html");
+const TRACE_MENTION_TEXT: &str = include_str!("templates/trace_mention.txt");
+const TRACE_MENTION_HTML: &str = include_str!("templates/trace_mention.html");
 const MESSAGE_RECEIVED_TEXT: &str = include_str!("templates/message_received.txt");
 const MESSAGE_RECEIVED_HTML: &str = include_str!("templates/message_received.html");
 const FOLLOW_REQUEST_RECEIVED_TEXT: &str = include_str!("templates/follow_request_received.txt");
@@ -164,6 +166,44 @@ pub fn shared_trace_finalized_email(
         subject,
         text_body: Some(text_body),
         html_body: Some(html_body),
+    })
+}
+
+pub fn trace_mention_email(
+    recipient_display_name: &str,
+    owner_display_name: &str,
+    journal_title: &str,
+    journal_url: &str,
+    interaction_date: NaiveDateTime,
+    trace_content: &str,
+) -> EmailTemplate {
+    let excerpt = build_trace_excerpt(trace_content, 150);
+    let subject = format!("{} vous a mentionné dans une trace", owner_display_name);
+    let interaction_date = interaction_date.format("%d/%m/%Y à %H:%M").to_string();
+    let variables = [
+        ("recipient_display_name", recipient_display_name.to_string()),
+        ("owner_display_name", owner_display_name.to_string()),
+        ("journal_title", journal_title.to_string()),
+        ("journal_url", journal_url.to_string()),
+        ("interaction_date", interaction_date.clone()),
+        ("excerpt", excerpt.clone()),
+    ];
+    let html_variables = [
+        (
+            "recipient_display_name",
+            escape_html(recipient_display_name),
+        ),
+        ("owner_display_name", escape_html(owner_display_name)),
+        ("journal_title", escape_html(journal_title)),
+        ("journal_url", escape_html(journal_url)),
+        ("interaction_date", escape_html(&interaction_date)),
+        ("excerpt_html", escape_html(&excerpt)),
+    ];
+
+    append_contact_preferences_footer(EmailTemplate {
+        subject,
+        text_body: Some(render_template(TRACE_MENTION_TEXT, &variables)),
+        html_body: Some(render_template(TRACE_MENTION_HTML, &html_variables)),
     })
 }
 

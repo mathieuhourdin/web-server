@@ -17,6 +17,6 @@ pub use routes::post_process_pending_emails_route;
 pub use templates::{
     daily_recap_email, follow_request_received_email, journal_access_granted_email,
     message_received_email, new_user_signup_email, password_reset_email,
-    shared_journal_daily_digest_email, shared_trace_finalized_email, weekly_recap_email,
-    EmailTemplate, SharedJournalDigestEmailItem,
+    shared_journal_daily_digest_email, shared_trace_finalized_email, trace_mention_email,
+    weekly_recap_email, EmailTemplate, SharedJournalDigestEmailItem,
 };

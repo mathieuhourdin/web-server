@@ -6,6 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
 use crate::entities_v2::post::{enforce_publication_invariant_for_source, PostSourceRef};
+use crate::entities_v2::trace_mention::TraceMention;
 use crate::entities_v2::trace_search::TraceSearchDocument;
 use crate::schema::trace_attachments;
 
@@ -77,7 +78,7 @@ fn compute_is_blank_with_conn(
 
 impl Trace {
     pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
-        self.update_internal(None, pool)
+        self.update_internal(None, None, pool)
     }
 
     pub fn update_with_expected_version(
@@ -85,12 +86,23 @@ impl Trace {
         expected_version_integer: i32,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
-        self.update_internal(Some(expected_version_integer), pool)
+        self.update_internal(Some(expected_version_integer), None, pool)
+    }
+
+    pub fn update_with_mentions_and_expected_version(
+        self,
+        expected_version_integer: i32,
+        mentioned_user_ids: &[uuid::Uuid],
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        let validated = TraceMention::validate_targets(self.user_id, mentioned_user_ids, pool)?;
+        self.update_internal(Some(expected_version_integer), Some(&validated), pool)
     }
 
     fn update_internal(
         mut self,
         expected_version_integer: Option<i32>,
+        mentioned_user_ids: Option<&[uuid::Uuid]>,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
@@ -221,6 +233,10 @@ impl Trace {
 
             if rows_affected == 0 {
                 return Ok(false);
+            }
+
+            if let Some(mentioned_user_ids) = mentioned_user_ids {
+                TraceMention::replace_active_with_conn(self.id, mentioned_user_ids, conn)?;
             }
 
             enforce_publication_invariant_for_source(

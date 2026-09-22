@@ -10,6 +10,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
+use crate::entities_v2::trace_mention::TraceMentionUser;
 use crate::entities_v2::user_post_state::PostSeenByPreview;
 use crate::schema::{posts, traces};
 
@@ -35,6 +36,8 @@ pub struct NewTraceDto {
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
     #[serde(default)]
     pub timeout_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub mentioned_user_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -51,6 +54,7 @@ pub struct UpdateTraceDto {
     pub publish_default_post: Option<bool>,
     #[serde(alias = "expected_version")]
     pub expected_version_integer: Option<i32>,
+    pub mentioned_user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +69,7 @@ pub struct PatchTraceDto {
     pub timeout_at: Option<Option<DateTime<Utc>>>,
     #[serde(alias = "expected_version")]
     pub expected_version_integer: Option<i32>,
+    pub mentioned_user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -91,6 +96,8 @@ pub struct Trace {
     pub finalized_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    #[serde(default)]
+    pub mentions: Vec<TraceMentionUser>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -129,6 +136,7 @@ pub struct TraceListItem {
     pub interaction_date: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub mentions: Vec<TraceMentionUser>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -156,6 +164,7 @@ pub struct TraceReadableView {
     pub interaction_date: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub mentions: Vec<TraceMentionUser>,
 }
 
 #[derive(QueryableByName, Debug)]
@@ -233,6 +242,7 @@ impl From<TraceRow> for Trace {
             finalized_at: row.finalized_at,
             created_at: row.created_at,
             updated_at: row.updated_at,
+            mentions: vec![],
         }
     }
 }
@@ -682,6 +692,7 @@ impl Trace {
                         finalized_at,
                         created_at,
                         updated_at,
+                        mentions: vec![],
                     },
                 )
                 .collect(),
@@ -918,6 +929,7 @@ impl Trace {
                     )),
                     timeout_start_at,
                     timeout_at,
+                    mentions: vec![],
                     user_id: Some(owner_user_id),
                     trace_type: Some(TraceType::from_db(&trace_type_raw)),
                     status: Some(TraceStatus::from_db(&status_raw)),
@@ -1056,6 +1068,7 @@ impl Trace {
                     sharing_sensitivity: None,
                     timeout_start_at: None,
                     timeout_at: None,
+                    mentions: vec![],
                     user_id: Some(user_id),
                     trace_type: None,
                     status: None,

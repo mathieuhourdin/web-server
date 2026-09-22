@@ -615,6 +615,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    trace_mentions (trace_id, mentioned_user_id) {
+        trace_id -> Uuid,
+        mentioned_user_id -> Uuid,
+        notified_at -> Nullable<Timestamp>,
+        removed_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     traces (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -846,6 +857,8 @@ diesel::joinable!(trace_source_assets -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> landmarks (primary_landmark_id));
 diesel::joinable!(trace_mirrors -> traces (trace_id));
 diesel::joinable!(trace_mirrors -> users (user_id));
+diesel::joinable!(trace_mentions -> traces (trace_id));
+diesel::joinable!(trace_mentions -> users (mentioned_user_id));
 diesel::joinable!(trace_search_documents -> journals (journal_id));
 diesel::joinable!(trace_search_documents -> traces (trace_id));
 diesel::joinable!(trace_search_documents -> users (user_id));
@@ -897,6 +910,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     trace_attachments,
     trace_source_assets,
     trace_mirrors,
+    trace_mentions,
     trace_search_documents,
     traces,
     usage_events,

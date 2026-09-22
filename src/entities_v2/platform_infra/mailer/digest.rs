@@ -13,6 +13,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::Journal,
     post::{DigestVisiblePost, Post},
+    trace_mention::TraceMention,
     user::{EmailNotificationMode, User, UserPrincipalType},
 };
 use crate::environment;
@@ -341,6 +342,22 @@ fn create_shared_journal_daily_digest_for_user(
         period_end,
         pool,
     )?;
+    let trace_ids = visible_posts
+        .iter()
+        .filter_map(|visible_post| visible_post.post.source_trace_id)
+        .collect::<Vec<_>>();
+    let mentioned_trace_ids =
+        TraceMention::find_active_trace_ids_for_user(recipient.id, &trace_ids, pool)?;
+    let visible_posts = visible_posts
+        .into_iter()
+        .filter(|visible_post| {
+            visible_post
+                .post
+                .source_trace_id
+                .map(|trace_id| !mentioned_trace_ids.contains(&trace_id))
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
 
     if visible_posts.is_empty() {
         return Ok(

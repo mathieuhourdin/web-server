@@ -1,0 +1,10 @@
+Bonjour {{recipient_display_name}},
+
+{{owner_display_name}} vous a mentionné dans une trace.
+
+Journal : {{journal_title}}
+Date : {{interaction_date}}
+Lien : {{journal_url}}
+
+Extrait :
+{{excerpt}}

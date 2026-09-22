@@ -569,6 +569,47 @@ pub(crate) async fn post_published_notification(
     }))
 }
 
+pub(crate) async fn trace_mention_notification(
+    post: &Post,
+    pool: &DbPool,
+) -> Result<Option<PushNotification>, PpdcError> {
+    let Some(mut notification) = post_published_notification(post, pool).await? else {
+        return Ok(None);
+    };
+    notification
+        .data
+        .insert("event_type".to_string(), "trace_mention".to_string());
+    if let Some(trace_id) = post.source_trace_id {
+        notification
+            .data
+            .insert("trace_id".to_string(), trace_id.to_string());
+    }
+    notification
+        .data
+        .insert("author_user_id".to_string(), post.user_id.to_string());
+    if let Some(display_name) = notification.data.get("publisher_display_name").cloned() {
+        notification
+            .data
+            .insert("author_display_name".to_string(), display_name);
+    }
+    if let Some(avatar_url) = notification
+        .data
+        .get("publisher_profile_picture_url")
+        .cloned()
+    {
+        notification
+            .data
+            .insert("author_avatar_url".to_string(), avatar_url);
+    }
+    notification.body = if notification.body == "Nouvelle publication" {
+        "vous a mentionné dans une trace".to_string()
+    } else {
+        format!("vous a mentionné dans « {} »", notification.body)
+    };
+    notification.thread_id = Some(post.user_id.to_string());
+    Ok(Some(notification))
+}
+
 pub(crate) async fn journal_history_shared_notification(
     journal: &Journal,
     owner: &User,

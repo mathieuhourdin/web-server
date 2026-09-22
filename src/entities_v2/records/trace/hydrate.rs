@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::trace_mention::TraceMention;
 use crate::schema::traces;
 
 use super::model::{Trace, TraceSharingSensitivity, TraceStatus, TraceType};
@@ -86,6 +87,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         finalized_at,
         created_at,
         updated_at,
+        mentions: vec![],
     }
 }
 
@@ -121,6 +123,9 @@ impl Trace {
             ))
             .first::<TraceTuple>(&mut conn)?;
 
-        Ok(tuple_to_trace(row))
+        let mut trace = tuple_to_trace(row);
+        drop(conn);
+        trace.mentions = TraceMention::find_active_users_for_trace(trace.id, pool)?;
+        Ok(trace)
     }
 }

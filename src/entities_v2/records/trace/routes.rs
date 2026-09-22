@@ -11,6 +11,7 @@ use crate::db::DbPool;
 use crate::entities_v2::records::trace_source_asset::{
     TraceSourceAsset, TraceSourceAssetReadableView,
 };
+use crate::entities_v2::trace_mention::TraceMention;
 use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
@@ -120,6 +121,30 @@ fn attach_content_images_to_trace_list_items(
     Ok(items)
 }
 
+fn attach_mentions_to_traces(
+    mut traces: Vec<Trace>,
+    pool: &DbPool,
+) -> Result<Vec<Trace>, PpdcError> {
+    let trace_ids = traces.iter().map(|trace| trace.id).collect::<Vec<_>>();
+    let mut mentions_by_trace_id = TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+    for trace in &mut traces {
+        trace.mentions = mentions_by_trace_id.remove(&trace.id).unwrap_or_default();
+    }
+    Ok(traces)
+}
+
+fn attach_mentions_to_trace_list_items(
+    mut items: Vec<TraceListItem>,
+    pool: &DbPool,
+) -> Result<Vec<TraceListItem>, PpdcError> {
+    let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let mut mentions_by_trace_id = TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+    for item in &mut items {
+        item.mentions = mentions_by_trace_id.remove(&item.id).unwrap_or_default();
+    }
+    Ok(items)
+}
+
 fn pagination_until_rank(rank: i64) -> ValidatedPagination {
     let limit = ((rank + JOURNAL_TRACE_POSITION_BATCH_SIZE - 1)
         / JOURNAL_TRACE_POSITION_BATCH_SIZE)
@@ -214,6 +239,7 @@ pub struct CreateJournalDraftDto {
     pub sharing_sensitivity: Option<super::enums::TraceSharingSensitivity>,
     #[serde(default)]
     pub timeout_at: Option<DateTime<Utc>>,
+    pub mentioned_user_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -248,6 +274,8 @@ pub struct CreateFinalizedJournalTraceDto {
     pub publish_default_post: Option<bool>,
     #[serde(default)]
     pub document_attachments: Vec<CreateFinalizedTraceDocumentAttachmentDto>,
+    #[serde(default)]
+    pub mentioned_user_ids: Vec<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -613,6 +641,39 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         interaction_date: trace.interaction_date,
         created_at: trace.created_at,
         updated_at: trace.updated_at,
+        mentions: trace.mentions,
+    }
+}
+
+fn dispatch_new_mentions_for_published_trace(
+    trace_id: Uuid,
+    previous_mentioned_user_ids: &[Uuid],
+    current_mentioned_user_ids: &[Uuid],
+    pool: &DbPool,
+) {
+    let newly_mentioned_user_ids = current_mentioned_user_ids
+        .iter()
+        .copied()
+        .filter(|user_id| !previous_mentioned_user_ids.contains(user_id))
+        .collect::<Vec<_>>();
+    if newly_mentioned_user_ids.is_empty() {
+        return;
+    }
+    match Post::find_for_trace(trace_id, pool) {
+        Ok(Some(post)) if post.status == PostStatus::Published => {
+            crate::entities_v2::post::routes::dispatch_trace_mention_notifications(
+                &post,
+                &newly_mentioned_user_ids,
+                pool,
+            );
+        }
+        Ok(_) => {}
+        Err(err) => tracing::warn!(
+            target: "notification",
+            trace_id = %trace_id,
+            error = %err.message,
+            "trace_mention_post_lookup_failed"
+        ),
     }
 }
 
@@ -742,6 +803,7 @@ fn apply_create_draft_payload(
         content_image_asset_id,
         sharing_sensitivity,
         timeout_at,
+        mentioned_user_ids,
     } = payload;
     let mut changed = false;
 
@@ -791,10 +853,19 @@ fn apply_create_draft_payload(
     if let Some(timeout_at) = trace.timeout_at {
         validate_timeout_at(timeout_at)?;
     }
-    if !changed {
+    if !changed && mentioned_user_ids.is_none() {
         return Ok(trace);
     }
-    let trace = trace.update(pool)?;
+    let trace = if let Some(mentioned_user_ids) = mentioned_user_ids {
+        let expected_version_integer = trace.version_integer;
+        trace.update_with_mentions_and_expected_version(
+            expected_version_integer,
+            &mentioned_user_ids,
+            pool,
+        )?
+    } else {
+        trace.update(pool)?
+    };
     if let Some(timeout_at) = trace.timeout_at {
         let _ = create_usage_event(
             user_id,
@@ -948,7 +1019,10 @@ pub async fn post_finalized_journal_trace_route(
         .unwrap_or(TraceSharingSensitivity::Normal);
     new_trace.start_writing_at = new_trace.interaction_date;
 
+    let mentioned_user_ids =
+        TraceMention::validate_targets(user_id, &payload.mentioned_user_ids, &pool)?;
     let trace = new_trace.create_finalized(&pool)?;
+    TraceMention::replace_active(trace.id, &mentioned_user_ids, &pool)?;
     let mut created_attachments = Vec::with_capacity(attachment_documents.len());
     for (attachment, document) in attachment_documents {
         let attachment_name = attachment
@@ -1007,6 +1081,7 @@ pub async fn patch_journal_draft_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let expected_version_integer =
         require_expected_version_integer(payload.expected_version_integer)?;
+    let mentioned_user_ids = payload.mentioned_user_ids.clone();
     let journal = Journal::find_full(journal_id, &pool)?;
     let mut trace = get_current_journal_draft(&journal, user_id, &pool)?;
 
@@ -1035,7 +1110,15 @@ pub async fn patch_journal_draft_route(
         validate_timeout_at(timeout_at)?;
     }
 
-    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
+    let trace = if let Some(mentioned_user_ids) = mentioned_user_ids.as_deref() {
+        trace.update_with_mentions_and_expected_version(
+            expected_version_integer,
+            mentioned_user_ids,
+            &pool,
+        )?
+    } else {
+        trace.update_with_expected_version(expected_version_integer, &pool)?
+    };
     if let Some(Some(timeout_at)) = payload.timeout_at {
         let _ = create_usage_event(
             user_id,
@@ -1062,10 +1145,16 @@ pub async fn put_trace_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let expected_version_integer =
         require_expected_version_integer(payload.expected_version_integer)?;
+    let mentioned_user_ids = payload.mentioned_user_ids.clone();
     let mut trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    let previous_mentioned_user_ids = if mentioned_user_ids.is_some() {
+        TraceMention::find_active_user_ids_for_trace(id, &pool)?
+    } else {
+        vec![]
+    };
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
 
     let title_changed = payload
@@ -1094,6 +1183,7 @@ pub async fn put_trace_route(
         .timeout_at
         .map(|timeout_at| timeout_at != trace.timeout_at)
         .unwrap_or(false);
+    let mentions_changed = mentioned_user_ids.is_some();
     if payload.publish_default_post.unwrap_or(false) {
         return Err(PpdcError::new(
             400,
@@ -1200,11 +1290,12 @@ pub async fn put_trace_route(
                 || image_asset_changed
                 || sharing_sensitivity_changed
                 || timeout_changed
+                || mentions_changed
             {
                 return Err(PpdcError::new(
                     400,
                     ErrorType::ApiError,
-                    "Cannot update title, content, interaction_date, content_image_asset_id, sharing_sensitivity or timeout_at once trace is archived".to_string(),
+                    "Cannot update an archived trace".to_string(),
                 ));
             }
 
@@ -1228,7 +1319,23 @@ pub async fn put_trace_route(
         }
     }
 
-    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
+    let trace = if let Some(mentioned_user_ids) = mentioned_user_ids.as_deref() {
+        trace.update_with_mentions_and_expected_version(
+            expected_version_integer,
+            mentioned_user_ids,
+            &pool,
+        )?
+    } else {
+        trace.update_with_expected_version(expected_version_integer, &pool)?
+    };
+    if let Some(mentioned_user_ids) = mentioned_user_ids.as_deref() {
+        dispatch_new_mentions_for_published_trace(
+            trace.id,
+            &previous_mentioned_user_ids,
+            mentioned_user_ids,
+            &pool,
+        );
+    }
     if timeout_changed {
         if let Some(Some(timeout_at)) = payload.timeout_at {
             let _ = create_usage_event(
@@ -1257,16 +1364,22 @@ pub async fn patch_trace_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let expected_version_integer =
         require_expected_version_integer(payload.expected_version_integer)?;
+    let mentioned_user_ids = payload.mentioned_user_ids.clone();
     let mut trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    let previous_mentioned_user_ids = if mentioned_user_ids.is_some() {
+        TraceMention::find_active_user_ids_for_trace(id, &pool)?
+    } else {
+        vec![]
+    };
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
     if trace.status == super::enums::TraceStatus::Archived {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Only draft traces can be patched".to_string(),
+            "Archived traces cannot be patched".to_string(),
         ));
     }
 
@@ -1295,7 +1408,23 @@ pub async fn patch_trace_route(
         validate_timeout_at(timeout_at)?;
     }
 
-    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
+    let trace = if let Some(mentioned_user_ids) = mentioned_user_ids.as_deref() {
+        trace.update_with_mentions_and_expected_version(
+            expected_version_integer,
+            mentioned_user_ids,
+            &pool,
+        )?
+    } else {
+        trace.update_with_expected_version(expected_version_integer, &pool)?
+    };
+    if let Some(mentioned_user_ids) = mentioned_user_ids.as_deref() {
+        dispatch_new_mentions_for_published_trace(
+            trace.id,
+            &previous_mentioned_user_ids,
+            mentioned_user_ids,
+            &pool,
+        );
+    }
     if let Some(Some(timeout_at)) = payload.timeout_at {
         let _ = create_usage_event(
             user_id,
@@ -1816,6 +1945,7 @@ pub async fn get_all_traces_for_user_route(
     let pagination = params.validate()?;
     let (traces, total) =
         Trace::get_all_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    let traces = attach_mentions_to_traces(traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
@@ -1840,6 +1970,7 @@ pub async fn get_me_traces_route(
         params.seen,
         &pool,
     )?;
+    let items = attach_mentions_to_trace_list_items(items, &pool)?;
     let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
@@ -1859,6 +1990,7 @@ pub async fn get_trace_drafts_route(
         pagination.limit,
         &pool,
     )?;
+    let drafts = attach_mentions_to_traces(drafts, &pool)?;
     Ok(Json(PaginatedResponse::new(drafts, pagination, total)))
 }
 
@@ -2309,9 +2441,11 @@ pub async fn get_traces_for_journal_route(
                 interaction_date: trace.interaction_date,
                 created_at: trace.created_at,
                 updated_at: trace.updated_at,
+                mentions: vec![],
             })
             .collect::<Vec<_>>();
         let items = attach_content_images_to_trace_list_items(items, &pool)?;
+        let items = attach_mentions_to_trace_list_items(items, &pool)?;
         let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
         let items = if params.include_seen_by_preview {
             attach_seen_by_preview_to_trace_list_items(user_id, items, &pool)?
@@ -2352,6 +2486,7 @@ pub async fn get_traces_for_journal_route(
         return Err(PpdcError::unauthorized());
     }
     let traces = attach_content_images_to_trace_list_items(traces, &pool)?;
+    let traces = attach_mentions_to_trace_list_items(traces, &pool)?;
     let traces = attach_seen_state_to_trace_list_items(user_id, traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

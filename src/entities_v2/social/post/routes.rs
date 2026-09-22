@@ -2,6 +2,7 @@ use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query, RawQuery},
 };
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -18,6 +19,7 @@ use crate::entities_v2::{
     source_projection::SourceProjection,
     trace::{Trace, TraceStatus},
     trace_attachment::TraceAttachment,
+    trace_mention::TraceMention,
     user::{User, UserPrincipalType},
     user_post_state::{PostSeenByUser, UserPostState},
 };
@@ -99,6 +101,7 @@ pub struct UpdatePostDto {
 
 pub(crate) fn enqueue_post_published_notification_emails(
     post: &Post,
+    excluded_recipient_ids: &[Uuid],
     pool: &DbPool,
 ) -> Result<Vec<Uuid>, PpdcError> {
     const POST_PUBLISHED_EMAIL_REASON: &str = "POST_PUBLISHED";
@@ -133,6 +136,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
 
     for recipient in recipients.into_iter().filter(|recipient| {
         recipient.id != owner.id
+            && !excluded_recipient_ids.contains(&recipient.id)
             && recipient.principal_type == UserPrincipalType::Human
             && !recipient.email.trim().is_empty()
             && recipient.allows_instant_shared_journal_activity_email()
@@ -175,8 +179,12 @@ pub(crate) fn enqueue_post_published_notification_emails(
     Ok(email_ids)
 }
 
-fn dispatch_post_published_notification_emails(post: &Post, pool: &DbPool) {
-    match enqueue_post_published_notification_emails(post, pool) {
+fn dispatch_post_published_notification_emails(
+    post: &Post,
+    excluded_recipient_ids: &[Uuid],
+    pool: &DbPool,
+) {
+    match enqueue_post_published_notification_emails(post, excluded_recipient_ids, pool) {
         Ok(email_ids) if !email_ids.is_empty() => {
             let pool_for_task = pool.clone();
             tokio::spawn(async move {
@@ -196,8 +204,160 @@ fn dispatch_post_published_notification_emails(post: &Post, pool: &DbPool) {
 }
 
 pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) {
-    notification::spawn_post_published_push_notification(post.clone(), pool.clone());
-    dispatch_post_published_notification_emails(post, pool);
+    let mentioned_user_ids = post
+        .source_trace_id
+        .and_then(|trace_id| TraceMention::find_active_user_ids_for_trace(trace_id, pool).ok())
+        .unwrap_or_default();
+    notification::spawn_post_published_push_notification(
+        post.clone(),
+        mentioned_user_ids.clone(),
+        pool.clone(),
+    );
+    dispatch_post_published_notification_emails(post, &mentioned_user_ids, pool);
+    dispatch_trace_mention_notifications(post, &mentioned_user_ids, pool);
+}
+
+fn enqueue_trace_mention_notification_emails(
+    post: &Post,
+    recipient_ids: &[Uuid],
+    pool: &DbPool,
+) -> Result<Vec<Uuid>, PpdcError> {
+    const TRACE_MENTION_EMAIL_REASON: &str = "TRACE_MENTION";
+
+    let Some(trace_id) = post.source_trace_id else {
+        return Ok(vec![]);
+    };
+    let trace = Trace::find_full_trace(trace_id, pool)?;
+    let Some(journal_id) = trace.journal_id else {
+        return Ok(vec![]);
+    };
+    let journal = Journal::find_full(journal_id, pool)?;
+    if journal.is_encrypted {
+        return Ok(vec![]);
+    }
+
+    let owner = User::find(&post.user_id, pool)?;
+    let recipients = User::find_many(recipient_ids, pool)?;
+    let journal_url = format!(
+        "{}/me/journals/{}?post_id={}",
+        crate::environment::get_app_base_url().trim_end_matches('/'),
+        journal.id,
+        post.id
+    );
+    let owner_display_name = owner.display_name();
+    let scheduled_at = Some(Utc::now().naive_utc());
+    let mut email_ids = Vec::new();
+
+    for recipient in recipients.into_iter().filter(|recipient| {
+        recipient.id != owner.id
+            && recipient.principal_type == UserPrincipalType::Human
+            && !recipient.email.trim().is_empty()
+            && recipient.allows_instant_shared_journal_activity_email()
+    }) {
+        let template = mailer::trace_mention_email(
+            &recipient.display_name(),
+            &owner_display_name,
+            &journal.title,
+            &journal_url,
+            trace.interaction_date,
+            &trace.content,
+        );
+        let email = NewOutboundEmail::new(
+            Some(recipient.id),
+            TRACE_MENTION_EMAIL_REASON.to_string(),
+            Some("POST".to_string()),
+            Some(post.id),
+            recipient.email,
+            environment::get_resend_from_email(),
+            template.subject,
+            template.text_body,
+            template.html_body,
+            OutboundEmailProvider::Resend,
+            scheduled_at,
+        )
+        .create(pool)?;
+        email_ids.push(email.id);
+    }
+    Ok(email_ids)
+}
+
+pub(crate) fn dispatch_trace_mention_notifications(
+    post: &Post,
+    candidate_recipient_ids: &[Uuid],
+    pool: &DbPool,
+) {
+    let Some(trace_id) = post.source_trace_id else {
+        return;
+    };
+    if post.status != PostStatus::Published || candidate_recipient_ids.is_empty() {
+        return;
+    }
+
+    let unnotified = match TraceMention::find_unnotified_active_user_ids_for_trace(trace_id, pool) {
+        Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
+        Err(err) => {
+            tracing::warn!(
+                target: "notification",
+                post_id = %post.id,
+                trace_id = %trace_id,
+                error = %err.message,
+                "trace_mention_unnotified_lookup_failed"
+            );
+            return;
+        }
+    };
+    let readable = match PostGrant::find_active_recipient_user_ids_for_post(post, pool) {
+        Ok(ids) => ids.into_iter().collect::<HashSet<_>>(),
+        Err(err) => {
+            tracing::warn!(
+                target: "notification",
+                post_id = %post.id,
+                trace_id = %trace_id,
+                error = %err.message,
+                "trace_mention_recipient_lookup_failed"
+            );
+            return;
+        }
+    };
+    let recipient_ids = candidate_recipient_ids
+        .iter()
+        .copied()
+        .filter(|user_id| unnotified.contains(user_id) && readable.contains(user_id))
+        .collect::<Vec<_>>();
+    if recipient_ids.is_empty() {
+        return;
+    }
+
+    notification::spawn_trace_mention_push_notification(
+        post.clone(),
+        recipient_ids.clone(),
+        pool.clone(),
+    );
+    match enqueue_trace_mention_notification_emails(post, &recipient_ids, pool) {
+        Ok(email_ids) if !email_ids.is_empty() => {
+            let pool_for_task = pool.clone();
+            tokio::spawn(async move {
+                let _ = mailer::process_pending_emails(email_ids, &pool_for_task).await;
+            });
+        }
+        Ok(_) => {}
+        Err(err) => tracing::warn!(
+            target: "mailer",
+            post_id = %post.id,
+            trace_id = %trace_id,
+            error = %err.message,
+            "trace_mention_email_enqueue_failed"
+        ),
+    }
+    if let Err(err) = TraceMention::mark_notified(trace_id, &recipient_ids, pool) {
+        tracing::warn!(
+            target: "notification",
+            post_id = %post.id,
+            trace_id = %trace_id,
+            error = %err.message,
+            "trace_mention_mark_notified_failed"
+        );
+    }
 }
 
 fn apply_source_backed_projection(post: &mut Post, projection: &SourceProjection) {

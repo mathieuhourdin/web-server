@@ -411,7 +411,11 @@ pub fn spawn_follow_request_accepted_push_notification(relationship: Relationshi
     });
 }
 
-pub fn spawn_post_published_push_notification(post: Post, pool: DbPool) {
+pub fn spawn_post_published_push_notification(
+    post: Post,
+    excluded_recipient_ids: Vec<Uuid>,
+    pool: DbPool,
+) {
     if post.status != PostStatus::Published || post.source_ref().is_none() {
         return;
     }
@@ -461,7 +465,9 @@ pub fn spawn_post_published_push_notification(post: Post, pool: DbPool) {
         };
 
         for recipient in recipients.into_iter().filter(|recipient| {
-            recipient.id != post.user_id && recipient.principal_type == UserPrincipalType::Human
+            recipient.id != post.user_id
+                && recipient.principal_type == UserPrincipalType::Human
+                && !excluded_recipient_ids.contains(&recipient.id)
         }) {
             match push::send_to_mobile_user(recipient.id, notification.clone(), &pool).await {
                 Ok(result) => {
@@ -483,6 +489,66 @@ pub fn spawn_post_published_push_notification(post: Post, pool: DbPool) {
                         "post_published_push_dispatch_failed"
                     );
                 }
+            }
+        }
+    });
+}
+
+pub fn spawn_trace_mention_push_notification(post: Post, recipient_ids: Vec<Uuid>, pool: DbPool) {
+    if post.status != PostStatus::Published
+        || post.source_trace_id.is_none()
+        || recipient_ids.is_empty()
+    {
+        return;
+    }
+
+    tokio::spawn(async move {
+        let notification = match push::trace_mention_notification(&post, &pool).await {
+            Ok(Some(notification)) => notification,
+            Ok(None) => return,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    error = %err.message,
+                    "trace_mention_push_build_failed"
+                );
+                return;
+            }
+        };
+
+        let recipients = match User::find_many(&recipient_ids, &pool) {
+            Ok(recipients) => recipients,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    error = %err.message,
+                    "trace_mention_push_recipient_user_lookup_failed"
+                );
+                return;
+            }
+        };
+
+        for recipient in recipients.into_iter().filter(|recipient| {
+            recipient.id != post.user_id && recipient.principal_type == UserPrincipalType::Human
+        }) {
+            match push::send_to_mobile_user(recipient.id, notification.clone(), &pool).await {
+                Ok(result) => info!(
+                    target: "notification",
+                    post_id = %post.id,
+                    recipient_user_id = %recipient.id,
+                    push_attempted_count = result.attempted_count,
+                    push_sent_count = result.sent_count,
+                    "trace_mention_push_dispatch_completed"
+                ),
+                Err(err) => warn!(
+                    target: "notification",
+                    post_id = %post.id,
+                    recipient_user_id = %recipient.id,
+                    error = %err.message,
+                    "trace_mention_push_dispatch_failed"
+                ),
             }
         }
     });
