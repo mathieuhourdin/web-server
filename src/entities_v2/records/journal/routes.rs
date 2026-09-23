@@ -28,8 +28,8 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::model::{
-    Journal, JournalExportDto, JournalExportFormat, JournalExportResponse, JournalStatus,
-    JournalType, NewJournalDto, UpdateJournalDto,
+    Journal, JournalAudienceMember, JournalExportDto, JournalExportFormat, JournalExportResponse,
+    JournalStatus, JournalType, NewJournalDto, UpdateJournalDto,
 };
 
 #[derive(serde::Deserialize)]
@@ -75,6 +75,32 @@ struct AllTracesJsonExport {
     to: Option<NaiveDate>,
     journals: Vec<Journal>,
     traces: Vec<DatedTraceExportItem>,
+}
+
+/// Lists the journal's named audience: people with an active future-sharing
+/// policy or current access to at least one trace. Broad grants and anonymous
+/// share links are not expanded.
+#[debug_handler]
+pub async fn get_journal_audience_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(journal_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<JournalAudienceMember>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    let pagination = params.validate()?;
+    let (items, total) = Journal::find_audience_paginated(
+        journal.id,
+        journal.user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
 
 #[debug_handler]

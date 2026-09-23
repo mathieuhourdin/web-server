@@ -305,6 +305,7 @@ pub fn create_router() -> Router {
             delete(journal_share_link::delete_journal_share_link_route),
         )
         .route("/:id/exports", post(journal::post_journal_export_route))
+        .route("/:id/audience", get(journal::get_journal_audience_route))
         .route(
             "/:id/sharing_policies",
             get(journal_sharing_policy::get_journal_sharing_policies_route)

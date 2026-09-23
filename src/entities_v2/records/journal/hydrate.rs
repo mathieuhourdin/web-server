@@ -1,17 +1,25 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::sql;
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Nullable, Timestamp};
+use diesel::sql_query;
+use diesel::sql_types::{Array, BigInt, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use diesel::PgSortExpressionMethods;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::db::DbPool;
-use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
-use crate::schema::{journals, posts, traces};
+use crate::entities_v2::{
+    error::PpdcError,
+    user::{User, UserPublicResponse},
+};
+use crate::schema::{journals, posts, traces, users};
 
-use super::model::{Journal, JournalSharingMode, JournalStatus, JournalType};
+use super::model::{
+    Journal, JournalAudienceAccessVia, JournalAudienceDefaultSharingPolicy, JournalAudienceMember,
+    JournalSharingMode, JournalStatus, JournalType,
+};
 
 type JournalTuple = (
     Uuid,
@@ -28,6 +36,147 @@ type JournalTuple = (
     NaiveDateTime,
     NaiveDateTime,
 );
+
+#[derive(QueryableByName)]
+struct JournalAudienceRow {
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    active_default_sharing_policy_id: Option<Uuid>,
+    #[diesel(sql_type = BigInt)]
+    accessible_trace_count: i64,
+    #[diesel(sql_type = Array<Text>)]
+    access_via: Vec<String>,
+    #[diesel(sql_type = BigInt)]
+    total: i64,
+}
+
+const JOURNAL_AUDIENCE_SQL: &str = r#"
+    WITH journal_traces AS (
+        SELECT trace.id, trace.user_id
+        FROM traces trace
+        WHERE trace.journal_id = $1
+          AND trace.trace_type = 'USER_TRACE'
+          AND trace.status = 'FINALIZED'
+          AND trace.is_encrypted = FALSE
+    ),
+    access_paths AS (
+        SELECT grant_row.grantee_user_id AS user_id,
+               trace.id AS trace_id,
+               'direct_post_grant'::text AS access_via
+        FROM journal_traces trace
+        INNER JOIN posts post
+            ON post.source_trace_id = trace.id
+           AND post.status = 'PUBLISHED'
+        INNER JOIN post_grants grant_row
+            ON grant_row.post_id = post.id
+           AND grant_row.status = 'ACTIVE'
+           AND grant_row.grantee_user_id IS NOT NULL
+           AND grant_row.grantee_scope IS NULL
+        WHERE NOT EXISTS (
+            SELECT 1 FROM user_blocks block
+            WHERE (block.blocker_user_id = trace.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
+               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = trace.user_id)
+               OR (block.blocker_user_id = post.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
+               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = post.user_id)
+        )
+
+        UNION ALL
+
+        SELECT mention.mentioned_user_id AS user_id,
+               trace.id AS trace_id,
+               'mention'::text AS access_via
+        FROM journal_traces trace
+        INNER JOIN trace_mentions mention
+            ON mention.trace_id = trace.id
+           AND mention.removed_at IS NULL
+        WHERE NOT EXISTS (
+            SELECT 1 FROM user_blocks block
+            WHERE (block.blocker_user_id = trace.user_id AND block.blocked_user_id = mention.mentioned_user_id)
+               OR (block.blocker_user_id = mention.mentioned_user_id AND block.blocked_user_id = trace.user_id)
+        )
+
+        UNION ALL
+
+        SELECT grant_row.grantee_user_id AS user_id,
+               source.id AS trace_id,
+               'reshare'::text AS access_via
+        FROM journal_traces source
+        INNER JOIN traces proxy
+            ON proxy.linked_source_trace_id = source.id
+           AND proxy.trace_type = 'LINKED_TRACE'
+           AND proxy.status = 'FINALIZED'
+        INNER JOIN trace_mentions mention
+            ON mention.trace_id = source.id
+           AND mention.mentioned_user_id = proxy.user_id
+           AND mention.removed_at IS NULL
+           AND mention.allows_reshare = TRUE
+        INNER JOIN posts post
+            ON post.source_trace_id = proxy.id
+           AND post.status = 'PUBLISHED'
+        INNER JOIN post_grants grant_row
+            ON grant_row.post_id = post.id
+           AND grant_row.status = 'ACTIVE'
+           AND grant_row.grantee_user_id IS NOT NULL
+           AND grant_row.grantee_scope IS NULL
+        WHERE NOT EXISTS (
+            SELECT 1 FROM user_blocks block
+            WHERE (block.blocker_user_id = source.user_id AND block.blocked_user_id = proxy.user_id)
+               OR (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = source.user_id)
+               OR (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
+               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = proxy.user_id)
+               OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
+               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = source.user_id)
+               OR (block.blocker_user_id = post.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
+               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = post.user_id)
+        )
+    ),
+    grouped_access AS (
+        SELECT user_id,
+               COUNT(DISTINCT trace_id)::bigint AS accessible_trace_count,
+               ARRAY_AGG(DISTINCT access_via ORDER BY access_via) AS access_via
+        FROM access_paths
+        WHERE user_id IS NOT NULL
+          AND user_id <> $4
+        GROUP BY user_id
+    ),
+    default_policy_users AS (
+        SELECT policy.id AS policy_id,
+               policy.grantee_user_id AS user_id
+        FROM journal_sharing_policies policy
+        WHERE policy.journal_id = $1
+          AND policy.status = 'ACTIVE'
+          AND policy.default_future_access_enabled = TRUE
+          AND policy.grantee_user_id <> $4
+    ),
+    audience AS (
+        SELECT policy.user_id,
+               policy.policy_id AS active_default_sharing_policy_id,
+               COALESCE(access.accessible_trace_count, 0)::bigint AS accessible_trace_count,
+               COALESCE(access.access_via, ARRAY[]::text[]) AS access_via
+        FROM default_policy_users policy
+        LEFT JOIN grouped_access access ON access.user_id = policy.user_id
+
+        UNION ALL
+
+        SELECT access.user_id,
+               NULL::uuid AS active_default_sharing_policy_id,
+               access.accessible_trace_count,
+               access.access_via
+        FROM grouped_access access
+        LEFT JOIN default_policy_users policy ON policy.user_id = access.user_id
+        WHERE policy.user_id IS NULL
+    )
+    SELECT audience.user_id,
+           audience.active_default_sharing_policy_id,
+           audience.accessible_trace_count,
+           audience.access_via,
+           COUNT(*) OVER()::bigint AS total
+    FROM audience
+    INNER JOIN users reader ON reader.id = audience.user_id
+    ORDER BY LOWER(reader.handle), audience.user_id
+    LIMIT $2 OFFSET $3
+"#;
 
 impl From<JournalTuple> for Journal {
     fn from(row: JournalTuple) -> Self {
@@ -97,6 +246,54 @@ fn select_journal_columns() -> (
 }
 
 impl Journal {
+    /// Lists named people who either have a future-sharing default for this
+    /// journal or current effective access to one of its traces. Broad
+    /// `ALL_PLATFORM_USERS` grants are intentionally excluded.
+    pub fn find_audience_paginated(
+        journal_id: Uuid,
+        owner_user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<JournalAudienceMember>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let rows = sql_query(JOURNAL_AUDIENCE_SQL)
+            .bind::<SqlUuid, _>(journal_id)
+            .bind::<BigInt, _>(limit)
+            .bind::<BigInt, _>(offset)
+            .bind::<SqlUuid, _>(owner_user_id)
+            .load::<JournalAudienceRow>(&mut conn)?;
+        let total = rows.first().map(|row| row.total).unwrap_or(0);
+        let user_ids = rows.iter().map(|row| row.user_id).collect::<Vec<_>>();
+        let users_by_id = users::table
+            .filter(users::id.eq_any(&user_ids))
+            .select(User::as_select())
+            .load::<User>(&mut conn)?
+            .into_iter()
+            .map(|user| (user.id, user))
+            .collect::<HashMap<_, _>>();
+
+        let readers = rows
+            .into_iter()
+            .filter_map(|row| {
+                let user = users_by_id.get(&row.user_id)?;
+                Some(JournalAudienceMember {
+                    user: UserPublicResponse::from(user),
+                    active_default_sharing_policy: row
+                        .active_default_sharing_policy_id
+                        .map(|id| JournalAudienceDefaultSharingPolicy { id }),
+                    accessible_trace_count: row.accessible_trace_count,
+                    access_via: row
+                        .access_via
+                        .iter()
+                        .filter_map(|value| JournalAudienceAccessVia::from_query_value(value))
+                        .collect(),
+                })
+            })
+            .collect();
+        Ok((readers, total))
+    }
+
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {
         let mut conn = pool.get()?;
 
