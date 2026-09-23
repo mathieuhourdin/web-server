@@ -29,7 +29,7 @@ use super::model::{
 const WAL_OPENAI_MODEL: &str = "gpt-5.6-luna";
 const WAL_PROJECTION_SCHEMA_VERSION: i32 = 1;
 const WAL_COMPILATION_PROMPT_VERSION: &str = "structured-v1";
-const WAL_CARRYOVER_PROMPT_VERSION: &str = "carryover-v1";
+const WAL_CARRYOVER_PROMPT_VERSION: &str = "carryover-v2-atomic";
 const CARRYOVER_SCAN_INTERVAL_SECONDS: u64 = 60;
 const CARRYOVER_SCAN_LIMIT: i64 = 20;
 const COMPILATION_SCAN_INTERVAL_SECONDS: u64 = 10;
@@ -142,7 +142,12 @@ fn carryover_schema() -> serde_json::Value {
                         },
                         "reason": { "type": "string" },
                         "selected_by_default": { "type": "boolean" },
-                        "source_refs": { "type": "array", "items": { "type": "string" } }
+                        "source_refs": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "minItems": 1,
+                            "maxItems": 1
+                        }
                     },
                     "required": [
                         "title", "content", "assessment", "reason",
@@ -329,44 +334,65 @@ fn normalize_carryover(
     entries: &[WalEntry],
 ) -> Result<WalCarryoverContent, PpdcError> {
     let references = entry_reference_map(entries);
-    let mut covered = HashSet::new();
-    let mut items = Vec::new();
+    let mut item_by_source_entry_id = HashMap::new();
     for item in draft.items {
         let source_entry_ids = resolve_source_refs(item.source_refs, &references)?;
-        covered.extend(source_entry_ids.iter().copied());
+        if source_entry_ids.len() != 1 {
+            return Err(PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "WAL carryover must contain exactly one source entry per item".to_string(),
+            ));
+        }
+        let source_entry_id = source_entry_ids[0];
+        if item_by_source_entry_id.contains_key(&source_entry_id) {
+            return Err(PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "WAL carryover returned more than one item for a source entry".to_string(),
+            ));
+        }
         let selected_by_default = matches!(
             item.assessment,
             WalCarryoverAssessment::ExplicitForToday | WalCarryoverAssessment::LikelyOpen
         ) && item.selected_by_default;
-        items.push(WalCarryoverItem {
-            id: Uuid::new_v4(),
-            title: clean_text(item.title, "WAL item"),
-            content: clean_text(item.content, "No additional detail."),
-            assessment: item.assessment,
-            reason: clean_text(item.reason, "The available text is inconclusive."),
-            selected_by_default,
-            source_entry_ids,
-            application: WalCarryoverApplication {
-                status: WalCarryoverApplicationStatus::Pending,
-                target_entry_id: None,
+        item_by_source_entry_id.insert(
+            source_entry_id,
+            WalCarryoverItem {
+                id: Uuid::new_v4(),
+                title: clean_text(item.title, "WAL item"),
+                content: clean_text(item.content, "No additional detail."),
+                assessment: item.assessment,
+                reason: clean_text(item.reason, "The available text is inconclusive."),
+                selected_by_default,
+                source_entry_ids,
+                application: WalCarryoverApplication {
+                    status: WalCarryoverApplicationStatus::Pending,
+                    target_entry_id: None,
+                },
             },
-        });
+        );
     }
-    for entry in entries.iter().filter(|entry| !covered.contains(&entry.id)) {
-        items.push(WalCarryoverItem {
-            id: Uuid::new_v4(),
-            title: fallback_title(entry),
-            content: entry.content.clone(),
-            assessment: WalCarryoverAssessment::Uncertain,
-            reason: "The model did not classify this raw item.".to_string(),
-            selected_by_default: false,
-            source_entry_ids: vec![entry.id],
-            application: WalCarryoverApplication {
-                status: WalCarryoverApplicationStatus::Pending,
-                target_entry_id: None,
-            },
-        });
-    }
+    let items = entries
+        .iter()
+        .map(|entry| {
+            item_by_source_entry_id
+                .remove(&entry.id)
+                .unwrap_or_else(|| WalCarryoverItem {
+                    id: Uuid::new_v4(),
+                    title: fallback_title(entry),
+                    content: entry.content.clone(),
+                    assessment: WalCarryoverAssessment::Uncertain,
+                    reason: "The model did not classify this raw item.".to_string(),
+                    selected_by_default: false,
+                    source_entry_ids: vec![entry.id],
+                    application: WalCarryoverApplication {
+                        status: WalCarryoverApplicationStatus::Pending,
+                        target_entry_id: None,
+                    },
+                })
+        })
+        .collect();
     Ok(WalCarryoverContent {
         schema_version: WAL_PROJECTION_SCHEMA_VERSION,
         source_date,
@@ -837,6 +863,71 @@ mod tests {
             content: content.to_string(),
             created_at: Utc::now().naive_utc(),
         }
+    }
+
+    #[test]
+    fn carryover_is_atomic_and_keeps_source_order() {
+        let first = entry(0, "Buy coffee and the specific red notebook");
+        let second = entry(1, "Ask Léa whether Thursday still works");
+        let draft = WalCarryoverDraft {
+            items: vec![
+                WalCarryoverItemDraft {
+                    title: "Ask Léa".to_string(),
+                    content: second.content.clone(),
+                    assessment: WalCarryoverAssessment::LikelyOpen,
+                    reason: "Still open".to_string(),
+                    selected_by_default: true,
+                    source_refs: vec!["R2".to_string()],
+                },
+                WalCarryoverItemDraft {
+                    title: "Shopping".to_string(),
+                    content: first.content.clone(),
+                    assessment: WalCarryoverAssessment::LikelyOpen,
+                    reason: "Still open".to_string(),
+                    selected_by_default: true,
+                    source_refs: vec!["R1".to_string()],
+                },
+            ],
+        };
+
+        let normalized = normalize_carryover(
+            draft,
+            NaiveDate::from_ymd_opt(2026, 9, 22).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 9, 23).unwrap(),
+            &[first.clone(), second.clone()],
+        )
+        .unwrap();
+
+        assert_eq!(normalized.items.len(), 2);
+        assert_eq!(normalized.items[0].source_entry_ids, vec![first.id]);
+        assert_eq!(normalized.items[1].source_entry_ids, vec![second.id]);
+        assert_eq!(normalized.items[0].content, first.content);
+        assert_eq!(normalized.items[1].content, second.content);
+    }
+
+    #[test]
+    fn carryover_rejects_merged_source_entries() {
+        let first = entry(0, "Buy coffee");
+        let second = entry(1, "Buy fruit");
+        let draft = WalCarryoverDraft {
+            items: vec![WalCarryoverItemDraft {
+                title: "Shopping".to_string(),
+                content: "Buy coffee and fruit".to_string(),
+                assessment: WalCarryoverAssessment::LikelyOpen,
+                reason: "Still open".to_string(),
+                selected_by_default: true,
+                source_refs: vec!["R1".to_string(), "R2".to_string()],
+            }],
+        };
+
+        let result = normalize_carryover(
+            draft,
+            NaiveDate::from_ymd_opt(2026, 9, 22).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 9, 23).unwrap(),
+            &[first, second],
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]
