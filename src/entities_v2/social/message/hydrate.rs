@@ -16,6 +16,7 @@ use super::model::{
     ConversationSummary, MentorSuggestedAction, Message, MessageMetadata, MessageProcessingState,
     MessageType,
 };
+use super::reaction::MessageReaction;
 
 type MessageTuple = (
     Uuid,
@@ -118,6 +119,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         attachment,
         suggested_actions,
         metadata,
+        reactions: Vec::new(),
         seen_at,
         created_at,
         updated_at,
@@ -257,7 +259,7 @@ impl Message {
         .collect();
 
         let last_message_ids: Vec<Uuid> = head_rows.iter().map(|row| row.last_message_id).collect();
-        let mut message_map: HashMap<Uuid, Message> = messages::table
+        let loaded_messages = messages::table
             .filter(messages::id.eq_any(&last_message_ids))
             .select((
                 messages::id,
@@ -283,8 +285,15 @@ impl Message {
             .load::<MessageTuple>(&mut conn)?
             .into_iter()
             .map(tuple_to_message)
-            .map(|message| (message.id, message))
-            .collect();
+            .collect::<Vec<_>>();
+        let mut message_map: HashMap<Uuid, Message> = MessageReaction::hydrate_messages_with_conn(
+            viewer_user_id,
+            loaded_messages,
+            &mut conn,
+        )?
+        .into_iter()
+        .map(|message| (message.id, message))
+        .collect();
 
         let partner_ids: Vec<Uuid> = head_rows.iter().map(|row| row.partner_id).collect();
         let mut partner_map: HashMap<Uuid, UserPublicResponse> = users::table
@@ -374,17 +383,18 @@ impl Message {
         .map(|row| (row.partner_id, row.unread))
         .collect();
 
-        Self::hydrate_conversation_summaries(head_rows, unread_map, &mut conn, pool)
+        Self::hydrate_conversation_summaries(viewer_user_id, head_rows, unread_map, &mut conn, pool)
     }
 
     fn hydrate_conversation_summaries(
+        viewer_user_id: Uuid,
         head_rows: Vec<ConversationHeadRow>,
         unread_map: HashMap<Uuid, i64>,
         conn: &mut PgConnection,
         pool: &DbPool,
     ) -> Result<Vec<ConversationSummary>, PpdcError> {
         let last_message_ids: Vec<Uuid> = head_rows.iter().map(|row| row.last_message_id).collect();
-        let mut message_map: HashMap<Uuid, Message> = messages::table
+        let loaded_messages = messages::table
             .filter(messages::id.eq_any(&last_message_ids))
             .select((
                 messages::id,
@@ -410,8 +420,12 @@ impl Message {
             .load::<MessageTuple>(conn)?
             .into_iter()
             .map(tuple_to_message)
-            .map(|message| (message.id, message))
-            .collect();
+            .collect::<Vec<_>>();
+        let mut message_map: HashMap<Uuid, Message> =
+            MessageReaction::hydrate_messages_with_conn(viewer_user_id, loaded_messages, conn)?
+                .into_iter()
+                .map(|message| (message.id, message))
+                .collect();
 
         let partner_ids: Vec<Uuid> = head_rows.iter().map(|row| row.partner_id).collect();
         let mut partner_map: HashMap<Uuid, UserPublicResponse> = users::table
@@ -502,7 +516,11 @@ impl Message {
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        Ok((
+            MessageReaction::hydrate_messages_with_conn(viewer_user_id, messages, &mut conn)?,
+            total,
+        ))
     }
 
     pub fn find_for_participant(
@@ -626,7 +644,11 @@ impl Message {
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        Ok((
+            MessageReaction::hydrate_messages_with_conn(user_id, messages, &mut conn)?,
+            total,
+        ))
     }
 
     pub fn find_for_trace_conversation(
@@ -706,7 +728,11 @@ impl Message {
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        Ok((
+            MessageReaction::hydrate_messages_with_conn(user_id, messages, &mut conn)?,
+            total,
+        ))
     }
 
     pub fn find_for_trace_conversation_paginated(
@@ -764,7 +790,11 @@ impl Message {
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        Ok((
+            MessageReaction::hydrate_messages_with_conn(user_id, messages, &mut conn)?,
+            total,
+        ))
     }
 
     pub fn find_for_trace_context_conversation_paginated(
@@ -860,7 +890,11 @@ impl Message {
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        Ok((
+            MessageReaction::hydrate_messages_with_conn(user_id, messages, &mut conn)?,
+            total,
+        ))
     }
 
     pub fn find_for_post_conversation_paginated(
@@ -918,7 +952,11 @@ impl Message {
             .offset(offset)
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok((rows.into_iter().map(tuple_to_message).collect(), total))
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        Ok((
+            MessageReaction::hydrate_messages_with_conn(user_id, messages, &mut conn)?,
+            total,
+        ))
     }
 
     pub fn find_latest_feedback_for_analysis(
@@ -957,7 +995,10 @@ impl Message {
             .order(messages::created_at.desc())
             .first::<MessageTuple>(&mut conn)
             .optional()?;
-        Ok(row.map(tuple_to_message))
+        let Some(message) = row.map(tuple_to_message) else {
+            return Ok(None);
+        };
+        Ok(MessageReaction::hydrate_messages_with_conn(user_id, vec![message], &mut conn)?.pop())
     }
 
     pub fn find_recent_mentor_feedbacks_for_user(
@@ -995,6 +1036,7 @@ impl Message {
             .order(messages::created_at.desc())
             .limit(limit.max(1))
             .load::<MessageTuple>(&mut conn)?;
-        Ok(rows.into_iter().map(tuple_to_message).collect())
+        let messages = rows.into_iter().map(tuple_to_message).collect();
+        MessageReaction::hydrate_messages_with_conn(user_id, messages, &mut conn)
     }
 }

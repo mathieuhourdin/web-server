@@ -6,6 +6,7 @@ use crate::entities_v2::user::UserPublicResponse;
 
 use super::attachment::{MessageAttachment, MessageAttachmentType};
 pub use super::enums::{MessageProcessingState, MessageType};
+use super::reaction::MessageReactionSummary;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -91,6 +92,8 @@ pub struct Message {
     pub attachment: Option<MessageAttachment>,
     pub suggested_actions: Vec<MentorSuggestedAction>,
     pub metadata: Option<MessageMetadata>,
+    #[serde(default)]
+    pub reactions: Vec<MessageReactionSummary>,
     pub seen_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

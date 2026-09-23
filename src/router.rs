@@ -471,6 +471,10 @@ pub fn create_router() -> Router {
             "/:id/seen",
             put(message::put_message_seen_route).patch(message::patch_message_seen_route),
         )
+        .route(
+            "/:id/reaction",
+            put(message::put_message_reaction_route).delete(message::delete_message_reaction_route),
+        )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let trace_mirrors_router = Router::new()

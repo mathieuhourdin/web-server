@@ -12,7 +12,7 @@ use crate::entities_v2::{
     device::Device,
     error::{ErrorType, PpdcError},
     journal::Journal,
-    message::Message,
+    message::{Message, MessageReaction},
     post::Post,
     relationship::Relationship,
     source_projection::{load_source_projection_map, SourceProjectionKind},
@@ -502,6 +502,52 @@ pub(crate) async fn message_received_notification(
         body: message.content.clone(),
         data,
         thread_id: Some(message.sender_user_id.to_string()),
+    })
+}
+
+pub(crate) async fn message_reaction_notification(
+    message: &Message,
+    reaction: &MessageReaction,
+    pool: &DbPool,
+) -> Result<PushNotification, PpdcError> {
+    let reactor = User::find(&reaction.user_id, pool)?;
+    let mut data = HashMap::new();
+    data.insert(
+        "event_type".to_string(),
+        "message_reaction_updated".to_string(),
+    );
+    data.insert("message_id".to_string(), message.id.to_string());
+    data.insert("emoji".to_string(), reaction.emoji.clone());
+    data.insert("reactor_user_id".to_string(), reactor.id.to_string());
+    data.insert("reactor_display_name".to_string(), reactor.display_name());
+    if let Some(avatar_url) = sender_avatar_url(&reactor, pool).await {
+        data.insert("reactor_avatar_url".to_string(), avatar_url.clone());
+        // The iOS notification service extension already treats actor_avatar_url
+        // as the generic avatar key for social events.
+        data.insert("actor_avatar_url".to_string(), avatar_url);
+    }
+    data.insert(
+        "message_sender_user_id".to_string(),
+        message.sender_user_id.to_string(),
+    );
+    data.insert(
+        "message_recipient_user_id".to_string(),
+        message.recipient_user_id.to_string(),
+    );
+    data.insert(
+        "message_content_preview".to_string(),
+        content_preview(&message.content),
+    );
+    data.insert(
+        "reacted_at".to_string(),
+        reaction.updated_at.and_utc().timestamp_millis().to_string(),
+    );
+
+    Ok(PushNotification {
+        title: reactor.display_name(),
+        body: format!("a réagi {} à votre message", reaction.emoji),
+        data,
+        thread_id: Some(reactor.id.to_string()),
     })
 }
 

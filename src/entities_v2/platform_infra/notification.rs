@@ -7,7 +7,7 @@ use crate::entities_v2::{
     analysis_summary::AnalysisSummary,
     error::PpdcError,
     landscape_analysis::LandscapeAnalysis,
-    message::Message,
+    message::{Message, MessageReaction},
     post::{Post, PostStatus},
     post_grant::PostGrant,
     relationship::Relationship,
@@ -248,6 +248,57 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                     "message_received_email_enqueue_failed"
                 );
             }
+        }
+    });
+}
+
+pub fn spawn_message_reaction_notification(
+    message: Message,
+    reaction: MessageReaction,
+    pool: DbPool,
+) {
+    let recipient_user_id = if reaction.user_id == message.sender_user_id {
+        message.recipient_user_id
+    } else if reaction.user_id == message.recipient_user_id {
+        message.sender_user_id
+    } else {
+        return;
+    };
+    if recipient_user_id == reaction.user_id {
+        return;
+    }
+
+    tokio::spawn(async move {
+        match push::message_reaction_notification(&message, &reaction, &pool).await {
+            Ok(notification) => {
+                match push::send_to_user(recipient_user_id, notification, &pool).await {
+                    Ok(result) => info!(
+                        target: "notification",
+                        message_id = %message.id,
+                        reaction_id = %reaction.id,
+                        recipient_user_id = %recipient_user_id,
+                        push_attempted_count = result.attempted_count,
+                        push_sent_count = result.sent_count,
+                        "message_reaction_push_dispatch_completed"
+                    ),
+                    Err(err) => warn!(
+                        target: "notification",
+                        message_id = %message.id,
+                        reaction_id = %reaction.id,
+                        recipient_user_id = %recipient_user_id,
+                        error = %err.message,
+                        "message_reaction_push_dispatch_failed"
+                    ),
+                }
+            }
+            Err(err) => warn!(
+                target: "notification",
+                message_id = %message.id,
+                reaction_id = %reaction.id,
+                recipient_user_id = %recipient_user_id,
+                error = %err.message,
+                "message_reaction_push_build_failed"
+            ),
         }
     });
 }

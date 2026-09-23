@@ -1,6 +1,7 @@
 use axum::{
     debug_handler,
     extract::{Extension, Json, Path, Query},
+    http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -25,6 +26,7 @@ use super::attachment::{MessageAttachment, MessageAttachmentType};
 use super::model::{
     ConversationSummary, Message, MessageProcessingState, MessageType, NewMessage, NewMessageDto,
 };
+use super::reaction::MessageReaction;
 
 #[derive(Deserialize)]
 pub struct MessageFiltersQuery {
@@ -84,6 +86,11 @@ pub struct MarkMessageSeenDto {
     pub post_id: Option<Uuid>,
 }
 
+#[derive(Deserialize)]
+pub struct PutMessageReactionDto {
+    pub emoji: String,
+}
+
 #[derive(Serialize)]
 pub struct MessageCreationResponse {
     pub question_message: Message,
@@ -110,6 +117,22 @@ fn ensure_message_visible_to_user(
         message.sender_user_id
     };
     UserBlock::ensure_can_interact(user_id, partner_id, pool)
+}
+
+fn hydrate_message_reactions(
+    message: Message,
+    viewer_user_id: Uuid,
+    pool: &DbPool,
+) -> Result<Message, PpdcError> {
+    MessageReaction::hydrate_messages(viewer_user_id, vec![message], pool)?
+        .pop()
+        .ok_or_else(|| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                "Failed to hydrate message reactions".to_string(),
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -376,7 +399,7 @@ pub async fn get_message_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let message = Message::find(id, &pool)?;
     ensure_message_visible_to_user(&message, user_id, &pool)?;
-    Ok(Json(message))
+    Ok(Json(hydrate_message_reactions(message, user_id, &pool)?))
 }
 
 #[debug_handler]
@@ -388,7 +411,7 @@ pub async fn patch_message_seen_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let message = Message::find(id, &pool)?;
     ensure_message_visible_to_user(&message, user_id, &pool)?;
-    let message = message.mark_seen(user_id, &pool)?;
+    let message = hydrate_message_reactions(message.mark_seen(user_id, &pool)?, user_id, &pool)?;
     Ok(Json(message))
 }
 
@@ -424,9 +447,46 @@ pub async fn put_message_seen_route(
     };
 
     Ok(Json(MessageSeenResponse {
-        message,
+        message: hydrate_message_reactions(message, user_id, &pool)?,
         marked_seen_count,
     }))
+}
+
+#[debug_handler]
+pub async fn put_message_reaction_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(message_id): Path<Uuid>,
+    Json(payload): Json<PutMessageReactionDto>,
+) -> Result<Json<MessageReaction>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let message = Message::find(message_id, &pool)?;
+    ensure_message_visible_to_user(&message, user_id, &pool)?;
+    if message.processing_state != MessageProcessingState::Processed {
+        return Err(PpdcError::new(
+            409,
+            ErrorType::ApiError,
+            "Only processed messages can receive reactions".to_string(),
+        ));
+    }
+    let (reaction, changed) = MessageReaction::upsert(message.id, user_id, &payload.emoji, &pool)?;
+    if changed {
+        notification::spawn_message_reaction_notification(message, reaction.clone(), pool.clone());
+    }
+    Ok(Json(reaction))
+}
+
+#[debug_handler]
+pub async fn delete_message_reaction_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(message_id): Path<Uuid>,
+) -> Result<StatusCode, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let message = Message::find(message_id, &pool)?;
+    ensure_message_visible_to_user(&message, user_id, &pool)?;
+    MessageReaction::delete_for_user(message.id, user_id, &pool)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[debug_handler]
@@ -937,7 +997,7 @@ pub async fn put_message_route(
     message.content = payload.content;
     message.attachment_type = payload.attachment_type;
     message.attachment = payload.attachment;
-    let message = message.update(&pool)?;
+    let message = hydrate_message_reactions(message.update(&pool)?, sender_user_id, &pool)?;
     Ok(Json(message))
 }
 
