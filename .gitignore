@@ -2,6 +2,8 @@
 /target_lab
 /imports
 /playground/pipeline/generated
+/playground/pipeline/datasets
+/playground/pipeline/hupo-traces-*
 *.swp
 *.swo
 *.swn
