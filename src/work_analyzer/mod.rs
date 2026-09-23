@@ -18,5 +18,5 @@ pub mod plausible_landmarks_context;
 
 pub const MENTOR_OPENAI_MODEL: &str = "gpt-5.6-terra";
 
-pub use analysis_queue::run_lens;
+pub use analysis_queue::{run_lens, run_lens_one};
 pub use message_processing::run_message;

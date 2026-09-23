@@ -22,6 +22,20 @@ const LENS_RUN_LOCK_TTL_SECONDS: i64 = 1800;
 const MAX_ANALYSES_PER_RUN: usize = 100;
 
 pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
+    run_lens_with_limit(lens_id, MAX_ANALYSES_PER_RUN).await
+}
+
+/// Runs at most one pending analysis for a lens.
+///
+/// This is deliberately a queue primitive rather than a playground-specific
+/// implementation: callers such as the pipeline playground can checkpoint the
+/// database at an exact completed analysis boundary without changing normal
+/// worker behaviour.
+pub async fn run_lens_one(lens_id: Uuid) -> Result<Lens, PpdcError> {
+    run_lens_with_limit(lens_id, 1).await
+}
+
+async fn run_lens_with_limit(lens_id: Uuid, max_analyses: usize) -> Result<Lens, PpdcError> {
     let pool = get_global_pool();
     let mut lens = Lens::find_full_lens(lens_id, pool)?;
     if let Some(user_id) = lens.user_id {
@@ -77,7 +91,8 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
         worker_id
     );
 
-    let run_result = run_claim_loop(&mut lens, worker_id, claim_cutoff_at, pool).await;
+    let run_result =
+        run_claim_loop(&mut lens, worker_id, claim_cutoff_at, max_analyses, pool).await;
 
     let release_result = lens.release_run_lock(worker_id, pool);
     match (run_result, release_result) {
@@ -160,9 +175,10 @@ async fn run_claim_loop(
     lens: &mut Lens,
     worker_id: Uuid,
     claim_cutoff_at: chrono::NaiveDateTime,
+    max_analyses: usize,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    for iteration in 0..MAX_ANALYSES_PER_RUN {
+    for iteration in 0..max_analyses {
         ensure_lock_is_alive(lens, worker_id, pool)?;
 
         let Some(mut claimed_analysis) =
@@ -253,6 +269,10 @@ async fn run_claim_loop(
             }
             return Err(err);
         }
+    }
+
+    if max_analyses != MAX_ANALYSES_PER_RUN {
+        return Ok(());
     }
 
     tracing::warn!(

@@ -20,6 +20,12 @@ use crate::work_analyzer::analysis_context::{load_previous_landscape_inputs, Ana
 use crate::work_analyzer::mentor_feedback;
 use crate::work_analyzer::period_summary;
 
+fn pipeline_playground_mode() -> bool {
+    std::env::var("PIPELINE_PLAYGROUND_MODE")
+        .ok()
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+}
+
 fn parse_user_timezone_or_utc(user: &User) -> Tz {
     user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
 }
@@ -224,33 +230,37 @@ impl PeriodAnalysisProcessor {
         analysis.processing_state = LandscapeProcessingState::Completed;
         let analysis = analysis.update(&self.context.pool)?;
 
-        match schedule_daily_recap_email(&analysis, &self.context.pool) {
-            Ok(Some((email_id, scheduled_at))) => {
-                tracing::info!(
-                    target: "mailer",
-                    "daily_recap_email_scheduled analysis_id={} user_id={} email_id={} scheduled_at={}",
-                    analysis.id,
-                    analysis.user_id,
-                    email_id,
-                    scheduled_at
-                );
-            }
-            Ok(None) => {
-                tracing::info!(
-                    target: "mailer",
-                    "daily_recap_email_skipped analysis_id={} user_id={} reason=no_recipient_email_or_feedback",
-                    analysis.id,
-                    analysis.user_id
-                );
-            }
-            Err(err) => {
-                tracing::error!(
-                    target: "mailer",
-                    "daily_recap_email_schedule_failed analysis_id={} user_id={} error={}",
-                    analysis.id,
-                    analysis.user_id,
-                    err
-                );
+        if pipeline_playground_mode() {
+            tracing::info!(target: "mailer", analysis_id=%analysis.id, "daily_recap_email_skipped_pipeline_playground");
+        } else {
+            match schedule_daily_recap_email(&analysis, &self.context.pool) {
+                Ok(Some((email_id, scheduled_at))) => {
+                    tracing::info!(
+                        target: "mailer",
+                        "daily_recap_email_scheduled analysis_id={} user_id={} email_id={} scheduled_at={}",
+                        analysis.id,
+                        analysis.user_id,
+                        email_id,
+                        scheduled_at
+                    );
+                }
+                Ok(None) => {
+                    tracing::info!(
+                        target: "mailer",
+                        "daily_recap_email_skipped analysis_id={} user_id={} reason=no_recipient_email_or_feedback",
+                        analysis.id,
+                        analysis.user_id
+                    );
+                }
+                Err(err) => {
+                    tracing::error!(
+                        target: "mailer",
+                        "daily_recap_email_schedule_failed analysis_id={} user_id={} error={}",
+                        analysis.id,
+                        analysis.user_id,
+                        err
+                    );
+                }
             }
         }
 
@@ -309,13 +319,15 @@ impl PeriodAnalysisProcessor {
         analysis.processing_state = LandscapeProcessingState::Completed;
         let analysis = analysis.update(&self.context.pool)?;
 
-        if let Some(feedback) = feedback {
-            notification::spawn_weekly_recap_feedback_notification(
-                analysis.clone(),
-                summary,
-                feedback,
-                self.context.pool.clone(),
-            );
+        if !pipeline_playground_mode() {
+            if let Some(feedback) = feedback {
+                notification::spawn_weekly_recap_feedback_notification(
+                    analysis.clone(),
+                    summary,
+                    feedback,
+                    self.context.pool.clone(),
+                );
+            }
         }
 
         Ok(analysis)

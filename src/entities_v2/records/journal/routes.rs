@@ -60,9 +60,21 @@ pub struct JournalMentorMessageCreationResponse {
     pub pending_reply_message: Message,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 struct DatedTraceExportItem {
     trace: Trace,
     journal_title: String,
+}
+
+#[derive(serde::Serialize)]
+struct AllTracesJsonExport {
+    /// Bump this if the offline playground import contract changes.
+    schema_version: u32,
+    exported_at: chrono::NaiveDateTime,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+    journals: Vec<Journal>,
+    traces: Vec<DatedTraceExportItem>,
 }
 
 #[debug_handler]
@@ -463,15 +475,8 @@ pub async fn get_all_my_traces_export_route(
             "from must be earlier than or equal to to".to_string(),
         ));
     }
-    if params.format == JournalExportFormat::Json {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "format must be md or txt".to_string(),
-        ));
-    }
-
     let journals = Journal::find_all_owned_by(user_id, &pool)?;
+    let exported_journals = journals.clone();
     let mut items = Vec::new();
     for journal in journals {
         for status in [
@@ -527,7 +532,19 @@ pub async fn get_all_my_traces_export_route(
             "txt",
             render_all_traces_text(&items, exported_at, params.from, params.to),
         ),
-        JournalExportFormat::Json => unreachable!(),
+        JournalExportFormat::Json => (
+            "application/json; charset=utf-8",
+            "json",
+            serde_json::to_string_pretty(&AllTracesJsonExport {
+                schema_version: 1,
+                exported_at,
+                from: params.from,
+                to: params.to,
+                journals: exported_journals,
+                traces: items,
+            })
+            .map_err(PpdcError::from)?,
+        ),
     };
     let filename = format!(
         "hupo-traces-{}.{}",

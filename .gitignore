@@ -1,6 +1,7 @@
 /target
 /target_lab
 /imports
+/playground/pipeline/generated
 *.swp
 *.swo
 *.swn

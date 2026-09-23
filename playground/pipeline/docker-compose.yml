@@ -1,0 +1,15 @@
+services:
+  pipeline_postgres:
+    image: postgres:17
+    container_name: hupo_pipeline_postgres
+    ports:
+      - "127.0.0.1:${PIPELINE_PLAYGROUND_PORT:-54321}:5432"
+    environment:
+      POSTGRES_USER: ${PIPELINE_PLAYGROUND_DB_USER:-pipeline}
+      POSTGRES_PASSWORD: ${PIPELINE_PLAYGROUND_DB_PASSWORD:?set PIPELINE_PLAYGROUND_DB_PASSWORD}
+      POSTGRES_DB: ${PIPELINE_PLAYGROUND_DB_NAME:-pipeline_playground}
+    volumes:
+      - pipeline-playground-pgdata:/var/lib/postgresql/data
+
+volumes:
+  pipeline-playground-pgdata:
