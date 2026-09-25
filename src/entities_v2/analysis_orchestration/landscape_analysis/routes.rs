@@ -14,7 +14,7 @@ use crate::entities_v2::{
     element::Element,
     error::{ErrorType, PpdcError},
     landmark::Landmark,
-    lens::{Lens, LensProcessingState},
+    lens::{activate_due_automatic_retries, Lens, LensProcessingState},
     platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     session::Session,
     trace::Trace,
@@ -45,6 +45,7 @@ pub struct PendingAnalysesRunError {
 
 #[derive(Serialize)]
 pub struct PendingAnalysesRunResponse {
+    pub automatic_retry_lens_ids: Vec<Uuid>,
     pub candidate_lens_ids: Vec<Uuid>,
     pub processed_lens_ids: Vec<Uuid>,
     pub failed: Vec<PendingAnalysesRunError>,
@@ -207,6 +208,7 @@ pub async fn post_run_pending_analyses_route(
         return Err(PpdcError::unauthorized());
     }
 
+    let automatic_retry_lens_ids = activate_due_automatic_retries(&pool)?;
     let candidate_lens_ids = find_lens_ids_with_pending_analyses(&pool)?;
     let mut processed_lens_ids = Vec::new();
     let mut failed = Vec::new();
@@ -222,6 +224,7 @@ pub async fn post_run_pending_analyses_route(
     }
 
     Ok(Json(PendingAnalysesRunResponse {
+        automatic_retry_lens_ids,
         candidate_lens_ids,
         processed_lens_ids,
         failed,

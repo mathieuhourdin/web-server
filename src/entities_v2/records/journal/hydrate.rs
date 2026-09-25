@@ -12,13 +12,14 @@ use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::{
     error::PpdcError,
+    trace::Trace,
     user::{User, UserPublicResponse},
 };
 use crate::schema::{journals, posts, traces, users};
 
 use super::model::{
     Journal, JournalAudienceAccessVia, JournalAudienceDefaultSharingPolicy, JournalAudienceMember,
-    JournalSharingMode, JournalStatus, JournalType,
+    JournalAudienceTrace, JournalSharingMode, JournalStatus, JournalType,
 };
 
 type JournalTuple = (
@@ -51,7 +52,17 @@ struct JournalAudienceRow {
     total: i64,
 }
 
-const JOURNAL_AUDIENCE_SQL: &str = r#"
+#[derive(QueryableByName)]
+struct JournalAudienceTraceRow {
+    #[diesel(sql_type = SqlUuid)]
+    trace_id: Uuid,
+    #[diesel(sql_type = Array<Text>)]
+    access_via: Vec<String>,
+    #[diesel(sql_type = BigInt)]
+    total: i64,
+}
+
+const JOURNAL_ACCESS_PATHS_CTE: &str = r#"
     WITH journal_traces AS (
         SELECT trace.id, trace.user_id
         FROM traces trace
@@ -130,7 +141,11 @@ const JOURNAL_AUDIENCE_SQL: &str = r#"
                OR (block.blocker_user_id = post.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
                OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = post.user_id)
         )
-    ),
+    )
+"#;
+
+const JOURNAL_AUDIENCE_SQL_TAIL: &str = r#"
+    ,
     grouped_access AS (
         SELECT user_id,
                COUNT(DISTINCT trace_id)::bigint AS accessible_trace_count,
@@ -177,6 +192,29 @@ const JOURNAL_AUDIENCE_SQL: &str = r#"
     ORDER BY LOWER(reader.handle), audience.user_id
     LIMIT $2 OFFSET $3
 "#;
+
+const JOURNAL_AUDIENCE_TRACES_SQL_TAIL: &str = r#"
+    ,
+    accessible_traces AS (
+        SELECT trace_id,
+               ARRAY_AGG(DISTINCT access_via ORDER BY access_via) AS access_via
+        FROM access_paths
+        WHERE user_id = $5
+          AND user_id <> $4
+        GROUP BY trace_id
+    )
+    SELECT access.trace_id,
+           access.access_via,
+           COUNT(*) OVER()::bigint AS total
+    FROM accessible_traces access
+    INNER JOIN traces trace ON trace.id = access.trace_id
+    ORDER BY trace.finalized_at DESC NULLS LAST, trace.id DESC
+    LIMIT $2 OFFSET $3
+"#;
+
+fn journal_access_query(tail: &str) -> String {
+    format!("{JOURNAL_ACCESS_PATHS_CTE}{tail}")
+}
 
 impl From<JournalTuple> for Journal {
     fn from(row: JournalTuple) -> Self {
@@ -257,7 +295,7 @@ impl Journal {
         pool: &DbPool,
     ) -> Result<(Vec<JournalAudienceMember>, i64), PpdcError> {
         let mut conn = pool.get()?;
-        let rows = sql_query(JOURNAL_AUDIENCE_SQL)
+        let rows = sql_query(journal_access_query(JOURNAL_AUDIENCE_SQL_TAIL))
             .bind::<SqlUuid, _>(journal_id)
             .bind::<BigInt, _>(limit)
             .bind::<BigInt, _>(offset)
@@ -292,6 +330,45 @@ impl Journal {
             })
             .collect();
         Ok((readers, total))
+    }
+
+    pub fn find_audience_user_traces_paginated(
+        journal_id: Uuid,
+        owner_user_id: Uuid,
+        audience_user_id: Uuid,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<JournalAudienceTrace>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let rows = sql_query(journal_access_query(JOURNAL_AUDIENCE_TRACES_SQL_TAIL))
+            .bind::<SqlUuid, _>(journal_id)
+            .bind::<BigInt, _>(limit)
+            .bind::<BigInt, _>(offset)
+            .bind::<SqlUuid, _>(owner_user_id)
+            .bind::<SqlUuid, _>(audience_user_id)
+            .load::<JournalAudienceTraceRow>(&mut conn)?;
+        let total = rows.first().map(|row| row.total).unwrap_or(0);
+        let trace_ids = rows.iter().map(|row| row.trace_id).collect::<Vec<_>>();
+        let traces_by_id = Trace::find_full_traces_by_ids(&trace_ids, pool)?
+            .into_iter()
+            .map(|trace| (trace.id, trace))
+            .collect::<HashMap<_, _>>();
+        let traces = rows
+            .into_iter()
+            .filter_map(|row| {
+                let trace = traces_by_id.get(&row.trace_id)?.clone();
+                Some(JournalAudienceTrace {
+                    trace,
+                    access_via: row
+                        .access_via
+                        .iter()
+                        .filter_map(|value| JournalAudienceAccessVia::from_query_value(value))
+                        .collect(),
+                })
+            })
+            .collect();
+        Ok((traces, total))
     }
 
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Journal, PpdcError> {

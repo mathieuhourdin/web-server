@@ -599,7 +599,9 @@ impl NewUser {
             payload.mentor_feedback_email_enabled = Some(true);
         }
         if payload.ai_features_enabled.is_none() {
-            payload.ai_features_enabled = Some(true);
+            // This existing field is the user's AI-processing consent. New
+            // accounts must opt in after seeing the client disclosure.
+            payload.ai_features_enabled = Some(false);
         }
         if payload.ai_features_enabled_by_admin.is_none() {
             payload.ai_features_enabled_by_admin = Some(true);

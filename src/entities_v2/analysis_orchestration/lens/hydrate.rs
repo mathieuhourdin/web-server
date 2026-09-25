@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use uuid::Uuid;
 
@@ -18,6 +19,9 @@ type LensTuple = (
     Option<Uuid>,
     Option<Uuid>,
     bool,
+    Option<String>,
+    Option<NaiveDateTime>,
+    i32,
 );
 
 fn tuple_to_lens(row: LensTuple) -> Lens {
@@ -29,6 +33,9 @@ fn tuple_to_lens(row: LensTuple) -> Lens {
         current_landscape_id,
         target_trace_id,
         autoplay,
+        failure_reason,
+        automatic_retry_at,
+        automatic_retry_count,
     ) = row;
 
     Lens {
@@ -39,6 +46,9 @@ fn tuple_to_lens(row: LensTuple) -> Lens {
         current_landscape_id,
         target_trace_id,
         autoplay,
+        failure_reason,
+        automatic_retry_at,
+        automatic_retry_count,
     }
 }
 
@@ -50,6 +60,9 @@ fn select_lens_columns() -> (
     lenses::current_landscape_id,
     lenses::target_trace_id,
     lenses::autoplay,
+    lenses::failure_reason,
+    lenses::automatic_retry_at,
+    lenses::automatic_retry_count,
 ) {
     (
         lenses::id,
@@ -59,6 +72,9 @@ fn select_lens_columns() -> (
         lenses::current_landscape_id,
         lenses::target_trace_id,
         lenses::autoplay,
+        lenses::failure_reason,
+        lenses::automatic_retry_at,
+        lenses::automatic_retry_count,
     )
 }
 

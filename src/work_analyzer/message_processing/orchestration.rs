@@ -8,6 +8,7 @@ use crate::entities_v2::message::{
     MentorSuggestedAction, MentorSuggestedActionKind, Message, MessageAttachment,
     MessageAttachmentType, MessageProcessingState, MessageType,
 };
+use crate::entities_v2::platform_infra::notification;
 use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
@@ -62,7 +63,10 @@ pub async fn run_message(message_id: Uuid, pool: &DbPool) -> Result<Message, Ppd
 
     let result = run_message_inner(reply_message.clone(), pool).await;
     match result {
-        Ok(message) => Ok(message),
+        Ok(message) => {
+            notification::spawn_message_received_notification(message.clone(), pool.clone());
+            Ok(message)
+        }
         Err(err) => {
             if let Ok(mut failed_message) = Message::find(message_id, pool) {
                 failed_message.processing_state = MessageProcessingState::Failed;

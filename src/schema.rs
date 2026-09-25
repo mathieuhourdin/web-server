@@ -367,6 +367,9 @@ diesel::table! {
         updated_at -> Timestamp,
         run_lock_owner -> Nullable<Uuid>,
         run_lock_until -> Nullable<Timestamp>,
+        failure_reason -> Nullable<Text>,
+        automatic_retry_at -> Nullable<Timestamp>,
+        automatic_retry_count -> Int4,
     }
 }
 

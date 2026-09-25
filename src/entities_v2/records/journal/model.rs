@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities_v2::user::UserPublicResponse;
+use crate::entities_v2::{trace::Trace, user::UserPublicResponse};
 
 pub use super::enums::{JournalExportFormat, JournalSharingMode, JournalStatus, JournalType};
 
@@ -36,6 +36,12 @@ pub struct JournalAudienceMember {
 #[derive(Serialize)]
 pub struct JournalAudienceDefaultSharingPolicy {
     pub id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct JournalAudienceTrace {
+    pub trace: Trace,
+    pub access_via: Vec<JournalAudienceAccessVia>,
 }
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]

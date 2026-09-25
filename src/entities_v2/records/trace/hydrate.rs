@@ -92,6 +92,53 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
 }
 
 impl Trace {
+    pub fn find_full_traces_by_ids(ids: &[Uuid], pool: &DbPool) -> Result<Vec<Trace>, PpdcError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = pool.get()?;
+        let rows = traces::table
+            .filter(traces::id.eq_any(ids))
+            .select((
+                traces::id,
+                traces::derived_from_trace_id,
+                traces::title,
+                traces::subtitle,
+                traces::interaction_date,
+                traces::content,
+                traces::is_encrypted,
+                sql::<Nullable<Text>>("encryption_metadata::text"),
+                traces::content_image_asset_id,
+                traces::sharing_sensitivity,
+                sql::<Nullable<Timestamptz>>("timeout_start_at"),
+                sql::<Nullable<Timestamptz>>("timeout_at"),
+                traces::journal_id.nullable(),
+                traces::user_id,
+                traces::trace_type,
+                traces::status,
+                traces::version_integer,
+                traces::is_blank,
+                traces::start_writing_at,
+                traces::finalized_at,
+                traces::created_at,
+                traces::updated_at,
+            ))
+            .load::<TraceTuple>(&mut conn)?;
+        drop(conn);
+
+        let trace_ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
+        let mut mentions_by_trace_id =
+            TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let mut trace = tuple_to_trace(row);
+                trace.mentions = mentions_by_trace_id.remove(&trace.id).unwrap_or_default();
+                trace
+            })
+            .collect())
+    }
+
     pub fn find_full_trace(id: Uuid, pool: &DbPool) -> Result<Trace, PpdcError> {
         let mut conn = pool.get()?;
 

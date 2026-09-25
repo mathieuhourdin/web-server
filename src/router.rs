@@ -307,6 +307,10 @@ pub fn create_router() -> Router {
         .route("/:id/exports", post(journal::post_journal_export_route))
         .route("/:id/audience", get(journal::get_journal_audience_route))
         .route(
+            "/:journal_id/audience/:user_id/traces",
+            get(journal::get_journal_audience_user_traces_route),
+        )
+        .route(
             "/:id/sharing_policies",
             get(journal_sharing_policy::get_journal_sharing_policies_route)
                 .post(journal_sharing_policy::post_journal_sharing_policy_route),

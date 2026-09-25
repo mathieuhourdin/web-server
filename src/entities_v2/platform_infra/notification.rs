@@ -390,6 +390,47 @@ pub fn spawn_weekly_recap_feedback_notification(
     });
 }
 
+/// Daily recaps retain their scheduled email delivery. This sends only the immediate mobile push
+/// when a mentor feedback message has been generated.
+pub fn spawn_daily_recap_feedback_push_notification(
+    analysis: LandscapeAnalysis,
+    feedback: Message,
+    pool: DbPool,
+) {
+    tokio::spawn(async move {
+        match push::message_received_notification(&feedback, &pool).await {
+            Ok(notification) => {
+                match push::send_to_user(feedback.recipient_user_id, notification, &pool).await {
+                    Ok(result) => info!(
+                        target: "notification",
+                        analysis_id = %analysis.id,
+                        message_id = %feedback.id,
+                        recipient_user_id = %feedback.recipient_user_id,
+                        push_attempted_count = result.attempted_count,
+                        push_sent_count = result.sent_count,
+                        "daily_recap_feedback_push_dispatch_completed"
+                    ),
+                    Err(err) => warn!(
+                        target: "notification",
+                        analysis_id = %analysis.id,
+                        message_id = %feedback.id,
+                        recipient_user_id = %feedback.recipient_user_id,
+                        error = %err.message,
+                        "daily_recap_feedback_push_dispatch_failed"
+                    ),
+                }
+            }
+            Err(err) => warn!(
+                target: "notification",
+                analysis_id = %analysis.id,
+                message_id = %feedback.id,
+                error = %err.message,
+                "daily_recap_feedback_push_build_failed"
+            ),
+        }
+    });
+}
+
 pub fn spawn_follow_request_received_push_notification(relationship: Relationship, pool: DbPool) {
     tokio::spawn(async move {
         let notification =

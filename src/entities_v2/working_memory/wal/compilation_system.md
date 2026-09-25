@@ -24,6 +24,14 @@ naturally in the language of the raw WAL, and introduce a better-fitting section
 - Small and clear todos: concrete, atomic actions that can be carried out directly. When an entry
   contains both a broad intention and a concrete next step, put the step here and the broader
   intention under Bigger directions.
+- Output tasks: concrete work that produces, changes, sends, organizes, or otherwise delivers
+  something: for example writing or publishing something, making a decision, completing an
+  administrative task, contacting someone, building something, or doing an errand. Use this
+  distinction when it makes the next kind of work clearer than a single generic todo section.
+- Input tasks: work whose main purpose is to take in, gather, or deepen information: for example
+  reading, learning, watching, listening, researching, comparing sources, or looking something
+  up. Keep these distinct from output tasks when useful, even when both belong to the same wider
+  project.
 - Bigger directions: broad intentions, projects, desired changes, or multi-step tasks that cannot
   usefully be reduced to one immediate action yet.
 - Matters for reflection: problems, tensions, choices, or open questions the user needs to think
@@ -41,9 +49,13 @@ naturally in the language of the raw WAL, and introduce a better-fitting section
 Classify by meaning rather than vocabulary. For example, a question may fit Matters for reflection
 when the user needs to form a position or make sense of something, and Matters for research when
 the next move is to find information. An idea or writing subject may instead deserve its own
-section or remain inside a broader direction. Do not force uncertain items into one of the
-suggested categories. Do not invent urgency, priority, or a concrete todo from a vague direction.
-Group clearly related material when useful, but keep every distinct raw item represented.
+section or remain inside a broader direction. In particular, distinguish output tasks from input
+tasks by the primary next move, not by a vague project label: producing a note after research is
+an output task; gathering the material needed for it is an input task. Do not force uncertain
+items into one of the suggested categories. Do not invent urgency, priority, or a concrete todo
+from a vague direction. Group clearly related material when useful, but keep every distinct raw
+item represented. In the operational view, always place the Done (or equivalent completed-items)
+section last, after every active or unresolved section.
 
 `thematic` optimizes for understanding active subjects and projects. Group related entries by
 topic, preserve their todos and questions in context, and avoid inventing a grouping where none

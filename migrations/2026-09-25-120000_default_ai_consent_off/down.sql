@@ -1,0 +1,2 @@
+ALTER TABLE users
+ALTER COLUMN ai_features_enabled SET DEFAULT TRUE;

@@ -69,12 +69,35 @@ impl GptRequestConfig {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
+        match self.execute_with_user_prompt(&self.user_prompt).await {
+            Ok(result) => Ok(result),
+            Err(error) if is_incomplete_response_error(&error) => {
+                tracing::warn!(
+                    target: "work_analyzer",
+                    display_name = self.display_name.as_deref().unwrap_or("unknown"),
+                    analysis_id = ?self.analysis_id,
+                    "gpt_incomplete_response_retrying_with_reduced_scope"
+                );
+                self.execute_with_user_prompt(&format!(
+                    "{}\n\n{}",
+                    self.user_prompt, REDUCED_SCOPE_RETRY_INSTRUCTION
+                ))
+                .await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn execute_with_user_prompt<T>(&self, user_prompt: &str) -> Result<T, PpdcError>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+    {
         Ok(make_gpt_request(
             self.model.clone(),
             self.reasoning_effort.clone(),
             self.verbosity.clone(),
             self.system_prompt.clone(),
-            self.user_prompt.clone(),
+            user_prompt.to_string(),
             self.schema.clone(),
             self.display_name.as_deref(),
             self.analysis_id,
@@ -82,5 +105,29 @@ impl GptRequestConfig {
             self.user_id,
         )
         .await?)
+    }
+}
+
+const REDUCED_SCOPE_RETRY_INSTRUCTION: &str = "RETRY INSTRUCTION: The prior generation did not complete. Return a substantially smaller, concise, high-confidence result that still conforms exactly to the required schema. Prefer the most salient supported items; omit marginal, repetitive, or weakly supported extractions. Do not add explanation outside the required output.";
+
+fn is_incomplete_response_error(error: &PpdcError) -> bool {
+    error
+        .message
+        .starts_with("GPT response not completed, status=incomplete")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities_v2::error::ErrorType;
+
+    #[test]
+    fn recognizes_incomplete_responses_for_one_reduced_scope_retry() {
+        let error = PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            "GPT response not completed, status=incomplete".to_string(),
+        );
+        assert!(is_incomplete_response_error(&error));
     }
 }

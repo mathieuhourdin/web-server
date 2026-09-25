@@ -491,6 +491,10 @@ pub(crate) async fn message_received_notification(
         data.insert("sender_avatar_url".to_string(), avatar_url);
     }
     data.insert("message_id".to_string(), message.id.to_string());
+    data.insert(
+        "message_type".to_string(),
+        message.message_type.to_db().to_ascii_lowercase(),
+    );
     data.insert("message_content".to_string(), message.content.clone());
     data.insert(
         "message_timestamp".to_string(),

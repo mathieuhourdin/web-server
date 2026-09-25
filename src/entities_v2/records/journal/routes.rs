@@ -28,8 +28,8 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 use crate::work_analyzer;
 
 use super::model::{
-    Journal, JournalAudienceMember, JournalExportDto, JournalExportFormat, JournalExportResponse,
-    JournalStatus, JournalType, NewJournalDto, UpdateJournalDto,
+    Journal, JournalAudienceMember, JournalAudienceTrace, JournalExportDto, JournalExportFormat,
+    JournalExportResponse, JournalStatus, JournalType, NewJournalDto, UpdateJournalDto,
 };
 
 #[derive(serde::Deserialize)]
@@ -96,6 +96,32 @@ pub async fn get_journal_audience_route(
     let (items, total) = Journal::find_audience_paginated(
         journal.id,
         journal.user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(items, pagination, total)))
+}
+
+/// Lists the traces in this journal which the specified audience member can
+/// currently read. A future-sharing policy alone does not make a trace appear.
+#[debug_handler]
+pub async fn get_journal_audience_user_traces_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path((journal_id, audience_user_id)): Path<(Uuid, Uuid)>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<JournalAudienceTrace>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let journal = Journal::find_full(journal_id, &pool)?;
+    if journal.user_id != user_id {
+        return Err(PpdcError::unauthorized());
+    }
+    let pagination = params.validate()?;
+    let (items, total) = Journal::find_audience_user_traces_paginated(
+        journal.id,
+        journal.user_id,
+        audience_user_id,
         pagination.offset,
         pagination.limit,
         &pool,

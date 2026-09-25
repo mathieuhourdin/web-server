@@ -214,7 +214,7 @@ impl PeriodAnalysisProcessor {
         )?;
 
         let summary = period_summary::run_day(&self.context, &current_landscape).await?;
-        let _feedback =
+        let feedback =
             mentor_feedback::send_day(&self.context, &current_landscape, &summary).await?;
         let current_landscape =
             LandscapeAnalysis::find_full_analysis(self.context.analysis_id, &self.context.pool)?;
@@ -233,6 +233,13 @@ impl PeriodAnalysisProcessor {
         if pipeline_playground_mode() {
             tracing::info!(target: "mailer", analysis_id=%analysis.id, "daily_recap_email_skipped_pipeline_playground");
         } else {
+            if let Some(feedback) = feedback {
+                notification::spawn_daily_recap_feedback_push_notification(
+                    analysis.clone(),
+                    feedback,
+                    self.context.pool.clone(),
+                );
+            }
             match schedule_daily_recap_email(&analysis, &self.context.pool) {
                 Ok(Some((email_id, scheduled_at))) => {
                     tracing::info!(

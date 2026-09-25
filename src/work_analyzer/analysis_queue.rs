@@ -107,10 +107,7 @@ async fn run_lens_with_limit(lens_id: Uuid, max_analyses: usize) -> Result<Lens,
             Ok(lens)
         }
         (Err(err), Ok(_)) => {
-            if let Err(state_err) = lens
-                .clone()
-                .set_processing_state(LensProcessingState::Failed, pool)
-            {
+            if let Err(state_err) = lens.clone().set_failed(err.message.clone(), pool) {
                 tracing::error!(
                     target: "work_analyzer",
                     "run_lens_failed_state_update_failed lens_id={} worker_id={} original_error={} state_error={}",
@@ -130,10 +127,7 @@ async fn run_lens_with_limit(lens_id: Uuid, max_analyses: usize) -> Result<Lens,
             Err(err)
         }
         (Ok(()), Err(err)) => {
-            if let Err(state_err) = lens
-                .clone()
-                .set_processing_state(LensProcessingState::Failed, pool)
-            {
+            if let Err(state_err) = lens.clone().set_failed(err.message.clone(), pool) {
                 tracing::error!(
                     target: "work_analyzer",
                     "run_lens_lock_release_failed_state_update_failed lens_id={} worker_id={} original_error={} state_error={}",
@@ -153,10 +147,7 @@ async fn run_lens_with_limit(lens_id: Uuid, max_analyses: usize) -> Result<Lens,
             Err(err)
         }
         (Err(err), Err(_release_err)) => {
-            if let Err(state_err) = lens
-                .clone()
-                .set_processing_state(LensProcessingState::Failed, pool)
-            {
+            if let Err(state_err) = lens.clone().set_failed(err.message.clone(), pool) {
                 tracing::error!(
                     target: "work_analyzer",
                     "run_lens_failed_and_lock_release_failed_state_update_failed lens_id={} worker_id={} original_error={} state_error={}",

@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use diesel::prelude::*;
+use diesel::sql_types::{Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -313,10 +314,7 @@ impl Lens {
                 Ok(())
             }
             Err(err) => {
-                if let Err(state_err) = self
-                    .clone()
-                    .set_processing_state(LensProcessingState::Failed, pool)
-                {
+                if let Err(state_err) = self.clone().set_failed(err.message.clone(), pool) {
                     tracing::error!(
                         target: "analysis",
                         "lens_pending_analysis_planning_failed_state_update_failed lens_id={} user_id={} target_trace_id={} original_error={} state_error={}",
@@ -346,9 +344,47 @@ impl Lens {
         pool: &DbPool,
     ) -> Result<Lens, PpdcError> {
         let mut conn = pool.get()?;
+        let clear_failure = new_processing_state != LensProcessingState::Failed;
         diesel::update(lenses::table.filter(lenses::id.eq(self.id)))
-            .set(lenses::processing_state.eq(new_processing_state.to_db()))
+            .set((
+                lenses::processing_state.eq(new_processing_state.to_db()),
+                lenses::failure_reason.eq(if clear_failure {
+                    None
+                } else {
+                    self.failure_reason.clone()
+                }),
+                lenses::automatic_retry_at.eq::<Option<chrono::NaiveDateTime>>(if clear_failure {
+                    None
+                } else {
+                    self.automatic_retry_at
+                }),
+            ))
             .execute(&mut conn)?;
+        Lens::find_full_lens(self.id, pool)
+    }
+
+    /// Trips the lens circuit breaker with an operational reason and schedules its single
+    /// next-day recovery attempt. Manual state changes do not use this method.
+    pub fn set_failed(self, failure_reason: String, pool: &DbPool) -> Result<Lens, PpdcError> {
+        let mut conn = pool.get()?;
+        let failure_reason = failure_reason.chars().take(2_000).collect::<String>();
+        diesel::sql_query(
+            r#"
+            UPDATE lenses
+            SET processing_state = 'FAILED',
+                failure_reason = $2,
+                automatic_retry_at = CASE
+                    WHEN automatic_retry_count = 0 AND automatic_retry_at IS NULL
+                    THEN NOW() + INTERVAL '1 day'
+                    ELSE automatic_retry_at
+                END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind::<SqlUuid, _>(self.id)
+        .bind::<Text, _>(failure_reason)
+        .execute(&mut conn)?;
         Lens::find_full_lens(self.id, pool)
     }
 
@@ -359,6 +395,53 @@ impl Lens {
             .execute(&mut conn)?;
         Lens::find_full_lens(self.id, pool)
     }
+}
+
+/// Atomically reopens each due lens exactly once and returns its failed scoped jobs to the normal
+/// queue. Concurrent cron invocations cannot reactivate the same lens twice.
+pub fn activate_due_automatic_retries(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
+    #[derive(diesel::QueryableByName)]
+    struct IdRow {
+        #[diesel(sql_type = SqlUuid)]
+        id: Uuid,
+    }
+
+    let mut conn = pool.get()?;
+    let rows = diesel::sql_query(
+        r#"
+        WITH due AS (
+            SELECT l.id
+            FROM lenses l
+            WHERE l.processing_state = 'FAILED'
+              AND l.automatic_retry_count = 0
+              AND l.automatic_retry_at <= NOW()
+            ORDER BY l.automatic_retry_at ASC
+            LIMIT 100
+            FOR UPDATE SKIP LOCKED
+        ), requeued_analyses AS (
+            UPDATE landscape_analyses la
+            SET processing_state = 'PENDING',
+                failure_reason = NULL,
+                updated_at = NOW()
+            FROM lens_analysis_scopes las
+            INNER JOIN due d ON d.id = las.lens_id
+            WHERE la.id = las.landscape_analysis_id
+              AND la.processing_state = 'FAILED'
+            RETURNING la.id
+        )
+        UPDATE lenses l
+        SET processing_state = 'OUT_OF_SYNC',
+            failure_reason = NULL,
+            automatic_retry_count = l.automatic_retry_count + 1,
+            automatic_retry_at = NULL,
+            updated_at = NOW()
+        FROM due
+        WHERE l.id = due.id
+        RETURNING l.id
+        "#,
+    )
+    .load::<IdRow>(&mut conn)?;
+    Ok(rows.into_iter().map(|row| row.id).collect())
 }
 
 impl NewLens {

@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -12,6 +13,9 @@ pub struct Lens {
     pub current_landscape_id: Option<Uuid>,
     pub target_trace_id: Option<Uuid>,
     pub autoplay: bool,
+    pub failure_reason: Option<String>,
+    pub automatic_retry_at: Option<NaiveDateTime>,
+    pub automatic_retry_count: i32,
 }
 
 pub struct NewLens {
