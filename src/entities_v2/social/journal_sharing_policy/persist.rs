@@ -157,7 +157,7 @@ fn create_policy_if_absent_with_conn(
     history_review_state: JournalHistoryReviewState,
     creation_origin: JournalSharingPolicyCreationOrigin,
     conn: &mut PgConnection,
-) -> Result<(), PpdcError> {
+) -> Result<Option<Uuid>, PpdcError> {
     let existing_id = journal_sharing_policies::table
         .filter(journal_sharing_policies::journal_id.eq(journal_id))
         .filter(journal_sharing_policies::grantee_user_id.eq(grantee_user_id))
@@ -165,7 +165,7 @@ fn create_policy_if_absent_with_conn(
         .first::<Uuid>(conn)
         .optional()?;
     if existing_id.is_some() {
-        return Ok(());
+        return Ok(None);
     }
 
     let automatically_reviewed_empty_history = matches!(
@@ -185,9 +185,10 @@ fn create_policy_if_absent_with_conn(
             (history_review_state, None, None)
         };
 
+    let id = Uuid::new_v4();
     diesel::insert_into(journal_sharing_policies::table)
         .values((
-            journal_sharing_policies::id.eq(Uuid::new_v4()),
+            journal_sharing_policies::id.eq(id),
             journal_sharing_policies::journal_id.eq(journal_id),
             journal_sharing_policies::owner_user_id.eq(owner_user_id),
             journal_sharing_policies::grantee_user_id.eq(grantee_user_id),
@@ -200,7 +201,7 @@ fn create_policy_if_absent_with_conn(
             journal_sharing_policies::history_reviewed_at.eq(history_reviewed_at),
         ))
         .execute(conn)?;
-    Ok(())
+    Ok((history_review_state == JournalHistoryReviewState::Unreviewed).then_some(id))
 }
 
 impl JournalSharingPolicy {
@@ -814,7 +815,7 @@ impl JournalSharingPolicy {
         owner_user_id: Uuid,
         follower_user_id: Uuid,
         conn: &mut PgConnection,
-    ) -> Result<(), PpdcError> {
+    ) -> Result<Vec<Uuid>, PpdcError> {
         let journals = journals::table
             .filter(journals::user_id.eq(owner_user_id))
             .filter(journals::status.eq(JournalStatus::Active.to_db()))
@@ -822,6 +823,7 @@ impl JournalSharingPolicy {
             .select((journals::id, journals::sharing_mode))
             .load::<(Uuid, String)>(conn)?;
 
+        let mut pending_review_policy_ids = Vec::new();
         for (journal_id, sharing_mode_raw) in journals {
             let sharing_mode = JournalSharingMode::from_db(&sharing_mode_raw);
             let Some((status, default_future_access_enabled, history_review_state)) =
@@ -830,7 +832,7 @@ impl JournalSharingPolicy {
                 continue;
             };
 
-            create_policy_if_absent_with_conn(
+            if let Some(policy_id) = create_policy_if_absent_with_conn(
                 journal_id,
                 owner_user_id,
                 follower_user_id,
@@ -839,31 +841,34 @@ impl JournalSharingPolicy {
                 history_review_state,
                 JournalSharingPolicyCreationOrigin::NewFollower,
                 conn,
-            )?;
+            )? {
+                pending_review_policy_ids.push(policy_id);
+            }
         }
 
-        Ok(())
+        Ok(pending_review_policy_ids)
     }
 
     pub(crate) fn create_missing_policies_for_existing_followers(
         journal: &Journal,
         pool: &DbPool,
-    ) -> Result<(), PpdcError> {
+    ) -> Result<Vec<Uuid>, PpdcError> {
         if journal.status != JournalStatus::Active || journal.is_encrypted {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let Some((status, default_future_access_enabled, history_review_state)) =
             default_policy_values_for_sharing_mode(journal.sharing_mode)
         else {
-            return Ok(());
+            return Ok(Vec::new());
         };
 
         let mut conn = pool.get()?;
-        conn.transaction::<(), PpdcError, _>(|conn| {
+        conn.transaction::<Vec<Uuid>, PpdcError, _>(|conn| {
             let follower_ids =
                 find_accepted_follower_ids_for_user_with_conn(journal.user_id, conn)?;
+            let mut pending_review_policy_ids = Vec::new();
             for follower_user_id in follower_ids {
-                create_policy_if_absent_with_conn(
+                if let Some(policy_id) = create_policy_if_absent_with_conn(
                     journal.id,
                     journal.user_id,
                     follower_user_id,
@@ -872,9 +877,11 @@ impl JournalSharingPolicy {
                     history_review_state,
                     JournalSharingPolicyCreationOrigin::JournalSharingMode,
                     conn,
-                )?;
+                )? {
+                    pending_review_policy_ids.push(policy_id);
+                }
             }
-            Ok(())
+            Ok(pending_review_policy_ids)
         })
     }
 }

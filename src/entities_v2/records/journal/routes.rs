@@ -17,6 +17,7 @@ use crate::entities_v2::{
         routes::{is_service_mentor, resolve_reply_context, MessageContextIds},
         Message, MessageProcessingState, MessageType, NewMessage,
     },
+    notification,
     platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
@@ -355,7 +356,14 @@ pub async fn post_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::create(payload, user_id, &pool)?;
-    JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
+    let pending_review_policy_ids =
+        JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
+    for policy_id in pending_review_policy_ids {
+        notification::spawn_journal_history_review_pending_push_notification(
+            policy_id,
+            pool.clone(),
+        );
+    }
     Ok(Json(journal))
 }
 
@@ -403,7 +411,14 @@ pub async fn put_journal_route(
     }
 
     let journal = journal.update(&pool)?;
-    JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
+    let pending_review_policy_ids =
+        JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
+    for policy_id in pending_review_policy_ids {
+        notification::spawn_journal_history_review_pending_push_notification(
+            policy_id,
+            pool.clone(),
+        );
+    }
     Ok(Json(journal))
 }
 

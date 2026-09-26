@@ -6,6 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     analysis_summary::AnalysisSummary,
     error::PpdcError,
+    journal_sharing_policy::{JournalHistoryReviewState, JournalSharingPolicy},
     landscape_analysis::LandscapeAnalysis,
     message::{Message, MessageReaction},
     post::{Post, PostStatus},
@@ -718,6 +719,89 @@ pub fn spawn_journal_history_shared_push_notification(
                 shared_trace_count,
                 error = %err.message,
                 "journal_history_shared_push_dispatch_failed"
+            ),
+        }
+    });
+}
+
+pub fn spawn_journal_history_review_pending_push_notification(policy_id: Uuid, pool: DbPool) {
+    tokio::spawn(async move {
+        let policy = match JournalSharingPolicy::find(policy_id, &pool) {
+            Ok(policy) if policy.history_review_state == JournalHistoryReviewState::Unreviewed => {
+                policy
+            }
+            Ok(_) => return,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    policy_id = %policy_id,
+                    error = %err.message,
+                    "journal_history_review_pending_push_policy_lookup_failed"
+                );
+                return;
+            }
+        };
+        let journal =
+            match crate::entities_v2::journal::Journal::find_full(policy.journal_id, &pool) {
+                Ok(journal) => journal,
+                Err(err) => {
+                    warn!(
+                        target: "notification",
+                        policy_id = %policy_id,
+                        journal_id = %policy.journal_id,
+                        error = %err.message,
+                        "journal_history_review_pending_push_journal_lookup_failed"
+                    );
+                    return;
+                }
+            };
+        let owner = match User::find(&policy.owner_user_id, &pool) {
+            Ok(owner) if owner.principal_type == UserPrincipalType::Human => owner,
+            Ok(_) => return,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    policy_id = %policy_id,
+                    owner_user_id = %policy.owner_user_id,
+                    error = %err.message,
+                    "journal_history_review_pending_push_owner_lookup_failed"
+                );
+                return;
+            }
+        };
+        let grantee = match User::find(&policy.grantee_user_id, &pool) {
+            Ok(grantee) => grantee,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    policy_id = %policy_id,
+                    grantee_user_id = %policy.grantee_user_id,
+                    error = %err.message,
+                    "journal_history_review_pending_push_grantee_lookup_failed"
+                );
+                return;
+            }
+        };
+        let notification =
+            push::journal_history_review_pending_notification(&journal, policy.id, &grantee, &pool)
+                .await;
+        match push::send_to_mobile_user(owner.id, notification, &pool).await {
+            Ok(result) => info!(
+                target: "notification",
+                policy_id = %policy.id,
+                journal_id = %journal.id,
+                owner_user_id = %owner.id,
+                push_attempted_count = result.attempted_count,
+                push_sent_count = result.sent_count,
+                "journal_history_review_pending_push_dispatch_completed"
+            ),
+            Err(err) => warn!(
+                target: "notification",
+                policy_id = %policy.id,
+                journal_id = %journal.id,
+                owner_user_id = %owner.id,
+                error = %err.message,
+                "journal_history_review_pending_push_dispatch_failed"
             ),
         }
     });

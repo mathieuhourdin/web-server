@@ -180,12 +180,12 @@ async fn firebase_access_token() -> Result<String, PpdcError> {
 }
 
 fn is_invalid_fcm_token(status: Option<&str>, message: Option<&str>) -> bool {
-    matches!(
-        status,
-        Some("NOT_FOUND") | Some("INVALID_ARGUMENT") | Some("UNREGISTERED")
-    ) || message
+    // `INVALID_ARGUMENT` also covers malformed notification payloads. Only clear
+    // a token when FCM identifies the registration token itself as invalid.
+    matches!(status, Some("NOT_FOUND") | Some("UNREGISTERED")) || message
         .map(|value| {
             value.contains("registration token is not a valid")
+                || value.contains("registration token is not a valid FCM registration token")
                 || value.contains("Requested entity was not found")
                 || value.contains("UNREGISTERED")
         })
@@ -492,7 +492,8 @@ pub(crate) async fn message_received_notification(
     }
     data.insert("message_id".to_string(), message.id.to_string());
     data.insert(
-        "message_type".to_string(),
+        // `message_type` is reserved by FCM and makes the entire data payload invalid.
+        "hupo_message_type".to_string(),
         message.message_type.to_db().to_ascii_lowercase(),
     );
     data.insert("message_content".to_string(), message.content.clone());
@@ -868,6 +869,38 @@ pub(crate) async fn journal_history_shared_notification(
     }
 }
 
+pub(crate) async fn journal_history_review_pending_notification(
+    journal: &Journal,
+    policy_id: Uuid,
+    grantee: &User,
+    pool: &DbPool,
+) -> PushNotification {
+    let mut data = HashMap::new();
+    data.insert(
+        "event_type".to_string(),
+        "journal_history_review_pending".to_string(),
+    );
+    data.insert("journal_id".to_string(), journal.id.to_string());
+    data.insert("journal_title".to_string(), journal.title.clone());
+    data.insert("policy_id".to_string(), policy_id.to_string());
+    data.insert("grantee_user_id".to_string(), grantee.id.to_string());
+    data.insert("grantee_display_name".to_string(), grantee.display_name());
+    if let Some(avatar_url) = sender_avatar_url(grantee, pool).await {
+        data.insert("grantee_avatar_url".to_string(), avatar_url);
+    }
+
+    PushNotification {
+        title: "Partage à confirmer".to_string(),
+        body: format!(
+            "Choisissez les traces passées à partager avec {} dans « {} »",
+            grantee.display_name(),
+            journal.title
+        ),
+        data,
+        thread_id: Some(journal.id.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -925,5 +958,21 @@ mod tests {
         assert_eq!(value["payload"]["aps"]["content-available"], 1);
         assert!(value["payload"]["aps"].get("alert").is_none());
         assert!(value["payload"]["aps"].get("sound").is_none());
+    }
+
+    #[test]
+    fn does_not_clear_a_token_for_an_invalid_data_payload() {
+        assert!(!is_invalid_fcm_token(
+            Some("INVALID_ARGUMENT"),
+            Some("Invalid data payload key: message_type"),
+        ));
+    }
+
+    #[test]
+    fn clears_a_token_when_fcm_identifies_it_as_invalid() {
+        assert!(is_invalid_fcm_token(
+            Some("INVALID_ARGUMENT"),
+            Some("The registration token is not a valid FCM registration token"),
+        ));
     }
 }

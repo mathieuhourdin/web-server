@@ -231,11 +231,17 @@ pub async fn put_relationship_route(
     Json(payload): Json<UpdateRelationshipDto>,
 ) -> Result<Json<Relationship>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let (relationship, should_notify_acceptance) =
+    let (relationship, should_notify_acceptance, pending_history_review_policy_ids) =
         Relationship::update_status(id, user_id, payload.status, &pool)?;
     if should_notify_acceptance {
         notification::spawn_follow_request_accepted_push_notification(
             relationship.clone(),
+            pool.clone(),
+        );
+    }
+    for policy_id in pending_history_review_policy_ids {
+        notification::spawn_journal_history_review_pending_push_notification(
+            policy_id,
             pool.clone(),
         );
     }

@@ -174,7 +174,7 @@ impl Relationship {
         actor_user_id: Uuid,
         status: RelationshipStatus,
         pool: &DbPool,
-    ) -> Result<(Relationship, bool), PpdcError> {
+    ) -> Result<(Relationship, bool, Vec<Uuid>), PpdcError> {
         if status == RelationshipStatus::Pending {
             return Err(PpdcError::new(
                 400,
@@ -200,54 +200,63 @@ impl Relationship {
         }
 
         let mut conn = pool.get()?;
-        conn.transaction::<(), diesel::result::Error, _>(|conn| {
-            if status == RelationshipStatus::Accepted {
-                diesel::update(relationships::table.filter(relationships::id.eq(id)))
-                    .set((
-                        relationships::status.eq(status.to_db()),
-                        relationships::accepted_at.eq(diesel::dsl::sql::<
-                            diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
-                        >(
-                            "COALESCE(accepted_at, NOW())"
-                        )),
-                        relationships::updated_at.eq(diesel::dsl::now),
-                    ))
-                    .execute(conn)?;
+        let pending_history_review_policy_ids = conn
+            .transaction::<Vec<Uuid>, diesel::result::Error, _>(|conn| {
+                if status == RelationshipStatus::Accepted {
+                    diesel::update(relationships::table.filter(relationships::id.eq(id)))
+                        .set((
+                            relationships::status.eq(status.to_db()),
+                            relationships::accepted_at.eq(diesel::dsl::sql::<
+                                diesel::sql_types::Nullable<diesel::sql_types::Timestamp>,
+                            >(
+                                "COALESCE(accepted_at, NOW())"
+                            )),
+                            relationships::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(conn)?;
 
-                if relationship.relationship_type == RelationshipType::Follow {
-                    Self::ensure_auto_followback_with_conn(
-                        actor_user_id,
-                        relationship.requester_user_id,
-                        conn,
-                    )
-                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-                    JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
-                        actor_user_id,
-                        relationship.requester_user_id,
-                        conn,
-                    )
-                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-                    JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
-                        relationship.requester_user_id,
-                        actor_user_id,
-                        conn,
-                    )
-                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                    if relationship.relationship_type == RelationshipType::Follow {
+                        Self::ensure_auto_followback_with_conn(
+                            actor_user_id,
+                            relationship.requester_user_id,
+                            conn,
+                        )
+                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                        let mut policy_ids =
+                            JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
+                                actor_user_id,
+                                relationship.requester_user_id,
+                                conn,
+                            )
+                            .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                        policy_ids.extend(
+                            JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
+                                relationship.requester_user_id,
+                                actor_user_id,
+                                conn,
+                            )
+                            .map_err(|_| diesel::result::Error::RollbackTransaction)?,
+                        );
+                        return Ok(policy_ids);
+                    }
+                } else {
+                    diesel::update(relationships::table.filter(relationships::id.eq(id)))
+                        .set((
+                            relationships::status.eq(status.to_db()),
+                            relationships::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(conn)?;
                 }
-            } else {
-                diesel::update(relationships::table.filter(relationships::id.eq(id)))
-                    .set((
-                        relationships::status.eq(status.to_db()),
-                        relationships::updated_at.eq(diesel::dsl::now),
-                    ))
-                    .execute(conn)?;
-            }
-            Ok(())
-        })?;
+                Ok(Vec::new())
+            })?;
         let should_notify_acceptance = relationship.relationship_type == RelationshipType::Follow
             && relationship.status != RelationshipStatus::Accepted
             && status == RelationshipStatus::Accepted;
-        Ok((Relationship::find(id, pool)?, should_notify_acceptance))
+        Ok((
+            Relationship::find(id, pool)?,
+            should_notify_acceptance,
+            pending_history_review_policy_ids,
+        ))
     }
 
     pub fn archive_for_actor(
