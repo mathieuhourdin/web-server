@@ -9,7 +9,7 @@ use crate::entities_v2::{
         enforce_publication_invariant_for_source, Post, PostAudienceRole, PostSourceRef, PostStatus,
     },
     post_grant::PostGrant,
-    trace::Trace,
+    trace::{Trace, TraceType},
 };
 use crate::schema::{album_items, albums, posts};
 
@@ -482,6 +482,13 @@ impl AlbumItem {
                 400,
                 ErrorType::ApiError,
                 "Album items must reference traces owned by the album owner".to_string(),
+            ));
+        }
+        if trace.trace_type == TraceType::TraceComplement {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Trace complements cannot be added to albums".to_string(),
             ));
         }
 

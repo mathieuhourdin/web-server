@@ -164,7 +164,7 @@ mod tests {
             .insert("content-type".to_string(), "text/plain".to_string());
 
         let mut file = File::new();
-        file.decode_from_bytes(example_bytes.to_vec());
+        file.decode_from_bytes(example_bytes.to_vec()).unwrap();
         assert_eq!(file, expected_file);
     }
 }

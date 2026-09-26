@@ -608,6 +608,14 @@ pub async fn put_trace_post_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    if trace.trace_type == TraceType::TraceComplement {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Complement posts are created with the complement and their audience is managed through post grants"
+                .to_string(),
+        ));
+    }
 
     let existing_post = Post::find_for_trace(trace_id, &pool)?;
     let requested_status = payload

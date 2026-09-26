@@ -13,7 +13,7 @@ use crate::entities_v2::{
     source_projection::{load_source_projection_map, SourceProjectionKind},
     user::User,
 };
-use crate::schema::{journals, posts, user_post_states};
+use crate::schema::{journals, posts, traces, user_post_states};
 
 use super::model::{FeedItem, FeedSourceKind};
 
@@ -62,8 +62,12 @@ pub fn find_feed_items_paginated(
     // source-backed predicate keeps source-less custom posts out of the feed.
     let total: i64 = {
         let mut count_query = posts::table
+            .left_join(traces::table.on(traces::id.nullable().eq(posts::source_trace_id)))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::user_id.ne(viewer_user_id))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+            ))
             .filter(posts::id.eq_any(visible_post_ids.clone()))
             .filter(
                 posts::source_trace_id
@@ -83,8 +87,12 @@ pub fn find_feed_items_paginated(
     };
 
     let mut page_query = posts::table
+        .left_join(traces::table.on(traces::id.nullable().eq(posts::source_trace_id)))
         .filter(posts::status.eq(PostStatus::Published.to_db()))
         .filter(posts::user_id.ne(viewer_user_id))
+        .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+            "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+        ))
         .filter(posts::id.eq_any(visible_post_ids))
         .filter(
             posts::source_trace_id
@@ -267,8 +275,12 @@ pub fn count_recent_unread_feed_items(
         .load::<Uuid>(&mut conn)?;
 
     let mut query = posts::table
+        .left_join(traces::table.on(traces::id.nullable().eq(posts::source_trace_id)))
         .filter(posts::status.eq(PostStatus::Published.to_db()))
         .filter(posts::user_id.ne(viewer_user_id))
+        .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+            "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+        ))
         .filter(posts::id.eq_any(visible_post_ids))
         .filter(
             posts::source_trace_id

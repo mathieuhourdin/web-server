@@ -517,7 +517,7 @@ impl Journal {
         let mut conn = pool.get()?;
 
         let total = journals::table
-            .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::id.eq_any(&visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -527,7 +527,7 @@ impl Journal {
             .first::<i64>(&mut conn)?;
 
         let rows = journals::table
-            .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::id.eq_any(visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -578,7 +578,7 @@ impl Journal {
 
         let mut conn = pool.get()?;
         let total = journals::table
-            .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(journals::user_id.eq(journal_owner_user_id))
             .filter(posts::id.eq_any(&visible_post_ids))
@@ -589,7 +589,7 @@ impl Journal {
             .first::<i64>(&mut conn)?;
 
         let rows = journals::table
-            .inner_join(traces::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
             .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(journals::user_id.eq(journal_owner_user_id))
             .filter(posts::id.eq_any(visible_post_ids))

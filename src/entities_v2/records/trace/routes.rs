@@ -47,7 +47,7 @@ use crate::pagination::{PaginatedResponse, PaginationParams, ValidatedPagination
 use crate::work_analyzer;
 
 use super::{
-    enums::{TraceSharingSensitivity, TraceStatus, TraceType},
+    enums::{TraceComplementAudienceMode, TraceSharingSensitivity, TraceStatus, TraceType},
     linked::LinkedTraceResponse,
     llm_qualify,
     model::{
@@ -227,6 +227,26 @@ pub struct TraceSeenStateResponse {
     pub last_seen_at: chrono::NaiveDateTime,
 }
 
+#[derive(Deserialize)]
+pub struct CreateTraceComplementDto {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
+    pub content: String,
+    #[serde(default)]
+    pub audience_mode: TraceComplementAudienceMode,
+    #[serde(default)]
+    pub grantee_user_ids: Vec<Uuid>,
+}
+
+#[derive(Serialize)]
+pub struct TraceComplementCreationResponse {
+    pub trace: Trace,
+    pub post: Post,
+    pub grants: Vec<crate::entities_v2::post_grant::PostGrant>,
+}
+
 #[debug_handler]
 pub async fn put_linked_trace_route(
     Extension(pool): Extension<DbPool>,
@@ -251,6 +271,62 @@ pub async fn delete_linked_trace_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     LinkedTraceResponse::delete(journal_id, source_trace_id, user_id, &pool)?;
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[debug_handler]
+pub async fn post_trace_complement_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(parent_trace_id): Path<Uuid>,
+    Json(payload): Json<CreateTraceComplementDto>,
+) -> Result<Json<TraceComplementCreationResponse>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let creation = Trace::create_complement(
+        parent_trace_id,
+        user_id,
+        payload.title,
+        payload.subtitle,
+        payload.content,
+        payload.audience_mode,
+        &payload.grantee_user_ids,
+        &pool,
+    )?;
+    Ok(Json(TraceComplementCreationResponse {
+        trace: creation.trace,
+        post: creation.post,
+        grants: creation.grants,
+    }))
+}
+
+#[debug_handler]
+pub async fn get_trace_complements_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(parent_trace_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Trace>>, PpdcError> {
+    let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let parent = Trace::find_full_trace(parent_trace_id, &pool)?;
+    if parent.trace_type != TraceType::UserTrace {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Complements can only be listed for user traces".to_string(),
+        ));
+    }
+    if !parent.user_can_read(user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
+    let pagination = params.validate()?;
+    let (traces, total) = Trace::find_visible_complements_for_parent_paginated(
+        parent_trace_id,
+        user_id,
+        parent.user_id == user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
 #[derive(Deserialize)]
@@ -746,6 +822,8 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         } else {
             None
         },
+        parent_trace_id: trace.parent_trace_id,
+        complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
             Some(trace.is_encrypted)
         } else {
@@ -1317,6 +1395,13 @@ pub async fn put_trace_route(
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
     }
+    if trace.trace_type == TraceType::TraceComplement {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Complements cannot be updated through the generic trace API".to_string(),
+        ));
+    }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
 
     let title_changed = payload
@@ -1523,6 +1608,13 @@ pub async fn patch_trace_route(
     let mut trace = Trace::find_full_trace(id, &pool)?;
     if trace.user_id != user_id {
         return Err(PpdcError::unauthorized());
+    }
+    if trace.trace_type == TraceType::TraceComplement {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Complements cannot be updated through the generic trace API".to_string(),
+        ));
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
     if trace.status == super::enums::TraceStatus::Archived {

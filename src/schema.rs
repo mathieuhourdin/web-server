@@ -644,7 +644,7 @@ diesel::table! {
     traces (id) {
         id -> Uuid,
         user_id -> Uuid,
-        journal_id -> Uuid,
+        journal_id -> Nullable<Uuid>,
         title -> Text,
         subtitle -> Text,
         content -> Text,
@@ -663,6 +663,8 @@ diesel::table! {
         sharing_sensitivity -> Text,
         derived_from_trace_id -> Nullable<Uuid>,
         linked_source_trace_id -> Nullable<Uuid>,
+        parent_trace_id -> Nullable<Uuid>,
+        complement_audience_mode -> Nullable<Text>,
         is_blank -> Bool,
         version_integer -> Int4,
     }

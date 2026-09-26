@@ -5,12 +5,18 @@ use diesel::sql_types::{BigInt, Bool, Nullable, Text, Timestamp, Timestamptz, Uu
 use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
-use crate::entities_v2::post::{enforce_publication_invariant_for_source, PostSourceRef};
+use crate::entities_v2::post::{
+    enforce_publication_invariant_for_source, Post, PostAudienceRole, PostInteractionType,
+    PostSourceRef, PostStatus, PostType,
+};
+use crate::entities_v2::post_grant::{PostGrant, PostGrantAccessLevel, PostGrantStatus};
+use crate::entities_v2::relationship::Relationship;
 use crate::entities_v2::trace_mention::{TraceMention, TraceMentionInput};
 use crate::entities_v2::trace_search::TraceSearchDocument;
-use crate::schema::trace_attachments;
+use crate::entities_v2::user_block::UserBlock;
+use crate::schema::{post_grants, posts, trace_attachments};
 
-use super::model::{NewTrace, Trace, TraceStatus};
+use super::model::{NewTrace, Trace, TraceComplementAudienceMode, TraceStatus, TraceType};
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -28,6 +34,29 @@ struct AffectedRows {
 struct VersionIntegerRow {
     #[diesel(sql_type = diesel::sql_types::Int4)]
     version_integer: i32,
+}
+
+#[derive(QueryableByName)]
+struct ParentTraceRow {
+    #[diesel(sql_type = SqlUuid)]
+    user_id: uuid::Uuid,
+    #[diesel(sql_type = Text)]
+    trace_type: String,
+    #[diesel(sql_type = Text)]
+    status: String,
+}
+
+#[derive(Clone, Copy)]
+struct TraceComplementIds {
+    trace_id: uuid::Uuid,
+    post_id: uuid::Uuid,
+}
+
+#[derive(Debug, Clone)]
+pub struct TraceComplementCreation {
+    pub trace: Trace,
+    pub post: Post,
+    pub grants: Vec<PostGrant>,
 }
 
 pub(super) fn recalculate_journal_last_trace_at(
@@ -77,6 +106,177 @@ fn compute_is_blank_with_conn(
 }
 
 impl Trace {
+    pub fn create_complement(
+        parent_trace_id: uuid::Uuid,
+        owner_user_id: uuid::Uuid,
+        title: String,
+        subtitle: String,
+        content: String,
+        audience_mode: TraceComplementAudienceMode,
+        grantee_user_ids: &[uuid::Uuid],
+        pool: &DbPool,
+    ) -> Result<TraceComplementCreation, PpdcError> {
+        use std::collections::HashSet;
+
+        if content.trim().is_empty() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "A complement must have content".to_string(),
+            ));
+        }
+        if audience_mode == TraceComplementAudienceMode::Parent && !grantee_user_ids.is_empty() {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "A parent-audience complement cannot have its own grants".to_string(),
+            ));
+        }
+
+        let mut unique_grantee_ids = HashSet::new();
+        for grantee_user_id in grantee_user_ids {
+            if !unique_grantee_ids.insert(*grantee_user_id) {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "grantee_user_ids cannot contain duplicates".to_string(),
+                ));
+            }
+            if *grantee_user_id == owner_user_id {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Cannot grant a post to yourself".to_string(),
+                ));
+            }
+            UserBlock::ensure_can_interact(owner_user_id, *grantee_user_id, pool)?;
+            if !Relationship::is_follow_accepted(*grantee_user_id, owner_user_id, pool)? {
+                return Err(PpdcError::new(
+                    403,
+                    ErrorType::ApiError,
+                    "Direct post grants are restricted to accepted followers".to_string(),
+                ));
+            }
+        }
+
+        let mut conn = pool.get()?;
+        let ids = conn.transaction::<TraceComplementIds, PpdcError, _>(|conn| {
+            let parent = diesel::sql_query(
+                "SELECT user_id, trace_type, status
+                 FROM traces
+                 WHERE id = $1
+                 FOR SHARE",
+            )
+            .bind::<SqlUuid, _>(parent_trace_id)
+            .get_result::<ParentTraceRow>(conn)
+            .optional()?
+            .ok_or_else(|| {
+                PpdcError::new(
+                    404,
+                    ErrorType::ApiError,
+                    "Parent trace not found".to_string(),
+                )
+            })?;
+            if parent.user_id != owner_user_id {
+                return Err(PpdcError::unauthorized());
+            }
+            if TraceType::from_db(&parent.trace_type) != TraceType::UserTrace {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Complements can only be attached to user traces".to_string(),
+                ));
+            }
+            if TraceStatus::from_db(&parent.status) != TraceStatus::Finalized {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Complements can only be attached to finalized user traces".to_string(),
+                ));
+            }
+
+            let now = Utc::now().naive_utc();
+            let trace_id = uuid::Uuid::new_v4();
+            diesel::sql_query(
+                "INSERT INTO traces (
+                    id, user_id, journal_id, parent_trace_id, complement_audience_mode,
+                    title, subtitle, content, interaction_date,
+                    trace_type, status, is_encrypted, encryption_metadata,
+                    start_writing_at, finalized_at, content_image_asset_id,
+                    timeout_at, timeout_start_at, sharing_sensitivity,
+                    derived_from_trace_id, linked_source_trace_id, is_blank, version_integer,
+                    created_at, updated_at
+                 ) VALUES (
+                    $1, $2, NULL, $3, $4,
+                    $5, $6, $7, $8,
+                    'TRACE_COMPLEMENT', 'FINALIZED', FALSE, NULL,
+                    $8, $8, NULL,
+                    NULL, NULL, 'NORMAL',
+                    NULL, NULL, FALSE, 0,
+                    $8, $8
+                 )",
+            )
+            .bind::<SqlUuid, _>(trace_id)
+            .bind::<SqlUuid, _>(owner_user_id)
+            .bind::<SqlUuid, _>(parent_trace_id)
+            .bind::<Text, _>(audience_mode.to_db())
+            .bind::<Text, _>(&title)
+            .bind::<Text, _>(&subtitle)
+            .bind::<Text, _>(&content)
+            .bind::<Timestamp, _>(now)
+            .execute(conn)?;
+
+            let post_id = uuid::Uuid::new_v4();
+            diesel::insert_into(posts::table)
+                .values((
+                    posts::id.eq(post_id),
+                    posts::source_trace_id.eq(Some(trace_id)),
+                    posts::source_document_id.eq::<Option<uuid::Uuid>>(None),
+                    posts::source_album_id.eq::<Option<uuid::Uuid>>(None),
+                    posts::title.eq(""),
+                    posts::subtitle.eq(""),
+                    posts::content.eq(""),
+                    posts::interaction_type.eq(PostInteractionType::Output.to_db()),
+                    posts::post_type.eq(PostType::Idea.to_db()),
+                    posts::user_id.eq(owner_user_id),
+                    posts::publishing_date.eq(Some(now)),
+                    posts::status.eq(PostStatus::Published.to_db()),
+                    posts::audience_role.eq(PostAudienceRole::Restricted.to_db()),
+                ))
+                .execute(conn)?;
+
+            let grants = unique_grantee_ids
+                .iter()
+                .map(|grantee_user_id| {
+                    (
+                        post_grants::id.eq(uuid::Uuid::new_v4()),
+                        post_grants::post_id.eq(post_id),
+                        post_grants::owner_user_id.eq(owner_user_id),
+                        post_grants::grantee_user_id.eq(Some(*grantee_user_id)),
+                        post_grants::grantee_scope.eq::<Option<String>>(None),
+                        post_grants::access_level.eq(PostGrantAccessLevel::Read.to_db()),
+                        post_grants::status.eq(PostGrantStatus::Active.to_db()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if !grants.is_empty() {
+                diesel::insert_into(post_grants::table)
+                    .values(&grants)
+                    .execute(conn)?;
+            }
+            Ok(TraceComplementIds { trace_id, post_id })
+        })?;
+
+        let trace = Trace::find_full_trace(ids.trace_id, pool)?;
+        let post = Post::find_full(ids.post_id, pool)?;
+        let (grants, _) = PostGrant::find_for_post_paginated(post.id, 0, i64::MAX / 4, pool)?;
+        Ok(TraceComplementCreation {
+            trace,
+            post,
+            grants,
+        })
+    }
+
     pub fn update(self, pool: &DbPool) -> Result<Trace, PpdcError> {
         self.update_internal(None, None, pool)
     }

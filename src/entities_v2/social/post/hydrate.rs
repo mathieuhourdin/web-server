@@ -303,9 +303,12 @@ impl Post {
 
         let mut query = posts::table
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
-            .left_join(journals::table.on(traces::journal_id.eq(journals::id)))
+            .left_join(journals::table.on(traces::journal_id.eq(journals::id.nullable())))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::user_id.ne(viewer_user_id))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+            ))
             .into_boxed();
 
         if visible_post_ids.is_empty() {
@@ -496,7 +499,7 @@ impl Post {
 
         let rows = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
-            .inner_join(journals::table.on(traces::journal_id.eq(journals::id)))
+            .inner_join(journals::table.on(traces::journal_id.eq(journals::id.nullable())))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::publishing_date.is_not_null())
             .filter(posts::publishing_date.ge(Some(period_start)))
@@ -630,7 +633,13 @@ impl Post {
         } else {
             PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?
         };
-        let mut count_query = posts::table.filter(posts::user_id.eq(user_id)).into_boxed();
+        let mut count_query = posts::table
+            .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::user_id.eq(user_id))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+            ))
+            .into_boxed();
         let interaction_type_values = interaction_types
             .iter()
             .map(|value| value.to_db())
@@ -657,7 +666,13 @@ impl Post {
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let mut query = posts::table.filter(posts::user_id.eq(user_id)).into_boxed();
+        let mut query = posts::table
+            .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::user_id.eq(user_id))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+            ))
+            .into_boxed();
 
         if !interaction_type_values.is_empty() {
             query = query.filter(posts::interaction_type.eq_any(interaction_type_values));
@@ -748,6 +763,9 @@ impl Post {
 
         let mut count_query = posts::table
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+            ))
             .into_boxed();
         let effective_post_types = if post_types.is_empty() {
             mapped_post_type.into_iter().collect::<Vec<_>>()
@@ -810,6 +828,9 @@ impl Post {
 
         let mut query = posts::table
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
+            ))
             .into_boxed();
         if !interaction_type_values.is_empty() {
             query = query.filter(posts::interaction_type.eq_any(interaction_type_values));

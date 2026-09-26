@@ -139,6 +139,10 @@ pub fn create_router() -> Router {
         .route("/drafts", get(trace::get_trace_drafts_route))
         .route("/search", get(trace_search::get_trace_search_route))
         .route(
+            "/:id/complements",
+            get(trace::get_trace_complements_route).post(trace::post_trace_complement_route),
+        )
+        .route(
             "/:id",
             get(trace::get_trace_route)
                 .put(trace::put_trace_route)

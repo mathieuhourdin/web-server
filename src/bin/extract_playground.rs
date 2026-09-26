@@ -5,11 +5,6 @@ use std::path::Path;
 use web_server::openai_handler::gpt_responses_handler::{make_gpt_request, DEFAULT_OPENAI_MODEL}; // ou le bon module
                                                                                                  // use your_crate_name::environment; // si besoin pour la clé, etc.
 
-#[derive(Debug, Deserialize)]
-struct ExtractOutput {
-    elements: Vec<serde_json::Value>,
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct ExtractedElement {
     resource_identifier: String,

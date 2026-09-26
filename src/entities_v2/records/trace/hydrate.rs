@@ -10,11 +10,15 @@ use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::trace_mention::TraceMention;
 use crate::schema::traces;
 
-use super::model::{Trace, TraceSharingSensitivity, TraceStatus, TraceType};
+use super::model::{
+    Trace, TraceComplementAudienceMode, TraceSharingSensitivity, TraceStatus, TraceType,
+};
 
 type TraceTuple = (
     Uuid,
     Option<Uuid>,
+    Option<Uuid>,
+    Option<String>,
     String,
     String,
     NaiveDateTime,
@@ -41,6 +45,8 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
     let (
         id,
         derived_from_trace_id,
+        parent_trace_id,
+        complement_audience_mode,
         title,
         subtitle,
         interaction_date,
@@ -66,6 +72,10 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
     Trace {
         id,
         derived_from_trace_id,
+        parent_trace_id,
+        complement_audience_mode: complement_audience_mode
+            .as_deref()
+            .map(TraceComplementAudienceMode::from_db),
         title,
         subtitle,
         interaction_date,
@@ -102,6 +112,8 @@ impl Trace {
             .select((
                 traces::id,
                 traces::derived_from_trace_id,
+                traces::parent_trace_id,
+                traces::complement_audience_mode,
                 traces::title,
                 traces::subtitle,
                 traces::interaction_date,
@@ -147,6 +159,8 @@ impl Trace {
             .select((
                 traces::id,
                 traces::derived_from_trace_id,
+                traces::parent_trace_id,
+                traces::complement_audience_mode,
                 traces::title,
                 traces::subtitle,
                 traces::interaction_date,

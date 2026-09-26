@@ -6,7 +6,9 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
-use crate::entities_v2::trace::{linked::LinkedTraceResponse, Trace, TraceType};
+use crate::entities_v2::trace::{
+    linked::LinkedTraceResponse, Trace, TraceComplementAudienceMode, TraceType,
+};
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
 use crate::entities_v2::user_block::UserBlock;
 use crate::schema::{post_grants, posts, users};
@@ -279,6 +281,18 @@ impl PostGrant {
         if post.user_id != owner_user_id {
             return Err(PpdcError::unauthorized());
         }
+        if let Some(trace_id) = post.source_trace_id {
+            let trace = Trace::find_full_trace(trace_id, pool)?;
+            if trace.trace_type == TraceType::TraceComplement
+                && trace.complement_audience_mode == Some(TraceComplementAudienceMode::Parent)
+            {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Parent-audience complements do not accept their own post grants".to_string(),
+                ));
+            }
+        }
 
         let (grantee_user_id, grantee_scope, access_level) =
             Self::validate_target_fields(&payload)?;
@@ -368,6 +382,18 @@ impl PostGrant {
     ) -> Result<bool, PpdcError> {
         if let Some(trace_id) = post.source_trace_id {
             let trace = Trace::find_full_trace(trace_id, pool)?;
+            if trace.trace_type == TraceType::TraceComplement
+                && trace.complement_audience_mode == Some(TraceComplementAudienceMode::Parent)
+            {
+                let Some(parent_trace_id) = trace.parent_trace_id else {
+                    return Ok(false);
+                };
+                let parent = Trace::find_full_trace(parent_trace_id, pool)?;
+                if parent.trace_type != TraceType::UserTrace {
+                    return Ok(false);
+                }
+                return parent.user_can_read(user_id, pool);
+            }
             if trace.trace_type == TraceType::LinkedTrace
                 && !LinkedTraceResponse::reshare_is_active(trace.id, post.user_id, user_id, pool)?
             {

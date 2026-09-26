@@ -182,14 +182,15 @@ async fn firebase_access_token() -> Result<String, PpdcError> {
 fn is_invalid_fcm_token(status: Option<&str>, message: Option<&str>) -> bool {
     // `INVALID_ARGUMENT` also covers malformed notification payloads. Only clear
     // a token when FCM identifies the registration token itself as invalid.
-    matches!(status, Some("NOT_FOUND") | Some("UNREGISTERED")) || message
-        .map(|value| {
-            value.contains("registration token is not a valid")
-                || value.contains("registration token is not a valid FCM registration token")
-                || value.contains("Requested entity was not found")
-                || value.contains("UNREGISTERED")
-        })
-        .unwrap_or(false)
+    matches!(status, Some("NOT_FOUND") | Some("UNREGISTERED"))
+        || message
+            .map(|value| {
+                value.contains("registration token is not a valid")
+                    || value.contains("registration token is not a valid FCM registration token")
+                    || value.contains("Requested entity was not found")
+                    || value.contains("UNREGISTERED")
+            })
+            .unwrap_or(false)
 }
 
 async fn send_fcm_to_device(

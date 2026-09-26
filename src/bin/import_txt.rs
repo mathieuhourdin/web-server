@@ -13,9 +13,6 @@ use web_server::entities_v2::trace::NewTrace;
 const USER_ID: Uuid = uuid::uuid!("a647a452-3a80-4a94-97d0-8a36c1c752c1");
 const JOURNAL_ID: Uuid = uuid::uuid!("95bacf39-5ca7-4a9f-99c1-eb6d440dade1");
 
-const DAYS: [&str; 7] = [
-    "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche",
-];
 const MONTHS: [&str; 12] = [
     "janvier",
     "février",
@@ -30,10 +27,6 @@ const MONTHS: [&str; 12] = [
     "novembre",
     "décembre",
 ];
-const YEARS: [&str; 8] = [
-    "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027",
-];
-
 fn read_to_string<P: AsRef<Path>>(path: P) -> anyhow::Result<String> {
     Ok(fs::read_to_string(path)?)
 }
@@ -81,26 +74,10 @@ fn year_from_month(month: &str) -> Option<&str> {
 }
 
 fn french_date_regex() -> Regex {
-    let days = DAYS
-        .iter()
-        .map(|d| regex::escape(d))
-        .collect::<Vec<String>>()
-        .join("|");
-    let months = MONTHS
-        .iter()
-        .map(|m| regex::escape(m))
-        .collect::<Vec<String>>()
-        .join("|");
-    let years = YEARS
-        .iter()
-        .map(|y| regex::escape(y))
-        .collect::<Vec<String>>()
-        .join("|");
-    //Regex::new(format!(r"^(({})\s[0-9]{{1,2}}\s({})\s([0-9]{{4}}))$", days, months).as_str()).unwrap()
-    //return Regex::new(r"((Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche)\s[0-9]{1,2}\s(Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s([0-9]{4}))").unwrap();
-    return Regex::new(
+    Regex::new(
         r"^(Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche)\s+(?P<day>\d{1,2})(?:er)?\s+(?P<month>janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(\s+(?P<year>\d{4}))?(\s+(?P<hour>\d{1,2})(h|:)(?P<minute>\d{2}))?$"
-    ).unwrap();
+    )
+    .unwrap()
 }
 
 fn extract_date(date_option_string: Option<String>) -> Option<NaiveDateTime> {

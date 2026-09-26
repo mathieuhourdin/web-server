@@ -784,6 +784,7 @@ impl From<JournalTraceListRow> for TraceListItem {
             subtitle: Some(row.subtitle),
             content: row.content,
             derived_from_trace_id: row.derived_from_trace_id,
+            parent_trace_id: None,
             is_encrypted: Some(row.is_encrypted),
             encryption_metadata: row
                 .encryption_metadata
