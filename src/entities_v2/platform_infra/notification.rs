@@ -647,6 +647,101 @@ pub fn spawn_trace_mention_push_notification(post: Post, recipient_ids: Vec<Uuid
     });
 }
 
+/// Notifies the original trace owner when someone they actively mentioned adds a complement.
+/// Parent owners can also create complements themselves, but those deliberately produce no
+/// self-notification.
+pub fn spawn_trace_complement_created_push_notification(
+    parent_trace_id: Uuid,
+    complement_trace_id: Uuid,
+    pool: DbPool,
+) {
+    tokio::spawn(async move {
+        let parent_trace = match Trace::find_full_trace(parent_trace_id, &pool) {
+            Ok(trace) => trace,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    parent_trace_id = %parent_trace_id,
+                    complement_trace_id = %complement_trace_id,
+                    error = %err.message,
+                    "trace_complement_push_parent_lookup_failed"
+                );
+                return;
+            }
+        };
+        let complement_trace = match Trace::find_full_trace(complement_trace_id, &pool) {
+            Ok(trace) => trace,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    parent_trace_id = %parent_trace_id,
+                    complement_trace_id = %complement_trace_id,
+                    error = %err.message,
+                    "trace_complement_push_lookup_failed"
+                );
+                return;
+            }
+        };
+        if parent_trace.user_id == complement_trace.user_id {
+            return;
+        }
+
+        let recipient = match User::find(&parent_trace.user_id, &pool) {
+            Ok(user) if user.principal_type == UserPrincipalType::Human => user,
+            Ok(_) => return,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    parent_trace_id = %parent_trace_id,
+                    complement_trace_id = %complement_trace_id,
+                    error = %err.message,
+                    "trace_complement_push_recipient_lookup_failed"
+                );
+                return;
+            }
+        };
+        let notification = match push::trace_complement_created_notification(
+            &parent_trace,
+            &complement_trace,
+            &pool,
+        )
+        .await
+        {
+            Ok(notification) => notification,
+            Err(err) => {
+                warn!(
+                    target: "notification",
+                    parent_trace_id = %parent_trace_id,
+                    complement_trace_id = %complement_trace_id,
+                    error = %err.message,
+                    "trace_complement_push_build_failed"
+                );
+                return;
+            }
+        };
+
+        match push::send_to_mobile_user(recipient.id, notification, &pool).await {
+            Ok(result) => info!(
+                target: "notification",
+                parent_trace_id = %parent_trace_id,
+                complement_trace_id = %complement_trace_id,
+                recipient_user_id = %recipient.id,
+                push_attempted_count = result.attempted_count,
+                push_sent_count = result.sent_count,
+                "trace_complement_push_dispatch_completed"
+            ),
+            Err(err) => warn!(
+                target: "notification",
+                parent_trace_id = %parent_trace_id,
+                complement_trace_id = %complement_trace_id,
+                recipient_user_id = %recipient.id,
+                error = %err.message,
+                "trace_complement_push_dispatch_failed"
+            ),
+        }
+    });
+}
+
 pub fn spawn_journal_history_shared_push_notification(
     journal_id: Uuid,
     owner_user_id: Uuid,

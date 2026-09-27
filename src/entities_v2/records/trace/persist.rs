@@ -44,6 +44,8 @@ struct ParentTraceRow {
     trace_type: String,
     #[diesel(sql_type = Text)]
     status: String,
+    #[diesel(sql_type = Bool)]
+    is_encrypted: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -133,36 +135,81 @@ impl Trace {
             ));
         }
 
+        // Read the parent before taking the write transaction so that a mentioned user is
+        // subject to the same current block and readability rules as any other interaction.
+        // The active-mention check is repeated while the parent is locked below, since a mention
+        // can be removed between this check and creation.
+        let parent_for_authorization = Trace::find_full_trace(parent_trace_id, pool)?;
+        let caller_owns_parent = parent_for_authorization.user_id == owner_user_id;
+        if !caller_owns_parent {
+            if parent_for_authorization.trace_type != TraceType::UserTrace {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Complements can only be attached to user traces".to_string(),
+                ));
+            }
+            if parent_for_authorization.status != TraceStatus::Finalized {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Complements can only be attached to finalized user traces".to_string(),
+                ));
+            }
+            if audience_mode != TraceComplementAudienceMode::Parent {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "A complement written by a mentioned user must inherit the parent audience"
+                        .to_string(),
+                ));
+            }
+            if !grantee_user_ids.is_empty() {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "A complement written by a mentioned user cannot have its own grants"
+                        .to_string(),
+                ));
+            }
+            UserBlock::ensure_can_interact(parent_for_authorization.user_id, owner_user_id, pool)?;
+            if !parent_for_authorization.user_can_read(owner_user_id, pool)? {
+                return Err(PpdcError::unauthorized());
+            }
+        }
+
         let mut unique_grantee_ids = HashSet::new();
-        for grantee_user_id in grantee_user_ids {
-            if !unique_grantee_ids.insert(*grantee_user_id) {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "grantee_user_ids cannot contain duplicates".to_string(),
-                ));
-            }
-            if *grantee_user_id == owner_user_id {
-                return Err(PpdcError::new(
-                    400,
-                    ErrorType::ApiError,
-                    "Cannot grant a post to yourself".to_string(),
-                ));
-            }
-            UserBlock::ensure_can_interact(owner_user_id, *grantee_user_id, pool)?;
-            if !Relationship::is_follow_accepted(*grantee_user_id, owner_user_id, pool)? {
-                return Err(PpdcError::new(
-                    403,
-                    ErrorType::ApiError,
-                    "Direct post grants are restricted to accepted followers".to_string(),
-                ));
+        if caller_owns_parent {
+            for grantee_user_id in grantee_user_ids {
+                if !unique_grantee_ids.insert(*grantee_user_id) {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "grantee_user_ids cannot contain duplicates".to_string(),
+                    ));
+                }
+                if *grantee_user_id == owner_user_id {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "Cannot grant a post to yourself".to_string(),
+                    ));
+                }
+                UserBlock::ensure_can_interact(owner_user_id, *grantee_user_id, pool)?;
+                if !Relationship::is_follow_accepted(*grantee_user_id, owner_user_id, pool)? {
+                    return Err(PpdcError::new(
+                        403,
+                        ErrorType::ApiError,
+                        "Direct post grants are restricted to accepted followers".to_string(),
+                    ));
+                }
             }
         }
 
         let mut conn = pool.get()?;
         let ids = conn.transaction::<TraceComplementIds, PpdcError, _>(|conn| {
             let parent = diesel::sql_query(
-                "SELECT user_id, trace_type, status
+                "SELECT user_id, trace_type, status, is_encrypted
                  FROM traces
                  WHERE id = $1
                  FOR SHARE",
@@ -177,9 +224,6 @@ impl Trace {
                     "Parent trace not found".to_string(),
                 )
             })?;
-            if parent.user_id != owner_user_id {
-                return Err(PpdcError::unauthorized());
-            }
             if TraceType::from_db(&parent.trace_type) != TraceType::UserTrace {
                 return Err(PpdcError::new(
                     400,
@@ -193,6 +237,45 @@ impl Trace {
                     ErrorType::ApiError,
                     "Complements can only be attached to finalized user traces".to_string(),
                 ));
+            }
+            if parent.user_id != owner_user_id {
+                if parent.is_encrypted {
+                    return Err(PpdcError::unauthorized());
+                }
+                if audience_mode != TraceComplementAudienceMode::Parent {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "A complement written by a mentioned user must inherit the parent audience"
+                            .to_string(),
+                    ));
+                }
+                if !grantee_user_ids.is_empty() {
+                    return Err(PpdcError::new(
+                        400,
+                        ErrorType::ApiError,
+                        "A complement written by a mentioned user cannot have its own grants"
+                            .to_string(),
+                    ));
+                }
+                // Lock the active mention too. Removing a mention must serialize with this
+                // creation: if removal wins, no complement is created; if creation wins, the
+                // already-created complement remains as an authored record.
+                let active_mention = diesel::sql_query(
+                    "SELECT trace_id AS id
+                     FROM trace_mentions
+                     WHERE trace_id = $1
+                       AND mentioned_user_id = $2
+                       AND removed_at IS NULL
+                     FOR SHARE",
+                )
+                .bind::<SqlUuid, _>(parent_trace_id)
+                .bind::<SqlUuid, _>(owner_user_id)
+                .get_result::<IdRow>(conn)
+                .optional()?;
+                if active_mention.is_none() {
+                    return Err(PpdcError::unauthorized());
+                }
             }
 
             let now = Utc::now().naive_utc();

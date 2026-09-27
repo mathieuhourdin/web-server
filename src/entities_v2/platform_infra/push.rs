@@ -16,6 +16,7 @@ use crate::entities_v2::{
     post::Post,
     relationship::Relationship,
     source_projection::{load_source_projection_map, SourceProjectionKind},
+    trace::Trace,
     user::User,
 };
 
@@ -821,6 +822,51 @@ pub(crate) async fn trace_mention_notification(
     };
     notification.thread_id = Some(post.user_id.to_string());
     Ok(Some(notification))
+}
+
+pub(crate) async fn trace_complement_created_notification(
+    parent_trace: &Trace,
+    complement_trace: &Trace,
+    pool: &DbPool,
+) -> Result<PushNotification, PpdcError> {
+    let author = User::find(&complement_trace.user_id, pool)?;
+    let mut data = HashMap::new();
+    data.insert(
+        "event_type".to_string(),
+        "trace_complement_created".to_string(),
+    );
+    // `trace_id` deliberately identifies the trace to open; the complement has its own explicit
+    // ID for clients that want to scroll to or highlight it after loading the parent.
+    data.insert("trace_id".to_string(), parent_trace.id.to_string());
+    data.insert("parent_trace_id".to_string(), parent_trace.id.to_string());
+    data.insert(
+        "complement_trace_id".to_string(),
+        complement_trace.id.to_string(),
+    );
+    data.insert("author_user_id".to_string(), author.id.to_string());
+    data.insert("author_display_name".to_string(), author.display_name());
+    if let Some(avatar_url) = sender_avatar_url(&author, pool).await {
+        data.insert("author_avatar_url".to_string(), avatar_url);
+    }
+    if !parent_trace.title.trim().is_empty() {
+        data.insert("parent_trace_title".to_string(), parent_trace.title.clone());
+    }
+    data.insert(
+        "content_preview".to_string(),
+        content_preview(&complement_trace.content),
+    );
+
+    let body = if parent_trace.title.trim().is_empty() {
+        "a ajouté un complément à votre trace".to_string()
+    } else {
+        format!("a ajouté un complément à « {} »", parent_trace.title)
+    };
+    Ok(PushNotification {
+        title: author.display_name(),
+        body,
+        data,
+        thread_id: Some(author.id.to_string()),
+    })
 }
 
 pub(crate) async fn journal_history_shared_notification(

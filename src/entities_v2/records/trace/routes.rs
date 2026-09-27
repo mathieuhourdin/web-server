@@ -291,6 +291,11 @@ pub async fn post_trace_complement_route(
         &payload.grantee_user_ids,
         &pool,
     )?;
+    notification::spawn_trace_complement_created_push_notification(
+        parent_trace_id,
+        creation.trace.id,
+        pool.clone(),
+    );
     Ok(Json(TraceComplementCreationResponse {
         trace: creation.trace,
         post: creation.post,
