@@ -215,6 +215,7 @@ fn new_external_user(
         home_focus_view: None,
         shared_journal_activity_email_mode: None,
         received_message_email_mode: None,
+        shared_journal_weekly_digest_enabled: None,
         mentor_feedback_email_enabled: None,
         ai_features_enabled: None,
         ai_features_enabled_by_admin: None,

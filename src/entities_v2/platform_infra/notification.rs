@@ -1,4 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime, Utc};
+use diesel::prelude::*;
+use diesel::sql_types::{Array, Nullable, Timestamp, Uuid as SqlUuid};
+use std::collections::HashSet;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -504,6 +507,51 @@ pub fn spawn_follow_request_accepted_push_notification(relationship: Relationshi
     });
 }
 
+pub fn record_publication_push_delivery(
+    post: &Post,
+    recipient_user_id: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    let mut conn = pool.get()?;
+    diesel::sql_query(
+        "INSERT INTO publication_push_deliveries (post_id, recipient_user_id, publishing_date)
+        VALUES ($1, $2, $3) ON CONFLICT (post_id, recipient_user_id)
+        DO UPDATE SET publishing_date = EXCLUDED.publishing_date, sent_at = NOW()",
+    )
+    .bind::<SqlUuid, _>(post.id)
+    .bind::<SqlUuid, _>(recipient_user_id)
+    .bind::<Nullable<Timestamp>, _>(post.publishing_date)
+    .execute(&mut conn)?;
+    Ok(())
+}
+
+pub fn successfully_pushed_publication_ids(
+    recipient_user_id: Uuid,
+    post_ids: &[Uuid],
+    pool: &DbPool,
+) -> Result<HashSet<Uuid>, PpdcError> {
+    #[derive(QueryableByName)]
+    struct PushedPost {
+        #[diesel(sql_type = SqlUuid)]
+        post_id: Uuid,
+    }
+    if post_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let mut conn = pool.get()?;
+    Ok(diesel::sql_query(
+        "SELECT d.post_id FROM publication_push_deliveries d JOIN posts p ON p.id = d.post_id
+        WHERE d.recipient_user_id = $1 AND d.post_id = ANY($2)
+        AND d.publishing_date IS NOT DISTINCT FROM p.publishing_date",
+    )
+    .bind::<SqlUuid, _>(recipient_user_id)
+    .bind::<Array<SqlUuid>, _>(post_ids)
+    .load::<PushedPost>(&mut conn)?
+    .into_iter()
+    .map(|row| row.post_id)
+    .collect())
+}
+
 pub fn spawn_post_published_push_notification(
     post: Post,
     excluded_recipient_ids: Vec<Uuid>,
@@ -515,8 +563,7 @@ pub fn spawn_post_published_push_notification(
 
     tokio::spawn(async move {
         let notification = match push::post_published_notification(&post, &pool).await {
-            Ok(Some(notification)) => notification,
-            Ok(None) => return,
+            Ok(notification) => notification,
             Err(err) => {
                 warn!(
                     target: "notification",
@@ -524,7 +571,7 @@ pub fn spawn_post_published_push_notification(
                     error = %err.message,
                     "post_published_push_build_failed"
                 );
-                return;
+                None
             }
         };
 
@@ -557,13 +604,25 @@ pub fn spawn_post_published_push_notification(
             }
         };
 
+        let mut email_exclusions = excluded_recipient_ids.clone();
         for recipient in recipients.into_iter().filter(|recipient| {
             recipient.id != post.user_id
                 && recipient.principal_type == UserPrincipalType::Human
                 && !excluded_recipient_ids.contains(&recipient.id)
         }) {
+            let Some(notification) = notification.as_ref() else {
+                continue;
+            };
             match push::send_to_mobile_user(recipient.id, notification.clone(), &pool).await {
                 Ok(result) => {
+                    if result.any_sent() {
+                        email_exclusions.push(recipient.id);
+                        if let Err(err) =
+                            record_publication_push_delivery(&post, recipient.id, &pool)
+                        {
+                            warn!(target: "notification", post_id = %post.id, recipient_user_id = %recipient.id, error = %err.message, "publication_push_delivery_record_failed");
+                        }
+                    }
                     info!(
                         target: "notification",
                         post_id = %post.id,
@@ -584,6 +643,11 @@ pub fn spawn_post_published_push_notification(
                 }
             }
         }
+        crate::entities_v2::post::routes::dispatch_post_published_notification_emails(
+            &post,
+            &email_exclusions,
+            &pool,
+        );
     });
 }
 

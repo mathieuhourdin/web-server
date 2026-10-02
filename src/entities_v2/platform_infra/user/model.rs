@@ -67,6 +67,7 @@ pub struct User {
     pub home_focus_view: HomeFocusView,
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
+    pub shared_journal_weekly_digest_enabled: bool,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
     pub ai_features_enabled_by_admin: bool,
@@ -132,6 +133,7 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub home_focus_view: HomeFocusView,
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
+    pub shared_journal_weekly_digest_enabled: bool,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
     pub ai_features_enabled_by_admin: bool,
@@ -176,6 +178,7 @@ impl UserPseudonymizedAuthentifiedResponse {
             home_focus_view: user.home_focus_view,
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
+            shared_journal_weekly_digest_enabled: user.shared_journal_weekly_digest_enabled,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             ai_features_enabled: user.ai_features_enabled,
             ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
@@ -282,6 +285,7 @@ pub struct UserPseudonymizedResponse {
     pub home_focus_view: HomeFocusView,
     pub shared_journal_activity_email_mode: EmailNotificationMode,
     pub received_message_email_mode: EmailNotificationMode,
+    pub shared_journal_weekly_digest_enabled: bool,
     pub mentor_feedback_email_enabled: bool,
     pub ai_features_enabled: bool,
     pub ai_features_enabled_by_admin: bool,
@@ -320,6 +324,7 @@ impl UserPseudonymizedResponse {
             home_focus_view: user.home_focus_view,
             shared_journal_activity_email_mode: user.shared_journal_activity_email_mode,
             received_message_email_mode: user.received_message_email_mode,
+            shared_journal_weekly_digest_enabled: user.shared_journal_weekly_digest_enabled,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
             ai_features_enabled: user.ai_features_enabled,
             ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
@@ -456,6 +461,7 @@ pub struct NewUser {
     pub home_focus_view: Option<HomeFocusView>,
     pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
     pub received_message_email_mode: Option<EmailNotificationMode>,
+    pub shared_journal_weekly_digest_enabled: Option<bool>,
     pub mentor_feedback_email_enabled: Option<bool>,
     pub ai_features_enabled: Option<bool>,
     #[serde(default, skip_deserializing)]
@@ -521,6 +527,7 @@ impl NewServiceUserDto {
             home_focus_view: None,
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
+            shared_journal_weekly_digest_enabled: None,
             mentor_feedback_email_enabled: None,
             ai_features_enabled: None,
             ai_features_enabled_by_admin: None,
@@ -562,6 +569,9 @@ impl NewServiceUserDto {
                 existing_user.shared_journal_activity_email_mode,
             ),
             received_message_email_mode: Some(existing_user.received_message_email_mode),
+            shared_journal_weekly_digest_enabled: Some(
+                existing_user.shared_journal_weekly_digest_enabled,
+            ),
             mentor_feedback_email_enabled: Some(existing_user.mentor_feedback_email_enabled),
             ai_features_enabled: Some(existing_user.ai_features_enabled),
             ai_features_enabled_by_admin: Some(existing_user.ai_features_enabled_by_admin),
@@ -594,6 +604,11 @@ impl NewUser {
         }
         if payload.received_message_email_mode.is_none() {
             payload.received_message_email_mode = Some(EmailNotificationMode::Instant);
+        }
+        if payload.shared_journal_weekly_digest_enabled.is_none() {
+            payload.shared_journal_weekly_digest_enabled = Some(
+                payload.shared_journal_activity_email_mode != Some(EmailNotificationMode::Off),
+            );
         }
         if payload.mentor_feedback_email_enabled.is_none() {
             payload.mentor_feedback_email_enabled = Some(true);
@@ -1339,6 +1354,7 @@ mod tests {
             home_focus_view: HomeFocusView::Follows,
             shared_journal_activity_email_mode: EmailNotificationMode::Instant,
             received_message_email_mode: EmailNotificationMode::Instant,
+            shared_journal_weekly_digest_enabled: true,
             mentor_feedback_email_enabled: true,
             ai_features_enabled: true,
             ai_features_enabled_by_admin: true,
@@ -1376,6 +1392,7 @@ mod tests {
             home_focus_view: None,
             shared_journal_activity_email_mode: None,
             received_message_email_mode: None,
+            shared_journal_weekly_digest_enabled: None,
             mentor_feedback_email_enabled: None,
             ai_features_enabled: None,
             ai_features_enabled_by_admin: None,

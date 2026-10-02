@@ -12,24 +12,49 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::Journal,
+    notification::successfully_pushed_publication_ids,
     post::{DigestVisiblePost, Post},
     trace_mention::TraceMention,
     user::{EmailNotificationMode, User, UserPrincipalType},
+    user_post_state::UserPostState,
 };
 use crate::environment;
 use crate::schema::{notification_digests, outbound_emails, users};
 
 use super::{
-    shared_journal_daily_digest_email, NewOutboundEmail, OutboundEmail, OutboundEmailProvider,
-    SharedJournalDigestEmailItem,
+    shared_journal_daily_digest_email, shared_journal_weekly_digest_email, NewOutboundEmail,
+    OutboundEmail, OutboundEmailProvider, SharedJournalDigestEmailItem,
 };
 
 const SHARED_JOURNAL_DAILY_DIGEST_SEND_HOUR_LOCAL: u32 = 10;
 const SHARED_JOURNAL_DAILY_DIGEST_REASON: &str = "SHARED_JOURNAL_ACTIVITY_DAILY_DIGEST";
 const SHARED_JOURNAL_DAILY_DIGEST_KIND: &str = "SHARED_JOURNAL_ACTIVITY_DAILY";
+const SHARED_JOURNAL_WEEKLY_DIGEST_REASON: &str = "SHARED_JOURNAL_ACTIVITY_WEEKLY_DIGEST";
+const SHARED_JOURNAL_WEEKLY_DIGEST_KIND: &str = "SHARED_JOURNAL_ACTIVITY_WEEKLY";
+
+fn shared_journal_weekly_digest_local_date(now_utc: DateTime<Utc>, tz: Tz) -> Option<NaiveDate> {
+    let local_now = now_utc.with_timezone(&tz);
+    if local_now.weekday() == chrono::Weekday::Mon
+        && local_now.hour() < SHARED_JOURNAL_DAILY_DIGEST_SEND_HOUR_LOCAL
+    {
+        return None;
+    }
+    let monday =
+        local_now.date_naive() - Duration::days(local_now.weekday().num_days_from_monday() as i64);
+    Some(monday - Duration::days(7))
+}
+
 const NOTIFICATION_DIGEST_STATUS_EMPTY: &str = "EMPTY";
 const NOTIFICATION_DIGEST_STATUS_ENQUEUED: &str = "ENQUEUED";
 const SHARED_JOURNAL_DIGEST_MAX_ITEMS: usize = 8;
+
+fn include_publication_in_digest(weekly: bool, seen: bool, pushed: bool, mentioned: bool) -> bool {
+    if weekly {
+        !seen
+    } else {
+        !pushed && !mentioned
+    }
+}
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::notification_digests)]
@@ -161,7 +186,13 @@ fn find_shared_journal_daily_digest_recipients(pool: &DbPool) -> Result<Vec<User
     let mut conn = pool.get()?;
     let users = users::table
         .filter(users::principal_type.eq(UserPrincipalType::Human))
-        .filter(users::shared_journal_activity_email_mode.eq(EmailNotificationMode::DailyDigest))
+        .filter(
+            users::shared_journal_activity_email_mode
+                .eq(EmailNotificationMode::DailyDigest)
+                .or(users::shared_journal_weekly_digest_enabled
+                    .eq(true)
+                    .and(users::shared_journal_activity_email_mode.ne(EmailNotificationMode::Off))),
+        )
         .select(User::as_select())
         .load::<User>(&mut conn)?;
 
@@ -175,6 +206,7 @@ fn create_empty_digest_row(
     recipient_user_id: Uuid,
     local_date: NaiveDate,
     timezone: &str,
+    digest_kind: &str,
     pool: &DbPool,
 ) -> Result<Option<Uuid>, PpdcError> {
     let mut conn = pool.get()?;
@@ -182,7 +214,7 @@ fn create_empty_digest_row(
         .values(&NewNotificationDigest {
             id: Uuid::new_v4(),
             recipient_user_id,
-            digest_kind: SHARED_JOURNAL_DAILY_DIGEST_KIND.to_string(),
+            digest_kind: digest_kind.to_string(),
             local_date,
             timezone: timezone.to_string(),
             status: NOTIFICATION_DIGEST_STATUS_EMPTY.to_string(),
@@ -205,6 +237,8 @@ fn create_enqueued_digest_row_with_email(
     subject: String,
     text_body: Option<String>,
     html_body: Option<String>,
+    digest_kind: &str,
+    email_reason: &str,
     pool: &DbPool,
 ) -> Result<Option<Uuid>, PpdcError> {
     let mut conn = pool.get()?;
@@ -214,7 +248,7 @@ fn create_enqueued_digest_row_with_email(
         let outbound_email = diesel::insert_into(outbound_emails::table)
             .values(&NewOutboundEmail::new(
                 Some(recipient.id),
-                SHARED_JOURNAL_DAILY_DIGEST_REASON.to_string(),
+                email_reason.to_string(),
                 None,
                 None,
                 recipient.email.clone(),
@@ -232,7 +266,7 @@ fn create_enqueued_digest_row_with_email(
             .values(&NewNotificationDigest {
                 id: Uuid::new_v4(),
                 recipient_user_id: recipient.id,
-                digest_kind: SHARED_JOURNAL_DAILY_DIGEST_KIND.to_string(),
+                digest_kind: digest_kind.to_string(),
                 local_date,
                 timezone: timezone.to_string(),
                 status: NOTIFICATION_DIGEST_STATUS_ENQUEUED.to_string(),
@@ -328,14 +362,45 @@ fn build_shared_journal_digest_items(
     Ok(items)
 }
 
-fn create_shared_journal_daily_digest_for_user(
+fn create_shared_journal_digest_for_user(
     recipient: &User,
     local_date: NaiveDate,
     timezone: Tz,
+    weekly: bool,
     pool: &DbPool,
 ) -> Result<DigestCreationResult, PpdcError> {
     let timezone_code = timezone.to_string();
-    let (period_start, period_end) = local_day_bounds_utc(local_date, timezone)?;
+    let (period_start, mut period_end) = local_day_bounds_utc(local_date, timezone)?;
+    let digest_kind = if weekly {
+        SHARED_JOURNAL_WEEKLY_DIGEST_KIND
+    } else {
+        SHARED_JOURNAL_DAILY_DIGEST_KIND
+    };
+    let email_reason = if weekly {
+        SHARED_JOURNAL_WEEKLY_DIGEST_REASON
+    } else {
+        SHARED_JOURNAL_DAILY_DIGEST_REASON
+    };
+    {
+        let mut conn = pool.get()?;
+        let exists = notification_digests::table
+            .filter(notification_digests::recipient_user_id.eq(recipient.id))
+            .filter(notification_digests::digest_kind.eq(digest_kind))
+            .filter(notification_digests::local_date.eq(local_date))
+            .filter(notification_digests::timezone.eq(&timezone_code))
+            .select(notification_digests::id)
+            .first::<Uuid>(&mut conn)
+            .optional()?
+            .is_some();
+        if exists {
+            return Ok(DigestCreationResult::AlreadyExists);
+        }
+    }
+    if weekly {
+        period_end = local_midnight(timezone, local_date + Duration::days(7))?
+            .with_timezone(&Utc)
+            .naive_utc();
+    }
     let visible_posts = Post::find_visible_shared_published_for_user_in_period(
         recipient.id,
         period_start,
@@ -348,20 +413,51 @@ fn create_shared_journal_daily_digest_for_user(
         .collect::<Vec<_>>();
     let mentioned_trace_ids =
         TraceMention::find_active_trace_ids_for_user(recipient.id, &trace_ids, pool)?;
+    let pushed_ids = if weekly {
+        HashSet::new()
+    } else {
+        successfully_pushed_publication_ids(
+            recipient.id,
+            &visible_posts
+                .iter()
+                .map(|item| item.post.id)
+                .collect::<Vec<_>>(),
+            pool,
+        )?
+    };
+    let seen_trace_ids = if weekly {
+        UserPostState::find_last_seen_at_by_user_and_trace_ids(recipient.id, &trace_ids, pool)?
+            .into_keys()
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
     let visible_posts = visible_posts
         .into_iter()
         .filter(|visible_post| {
-            visible_post
-                .post
-                .source_trace_id
-                .map(|trace_id| !mentioned_trace_ids.contains(&trace_id))
-                .unwrap_or(true)
+            let trace_id = visible_post.post.source_trace_id;
+            include_publication_in_digest(
+                weekly,
+                trace_id
+                    .map(|id| seen_trace_ids.contains(&id))
+                    .unwrap_or(false),
+                pushed_ids.contains(&visible_post.post.id),
+                trace_id
+                    .map(|id| mentioned_trace_ids.contains(&id))
+                    .unwrap_or(false),
+            )
         })
         .collect::<Vec<_>>();
 
     if visible_posts.is_empty() {
         return Ok(
-            match create_empty_digest_row(recipient.id, local_date, &timezone_code, pool)? {
+            match create_empty_digest_row(
+                recipient.id,
+                local_date,
+                &timezone_code,
+                digest_kind,
+                pool,
+            )? {
                 Some(digest_id) => DigestCreationResult::Empty(digest_id),
                 None => DigestCreationResult::AlreadyExists,
             },
@@ -370,11 +466,23 @@ fn create_shared_journal_daily_digest_for_user(
 
     let items =
         build_shared_journal_digest_items(recipient, local_date, timezone, visible_posts, pool)?;
-    let template = shared_journal_daily_digest_email(
-        &recipient.display_name(),
-        &french_day_label(local_date),
-        items,
-    );
+    let template = if weekly {
+        shared_journal_weekly_digest_email(
+            &recipient.display_name(),
+            &format!(
+                "du {} au {}",
+                french_day_label(local_date),
+                french_day_label(local_date + Duration::days(6))
+            ),
+            items,
+        )
+    } else {
+        shared_journal_daily_digest_email(
+            &recipient.display_name(),
+            &french_day_label(local_date),
+            items,
+        )
+    };
 
     Ok(
         match create_enqueued_digest_row_with_email(
@@ -384,6 +492,8 @@ fn create_shared_journal_daily_digest_for_user(
             template.subject,
             template.text_body,
             template.html_body,
+            digest_kind,
+            email_reason,
             pool,
         )? {
             Some(digest_id) => DigestCreationResult::Enqueued(digest_id),
@@ -392,7 +502,7 @@ fn create_shared_journal_daily_digest_for_user(
     )
 }
 
-/// Generates the daily shared-journal digest emails for users who opted in and already reached the local send hour.
+/// Generates daily fallbacks and the latest completed weekly recap using the existing cron.
 pub fn generate_shared_journal_daily_digests(
     pool: &DbPool,
 ) -> Result<SharedJournalDailyDigestsGenerationResponse, PpdcError> {
@@ -406,27 +516,49 @@ pub fn generate_shared_journal_daily_digests(
 
     for recipient in recipients {
         let timezone = parse_user_timezone_or_utc(&recipient);
-        let Some(local_date) = shared_journal_daily_digest_local_date(now, timezone) else {
-            skipped.push(SharedJournalDigestGenerationSkip {
-                user_id: recipient.id,
-                reason: "not_due_yet".to_string(),
-            });
-            continue;
-        };
-
-        match create_shared_journal_daily_digest_for_user(&recipient, local_date, timezone, pool) {
-            Ok(DigestCreationResult::Empty(digest_id)) => empty_digest_ids.push(digest_id),
-            Ok(DigestCreationResult::Enqueued(digest_id)) => enqueued_digest_ids.push(digest_id),
-            Ok(DigestCreationResult::AlreadyExists) => {
+        for weekly in [false, true] {
+            if weekly {
+                if !recipient.shared_journal_weekly_digest_enabled
+                    || recipient.shared_journal_activity_email_mode == EmailNotificationMode::Off
+                {
+                    continue;
+                }
+            } else if recipient.shared_journal_activity_email_mode
+                != EmailNotificationMode::DailyDigest
+            {
+                continue;
+            }
+            let due_date = if weekly {
+                shared_journal_weekly_digest_local_date(now, timezone)
+            } else {
+                shared_journal_daily_digest_local_date(now, timezone)
+            };
+            let Some(local_date) = due_date else {
                 skipped.push(SharedJournalDigestGenerationSkip {
                     user_id: recipient.id,
-                    reason: "already_generated".to_string(),
+                    reason: "not_due_yet".to_string(),
                 });
+                continue;
+            };
+
+            match create_shared_journal_digest_for_user(
+                &recipient, local_date, timezone, weekly, pool,
+            ) {
+                Ok(DigestCreationResult::Empty(digest_id)) => empty_digest_ids.push(digest_id),
+                Ok(DigestCreationResult::Enqueued(digest_id)) => {
+                    enqueued_digest_ids.push(digest_id)
+                }
+                Ok(DigestCreationResult::AlreadyExists) => {
+                    skipped.push(SharedJournalDigestGenerationSkip {
+                        user_id: recipient.id,
+                        reason: "already_generated".to_string(),
+                    });
+                }
+                Err(error) => failed.push(SharedJournalDigestGenerationError {
+                    user_id: recipient.id,
+                    message: error.message,
+                }),
             }
-            Err(error) => failed.push(SharedJournalDigestGenerationError {
-                user_id: recipient.id,
-                message: error.message,
-            }),
         }
     }
 
@@ -454,4 +586,52 @@ pub async fn post_generate_shared_journal_daily_digests_route(
     }
 
     Ok(Json(generate_shared_journal_daily_digests(&pool)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_fallback_excludes_successful_pushes_and_separate_mentions() {
+        assert!(include_publication_in_digest(false, false, false, false));
+        assert!(!include_publication_in_digest(false, false, true, false));
+        assert!(!include_publication_in_digest(false, false, false, true));
+    }
+
+    #[test]
+    fn weekly_catchup_includes_pushed_and_mentioned_but_only_unread_items() {
+        assert!(include_publication_in_digest(true, false, true, true));
+        assert!(!include_publication_in_digest(true, true, true, true));
+        assert!(!include_publication_in_digest(true, true, false, false));
+    }
+
+    #[test]
+    fn weekly_schedule_uses_local_monday_ten_and_catches_up_after_missed_run() {
+        let tz = chrono_tz::Europe::Paris;
+        let before = DateTime::parse_from_rfc3339("2026-10-05T07:59:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(shared_journal_weekly_digest_local_date(before, tz), None);
+        let due = before + Duration::minutes(1);
+        let week_start = NaiveDate::from_ymd_opt(2026, 9, 28).unwrap();
+        assert_eq!(
+            shared_journal_weekly_digest_local_date(due, tz),
+            Some(week_start)
+        );
+        assert_eq!(
+            shared_journal_weekly_digest_local_date(due + Duration::days(2), tz),
+            Some(week_start)
+        );
+    }
+
+    #[test]
+    fn weekly_bounds_follow_calendar_midnight_across_dst() {
+        let tz = chrono_tz::Europe::Paris;
+        let start = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let elapsed = local_midnight(tz, start + Duration::days(7))
+            .unwrap()
+            .signed_duration_since(local_midnight(tz, start).unwrap());
+        assert_eq!(elapsed.num_hours(), 169);
+    }
 }

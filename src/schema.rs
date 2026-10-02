@@ -451,6 +451,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    publication_push_deliveries (post_id, recipient_user_id) {
+        post_id -> Uuid,
+        recipient_user_id -> Uuid,
+        publishing_date -> Nullable<Timestamp>,
+        sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     outbound_emails (id) {
         id -> Uuid,
         recipient_user_id -> Nullable<Uuid>,
@@ -805,6 +814,7 @@ diesel::table! {
         shared_journal_activity_email_mode -> Text,
         received_message_email_mode -> Text,
         mentor_feedback_email_enabled -> Bool,
+        shared_journal_weekly_digest_enabled -> Bool,
         onboarding_version -> Int4,
         ai_features_enabled -> Bool,
         ai_features_enabled_by_admin -> Bool,
@@ -862,6 +872,8 @@ diesel::joinable!(message_reactions -> messages (message_id));
 diesel::joinable!(message_reactions -> users (user_id));
 diesel::joinable!(notification_digests -> outbound_emails (outbound_email_id));
 diesel::joinable!(notification_digests -> users (recipient_user_id));
+diesel::joinable!(publication_push_deliveries -> posts (post_id));
+diesel::joinable!(publication_push_deliveries -> users (recipient_user_id));
 diesel::joinable!(outbound_emails -> users (recipient_user_id));
 diesel::joinable!(post_grants -> posts (post_id));
 diesel::joinable!(posts -> albums (source_album_id));
@@ -925,6 +937,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     messages,
     message_reactions,
     notification_digests,
+    publication_push_deliveries,
     outbound_emails,
     post_grants,
     post_relations,

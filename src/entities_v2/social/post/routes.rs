@@ -180,7 +180,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
     Ok(email_ids)
 }
 
-fn dispatch_post_published_notification_emails(
+pub(crate) fn dispatch_post_published_notification_emails(
     post: &Post,
     excluded_recipient_ids: &[Uuid],
     pool: &DbPool,
@@ -214,7 +214,6 @@ pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) 
         mentioned_user_ids.clone(),
         pool.clone(),
     );
-    dispatch_post_published_notification_emails(post, &mentioned_user_ids, pool);
     dispatch_trace_mention_notifications(post, &mentioned_user_ids, pool);
 }
 

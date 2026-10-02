@@ -207,10 +207,27 @@ pub fn trace_mention_email(
     })
 }
 
+pub fn shared_journal_weekly_digest_email(
+    recipient_display_name: &str,
+    period_label: &str,
+    items: Vec<SharedJournalDigestEmailItem>,
+) -> EmailTemplate {
+    shared_journal_digest_email(recipient_display_name, period_label, items, true)
+}
+
 pub fn shared_journal_daily_digest_email(
     recipient_display_name: &str,
     digest_date_label: &str,
     items: Vec<SharedJournalDigestEmailItem>,
+) -> EmailTemplate {
+    shared_journal_digest_email(recipient_display_name, digest_date_label, items, false)
+}
+
+fn shared_journal_digest_email(
+    recipient_display_name: &str,
+    digest_date_label: &str,
+    items: Vec<SharedJournalDigestEmailItem>,
+    weekly: bool,
 ) -> EmailTemplate {
     let owners = distinct_owner_display_names(&items);
     let owners_preview = if owners.len() > 2 {
@@ -219,7 +236,9 @@ pub fn shared_journal_daily_digest_email(
         join_owner_display_names(&owners)
     };
     let owners_sentence = join_owner_display_names(&owners);
-    let subject = if owners.len() == 1 {
+    let subject = if weekly {
+        "Votre semaine de lectures sur hupo".to_string()
+    } else if owners.len() == 1 {
         format!("{} a écrit dans son journal", owners_preview)
     } else {
         format!("{} ont écrit dans leur journal", owners_preview)
@@ -229,10 +248,17 @@ pub fn shared_journal_daily_digest_email(
     } else {
         format!("{} ont écrit dans leur journal.", owners_sentence)
     };
-    let summary_line = format!(
-        "Voici un récapitulatif des traces écrites par vos amis le {}. Bonne lecture !",
-        digest_date_label
-    );
+    let summary_line = if weekly {
+        format!(
+            "Voici les traces de vos amis que vous n’avez pas encore lues, {}. Bonne lecture !",
+            digest_date_label
+        )
+    } else {
+        format!(
+            "Voici un récapitulatif des traces écrites par vos amis le {}. Bonne lecture !",
+            digest_date_label
+        )
+    };
     let items_text = items
         .iter()
         .map(|item| {

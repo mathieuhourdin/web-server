@@ -79,6 +79,7 @@ pub struct PatchUserDto {
     pub home_focus_view: Option<HomeFocusView>,
     pub shared_journal_activity_email_mode: Option<EmailNotificationMode>,
     pub received_message_email_mode: Option<EmailNotificationMode>,
+    pub shared_journal_weekly_digest_enabled: Option<bool>,
     pub mentor_feedback_email_enabled: Option<bool>,
     pub ai_features_enabled: Option<bool>,
     pub onboarding_version: Option<i32>,
@@ -830,6 +831,7 @@ pub async fn post_user(
         home_focus_view: None,
         shared_journal_activity_email_mode: None,
         received_message_email_mode: None,
+        shared_journal_weekly_digest_enabled: None,
         mentor_feedback_email_enabled: None,
         ai_features_enabled: None,
         ai_features_enabled_by_admin: None,
@@ -988,6 +990,7 @@ pub async fn patch_user_route(
              ai_features_enabled = COALESCE($28, ai_features_enabled),
              onboarding_version = COALESCE($29, onboarding_version),
              external_captures_default_journal_id = CASE WHEN $30 THEN $31 ELSE external_captures_default_journal_id END,
+             shared_journal_weekly_digest_enabled = COALESCE($32, shared_journal_weekly_digest_enabled),
              updated_at = NOW()
          WHERE id = $1
          ",
@@ -1035,6 +1038,7 @@ pub async fn patch_user_route(
     .bind::<Nullable<Int4>, _>(payload.onboarding_version)
     .bind::<Bool, _>(payload.external_captures_default_journal_id.is_some())
     .bind::<Nullable<SqlUuid>, _>(payload.external_captures_default_journal_id.flatten())
+    .bind::<Nullable<Bool>, _>(payload.shared_journal_weekly_digest_enabled)
     .execute(&mut conn)?;
     let updated_user = User::find(&id, &pool)?;
 
