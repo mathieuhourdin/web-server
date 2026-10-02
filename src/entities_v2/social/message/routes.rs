@@ -240,8 +240,12 @@ pub(crate) fn is_service_mentor(recipient: &User, pool: &DbPool) -> Result<bool,
     Ok(recipient.has_role(UserRole::Mentor, pool)?)
 }
 
-fn find_published_trace_post(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
-    let Some(post) = Post::find_for_trace(trace_id, pool)? else {
+fn find_published_trace_post(
+    trace_id: Uuid,
+    viewer_id: Uuid,
+    pool: &DbPool,
+) -> Result<Option<Post>, PpdcError> {
+    let Some(post) = Post::find_readable_for_trace(trace_id, viewer_id, pool)? else {
         return Ok(None);
     };
     if post.status != PostStatus::Published {
@@ -583,7 +587,8 @@ pub async fn post_message_route(
                     "You no longer have access to this shared trace".to_string(),
                 ));
             }
-            normalized_post_id = find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+            normalized_post_id =
+                find_published_trace_post(trace_id, sender_user_id, &pool)?.map(|post| post.id);
         } else if recipient_is_service_mentor
             || matches!(
                 message_type,
@@ -607,7 +612,7 @@ pub async fn post_message_route(
             }
             if normalized_post_id.is_none() {
                 normalized_post_id =
-                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+                    find_published_trace_post(trace_id, sender_user_id, &pool)?.map(|post| post.id);
             }
         } else if trace.user_id == payload.recipient_user_id {
             if !trace.user_can_read(sender_user_id, &pool)? {
@@ -619,7 +624,7 @@ pub async fn post_message_route(
             }
             if normalized_post_id.is_none() {
                 normalized_post_id =
-                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+                    find_published_trace_post(trace_id, sender_user_id, &pool)?.map(|post| post.id);
             }
         } else {
             return Err(PpdcError::new(
@@ -925,7 +930,8 @@ pub async fn put_message_route(
                     "You no longer have access to this shared trace".to_string(),
                 ));
             }
-            normalized_post_id = find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+            normalized_post_id =
+                find_published_trace_post(trace_id, sender_user_id, &pool)?.map(|post| post.id);
         } else if recipient_is_service_mentor
             || matches!(
                 effective_message_type,
@@ -949,7 +955,7 @@ pub async fn put_message_route(
             }
             if normalized_post_id.is_none() {
                 normalized_post_id =
-                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+                    find_published_trace_post(trace_id, sender_user_id, &pool)?.map(|post| post.id);
             }
         } else if trace.user_id == payload.recipient_user_id {
             if !trace.user_can_read(sender_user_id, &pool)? {
@@ -961,7 +967,7 @@ pub async fn put_message_route(
             }
             if normalized_post_id.is_none() {
                 normalized_post_id =
-                    find_published_trace_post(trace_id, &pool)?.map(|post| post.id);
+                    find_published_trace_post(trace_id, sender_user_id, &pool)?.map(|post| post.id);
             }
         } else {
             return Err(PpdcError::new(

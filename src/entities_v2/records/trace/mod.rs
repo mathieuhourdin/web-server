@@ -1,7 +1,6 @@
 pub mod enums;
 pub mod heatmap;
 pub mod hydrate;
-pub mod linked;
 pub mod llm_qualify;
 pub mod model;
 pub mod persist;
@@ -15,16 +14,15 @@ pub use model::{
     TraceSharingSensitivity, TraceStatus, TraceType, UpdateTraceDto,
 };
 pub use routes::{
-    delete_linked_trace_route, delete_trace_attachment_route, delete_trace_source_asset_route,
-    get_all_traces_for_user_route, get_journal_draft_route, get_me_traces_route,
-    get_trace_analysis_route, get_trace_attachments_route, get_trace_complements_route,
-    get_trace_conversations_route, get_trace_drafts_route, get_trace_messages_route,
-    get_trace_route, get_trace_seen_by_route, get_trace_source_assets_route,
-    get_traces_for_journal_route, patch_journal_draft_route, patch_trace_route,
-    post_finalized_journal_trace_route, post_journal_draft_route, post_trace_asset_route,
-    post_trace_attachment_route, post_trace_complement_route, post_trace_document_attachment_route,
-    post_trace_extend_timeout_route, post_trace_message_route, post_trace_source_asset_route,
-    put_linked_trace_route, put_trace_route, put_trace_seen_route,
+    delete_trace_attachment_route, delete_trace_source_asset_route, get_all_traces_for_user_route,
+    get_journal_draft_route, get_me_traces_route, get_trace_analysis_route,
+    get_trace_attachments_route, get_trace_complements_route, get_trace_conversations_route,
+    get_trace_drafts_route, get_trace_messages_route, get_trace_route, get_trace_seen_by_route,
+    get_trace_source_assets_route, get_traces_for_journal_route, patch_journal_draft_route,
+    patch_trace_route, post_finalized_journal_trace_route, post_journal_draft_route,
+    post_trace_asset_route, post_trace_attachment_route, post_trace_complement_route,
+    post_trace_document_attachment_route, post_trace_extend_timeout_route,
+    post_trace_message_route, post_trace_source_asset_route, put_trace_route, put_trace_seen_route,
     put_trace_source_assets_order_route,
 };
 pub use transcription::{

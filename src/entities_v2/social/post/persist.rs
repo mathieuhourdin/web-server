@@ -103,7 +103,7 @@ impl NewPost {
 /// Callers pass `permits_published_post` computed from their own status enum
 /// (see `*Status::permits_published_post`). The cascade is idempotent and must
 /// run inside the caller's transaction so it commits atomically with the source
-/// status change. Post↔source is 1:1, so at most one post is affected.
+/// status change. Every publication of a trace is affected, regardless of publisher.
 pub fn enforce_publication_invariant_for_source(
     source: PostSourceRef,
     permits_published_post: bool,

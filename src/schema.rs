@@ -496,6 +496,7 @@ diesel::table! {
         status -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        source_grant_id -> Nullable<Uuid>,
     }
 }
 
@@ -527,6 +528,7 @@ diesel::table! {
         audience_role -> Text,
         source_document_id -> Nullable<Uuid>,
         source_album_id -> Nullable<Uuid>,
+        audience_source_post_id -> Nullable<Uuid>,
     }
 }
 
@@ -671,7 +673,6 @@ diesel::table! {
         timeout_start_at -> Nullable<Timestamptz>,
         sharing_sensitivity -> Text,
         derived_from_trace_id -> Nullable<Uuid>,
-        linked_source_trace_id -> Nullable<Uuid>,
         parent_trace_id -> Nullable<Uuid>,
         complement_audience_mode -> Nullable<Text>,
         is_blank -> Bool,

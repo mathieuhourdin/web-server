@@ -36,7 +36,7 @@ pub fn find_feed_items_paginated(
     limit: i64,
     pool: &DbPool,
 ) -> Result<(Vec<FeedItem>, i64), PpdcError> {
-    let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+    let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
     if visible_post_ids.is_empty() {
         return Ok((vec![], 0));
     }
@@ -263,7 +263,7 @@ pub fn count_recent_unread_feed_items(
     published_since: NaiveDateTime,
     pool: &DbPool,
 ) -> Result<i64, PpdcError> {
-    let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+    let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
     if visible_post_ids.is_empty() {
         return Ok(0);
     }

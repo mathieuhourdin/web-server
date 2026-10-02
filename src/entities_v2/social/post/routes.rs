@@ -205,8 +205,17 @@ pub(crate) fn dispatch_post_published_notification_emails(
 }
 
 pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) {
+    let trace = post
+        .source_trace_id
+        .and_then(|id| Trace::find_full_trace(id, pool).ok());
+    // Mentions belong to authored content, not each subsequent publication.
     let mentioned_user_ids = post
         .source_trace_id
+        .filter(|_| {
+            trace
+                .as_ref()
+                .is_some_and(|trace| trace.user_id == post.user_id)
+        })
         .and_then(|trace_id| TraceMention::find_active_user_ids_for_trace(trace_id, pool).ok())
         .unwrap_or_default();
     notification::spawn_post_published_push_notification(
@@ -214,7 +223,12 @@ pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) 
         mentioned_user_ids.clone(),
         pool.clone(),
     );
-    dispatch_trace_mention_notifications(post, &mentioned_user_ids, pool);
+    if trace
+        .as_ref()
+        .is_some_and(|trace| trace.user_id == post.user_id)
+    {
+        dispatch_trace_mention_notifications(post, &mentioned_user_ids, pool);
+    }
 }
 
 fn enqueue_trace_mention_notification_emails(
@@ -545,11 +559,11 @@ pub async fn get_trace_post_route(
 ) -> Result<Json<Option<Post>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
-    if trace.user_id != user_id {
+    let post = Post::find_for_trace_and_publisher(trace_id, user_id, &pool)?;
+    if post.is_none() && !trace.user_can_publish(user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
-
-    Ok(Json(Post::find_for_trace(trace_id, &pool)?))
+    Ok(Json(post))
 }
 
 #[debug_handler]
@@ -604,35 +618,16 @@ pub async fn put_trace_post_route(
 ) -> Result<Json<Post>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
-    if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
-    if trace.trace_type == TraceType::TraceComplement {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Complement posts are created with the complement and their audience is managed through post grants"
-                .to_string(),
-        ));
-    }
-
-    let existing_post = Post::find_for_trace(trace_id, &pool)?;
+    let existing_post = Post::find_for_trace_and_publisher(trace_id, user_id, &pool)?;
     let requested_status = payload
         .status
         .or_else(|| existing_post.as_ref().map(|post| post.status))
         .unwrap_or(PostStatus::Draft);
-    if trace.trace_type == TraceType::LinkedTrace {
-        let reshare_is_active =
-            crate::entities_v2::trace::linked::LinkedTraceResponse::reshare_is_active(
-                trace.id, user_id, user_id, &pool,
-            )?;
-        // A stale post can always be archived after the original author revokes
-        // permission. Creating or (re)publishing it requires an active delegation.
-        if !reshare_is_active
-            && (existing_post.is_none() || requested_status != PostStatus::Archived)
-        {
-            return Err(PpdcError::unauthorized());
-        }
+    // Revoked publishers may still archive their own publication.
+    if !(requested_status == PostStatus::Archived && existing_post.is_some())
+        && !trace.user_can_publish(user_id, &pool)?
+    {
+        return Err(PpdcError::unauthorized());
     }
 
     let mut post = if let Some(existing_post) = existing_post {
@@ -674,15 +669,13 @@ pub async fn put_trace_post_route(
     if let Some(audience_role) = payload.audience_role {
         post.audience_role = audience_role;
     }
+    if trace.trace_type == TraceType::TraceComplement {
+        post.audience_role = PostAudienceRole::Restricted;
+    }
     if post.status == PostStatus::Published {
-        if trace.trace_type == TraceType::LinkedTrace {
-            if !crate::entities_v2::trace::linked::LinkedTraceResponse::reshare_is_active(
-                trace.id, user_id, user_id, &pool,
-            )? {
-                return Err(PpdcError::unauthorized());
-            }
-        } else {
-            ensure_source_permits_published_post(trace.status.permits_published_post())?;
+        ensure_source_permits_published_post(trace.status.permits_published_post())?;
+        if !trace.user_can_publish(user_id, &pool)? {
+            return Err(PpdcError::unauthorized());
         }
     }
     if previous_status != PostStatus::Published
@@ -707,22 +700,18 @@ pub async fn delete_trace_post_route(
 ) -> Result<Json<Post>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(trace_id, &pool)?;
-    if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
-    if trace.status != TraceStatus::Draft && trace.trace_type != TraceType::LinkedTrace {
+    if trace.user_id == user_id && trace.status != TraceStatus::Draft {
         return Err(PpdcError::new(
             400,
             ErrorType::ApiError,
-            "Only draft traces can have their staged post deleted".to_string(),
+            "Only draft author traces can have their staged post deleted".to_string(),
         ));
     }
-
-    let post = Post::find_for_trace(trace_id, &pool)?.ok_or_else(|| {
+    let post = Post::find_for_trace_and_publisher(trace_id, user_id, &pool)?.ok_or_else(|| {
         PpdcError::new(
             404,
             ErrorType::ApiError,
-            "Trace has no staged post".to_string(),
+            "Trace has no post for this publisher".to_string(),
         )
     })?;
     let deleted_post = post.delete_draft_trace_post(&pool)?;

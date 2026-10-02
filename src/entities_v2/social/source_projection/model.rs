@@ -42,7 +42,7 @@ impl SourceProjection {
             source_kind: SourceProjectionKind::Trace,
             source_id: trace.id,
             original_source_id: None,
-            original_author_user_id: None,
+            original_author_user_id: Some(trace.user_id),
             journal_id: trace.journal_id,
             title: trace.title.clone(),
             subtitle: trace.subtitle.clone(),

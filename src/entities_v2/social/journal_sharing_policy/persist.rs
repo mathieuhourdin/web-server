@@ -771,10 +771,11 @@ impl JournalSharingPolicy {
         };
 
         let trace = Trace::find_full_trace(trace_id, pool)?;
-        if !matches!(
-            trace.trace_type,
-            TraceType::UserTrace | TraceType::LinkedTrace
-        ) || trace.status == TraceStatus::Archived
+        if post.user_id != trace.user_id {
+            return Ok(());
+        }
+        if !matches!(trace.trace_type, TraceType::UserTrace)
+            || trace.status == TraceStatus::Archived
         {
             return Ok(());
         }

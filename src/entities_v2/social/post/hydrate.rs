@@ -299,7 +299,7 @@ impl Post {
         pool: &DbPool,
     ) -> Result<(Vec<FeedPostResponse>, i64), PpdcError> {
         let mut conn = pool.get()?;
-        let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut query = posts::table
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
@@ -437,6 +437,7 @@ impl Post {
 
         let total = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
@@ -448,6 +449,7 @@ impl Post {
 
         let rows = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
@@ -475,6 +477,7 @@ impl Post {
 
         let matching_post_id = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
@@ -495,12 +498,14 @@ impl Post {
         period_end: NaiveDateTime,
         pool: &DbPool,
     ) -> Result<Vec<DigestVisiblePost>, PpdcError> {
+        let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
         let mut conn = pool.get()?;
 
         let rows = posts::table
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .inner_join(journals::table.on(traces::journal_id.eq(journals::id.nullable())))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(posts::id.eq_any(visible_post_ids))
             .filter(posts::publishing_date.is_not_null())
             .filter(posts::publishing_date.ge(Some(period_start)))
             .filter(posts::publishing_date.lt(Some(period_end)))
@@ -525,21 +530,33 @@ impl Post {
             .then_order_by(posts::created_at.desc())
             .load::<DigestVisiblePostTuple>(&mut conn)?;
 
-        let mut visible_posts = Vec::new();
-        for row in rows {
-            let visible_post = tuple_to_digest_visible_post(row);
-            if PostGrant::user_can_read_post(&visible_post.post, viewer_user_id, pool)? {
-                visible_posts.push(visible_post);
-            }
-        }
+        drop(conn);
+        let visible_posts = rows.into_iter().map(tuple_to_digest_visible_post).collect();
 
         hydrate_source_projection_for_digest_visible_posts(visible_posts, pool)
     }
 
-    pub fn find_for_trace(trace_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
+    pub fn find_author_post_for_trace(
+        trace_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Post>, PpdcError> {
+        // Author-originated events are anchored to the author's own publication.
+        let author_id = traces::table
+            .find(trace_id)
+            .select(traces::user_id)
+            .first::<Uuid>(&mut pool.get()?)?;
+        Self::find_for_trace_and_publisher(trace_id, author_id, pool)
+    }
+
+    pub fn find_for_trace_and_publisher(
+        trace_id: Uuid,
+        publisher_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
             .filter(posts::source_trace_id.eq(Some(trace_id)))
+            .filter(posts::user_id.eq(publisher_id))
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
             .optional()?;
@@ -548,6 +565,42 @@ impl Post {
             Some(post) => Ok(Some(hydrate_source_projection_for_post(post, pool)?)),
             None => Ok(None),
         }
+    }
+
+    /// Canonical read context: readable author publication first, then newest
+    /// readable secondary publication. Never use this helper for mutations.
+    pub fn find_readable_for_trace(
+        trace_id: Uuid,
+        viewer_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Option<Post>, PpdcError> {
+        let mut conn = pool.get()?;
+        let row = posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::source_trace_id.eq(Some(trace_id)))
+            .filter(posts::status.eq(PostStatus::Published.to_db()))
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+                "trace_publication_readable(posts.id, '{}')",
+                viewer_id
+            )))
+            .order(
+                diesel::dsl::sql::<diesel::sql_types::Bool>("posts.user_id = traces.user_id")
+                    .desc(),
+            )
+            .then_order_by(
+                diesel::dsl::sql::<diesel::sql_types::Timestamp>(
+                    "COALESCE(posts.publishing_date, posts.created_at)",
+                )
+                .desc(),
+            )
+            .then_order_by(posts::created_at.desc())
+            .then_order_by(posts::id.desc())
+            .select(select_post_columns())
+            .first::<PostTuple>(&mut conn)
+            .optional()?;
+        drop(conn);
+        row.map(|row| hydrate_source_projection_for_post(tuple_to_post(row), pool))
+            .transpose()
     }
 
     pub fn find_for_document(document_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {

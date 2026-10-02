@@ -74,7 +74,8 @@ const JOURNAL_ACCESS_PATHS_CTE: &str = r#"
     access_paths AS (
         SELECT grant_row.grantee_user_id AS user_id,
                trace.id AS trace_id,
-               'direct_post_grant'::text AS access_via
+               CASE WHEN post.user_id = trace.user_id THEN 'direct_post_grant'
+                    ELSE 'reshare' END::text AS access_via
         FROM journal_traces trace
         INNER JOIN posts post
             ON post.source_trace_id = trace.id
@@ -84,7 +85,7 @@ const JOURNAL_ACCESS_PATHS_CTE: &str = r#"
            AND grant_row.status = 'ACTIVE'
            AND grant_row.grantee_user_id IS NOT NULL
            AND grant_row.grantee_scope IS NULL
-        WHERE NOT EXISTS (
+        WHERE trace_publication_eligible(post.id, grant_row.grantee_user_id) AND NOT EXISTS (
             SELECT 1 FROM user_blocks block
             WHERE (block.blocker_user_id = trace.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
                OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = trace.user_id)
@@ -107,40 +108,6 @@ const JOURNAL_ACCESS_PATHS_CTE: &str = r#"
                OR (block.blocker_user_id = mention.mentioned_user_id AND block.blocked_user_id = trace.user_id)
         )
 
-        UNION ALL
-
-        SELECT grant_row.grantee_user_id AS user_id,
-               source.id AS trace_id,
-               'reshare'::text AS access_via
-        FROM journal_traces source
-        INNER JOIN traces proxy
-            ON proxy.linked_source_trace_id = source.id
-           AND proxy.trace_type = 'LINKED_TRACE'
-           AND proxy.status = 'FINALIZED'
-        INNER JOIN trace_mentions mention
-            ON mention.trace_id = source.id
-           AND mention.mentioned_user_id = proxy.user_id
-           AND mention.removed_at IS NULL
-           AND mention.allows_reshare = TRUE
-        INNER JOIN posts post
-            ON post.source_trace_id = proxy.id
-           AND post.status = 'PUBLISHED'
-        INNER JOIN post_grants grant_row
-            ON grant_row.post_id = post.id
-           AND grant_row.status = 'ACTIVE'
-           AND grant_row.grantee_user_id IS NOT NULL
-           AND grant_row.grantee_scope IS NULL
-        WHERE NOT EXISTS (
-            SELECT 1 FROM user_blocks block
-            WHERE (block.blocker_user_id = source.user_id AND block.blocked_user_id = proxy.user_id)
-               OR (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = source.user_id)
-               OR (block.blocker_user_id = proxy.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
-               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = proxy.user_id)
-               OR (block.blocker_user_id = source.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
-               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = source.user_id)
-               OR (block.blocker_user_id = post.user_id AND block.blocked_user_id = grant_row.grantee_user_id)
-               OR (block.blocker_user_id = grant_row.grantee_user_id AND block.blocked_user_id = post.user_id)
-        )
     )
 "#;
 

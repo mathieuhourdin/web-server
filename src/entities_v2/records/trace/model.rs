@@ -8,10 +8,9 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
-use crate::entities_v2::post::{PostSourceRef, PostStatus};
+use crate::entities_v2::post::PostStatus;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::records::trace_source_asset::TraceSourceAssetReadableView;
-use crate::entities_v2::source_projection::load_source_projection_map;
 use crate::entities_v2::trace_mention::{TraceMention, TraceMentionInput, TraceMentionUser};
 use crate::entities_v2::user_block::UserBlock;
 use crate::entities_v2::user_post_state::PostSeenByPreview;
@@ -279,6 +278,35 @@ impl From<TraceRow> for Trace {
 }
 
 impl Trace {
+    pub fn user_can_publish(&self, publisher_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+        if self.trace_type == TraceType::TraceComplement {
+            let parent_id = self.parent_trace_id.ok_or_else(PpdcError::unauthorized)?;
+            let parent = Trace::find_full_trace(parent_id, pool)?;
+            return Ok(parent.user_id == publisher_id
+                && parent.status == TraceStatus::Finalized
+                && !parent.is_encrypted
+                && !UserBlock::exists_in_either_direction(self.user_id, publisher_id, pool)?);
+        }
+        if self.user_id == publisher_id {
+            return Ok(true);
+        }
+        if self.trace_type != TraceType::UserTrace
+            || self.status != TraceStatus::Finalized
+            || self.is_encrypted
+            || UserBlock::exists_in_either_direction(self.user_id, publisher_id, pool)?
+        {
+            return Ok(false);
+        }
+        Ok(diesel::select(diesel::dsl::exists(
+            crate::schema::trace_mentions::table
+                .filter(crate::schema::trace_mentions::trace_id.eq(self.id))
+                .filter(crate::schema::trace_mentions::mentioned_user_id.eq(publisher_id))
+                .filter(crate::schema::trace_mentions::removed_at.is_null())
+                .filter(crate::schema::trace_mentions::allows_reshare.eq(true)),
+        ))
+        .get_result::<bool>(&mut pool.get()?)?)
+    }
+
     pub fn user_can_read(&self, viewer_user_id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
         if self.user_id == viewer_user_id {
             return Ok(true);
@@ -289,55 +317,25 @@ impl Trace {
         if UserBlock::exists_in_either_direction(self.user_id, viewer_user_id, pool)? {
             return Ok(false);
         }
-        if self.trace_type == TraceType::TraceComplement
-            && self.complement_audience_mode == Some(TraceComplementAudienceMode::Parent)
-        {
-            let Some(parent_trace_id) = self.parent_trace_id else {
-                return Ok(false);
-            };
-            let parent = Trace::find_full_trace(parent_trace_id, pool)?;
-            if parent.trace_type != TraceType::UserTrace {
-                return Ok(false);
-            }
-            return parent.user_can_read(viewer_user_id, pool);
-        }
-        // An independent complement's restricted post is its sole reader ACL.
-        // Mentions are presentation metadata and must not grant access.
-        if self.trace_type != TraceType::TraceComplement
-            && TraceMention::active_mention_exists(self.id, viewer_user_id, pool)?
-        {
-            return Ok(true);
-        }
-        let Some(post) = crate::entities_v2::post::Post::find_for_trace(self.id, pool)? else {
-            if self.trace_type == TraceType::TraceComplement {
-                return Ok(false);
-            }
-            return super::linked::LinkedTraceResponse::source_is_readable_via_reshare(
-                self.id,
-                viewer_user_id,
-                pool,
-            );
-        };
-        if post.status != PostStatus::Published {
-            if self.trace_type == TraceType::TraceComplement {
-                return Ok(false);
-            }
-            return super::linked::LinkedTraceResponse::source_is_readable_via_reshare(
-                self.id,
-                viewer_user_id,
-                pool,
-            );
-        }
-        if PostGrant::user_can_read_post(&post, viewer_user_id, pool)? {
-            return Ok(true);
-        }
         if self.trace_type == TraceType::TraceComplement {
-            return Ok(false);
+            let parent_id = self.parent_trace_id.ok_or_else(PpdcError::unauthorized)?;
+            let parent = Trace::find_full_trace(parent_id, pool)?;
+            if parent.status != TraceStatus::Finalized
+                || parent.is_encrypted
+                || UserBlock::exists_in_either_direction(parent.user_id, viewer_user_id, pool)?
+            {
+                return Ok(false);
+            }
+            // The parent owner can review an unpublished contribution.
+            if parent.user_id == viewer_user_id {
+                return Ok(true);
+            }
+        } else if TraceMention::active_mention_exists(self.id, viewer_user_id, pool)? {
+            return Ok(true);
         }
-        super::linked::LinkedTraceResponse::source_is_readable_via_reshare(
-            self.id,
-            viewer_user_id,
-            pool,
+        Ok(
+            crate::entities_v2::post::Post::find_readable_for_trace(self.id, viewer_user_id, pool)?
+                .is_some(),
         )
     }
 
@@ -353,59 +351,39 @@ impl Trace {
         limit: i64,
         pool: &DbPool,
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
-        let visible_post_ids = if parent_is_owned_by_viewer {
-            None
-        } else {
-            let ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
-            Some(ids)
-        };
-
+        let _ = parent_is_owned_by_viewer;
+        let predicate = format!(
+            "(traces.user_id = '{viewer_user_id}' OR EXISTS (
+                SELECT 1 FROM traces parent WHERE parent.id = traces.parent_trace_id
+                  AND parent.user_id = '{viewer_user_id}'
+            ) OR EXISTS (
+                SELECT 1 FROM posts p WHERE p.source_trace_id = traces.id
+                  AND trace_publication_readable(p.id, '{viewer_user_id}')
+            ))"
+        );
         let mut conn = pool.get()?;
-        let mut count_query = traces::table
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+        let total = traces::table
             .filter(traces::parent_trace_id.eq(Some(parent_trace_id)))
             .filter(traces::trace_type.eq(TraceType::TraceComplement.to_db()))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
-            .filter(posts::status.eq(PostStatus::Published.to_db()))
-            .into_boxed();
-        if let Some(visible_post_ids) = visible_post_ids.as_ref() {
-            if visible_post_ids.is_empty() {
-                count_query = count_query.filter(
-                    traces::complement_audience_mode
-                        .eq(TraceComplementAudienceMode::Parent.to_db()),
-                );
-            } else {
-                count_query = count_query.filter(
-                    traces::complement_audience_mode
-                        .eq(TraceComplementAudienceMode::Parent.to_db())
-                        .or(posts::id.eq_any(visible_post_ids)),
-                );
-            }
-        }
-        let total = count_query.count().get_result::<i64>(&mut conn)?;
-
-        let mut ids_query = traces::table
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(sql::<Bool>(&predicate))
+            .filter(sql::<Bool>(&format!(
+                "NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                (b.blocker_user_id = traces.user_id AND b.blocked_user_id = '{viewer_user_id}') OR
+                (b.blocked_user_id = traces.user_id AND b.blocker_user_id = '{viewer_user_id}'))"
+            )))
+            .count()
+            .get_result::<i64>(&mut conn)?;
+        let ids = traces::table
             .filter(traces::parent_trace_id.eq(Some(parent_trace_id)))
             .filter(traces::trace_type.eq(TraceType::TraceComplement.to_db()))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
-            .filter(posts::status.eq(PostStatus::Published.to_db()))
-            .into_boxed();
-        if let Some(visible_post_ids) = visible_post_ids {
-            if visible_post_ids.is_empty() {
-                ids_query = ids_query.filter(
-                    traces::complement_audience_mode
-                        .eq(TraceComplementAudienceMode::Parent.to_db()),
-                );
-            } else {
-                ids_query = ids_query.filter(
-                    traces::complement_audience_mode
-                        .eq(TraceComplementAudienceMode::Parent.to_db())
-                        .or(posts::id.eq_any(visible_post_ids)),
-                );
-            }
-        }
-        let ids = ids_query
+            .filter(sql::<Bool>(&predicate))
+            .filter(sql::<Bool>(&format!(
+                "NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+                (b.blocker_user_id = traces.user_id AND b.blocked_user_id = '{viewer_user_id}') OR
+                (b.blocked_user_id = traces.user_id AND b.blocker_user_id = '{viewer_user_id}'))"
+            )))
             .select(traces::id)
             .order(traces::created_at.asc())
             .then_order_by(traces::id.asc())
@@ -479,7 +457,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-               AND trace_type NOT IN ('LINKED_TRACE', 'TRACE_COMPLEMENT')
+               AND trace_type <> 'TRACE_COMPLEMENT'
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
              LIMIT 1",
         )
@@ -508,7 +486,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-               AND trace_type NOT IN ('LINKED_TRACE', 'TRACE_COMPLEMENT')
+               AND trace_type <> 'TRACE_COMPLEMENT'
                AND interaction_date BETWEEN $2 AND $3
              ORDER BY interaction_date ASC, created_at ASC",
         )
@@ -534,7 +512,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-               AND trace_type NOT IN ('LINKED_TRACE', 'TRACE_COMPLEMENT')
+               AND trace_type <> 'TRACE_COMPLEMENT'
                AND interaction_date <= $2
              ORDER BY interaction_date ASC, created_at ASC",
         )
@@ -653,7 +631,7 @@ impl Trace {
             "SELECT COUNT(*)::bigint AS count
              FROM traces
              WHERE user_id = $1
-               AND trace_type NOT IN ('LINKED_TRACE', 'TRACE_COMPLEMENT')",
+               AND trace_type <> 'TRACE_COMPLEMENT'",
         )
         .bind::<SqlUuid, _>(user_id)
         .get_result::<CountRow>(&mut conn)?
@@ -663,7 +641,7 @@ impl Trace {
             "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
-               AND trace_type NOT IN ('LINKED_TRACE', 'TRACE_COMPLEMENT')
+               AND trace_type <> 'TRACE_COMPLEMENT'
              ORDER BY interaction_date DESC NULLS LAST, created_at DESC
              OFFSET $2
              LIMIT $3",
@@ -968,7 +946,11 @@ impl Trace {
         };
 
         let mut count_query = traces::table
-            .left_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .left_join(
+                posts::table.on(posts::source_trace_id
+                    .eq(traces::id.nullable())
+                    .and(posts::user_id.eq(traces::user_id))),
+            )
             .filter(traces::user_id.eq(owner_user_id))
             .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
             .filter(traces::status.eq(status.to_db()))
@@ -1000,7 +982,11 @@ impl Trace {
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
         let mut query = traces::table
-            .left_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .left_join(
+                posts::table.on(posts::source_trace_id
+                    .eq(traces::id.nullable())
+                    .and(posts::user_id.eq(traces::user_id))),
+            )
             .filter(traces::user_id.eq(owner_user_id))
             .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
             .filter(traces::status.eq(status.to_db()))
@@ -1214,7 +1200,7 @@ impl Trace {
                 NaiveDateTime,
             )>(&mut conn)?;
 
-        let mut trace_items = rows
+        let trace_items = rows
             .into_iter()
             .map(
                 |(
@@ -1263,28 +1249,6 @@ impl Trace {
                 },
             )
             .collect::<Vec<_>>();
-
-        let source_refs = trace_items
-            .iter()
-            .map(|item| PostSourceRef::Trace(item.id))
-            .collect::<Vec<_>>();
-        let projections = load_source_projection_map(&source_refs, &mut conn)?;
-        for item in &mut trace_items {
-            let Some(projection) = projections.get(&PostSourceRef::Trace(item.id)) else {
-                continue;
-            };
-            let Some(original_source_id) = projection.original_source_id else {
-                continue;
-            };
-            item.source_trace_id = Some(original_source_id);
-            item.title = projection.title.clone();
-            item.subtitle = Some(projection.subtitle.clone());
-            item.content = projection.content.clone();
-            item.content_image_asset_id = projection.cover_image_asset_id;
-            item.user_id = projection.original_author_user_id;
-            item.trace_type = Some(TraceType::LinkedTrace);
-            item.status = Some(TraceStatus::Finalized);
-        }
 
         Ok((trace_items, total))
     }

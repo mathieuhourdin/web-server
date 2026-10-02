@@ -6,9 +6,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::post::Post;
 use crate::entities_v2::relationship::Relationship;
-use crate::entities_v2::trace::{
-    linked::LinkedTraceResponse, Trace, TraceComplementAudienceMode, TraceType,
-};
+use crate::entities_v2::trace::{Trace, TraceComplementAudienceMode, TraceType};
 use crate::entities_v2::user::{User, UserPrincipalType, UserRole};
 use crate::entities_v2::user_block::UserBlock;
 use crate::schema::{post_grants, posts, users};
@@ -17,6 +15,41 @@ use super::enums::{PostGrantAccessLevel, PostGrantScope, PostGrantStatus};
 use super::model::{NewPostGrantDto, PostGrant};
 
 impl PostGrant {
+    pub fn publication_is_eligible(
+        post_id: Uuid,
+        viewer_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<bool, PpdcError> {
+        #[derive(QueryableByName)]
+        struct Eligible {
+            #[diesel(sql_type = diesel::sql_types::Bool)]
+            eligible: bool,
+        }
+        let row = diesel::sql_query("SELECT trace_publication_eligible($1, $2) AS eligible")
+            .bind::<diesel::sql_types::Uuid, _>(post_id)
+            .bind::<diesel::sql_types::Uuid, _>(viewer_id)
+            .get_result::<Eligible>(&mut pool.get()?)?;
+        Ok(row.eligible)
+    }
+
+    fn filter_eligible_publication_ids(
+        ids: &[Uuid],
+        viewer_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<Uuid>, PpdcError> {
+        #[derive(QueryableByName)]
+        struct Id {
+            #[diesel(sql_type = diesel::sql_types::Uuid)]
+            id: Uuid,
+        }
+        let rows = diesel::sql_query(
+            "SELECT id FROM posts WHERE id = ANY($1) AND trace_publication_eligible(id, $2)",
+        )
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(ids)
+        .bind::<diesel::sql_types::Uuid, _>(viewer_id)
+        .load::<Id>(&mut pool.get()?)?;
+        Ok(rows.into_iter().map(|row| row.id).collect())
+    }
     pub fn find_visible_post_ids_for_user(
         user_id: Uuid,
         pool: &DbPool,
@@ -41,10 +74,18 @@ impl PostGrant {
 
         candidate_ids.sort_unstable();
         candidate_ids.dedup();
-        if candidate_ids.is_empty() {
-            return Ok(candidate_ids);
-        }
 
+        candidate_ids.extend(
+            posts::table
+                .inner_join(
+                    crate::schema::traces::table
+                        .on(posts::source_trace_id.eq(crate::schema::traces::id.nullable())),
+                )
+                .filter(posts::user_id.eq(user_id))
+                .filter(crate::schema::traces::user_id.ne(user_id))
+                .select(posts::id)
+                .load::<Uuid>(&mut conn)?,
+        );
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let candidate_ids = if blocked_user_ids.is_empty() {
             candidate_ids
@@ -56,7 +97,7 @@ impl PostGrant {
                 .load::<Uuid>(&mut conn)?
         };
         drop(conn);
-        LinkedTraceResponse::filter_eligible_reshare_post_ids(&candidate_ids, user_id, pool)
+        Self::filter_eligible_publication_ids(&candidate_ids, user_id, pool)
     }
 
     fn owner_can_use_scope(
@@ -357,6 +398,16 @@ impl PostGrant {
             return Err(PpdcError::unauthorized());
         }
         let grant = PostGrant::find(grant_id, pool)?;
+        if let Some(trace_id) = post.source_trace_id {
+            let trace = Trace::find_full_trace(trace_id, pool)?;
+            if trace.complement_audience_mode == Some(TraceComplementAudienceMode::Parent) {
+                return Err(PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "Inherited complement grants must be changed on the parent post".to_string(),
+                ));
+            }
+        }
         if grant.post_id != post_id {
             return Err(PpdcError::new(
                 400,
@@ -380,25 +431,13 @@ impl PostGrant {
         user_id: Uuid,
         pool: &DbPool,
     ) -> Result<bool, PpdcError> {
-        if let Some(trace_id) = post.source_trace_id {
-            let trace = Trace::find_full_trace(trace_id, pool)?;
-            if trace.trace_type == TraceType::TraceComplement
-                && trace.complement_audience_mode == Some(TraceComplementAudienceMode::Parent)
-            {
-                let Some(parent_trace_id) = trace.parent_trace_id else {
-                    return Ok(false);
-                };
-                let parent = Trace::find_full_trace(parent_trace_id, pool)?;
-                if parent.trace_type != TraceType::UserTrace {
-                    return Ok(false);
-                }
-                return parent.user_can_read(user_id, pool);
-            }
-            if trace.trace_type == TraceType::LinkedTrace
-                && !LinkedTraceResponse::reshare_is_active(trace.id, post.user_id, user_id, pool)?
-            {
-                return Ok(false);
-            }
+        // Publishers retain access to their own staged/archived metadata.
+        if post.user_id == user_id && post.status != crate::entities_v2::post::PostStatus::Published
+        {
+            return Ok(true);
+        }
+        if !Self::publication_is_eligible(post.id, user_id, pool)? {
+            return Ok(false);
         }
         if post.user_id == user_id {
             return Ok(true);
@@ -446,18 +485,12 @@ impl PostGrant {
         #[derive(Clone, Copy)]
         struct VisiblePostCandidate {
             post_id: Uuid,
-            specificity: i32,
+            is_author: bool,
             published_or_created_at: NaiveDateTime,
             created_at: NaiveDateTime,
         }
 
         let mut conn = pool.get()?;
-        let direct_ids = post_grants::table
-            .filter(post_grants::grantee_user_id.eq(Some(user_id)))
-            .filter(post_grants::status.eq(PostGrantStatus::Active.to_db()))
-            .select(post_grants::post_id)
-            .load::<Uuid>(&mut conn)?;
-        let direct_ids_set = direct_ids.iter().copied().collect::<HashSet<_>>();
         let candidate_ids = Self::find_visible_post_ids_for_user(user_id, pool)?
             .into_iter()
             .collect::<HashSet<_>>();
@@ -471,22 +504,40 @@ impl PostGrant {
             .select((
                 posts::id,
                 posts::source_trace_id,
+                posts::user_id,
                 posts::publishing_date,
                 posts::created_at,
             ))
-            .load::<(Uuid, Option<Uuid>, Option<NaiveDateTime>, NaiveDateTime)>(&mut conn)?;
+            .load::<(
+                Uuid,
+                Option<Uuid>,
+                Uuid,
+                Option<NaiveDateTime>,
+                NaiveDateTime,
+            )>(&mut conn)?;
+        let authors = crate::schema::traces::table
+            .filter(
+                crate::schema::traces::id.eq_any(
+                    candidate_rows
+                        .iter()
+                        .filter_map(|row| row.1)
+                        .collect::<Vec<_>>(),
+                ),
+            )
+            .select((crate::schema::traces::id, crate::schema::traces::user_id))
+            .load::<(Uuid, Uuid)>(&mut conn)?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
 
         let mut selected_ids = HashSet::new();
         let mut best_by_trace_id = HashMap::<Uuid, VisiblePostCandidate>::new();
 
-        for (post_id, source_trace_id, publishing_date, created_at) in candidate_rows {
+        for (post_id, source_trace_id, publisher_id, publishing_date, created_at) in candidate_rows
+        {
             let candidate = VisiblePostCandidate {
                 post_id,
-                specificity: if direct_ids_set.contains(&post_id) {
-                    2
-                } else {
-                    1
-                },
+                is_author: source_trace_id.and_then(|id| authors.get(&id).copied())
+                    == Some(publisher_id),
                 published_or_created_at: publishing_date.unwrap_or(created_at),
                 created_at,
             };
@@ -495,13 +546,17 @@ impl PostGrant {
                 let should_replace = best_by_trace_id
                     .get(&source_trace_id)
                     .map(|current| {
-                        candidate.specificity > current.specificity
-                            || (candidate.specificity == current.specificity
-                                && (candidate.published_or_created_at
-                                    > current.published_or_created_at
-                                    || (candidate.published_or_created_at
-                                        == current.published_or_created_at
-                                        && candidate.created_at > current.created_at)))
+                        (
+                            candidate.is_author,
+                            candidate.published_or_created_at,
+                            candidate.created_at,
+                            candidate.post_id,
+                        ) > (
+                            current.is_author,
+                            current.published_or_created_at,
+                            current.created_at,
+                            current.post_id,
+                        )
                     })
                     .unwrap_or(true);
 
@@ -546,14 +601,12 @@ impl PostGrant {
         ids.remove(&post.user_id);
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(post.user_id, pool)?;
         ids.retain(|user_id| !blocked_user_ids.contains(user_id));
-        let ids = ids.into_iter().collect::<Vec<_>>();
-        let Some(trace_id) = post.source_trace_id else {
-            return Ok(ids);
-        };
-        let trace = Trace::find_full_trace(trace_id, pool)?;
-        if trace.trace_type != TraceType::LinkedTrace {
-            return Ok(ids);
+        let mut eligible = Vec::new();
+        for id in ids {
+            if Self::publication_is_eligible(post.id, id, pool)? {
+                eligible.push(id);
+            }
         }
-        LinkedTraceResponse::filter_eligible_reshare_viewers(trace.id, post.user_id, &ids, pool)
+        Ok(eligible)
     }
 }

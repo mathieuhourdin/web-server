@@ -287,7 +287,7 @@ impl Trace {
                     trace_type, status, is_encrypted, encryption_metadata,
                     start_writing_at, finalized_at, content_image_asset_id,
                     timeout_at, timeout_start_at, sharing_sensitivity,
-                    derived_from_trace_id, linked_source_trace_id, is_blank, version_integer,
+                    derived_from_trace_id, is_blank, version_integer,
                     created_at, updated_at
                  ) VALUES (
                     $1, $2, NULL, $3, $4,
@@ -295,7 +295,7 @@ impl Trace {
                     'TRACE_COMPLEMENT', 'FINALIZED', FALSE, NULL,
                     $8, $8, NULL,
                     NULL, NULL, 'NORMAL',
-                    NULL, NULL, FALSE, 0,
+                    NULL, FALSE, 0,
                     $8, $8
                  )",
             )
@@ -322,8 +322,17 @@ impl Trace {
                     posts::interaction_type.eq(PostInteractionType::Output.to_db()),
                     posts::post_type.eq(PostType::Idea.to_db()),
                     posts::user_id.eq(owner_user_id),
-                    posts::publishing_date.eq(Some(now)),
-                    posts::status.eq(PostStatus::Published.to_db()),
+                    posts::publishing_date.eq(if parent.user_id == owner_user_id {
+                        Some(now)
+                    } else {
+                        None
+                    }),
+                    posts::status.eq(if parent.user_id == owner_user_id {
+                        PostStatus::Published
+                    } else {
+                        PostStatus::Draft
+                    }
+                    .to_db()),
                     posts::audience_role.eq(PostAudienceRole::Restricted.to_db()),
                 ))
                 .execute(conn)?;
@@ -421,14 +430,6 @@ impl Trace {
         mentions: Option<&[TraceMentionInput]>,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
-        if self.trace_type == super::enums::TraceType::LinkedTrace {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Linked traces can only be moved or removed through the linked trace API"
-                    .to_string(),
-            ));
-        }
         if self.is_encrypted && self.encryption_metadata.is_none() {
             return Err(PpdcError::new(
                 400,

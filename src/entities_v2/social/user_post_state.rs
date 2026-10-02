@@ -185,7 +185,13 @@ impl UserPostState {
         let mut out = HashMap::with_capacity(rows.len());
         for (trace_id, last_seen_at) in rows {
             if let Some(trace_id) = trace_id {
-                out.insert(trace_id, last_seen_at);
+                out.entry(trace_id)
+                    .and_modify(|seen_at| {
+                        if last_seen_at > *seen_at {
+                            *seen_at = last_seen_at;
+                        }
+                    })
+                    .or_insert(last_seen_at);
             }
         }
         Ok(out)
