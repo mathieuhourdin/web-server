@@ -416,7 +416,7 @@ impl Asset {
             }
             AssetUsage::TraceSourceAsset { trace_id } => {
                 let trace = Trace::find_full_trace(trace_id, pool)?;
-                Ok(trace.user_id == viewer_user_id)
+                trace.user_can_read(viewer_user_id, pool)
             }
             AssetUsage::DocumentCover { document_id }
             | AssetUsage::DocumentContentAsset { document_id } => {

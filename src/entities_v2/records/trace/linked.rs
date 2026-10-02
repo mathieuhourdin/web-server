@@ -806,6 +806,7 @@ impl From<JournalTraceListRow> for TraceListItem {
             created_at: row.created_at,
             updated_at: row.updated_at,
             mentions: Vec::new(),
+            source_assets: Vec::new(),
         }
     }
 }

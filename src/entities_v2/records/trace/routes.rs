@@ -122,19 +122,24 @@ fn attach_content_images_to_trace_list_items(
     Ok(items)
 }
 
-fn attach_mentions_to_traces(
+fn attach_metadata_to_traces(
     mut traces: Vec<Trace>,
     pool: &DbPool,
 ) -> Result<Vec<Trace>, PpdcError> {
     let trace_ids = traces.iter().map(|trace| trace.id).collect::<Vec<_>>();
     let mut mentions_by_trace_id = TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+    let mut source_assets_by_trace_id =
+        TraceSourceAsset::find_readable_by_trace_ids(&trace_ids, pool)?;
     for trace in &mut traces {
         trace.mentions = mentions_by_trace_id.remove(&trace.id).unwrap_or_default();
+        trace.source_assets = source_assets_by_trace_id
+            .remove(&trace.id)
+            .unwrap_or_default();
     }
     Ok(traces)
 }
 
-fn attach_mentions_to_trace_list_items(
+fn attach_metadata_to_trace_list_items(
     mut items: Vec<TraceListItem>,
     pool: &DbPool,
 ) -> Result<Vec<TraceListItem>, PpdcError> {
@@ -143,10 +148,15 @@ fn attach_mentions_to_trace_list_items(
         .map(|item| item.source_trace_id.unwrap_or(item.id))
         .collect::<Vec<_>>();
     let mut mentions_by_trace_id = TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+    let source_assets_by_trace_id = TraceSourceAsset::find_readable_by_trace_ids(&trace_ids, pool)?;
     for item in &mut items {
         let source_trace_id = item.source_trace_id.unwrap_or(item.id);
         item.mentions = mentions_by_trace_id
             .remove(&source_trace_id)
+            .unwrap_or_default();
+        item.source_assets = source_assets_by_trace_id
+            .get(&source_trace_id)
+            .cloned()
             .unwrap_or_default();
     }
     Ok(items)
@@ -882,6 +892,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         created_at: trace.created_at,
         updated_at: trace.updated_at,
         mentions: trace.mentions,
+        source_assets: trace.source_assets,
     }
 }
 
@@ -1727,10 +1738,8 @@ pub async fn get_trace_source_assets_route(
 ) -> Result<Json<Vec<TraceSourceAssetReadableView>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
-    if trace.user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
-    Ok(Json(TraceSourceAsset::find_readable_for_trace(id, &pool)?))
+    let source = resolve_readable_source_trace(trace, user_id, &pool)?;
+    Ok(Json(source.source_assets))
 }
 
 #[debug_handler]
@@ -2189,7 +2198,7 @@ pub async fn get_all_traces_for_user_route(
     let pagination = params.validate()?;
     let (traces, total) =
         Trace::get_all_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
-    let traces = attach_mentions_to_traces(traces, &pool)?;
+    let traces = attach_metadata_to_traces(traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
@@ -2214,7 +2223,7 @@ pub async fn get_me_traces_route(
         params.seen,
         &pool,
     )?;
-    let items = attach_mentions_to_trace_list_items(items, &pool)?;
+    let items = attach_metadata_to_trace_list_items(items, &pool)?;
     let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
@@ -2234,7 +2243,7 @@ pub async fn get_trace_drafts_route(
         pagination.limit,
         &pool,
     )?;
-    let drafts = attach_mentions_to_traces(drafts, &pool)?;
+    let drafts = attach_metadata_to_traces(drafts, &pool)?;
     Ok(Json(PaginatedResponse::new(drafts, pagination, total)))
 }
 
@@ -2265,7 +2274,7 @@ pub async fn get_trace_route(
         if !can_read {
             return Err(PpdcError::unauthorized());
         }
-        let source = attach_mentions_to_traces(vec![source], &pool)?.remove(0);
+        let source = attach_metadata_to_traces(vec![source], &pool)?.remove(0);
         let source_user_id = source.user_id;
         let mut view = trace_to_readable_view(source, false);
         view.id = trace.id;
@@ -2664,7 +2673,7 @@ pub async fn get_traces_for_journal_route(
             &pool,
         )?;
         let items = attach_content_images_to_trace_list_items(items, &pool)?;
-        let items = attach_mentions_to_trace_list_items(items, &pool)?;
+        let items = attach_metadata_to_trace_list_items(items, &pool)?;
         let items = attach_seen_state_to_trace_list_items(user_id, items, &pool)?;
         let items = if params.include_seen_by_preview {
             attach_seen_by_preview_to_trace_list_items(user_id, items, &pool)?
@@ -2709,7 +2718,7 @@ pub async fn get_traces_for_journal_route(
         &pool,
     )?;
     let traces = attach_content_images_to_trace_list_items(traces, &pool)?;
-    let traces = attach_mentions_to_trace_list_items(traces, &pool)?;
+    let traces = attach_metadata_to_trace_list_items(traces, &pool)?;
     let traces = attach_seen_state_to_trace_list_items(user_id, traces, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
+use crate::entities_v2::records::trace_source_asset::TraceSourceAsset;
 use crate::entities_v2::trace_mention::TraceMention;
 use crate::schema::traces;
 
@@ -98,6 +99,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         created_at,
         updated_at,
         mentions: vec![],
+        source_assets: vec![],
     }
 }
 
@@ -141,11 +143,16 @@ impl Trace {
         let trace_ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
         let mut mentions_by_trace_id =
             TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+        let mut source_assets_by_trace_id =
+            TraceSourceAsset::find_readable_by_trace_ids(&trace_ids, pool)?;
         Ok(rows
             .into_iter()
             .map(|row| {
                 let mut trace = tuple_to_trace(row);
                 trace.mentions = mentions_by_trace_id.remove(&trace.id).unwrap_or_default();
+                trace.source_assets = source_assets_by_trace_id
+                    .remove(&trace.id)
+                    .unwrap_or_default();
                 trace
             })
             .collect())
@@ -187,6 +194,7 @@ impl Trace {
         let mut trace = tuple_to_trace(row);
         drop(conn);
         trace.mentions = TraceMention::find_active_users_for_trace(trace.id, pool)?;
+        trace.source_assets = TraceSourceAsset::find_readable_for_trace(trace.id, pool)?;
         Ok(trace)
     }
 }

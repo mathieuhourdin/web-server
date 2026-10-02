@@ -10,6 +10,7 @@ use crate::db::DbPool;
 use crate::entities_v2::error::PpdcError;
 use crate::entities_v2::post::{PostSourceRef, PostStatus};
 use crate::entities_v2::post_grant::PostGrant;
+use crate::entities_v2::records::trace_source_asset::TraceSourceAssetReadableView;
 use crate::entities_v2::source_projection::load_source_projection_map;
 use crate::entities_v2::trace_mention::{TraceMention, TraceMentionInput, TraceMentionUser};
 use crate::entities_v2::user_block::UserBlock;
@@ -108,6 +109,8 @@ pub struct Trace {
     pub updated_at: NaiveDateTime,
     #[serde(default)]
     pub mentions: Vec<TraceMentionUser>,
+    #[serde(default)]
+    pub source_assets: Vec<TraceSourceAssetReadableView>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -150,6 +153,8 @@ pub struct TraceListItem {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub mentions: Vec<TraceMentionUser>,
+    #[serde(default)]
+    pub source_assets: Vec<TraceSourceAssetReadableView>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -182,6 +187,8 @@ pub struct TraceReadableView {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub mentions: Vec<TraceMentionUser>,
+    #[serde(default)]
+    pub source_assets: Vec<TraceSourceAssetReadableView>,
 }
 
 #[derive(QueryableByName, Debug)]
@@ -266,6 +273,7 @@ impl From<TraceRow> for Trace {
             created_at: row.created_at,
             updated_at: row.updated_at,
             mentions: vec![],
+            source_assets: vec![],
         }
     }
 }
@@ -854,6 +862,7 @@ impl Trace {
                         created_at,
                         updated_at,
                         mentions: vec![],
+                        source_assets: vec![],
                     },
                 )
                 .collect(),
@@ -1097,6 +1106,7 @@ impl Trace {
                     timeout_start_at,
                     timeout_at,
                     mentions: vec![],
+                    source_assets: vec![],
                     user_id: Some(owner_user_id),
                     trace_type: Some(TraceType::from_db(&trace_type_raw)),
                     status: Some(TraceStatus::from_db(&status_raw)),
@@ -1238,6 +1248,7 @@ impl Trace {
                     timeout_start_at: None,
                     timeout_at: None,
                     mentions: vec![],
+                    source_assets: vec![],
                     user_id: Some(user_id),
                     trace_type: None,
                     status: None,

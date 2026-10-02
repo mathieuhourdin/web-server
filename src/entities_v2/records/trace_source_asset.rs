@@ -1,16 +1,14 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::sql_types::{Integer, Uuid as SqlUuid};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
     db::DbPool,
-    entities_v2::{
-        asset::Asset,
-        error::{ErrorType, PpdcError},
-    },
-    schema::trace_source_assets,
+    entities_v2::error::{ErrorType, PpdcError},
+    schema::{assets, trace_source_assets},
 };
 
 #[derive(Serialize, Debug, Clone)]
@@ -22,7 +20,7 @@ pub struct TraceSourceAsset {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceSourceAssetReadableView {
     pub id: Uuid,
     pub trace_id: Uuid,
@@ -46,20 +44,6 @@ impl TraceSourceAsset {
             asset_id,
             position,
             created_at,
-        }
-    }
-
-    fn readable_view(source_asset: Self, asset: Asset) -> TraceSourceAssetReadableView {
-        TraceSourceAssetReadableView {
-            id: source_asset.id,
-            trace_id: source_asset.trace_id,
-            asset_id: source_asset.asset_id,
-            position: source_asset.position,
-            created_at: source_asset.created_at,
-            image_width: asset.image_width,
-            image_height: asset.image_height,
-            original_filename: asset.original_filename,
-            mime_type: asset.mime_type,
         }
     }
 
@@ -108,29 +92,79 @@ impl TraceSourceAsset {
         trace_id: Uuid,
         pool: &DbPool,
     ) -> Result<Vec<TraceSourceAssetReadableView>, PpdcError> {
-        let source_assets = Self::find_for_trace(trace_id, pool)?;
-        let asset_ids = source_assets
-            .iter()
-            .map(|source_asset| source_asset.asset_id)
-            .collect::<Vec<_>>();
-        let assets_by_id = Asset::find_by_ids(&asset_ids, pool)?;
+        Ok(Self::find_readable_by_trace_ids(&[trace_id], pool)?
+            .remove(&trace_id)
+            .unwrap_or_default())
+    }
 
-        source_assets
-            .into_iter()
-            .map(|source_asset| {
-                let asset = assets_by_id
-                    .get(&source_asset.asset_id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        PpdcError::new(
-                            500,
-                            ErrorType::InternalError,
-                            "Trace source asset is missing its uploaded asset".to_string(),
-                        )
-                    })?;
-                Ok(Self::readable_view(source_asset, asset))
-            })
-            .collect()
+    /// Metadata only; callers must authorize the traces before exposing these results.
+    /// A single joined query hydrates all source photos in a trace page.
+    pub fn find_readable_by_trace_ids(
+        trace_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, Vec<TraceSourceAssetReadableView>>, PpdcError> {
+        let mut grouped = HashMap::<Uuid, Vec<TraceSourceAssetReadableView>>::new();
+        if trace_ids.is_empty() {
+            return Ok(grouped);
+        }
+        let mut conn = pool.get()?;
+        let rows = trace_source_assets::table
+            .inner_join(assets::table.on(assets::id.eq(trace_source_assets::asset_id)))
+            .filter(trace_source_assets::trace_id.eq_any(trace_ids))
+            .order((
+                trace_source_assets::position.asc(),
+                trace_source_assets::id.asc(),
+            ))
+            .select((
+                trace_source_assets::id,
+                trace_source_assets::trace_id,
+                trace_source_assets::asset_id,
+                trace_source_assets::position,
+                trace_source_assets::created_at,
+                assets::image_width,
+                assets::image_height,
+                assets::original_filename,
+                assets::mime_type,
+            ))
+            .load::<(
+                Uuid,
+                Uuid,
+                Uuid,
+                i32,
+                NaiveDateTime,
+                Option<i32>,
+                Option<i32>,
+                String,
+                String,
+            )>(&mut conn)?;
+        for (
+            id,
+            trace_id,
+            asset_id,
+            position,
+            created_at,
+            image_width,
+            image_height,
+            original_filename,
+            mime_type,
+        ) in rows
+        {
+            grouped
+                .entry(trace_id)
+                .or_default()
+                .push(TraceSourceAssetReadableView {
+                    id,
+                    trace_id,
+                    asset_id,
+                    position,
+                    created_at,
+                    image_width,
+                    image_height,
+                    original_filename,
+                    mime_type,
+                });
+        }
+        Ok(grouped)
     }
 
     pub fn create(trace_id: Uuid, asset_id: Uuid, pool: &DbPool) -> Result<Self, PpdcError> {
