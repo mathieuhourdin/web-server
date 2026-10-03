@@ -813,14 +813,14 @@ fn load_user_metric_points(
                     ),
                     activity AS (
                         SELECT
-                            timezone($4, COALESCE(t.interaction_date, t.created_at) AT TIME ZONE 'UTC')::date AS day,
+                            timezone($4, t.finalized_at AT TIME ZONE 'UTC')::date AS day,
                             COUNT(*)::bigint AS count
                         FROM traces t
                         WHERE t.user_id = $1
                           AND t.finalized_at IS NOT NULL
                           AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-                          AND COALESCE(t.interaction_date, t.created_at) >= ($2::date - interval '1 day')
-                          AND COALESCE(t.interaction_date, t.created_at) < ($3::date + interval '2 days')
+                          AND t.finalized_at >= ($2::date - interval '1 day')
+                          AND t.finalized_at < ($3::date + interval '2 days')
                         GROUP BY 1
                     )
                     SELECT d.day, COALESCE(a.count, 0)::bigint AS count
@@ -1396,14 +1396,14 @@ pub async fn get_admin_analytics_users_route(
             INNER JOIN users trace_user ON trace_user.id = t.user_id
             WHERE t.finalized_at IS NOT NULL
               AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-              AND COALESCE(t.interaction_date, t.created_at) >= ($1::date - interval '1 day')
-              AND COALESCE(t.interaction_date, t.created_at) < ($2::date + interval '2 days')
+              AND t.finalized_at >= ($1::date - interval '1 day')
+              AND t.finalized_at < ($2::date + interval '2 days')
               AND timezone(
                     COALESCE(NULLIF(CASE
                         WHEN trace_user.timezone = 'Asia/Saigon' THEN 'Asia/Ho_Chi_Minh'
                         ELSE trace_user.timezone
                     END, ''), 'UTC'),
-                    COALESCE(t.interaction_date, t.created_at) AT TIME ZONE 'UTC'
+                    t.finalized_at AT TIME ZONE 'UTC'
                   )::date BETWEEN $1::date AND $2::date
             GROUP BY t.user_id
         )
@@ -1603,7 +1603,7 @@ pub async fn get_admin_recent_user_activity_route(
                     WHERE t.user_id = $1
                       AND t.finalized_at IS NOT NULL
                       AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-                      AND timezone($4, COALESCE(t.interaction_date, t.created_at) AT TIME ZONE 'UTC')::date = d.day
+                      AND timezone($4, t.finalized_at AT TIME ZONE 'UTC')::date = d.day
                 ), 0)::bigint AS trace_count,
                 COALESCE((
                     SELECT COUNT(*)::bigint

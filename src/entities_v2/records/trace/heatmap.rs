@@ -35,14 +35,15 @@ pub fn heatmap_sum_trace_content_len(
     let rows = traces::table
         .filter(traces::user_id.eq(user_id))
         .filter(traces::trace_type.ne("TRACE_COMPLEMENT"))
-        .filter(traces::interaction_date.ge(from_dt))
-        .filter(traces::interaction_date.lt(to_exclusive_dt))
-        .select((traces::interaction_date, traces::content))
+        .filter(traces::finalized_at.is_not_null())
+        .filter(traces::finalized_at.ge(Some(from_dt)))
+        .filter(traces::finalized_at.lt(Some(to_exclusive_dt)))
+        .select((traces::finalized_at.assume_not_null(), traces::content))
         .load::<TraceContentRow>(conn)?;
 
     let mut by_day = HashMap::<NaiveDate, i64>::new();
-    for (interaction_date, content) in rows {
-        let day = interaction_date.date();
+    for (finalized_at, content) in rows {
+        let day = finalized_at.date();
         let value = i64::try_from(content.chars().count()).unwrap_or(i64::MAX);
         *by_day.entry(day).or_insert(0) += value;
     }
