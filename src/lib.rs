@@ -7,6 +7,7 @@ pub mod openai_handler;
 pub mod pagination;
 pub mod router;
 pub mod schema;
+pub mod serde_helpers;
 pub mod sessions_service;
 pub mod threadpool;
 pub mod work_analyzer;

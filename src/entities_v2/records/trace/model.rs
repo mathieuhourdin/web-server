@@ -20,6 +20,45 @@ pub use super::enums::{
     TraceComplementAudienceMode, TraceSharingSensitivity, TraceStatus, TraceType,
 };
 
+#[cfg(test)]
+mod timeout_update_tests {
+    use super::*;
+
+    fn assert_timeout(payload: serde_json::Value, expected: Option<Option<DateTime<Utc>>>) {
+        let patch: PatchTraceDto = serde_json::from_value(payload.clone()).unwrap();
+        let update: UpdateTraceDto = serde_json::from_value(payload).unwrap();
+        assert_eq!(patch.timeout_at, expected);
+        assert_eq!(update.timeout_at, expected);
+    }
+
+    #[test]
+    fn omitted_timeout_is_unchanged() {
+        assert_timeout(serde_json::json!({"content": "updated"}), None);
+    }
+
+    #[test]
+    fn null_timeout_explicitly_clears_deadline() {
+        assert_timeout(serde_json::json!({"timeout_at": null}), Some(None));
+    }
+
+    #[test]
+    fn timestamp_sets_deadline() {
+        let timestamp = "2026-10-06T18:30:00Z";
+        let expected = timestamp.parse::<DateTime<Utc>>().unwrap();
+        assert_timeout(
+            serde_json::json!({"timeout_at": timestamp}),
+            Some(Some(expected)),
+        );
+    }
+
+    #[test]
+    fn invalid_timeout_is_rejected_not_cleared() {
+        let payload = serde_json::json!({"timeout_at": "not-a-date"});
+        assert!(serde_json::from_value::<PatchTraceDto>(payload.clone()).is_err());
+        assert!(serde_json::from_value::<UpdateTraceDto>(payload).is_err());
+    }
+}
+
 #[derive(Deserialize)]
 pub struct NewTraceDto {
     #[serde(default)]
@@ -56,6 +95,7 @@ pub struct UpdateTraceDto {
     #[serde(alias = "image_asset_id")]
     pub content_image_asset_id: Option<Option<Uuid>>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub timeout_at: Option<Option<DateTime<Utc>>>,
     pub publish_default_post: Option<bool>,
     #[serde(alias = "expected_version")]
@@ -73,6 +113,7 @@ pub struct PatchTraceDto {
     #[serde(alias = "image_asset_id")]
     pub content_image_asset_id: Option<Option<Uuid>>,
     pub sharing_sensitivity: Option<TraceSharingSensitivity>,
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub timeout_at: Option<Option<DateTime<Utc>>>,
     #[serde(alias = "expected_version")]
     pub expected_version_integer: Option<i32>,

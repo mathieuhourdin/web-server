@@ -171,16 +171,32 @@ fn normalized_profile_value(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn handle_from_profile_names(first_name: Option<&str>, last_name: Option<&str>) -> Option<String> {
+    let name = [first_name, last_name]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("-");
+    let mut slug = String::new();
+    for ch in name.chars().flat_map(char::to_lowercase) {
+        if ch.is_alphanumeric() {
+            slug.push(ch);
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_end_matches('-');
+    (!slug.is_empty()).then(|| format!("@{slug}"))
+}
+
 fn new_external_user(
     identity: &VerifiedExternalIdentity,
     payload: &ExternalRegistrationDto,
 ) -> NewUser {
     let first_name = normalized_profile_value(payload.first_name.clone())
-        .or_else(|| normalized_profile_value(identity.given_name.clone()))
-        .unwrap_or_else(|| "Hupo".to_string());
+        .or_else(|| normalized_profile_value(identity.given_name.clone()));
     let last_name = normalized_profile_value(payload.last_name.clone())
-        .or_else(|| normalized_profile_value(identity.family_name.clone()))
-        .unwrap_or_else(|| "User".to_string());
+        .or_else(|| normalized_profile_value(identity.family_name.clone()));
     let handle = normalized_profile_value(payload.handle.clone())
         .map(|handle| {
             if handle.starts_with('@') {
@@ -189,14 +205,15 @@ fn new_external_user(
                 format!("@{}", handle)
             }
         })
+        .or_else(|| handle_from_profile_names(first_name.as_deref(), last_name.as_deref()))
         .unwrap_or_else(|| format!("@hupo-{}", Uuid::new_v4().simple()));
 
     NewUser {
         email: identity.email.clone(),
         principal_type: Some(UserPrincipalType::Human),
         mentor_id: None,
-        first_name,
-        last_name,
+        first_name: first_name.unwrap_or_else(|| "Hupo".to_string()),
+        last_name: last_name.unwrap_or_else(|| "User".to_string()),
         handle,
         password: Some(Uuid::new_v4().to_string()),
         profile_picture_url: None,
@@ -222,6 +239,103 @@ fn new_external_user(
         onboarding_version: None,
         external_captures_default_journal_id: None,
         mentor_specific_prompt: None,
+    }
+}
+
+#[cfg(test)]
+mod external_signup_tests {
+    use super::*;
+
+    fn identity(provider: ExternalAuthProvider) -> VerifiedExternalIdentity {
+        VerifiedExternalIdentity {
+            provider,
+            subject: "test-subject".to_string(),
+            email: "signup@example.invalid".to_string(),
+            given_name: Some("Ada".to_string()),
+            family_name: Some("Lovelace".to_string()),
+        }
+    }
+
+    fn payload(value: serde_json::Value) -> ExternalRegistrationDto {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn google_signup_uses_provider_names() {
+        let user = new_external_user(
+            &identity(ExternalAuthProvider::Google),
+            &payload(serde_json::json!({"id_token":"unused"})),
+        );
+        assert_eq!(user.handle, "@ada-lovelace");
+    }
+
+    #[test]
+    fn apple_signup_uses_client_names_over_provider_names() {
+        let user = new_external_user(
+            &identity(ExternalAuthProvider::Apple),
+            &payload(
+                serde_json::json!({"id_token":"unused", "first_name":" Grace ", "last_name":"Hopper"}),
+            ),
+        );
+        assert_eq!(user.first_name, "Grace");
+        assert_eq!(user.handle, "@grace-hopper");
+    }
+
+    #[test]
+    fn explicit_handle_is_preserved() {
+        for handle in ["my-handle", "@my-handle"] {
+            let user = new_external_user(
+                &identity(ExternalAuthProvider::Google),
+                &payload(serde_json::json!({"id_token":"unused", "handle":handle})),
+            );
+            assert_eq!(user.handle, "@my-handle");
+        }
+    }
+
+    #[test]
+    fn empty_handle_and_names_use_provider_names() {
+        let user = new_external_user(
+            &identity(ExternalAuthProvider::Google),
+            &payload(
+                serde_json::json!({"id_token":"unused", "handle":" ", "first_name":" ", "last_name":" "}),
+            ),
+        );
+        assert_eq!(user.handle, "@ada-lovelace");
+    }
+
+    #[test]
+    fn names_are_lowercase_and_separators_collapsed() {
+        assert_eq!(
+            handle_from_profile_names(Some(" Jean   Pierre "), Some("D'Antuono")),
+            Some("@jean-pierre-d-antuono".to_string())
+        );
+        assert_eq!(
+            handle_from_profile_names(Some("Élodie"), Some("杜")),
+            Some("@élodie-杜".to_string())
+        );
+        assert_eq!(
+            handle_from_profile_names(Some("Ada"), None),
+            Some("@ada".to_string())
+        );
+        assert_eq!(
+            handle_from_profile_names(None, Some("Hopper")),
+            Some("@hopper".to_string())
+        );
+        assert_eq!(handle_from_profile_names(Some("---"), None), None);
+    }
+
+    #[test]
+    fn missing_names_keep_uuid_fallback_not_placeholder_names() {
+        let mut identity = identity(ExternalAuthProvider::Apple);
+        identity.given_name = None;
+        identity.family_name = None;
+        let user = new_external_user(
+            &identity,
+            &payload(serde_json::json!({"id_token":"unused"})),
+        );
+        assert_eq!(user.first_name, "Hupo");
+        assert_eq!(user.last_name, "User");
+        assert!(Uuid::parse_str(user.handle.strip_prefix("@hupo-").unwrap()).is_ok());
     }
 }
 
@@ -277,7 +391,11 @@ async fn external_registration(
 
     let mut new_user = new_external_user(&identity, &payload);
     new_user.hash_password()?;
-    let user = new_user.create(&pool)?;
+    let user = if normalized_profile_value(payload.handle.clone()).is_none() {
+        new_user.create_with_generated_handle(&pool)?
+    } else {
+        new_user.create(&pool)?
+    };
     if let Err(error) = link_external_identity(&user, &identity, &pool) {
         crate::entities_v2::user::cleanup_failed_user_registration(user.id, &pool);
         return Err(error);

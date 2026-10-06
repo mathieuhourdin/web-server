@@ -437,7 +437,11 @@ impl Trace {
                 "encryption_metadata is required when is_encrypted is true".to_string(),
             ));
         }
-        if self.timeout_at.is_some() && self.timeout_start_at.is_none() {
+        if self.timeout_at.is_none() {
+            // Clearing a deadline also clears its backend-managed start marker.
+            // Keep this invariant for PATCH, PUT, journal drafts and finalization.
+            self.timeout_start_at = None;
+        } else if self.timeout_start_at.is_none() {
             self.timeout_start_at = Some(Utc::now());
         }
         let mut conn = pool.get()?;

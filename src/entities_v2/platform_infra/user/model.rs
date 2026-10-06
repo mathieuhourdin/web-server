@@ -587,6 +587,19 @@ impl NewServiceUserDto {
 
 impl NewUser {
     pub fn create(self, pool: &DbPool) -> Result<User, PpdcError> {
+        self.create_internal(pool, false)
+    }
+
+    /// Generated signup handles may collide; explicit user choices must not be changed.
+    pub(crate) fn create_with_generated_handle(self, pool: &DbPool) -> Result<User, PpdcError> {
+        self.create_internal(pool, true)
+    }
+
+    fn create_internal(
+        self,
+        pool: &DbPool,
+        retry_generated_handle: bool,
+    ) -> Result<User, PpdcError> {
         let mut conn = pool.get()?;
 
         let mut payload = self;
@@ -631,23 +644,47 @@ impl NewUser {
         payload.onboarding_version = Some(0);
         let email = payload.email.clone();
 
-        let user = conn.transaction::<User, diesel::result::Error, _>(|conn| {
-            let user = diesel::insert_into(users::table)
-                .values(&payload)
-                .returning(User::as_returning())
-                .get_result(conn)?;
+        let base_handle = payload.handle.clone();
+        let mut handle_retries = 0;
+        let user = loop {
+            let result = conn.transaction::<User, diesel::result::Error, _>(|conn| {
+                let user = diesel::insert_into(users::table)
+                    .values(&payload)
+                    .returning(User::as_returning())
+                    .get_result(conn)?;
 
-            diesel::insert_into(user_roles::table)
-                .values((
-                    user_roles::user_id.eq(user.id),
-                    user_roles::role.eq(UserRole::Member.to_db()),
-                ))
-                .on_conflict((user_roles::user_id, user_roles::role))
-                .do_nothing()
-                .execute(conn)?;
+                diesel::insert_into(user_roles::table)
+                    .values((
+                        user_roles::user_id.eq(user.id),
+                        user_roles::role.eq(UserRole::Member.to_db()),
+                    ))
+                    .on_conflict((user_roles::user_id, user_roles::role))
+                    .do_nothing()
+                    .execute(conn)?;
 
-            Ok(user)
-        });
+                Ok(user)
+            });
+
+            if retry_generated_handle
+                && handle_retries < 3
+                && matches!(
+                    &result,
+                    Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, info))
+                        if info.constraint_name() == Some("platform_users_unique_handle_key")
+                )
+            {
+                // Retry only the exact handle constraint, including concurrent signups.
+                // Email/identity conflicts retain their existing error behavior.
+                payload.handle = format!(
+                    "{}-{}",
+                    base_handle,
+                    &Uuid::new_v4().simple().to_string()[..12]
+                );
+                handle_retries += 1;
+                continue;
+            }
+            break result;
+        };
 
         match user {
             Ok(user) => Ok(user),
