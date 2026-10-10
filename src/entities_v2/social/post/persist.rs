@@ -20,7 +20,7 @@ impl Post {
                 posts::post_type.eq(self.post_type.to_db()),
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
-                posts::audience_role.eq(self.audience_role.to_db()),
+                posts::public_link_eligible.eq(self.public_link_eligible),
                 posts::user_id.eq(self.user_id),
             ))
             .execute(&mut conn)?;
@@ -35,11 +35,12 @@ impl Post {
                 "Only trace-backed posts can be deleted through this route".to_string(),
             ));
         }
-        if self.status == PostStatus::Published {
+        if self.status != PostStatus::Draft || self.publishing_date.is_some() {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Published trace posts cannot be deleted".to_string(),
+                "Only never-published draft posts can be deleted; archive existing publications"
+                    .to_string(),
             ));
         }
 
@@ -86,7 +87,7 @@ impl NewPost {
                 posts::user_id.eq(self.user_id),
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
-                posts::audience_role.eq(self.audience_role.to_db()),
+                posts::public_link_eligible.eq(self.public_link_eligible),
             ))
             .returning(posts::id)
             .get_result(&mut conn)?;

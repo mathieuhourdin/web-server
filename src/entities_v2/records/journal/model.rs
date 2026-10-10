@@ -29,6 +29,8 @@ pub struct Journal {
 pub struct JournalAudienceMember {
     pub user: UserPublicResponse,
     pub active_default_sharing_policy: Option<JournalAudienceDefaultSharingPolicy>,
+    pub default_audience_ids: Vec<Uuid>,
+    pub has_future_default_access: bool,
     pub accessible_trace_count: i64,
     pub access_via: Vec<JournalAudienceAccessVia>,
 }

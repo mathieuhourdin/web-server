@@ -170,7 +170,7 @@ fn create_post_report(
         "subtitle": projection.subtitle,
         "cover_image_asset_id": projection.cover_image_asset_id,
         "post_type": post.post_type,
-        "audience_role": post.audience_role,
+        "public_link_eligible": post.public_link_eligible,
         "post_status": post.status,
         "publishing_date": post.publishing_date
     }));

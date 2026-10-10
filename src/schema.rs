@@ -500,6 +500,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         source_grant_id -> Nullable<Uuid>,
+        audience_id -> Nullable<Uuid>,
     }
 }
 
@@ -528,7 +529,7 @@ diesel::table! {
         updated_at -> Timestamp,
         source_trace_id -> Nullable<Uuid>,
         status -> Text,
-        audience_role -> Text,
+        public_link_eligible -> Bool,
         source_document_id -> Nullable<Uuid>,
         source_album_id -> Nullable<Uuid>,
         audience_source_post_id -> Nullable<Uuid>,
@@ -914,7 +915,83 @@ diesel::joinable!(wal_days -> users (user_id));
 diesel::joinable!(wal_entries -> wal_days (wal_day_id));
 diesel::joinable!(wal_projections -> wal_days (wal_day_id));
 
+diesel::table! {
+    audiences (id) {
+        id -> Uuid,
+        owner_user_id -> Uuid,
+        name -> Text,
+        source_journal_id -> Nullable<Uuid>,
+        archived_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    audience_members (id) {
+        id -> Uuid,
+        audience_id -> Uuid,
+        user_id -> Uuid,
+        status -> Text,
+        future_access_enabled -> Bool,
+        history_cutoff_at -> Timestamp,
+        history_review_state -> Text,
+        history_decision -> Nullable<Text>,
+        history_reviewed_at -> Nullable<Timestamp>,
+        legacy_policy_id -> Nullable<Uuid>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    post_audiences (post_id, audience_id) {
+        post_id -> Uuid,
+        audience_id -> Uuid,
+        is_default -> Bool,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    post_grant_sources (id) {
+        id -> Uuid,
+        post_grant_id -> Uuid,
+        source_type -> Text,
+        audience_id -> Nullable<Uuid>,
+        status -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    journal_default_audiences (journal_id, audience_id) {
+        journal_id -> Uuid,
+        audience_id -> Uuid,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::joinable!(audiences -> users (owner_user_id));
+diesel::joinable!(audiences -> journals (source_journal_id));
+diesel::joinable!(audience_members -> audiences (audience_id));
+diesel::joinable!(audience_members -> users (user_id));
+diesel::joinable!(audience_members -> journal_sharing_policies (legacy_policy_id));
+diesel::joinable!(post_audiences -> posts (post_id));
+diesel::joinable!(post_audiences -> audiences (audience_id));
+diesel::joinable!(journal_default_audiences -> journals (journal_id));
+diesel::joinable!(journal_default_audiences -> audiences (audience_id));
+diesel::joinable!(post_grants -> audiences (audience_id));
+diesel::joinable!(post_grant_sources -> post_grants (post_grant_id));
+diesel::joinable!(post_grant_sources -> audiences (audience_id));
+
 diesel::allow_tables_to_appear_in_same_query!(
+    audiences,
+    audience_members,
+    post_audiences,
+    post_grant_sources,
+    journal_default_audiences,
     album_items,
     albums,
     analysis_summaries,

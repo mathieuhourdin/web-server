@@ -44,6 +44,8 @@ struct JournalAudienceRow {
     user_id: Uuid,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     active_default_sharing_policy_id: Option<Uuid>,
+    #[diesel(sql_type = Array<SqlUuid>)]
+    default_audience_ids: Vec<Uuid>,
     #[diesel(sql_type = BigInt)]
     accessible_trace_count: i64,
     #[diesel(sql_type = Array<Text>)]
@@ -123,17 +125,25 @@ const JOURNAL_AUDIENCE_SQL_TAIL: &str = r#"
         GROUP BY user_id
     ),
     default_policy_users AS (
-        SELECT policy.id AS policy_id,
-               policy.grantee_user_id AS user_id
-        FROM journal_sharing_policies policy
-        WHERE policy.journal_id = $1
-          AND policy.status = 'ACTIVE'
-          AND policy.default_future_access_enabled = TRUE
-          AND policy.grantee_user_id <> $4
+        SELECT m.user_id,
+               NULL::uuid AS policy_id,
+               ARRAY_AGG(DISTINCT a.id ORDER BY a.id) AS default_audience_ids
+        FROM journal_default_audiences defaults
+        INNER JOIN audiences a ON a.id=defaults.audience_id
+        INNER JOIN audience_members m ON m.audience_id=a.id
+        WHERE defaults.journal_id=$1 AND a.owner_user_id=$4 AND a.archived_at IS NULL
+          AND m.status='ACTIVE' AND m.future_access_enabled AND m.user_id<>$4
+          AND EXISTS (SELECT 1 FROM relationships r WHERE r.requester_user_id=m.user_id
+              AND r.target_user_id=$4 AND r.relationship_type='FOLLOW' AND r.status='ACCEPTED')
+          AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+              (b.blocker_user_id=$4 AND b.blocked_user_id=m.user_id)
+              OR (b.blocker_user_id=m.user_id AND b.blocked_user_id=$4))
+        GROUP BY m.user_id
     ),
     audience AS (
         SELECT policy.user_id,
                policy.policy_id AS active_default_sharing_policy_id,
+               policy.default_audience_ids,
                COALESCE(access.accessible_trace_count, 0)::bigint AS accessible_trace_count,
                COALESCE(access.access_via, ARRAY[]::text[]) AS access_via
         FROM default_policy_users policy
@@ -143,6 +153,7 @@ const JOURNAL_AUDIENCE_SQL_TAIL: &str = r#"
 
         SELECT access.user_id,
                NULL::uuid AS active_default_sharing_policy_id,
+               ARRAY[]::uuid[] AS default_audience_ids,
                access.accessible_trace_count,
                access.access_via
         FROM grouped_access access
@@ -151,6 +162,7 @@ const JOURNAL_AUDIENCE_SQL_TAIL: &str = r#"
     )
     SELECT audience.user_id,
            audience.active_default_sharing_policy_id,
+           audience.default_audience_ids,
            audience.accessible_trace_count,
            audience.access_via,
            COUNT(*) OVER()::bigint AS total
@@ -287,6 +299,8 @@ impl Journal {
                     active_default_sharing_policy: row
                         .active_default_sharing_policy_id
                         .map(|id| JournalAudienceDefaultSharingPolicy { id }),
+                    has_future_default_access: !row.default_audience_ids.is_empty(),
+                    default_audience_ids: row.default_audience_ids,
                     accessible_trace_count: row.accessible_trace_count,
                     access_via: row
                         .access_via

@@ -14,6 +14,37 @@ struct IdRow {
 }
 
 impl Journal {
+    pub fn user_can_read(&self, user_id: uuid::Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+        if self.user_id == user_id {
+            return Ok(true);
+        }
+        if self.status == JournalStatus::Archived || self.is_encrypted {
+            return Ok(false);
+        }
+        let (_, total) =
+            Self::find_audience_user_traces_paginated(self.id, self.user_id, user_id, 0, 1, pool)?;
+        Ok(total > 0)
+    }
+
+    pub fn find_shared_ids_for_user(
+        user_id: uuid::Uuid,
+        pool: &DbPool,
+    ) -> Result<Vec<uuid::Uuid>, PpdcError> {
+        use crate::schema::{posts, traces};
+        let visible = crate::entities_v2::post_grant::PostGrant::find_shared_post_ids_for_user(
+            user_id, pool,
+        )?;
+        let mut conn = pool.get()?;
+        Ok(posts::table
+            .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .filter(posts::id.eq_any(visible))
+            .filter(posts::status.eq("PUBLISHED"))
+            .filter(traces::journal_id.is_not_null())
+            .select(traces::journal_id.assume_not_null())
+            .distinct()
+            .load(&mut conn)?)
+    }
+
     pub fn update(self, pool: &DbPool) -> Result<Journal, PpdcError> {
         let mut conn = pool.get()?;
 

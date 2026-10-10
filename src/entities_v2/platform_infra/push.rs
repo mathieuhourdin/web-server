@@ -434,7 +434,7 @@ async fn send_to_devices(
     Ok(result)
 }
 
-async fn sender_avatar_url(sender: &User, pool: &DbPool) -> Option<String> {
+pub(crate) async fn sender_avatar_url(sender: &User, pool: &DbPool) -> Option<String> {
     if let Some(asset_id) = sender.profile_picture_asset_id {
         match Asset::find(asset_id, pool) {
             Ok(asset) => {
@@ -910,38 +910,6 @@ pub(crate) async fn journal_history_shared_notification(
         body: format!(
             "a partagé {} du journal « {} » avec vous",
             trace_label, journal.title
-        ),
-        data,
-        thread_id: Some(journal.id.to_string()),
-    }
-}
-
-pub(crate) async fn journal_history_review_pending_notification(
-    journal: &Journal,
-    policy_id: Uuid,
-    grantee: &User,
-    pool: &DbPool,
-) -> PushNotification {
-    let mut data = HashMap::new();
-    data.insert(
-        "event_type".to_string(),
-        "journal_history_review_pending".to_string(),
-    );
-    data.insert("journal_id".to_string(), journal.id.to_string());
-    data.insert("journal_title".to_string(), journal.title.clone());
-    data.insert("policy_id".to_string(), policy_id.to_string());
-    data.insert("grantee_user_id".to_string(), grantee.id.to_string());
-    data.insert("grantee_display_name".to_string(), grantee.display_name());
-    if let Some(avatar_url) = sender_avatar_url(grantee, pool).await {
-        data.insert("grantee_avatar_url".to_string(), avatar_url);
-    }
-
-    PushNotification {
-        title: "Partage à confirmer".to_string(),
-        body: format!(
-            "Choisissez les traces passées à partager avec {} dans « {} »",
-            grantee.display_name(),
-            journal.title
         ),
         data,
         thread_id: Some(journal.id.to_string()),

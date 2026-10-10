@@ -2,7 +2,17 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub use super::enums::{PostAudienceRole, PostInteractionType, PostStatus, PostType};
+pub use super::enums::{PostInteractionType, PostStatus, PostType};
+
+pub(crate) fn reject_removed_audience_role<'de, D>(deserializer: D) -> Result<(), D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde::de::IgnoredAny::deserialize(deserializer)?;
+    Err(serde::de::Error::custom(
+        "audience_role has been removed; configure grants before publishing",
+    ))
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Post {
@@ -17,7 +27,7 @@ pub struct Post {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
-    pub audience_role: PostAudienceRole,
+    pub public_link_eligible: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -39,6 +49,13 @@ pub enum PostSourceRef {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewPostDto {
+    #[serde(
+        rename = "audience_role",
+        default,
+        deserialize_with = "reject_removed_audience_role",
+        skip_serializing
+    )]
+    pub removed_audience_role: (),
     #[serde(default)]
     pub source_trace_id: Option<Uuid>,
     #[serde(default)]
@@ -49,7 +66,6 @@ pub struct NewPostDto {
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: Option<PostStatus>,
-    pub audience_role: Option<PostAudienceRole>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,11 +78,7 @@ pub struct NewPost {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
-    pub audience_role: PostAudienceRole,
-}
-
-fn default_post_audience_role() -> PostAudienceRole {
-    PostAudienceRole::Default
+    pub public_link_eligible: bool,
 }
 
 impl NewPost {
@@ -83,9 +95,7 @@ impl NewPost {
             user_id,
             publishing_date: payload.publishing_date,
             status,
-            audience_role: payload
-                .audience_role
-                .unwrap_or_else(default_post_audience_role),
+            public_link_eligible: true,
         }
     }
 }

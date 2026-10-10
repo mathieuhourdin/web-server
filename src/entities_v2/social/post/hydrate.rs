@@ -11,9 +11,7 @@ use crate::entities_v2::source_projection::{
 };
 use crate::schema::{journals, posts, traces, user_post_states};
 
-use super::model::{
-    FeedPostResponse, Post, PostAudienceRole, PostInteractionType, PostStatus, PostType,
-};
+use super::model::{FeedPostResponse, Post, PostInteractionType, PostStatus, PostType};
 
 type PostTuple = (
     Uuid,
@@ -25,7 +23,7 @@ type PostTuple = (
     String,
     Option<NaiveDateTime>,
     String,
-    String,
+    bool,
     NaiveDateTime,
     NaiveDateTime,
 );
@@ -40,7 +38,7 @@ type DigestVisiblePostTuple = (
     String,
     Option<NaiveDateTime>,
     String,
-    String,
+    bool,
     NaiveDateTime,
     NaiveDateTime,
     Uuid,
@@ -56,7 +54,7 @@ type FeedPostTuple = (
     String,
     Option<NaiveDateTime>,
     String,
-    String,
+    bool,
     NaiveDateTime,
     NaiveDateTime,
     Option<Uuid>,
@@ -81,7 +79,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         post_type_raw,
         publishing_date,
         status_raw,
-        audience_role_raw,
+        public_link_eligible,
         created_at,
         updated_at,
     ) = row;
@@ -97,7 +95,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         user_id,
         publishing_date,
         status: PostStatus::from_db(&status_raw),
-        audience_role: PostAudienceRole::from_db(&audience_role_raw),
+        public_link_eligible: public_link_eligible,
         created_at,
         updated_at,
     }
@@ -113,7 +111,7 @@ fn select_post_columns() -> (
     posts::post_type,
     posts::publishing_date,
     posts::status,
-    posts::audience_role,
+    posts::public_link_eligible,
     posts::created_at,
     posts::updated_at,
 ) {
@@ -127,7 +125,7 @@ fn select_post_columns() -> (
         posts::post_type,
         posts::publishing_date,
         posts::status,
-        posts::audience_role,
+        posts::public_link_eligible,
         posts::created_at,
         posts::updated_at,
     )
@@ -144,7 +142,7 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         post_type_raw,
         publishing_date,
         status_raw,
-        audience_role_raw,
+        public_link_eligible,
         created_at,
         updated_at,
         journal_id,
@@ -162,7 +160,7 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             user_id,
             publishing_date,
             status: PostStatus::from_db(&status_raw),
-            audience_role: PostAudienceRole::from_db(&audience_role_raw),
+            public_link_eligible: public_link_eligible,
             created_at,
             updated_at,
         },
@@ -182,7 +180,7 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         post_type_raw,
         publishing_date,
         status_raw,
-        audience_role_raw,
+        public_link_eligible,
         created_at,
         updated_at,
         journal_id,
@@ -201,7 +199,7 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             user_id,
             publishing_date,
             status: PostStatus::from_db(&status_raw),
-            audience_role: PostAudienceRole::from_db(&audience_role_raw),
+            public_link_eligible: public_link_eligible,
             created_at,
             updated_at,
         },
@@ -327,7 +325,7 @@ impl Post {
                 posts::post_type,
                 posts::publishing_date,
                 posts::status,
-                posts::audience_role,
+                posts::public_link_eligible,
                 posts::created_at,
                 posts::updated_at,
                 traces::journal_id.nullable(),
@@ -440,7 +438,8 @@ impl Post {
             .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
-            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(posts::public_link_eligible.eq(true))
+            .filter(traces::is_encrypted.eq(false))
             .filter(traces::trace_type.eq(crate::entities_v2::trace::TraceType::UserTrace.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
@@ -452,7 +451,8 @@ impl Post {
             .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
-            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(posts::public_link_eligible.eq(true))
+            .filter(traces::is_encrypted.eq(false))
             .filter(traces::trace_type.eq(crate::entities_v2::trace::TraceType::UserTrace.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
@@ -480,7 +480,8 @@ impl Post {
             .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
-            .filter(posts::audience_role.eq(PostAudienceRole::Default.to_db()))
+            .filter(posts::public_link_eligible.eq(true))
+            .filter(traces::is_encrypted.eq(false))
             .filter(traces::trace_type.eq(crate::entities_v2::trace::TraceType::UserTrace.to_db()))
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
@@ -521,7 +522,7 @@ impl Post {
                 posts::post_type,
                 posts::publishing_date,
                 posts::status,
-                posts::audience_role,
+                posts::public_link_eligible,
                 posts::created_at,
                 posts::updated_at,
                 journals::id,

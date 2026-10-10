@@ -2,8 +2,6 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entities_v2::post::PostAudienceRole;
-
 pub use super::enums::{AlbumCompletionStatus, AlbumOrderingMode, AlbumVisibility};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -41,7 +39,7 @@ pub struct AlbumItemTraceView {
     pub interaction_date: NaiveDateTime,
     pub published_post_id: Option<Uuid>,
     pub publishing_date: Option<NaiveDateTime>,
-    pub post_audience_role: Option<PostAudienceRole>,
+    pub post_public_link_eligible: Option<bool>,
 }
 
 #[derive(Serialize, Debug, Clone)]

@@ -17,7 +17,7 @@ use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus},
-    post::{Post, PostAudienceRole, PostStatus},
+    post::{Post, PostStatus},
     session::Session,
     trace::{Trace, TraceSharingSensitivity},
     user::User,
@@ -457,11 +457,11 @@ impl JournalShareLink {
                 "Cannot scope a journal share link to a non-published post".to_string(),
             ));
         }
-        if post.audience_role != PostAudienceRole::Default {
+        if !post.public_link_eligible {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Cannot scope a journal share link to a restricted post".to_string(),
+                "This post is excluded from public journal links".to_string(),
             ));
         }
         let trace_id = post.source_trace_id.ok_or_else(|| {
@@ -472,6 +472,14 @@ impl JournalShareLink {
             )
         })?;
         let trace = Trace::find_full_trace(trace_id, pool)?;
+        if trace.is_encrypted || trace.trace_type != crate::entities_v2::trace::TraceType::UserTrace
+        {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Journal share links require an unencrypted ordinary trace".to_string(),
+            ));
+        }
         if trace.journal_id != Some(journal.id) {
             return Err(PpdcError::new(
                 400,

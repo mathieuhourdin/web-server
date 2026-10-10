@@ -1,7 +1,7 @@
 pub mod album;
+pub mod audience;
 pub mod content_report;
 pub mod feed;
-pub mod journal_sharing_policy;
 pub mod message;
 pub mod post;
 pub mod post_grant;

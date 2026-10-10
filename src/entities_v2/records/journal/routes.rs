@@ -12,12 +12,10 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
-    journal_sharing_policy::JournalSharingPolicy,
     message::{
         routes::{is_service_mentor, resolve_reply_context, MessageContextIds},
         Message, MessageProcessingState, MessageType, NewMessage,
     },
-    notification,
     platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     records::journal_import::{model::ImportJournalResult, service::import_journal_text},
     session::Session,
@@ -292,7 +290,7 @@ pub async fn get_shared_journals_route(
 ) -> Result<Json<PaginatedResponse<Journal>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let pagination = params.validate()?;
-    let shared_ids = JournalSharingPolicy::find_shared_journal_ids_for_user(user_id, &pool)?;
+    let shared_ids = Journal::find_shared_ids_for_user(user_id, &pool)?;
     let (journals, total) =
         Journal::find_many_paginated(shared_ids, pagination.offset, pagination.limit, true, &pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
@@ -342,7 +340,7 @@ pub async fn get_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(id, &pool)?;
-    if !JournalSharingPolicy::user_can_read_journal(&journal, user_id, &pool)? {
+    if !journal.user_can_read(user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     Ok(Json(journal))
@@ -356,13 +354,12 @@ pub async fn post_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::create(payload, user_id, &pool)?;
-    let pending_review_policy_ids =
-        JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
-    for policy_id in pending_review_policy_ids {
-        notification::spawn_journal_history_review_pending_push_notification(
-            policy_id,
-            pool.clone(),
-        );
+    for (owner, aid, reader) in
+        crate::entities_v2::audience::persist::create_missing_members_for_existing_followers(
+            &journal, &pool,
+        )?
+    {
+        crate::entities_v2::audience::routes::notify(owner, reader, aid, true, 0, pool.clone());
     }
     Ok(Json(journal))
 }
@@ -390,12 +387,13 @@ pub async fn put_journal_route(
         journal.content = content;
     }
     if let Some(is_encrypted) = payload.is_encrypted {
-        if is_encrypted && JournalSharingPolicy::has_active_policies_for_journal(journal.id, &pool)?
+        if is_encrypted
+            && crate::entities_v2::audience::persist::has_journal_defaults(journal.id, &pool)?
         {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Revoke active journal sharing policies before enabling encryption".to_string(),
+                "Remove journal default audiences before enabling encryption".to_string(),
             ));
         }
         journal.is_encrypted = is_encrypted;
@@ -411,13 +409,12 @@ pub async fn put_journal_route(
     }
 
     let journal = journal.update(&pool)?;
-    let pending_review_policy_ids =
-        JournalSharingPolicy::create_missing_policies_for_existing_followers(&journal, &pool)?;
-    for policy_id in pending_review_policy_ids {
-        notification::spawn_journal_history_review_pending_push_notification(
-            policy_id,
-            pool.clone(),
-        );
+    for (owner, aid, reader) in
+        crate::entities_v2::audience::persist::create_missing_members_for_existing_followers(
+            &journal, &pool,
+        )?
+    {
+        crate::entities_v2::audience::routes::notify(owner, reader, aid, true, 0, pool.clone());
     }
     Ok(Json(journal))
 }

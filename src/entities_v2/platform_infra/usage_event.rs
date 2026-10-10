@@ -15,7 +15,6 @@ use crate::entities_v2::{
     analysis_summary::AnalysisSummary,
     error::{ErrorType, PpdcError},
     journal::Journal,
-    journal_sharing_policy::JournalSharingPolicy,
     message::{Message, MessageType},
     post::{Post, PostStatus},
     post_grant::PostGrant,
@@ -382,7 +381,7 @@ fn validate_usage_event_access(
                 )
             })?;
             let journal = Journal::find_full(resource_id, pool)?;
-            if !JournalSharingPolicy::user_can_read_journal(&journal, user_id, pool)? {
+            if !journal.user_can_read(user_id, pool)? {
                 return Err(PpdcError::unauthorized());
             }
         }

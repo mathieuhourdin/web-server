@@ -16,7 +16,6 @@ use crate::entities_v2::{
     document::{Document, DocumentContentSource, DocumentRole, NewDocumentDto},
     error::{ErrorType, PpdcError},
     journal::{Journal, JournalStatus, JournalType},
-    journal_sharing_policy::JournalSharingPolicy,
     landscape_analysis::LandscapeAnalysis,
     lens::Lens,
     message::{
@@ -2561,7 +2560,7 @@ pub async fn get_traces_for_journal_route(
     // Access must be checked independently from the filtered trace result. An authorized reader
     // can legitimately have zero matching rows, notably with `seen=false` after reading every
     // shared trace in the journal.
-    if !JournalSharingPolicy::user_can_read_journal(&journal, user_id, &pool)? {
+    if !journal.user_can_read(user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
 

@@ -2,8 +2,8 @@ use diesel::prelude::*;
 use uuid::Uuid;
 
 use crate::db::DbPool;
+use crate::entities_v2::audience::persist::create_members_for_new_follower_pair_with_conn;
 use crate::entities_v2::error::{ErrorType, PpdcError};
-use crate::entities_v2::journal_sharing_policy::JournalSharingPolicy;
 use crate::entities_v2::post_grant::PostGrant;
 use crate::entities_v2::user_block::UserBlock;
 use crate::schema::relationships;
@@ -174,7 +174,7 @@ impl Relationship {
         actor_user_id: Uuid,
         status: RelationshipStatus,
         pool: &DbPool,
-    ) -> Result<(Relationship, bool, Vec<Uuid>), PpdcError> {
+    ) -> Result<(Relationship, bool, Vec<(Uuid, Uuid, Uuid)>), PpdcError> {
         if status == RelationshipStatus::Pending {
             return Err(PpdcError::new(
                 400,
@@ -200,8 +200,8 @@ impl Relationship {
         }
 
         let mut conn = pool.get()?;
-        let pending_history_review_policy_ids = conn
-            .transaction::<Vec<Uuid>, diesel::result::Error, _>(|conn| {
+        let pending_history_review_members = conn
+            .transaction::<Vec<(Uuid, Uuid, Uuid)>, diesel::result::Error, _>(|conn| {
                 if status == RelationshipStatus::Accepted {
                     diesel::update(relationships::table.filter(relationships::id.eq(id)))
                         .set((
@@ -222,22 +222,21 @@ impl Relationship {
                             conn,
                         )
                         .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-                        let mut policy_ids =
-                            JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
-                                actor_user_id,
-                                relationship.requester_user_id,
-                                conn,
-                            )
-                            .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-                        policy_ids.extend(
-                            JournalSharingPolicy::create_policies_for_new_follower_pair_with_conn(
+                        let mut pending_members = create_members_for_new_follower_pair_with_conn(
+                            actor_user_id,
+                            relationship.requester_user_id,
+                            conn,
+                        )
+                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                        pending_members.extend(
+                            create_members_for_new_follower_pair_with_conn(
                                 relationship.requester_user_id,
                                 actor_user_id,
                                 conn,
                             )
                             .map_err(|_| diesel::result::Error::RollbackTransaction)?,
                         );
-                        return Ok(policy_ids);
+                        return Ok(pending_members);
                     }
                 } else {
                     diesel::update(relationships::table.filter(relationships::id.eq(id)))
@@ -255,7 +254,7 @@ impl Relationship {
         Ok((
             Relationship::find(id, pool)?,
             should_notify_acceptance,
-            pending_history_review_policy_ids,
+            pending_history_review_members,
         ))
     }
 

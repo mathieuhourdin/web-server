@@ -5,9 +5,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     asset::Asset,
     error::{ErrorType, PpdcError},
-    post::{
-        enforce_publication_invariant_for_source, Post, PostAudienceRole, PostSourceRef, PostStatus,
-    },
+    post::{enforce_publication_invariant_for_source, Post, PostSourceRef, PostStatus},
     post_grant::PostGrant,
     trace::{Trace, TraceType},
 };
@@ -137,20 +135,7 @@ fn published_or_created_at(post: &Post) -> chrono::NaiveDateTime {
     post.publishing_date.unwrap_or(post.created_at)
 }
 
-fn audience_priority(post: &Post) -> i32 {
-    match post.audience_role {
-        PostAudienceRole::Restricted => 1,
-        PostAudienceRole::Default => 0,
-    }
-}
-
 fn is_better_album_post_candidate(candidate: &Post, current: &Post) -> bool {
-    let candidate_priority = audience_priority(candidate);
-    let current_priority = audience_priority(current);
-    if candidate_priority != current_priority {
-        return candidate_priority > current_priority;
-    }
-
     let candidate_published_at = published_or_created_at(candidate);
     let current_published_at = published_or_created_at(current);
     if candidate_published_at != current_published_at {
@@ -215,7 +200,7 @@ fn album_item_view_from_trace_and_post(
             interaction_date: trace.interaction_date,
             published_post_id: selected_post.as_ref().map(|post| post.id),
             publishing_date: selected_post.as_ref().and_then(|post| post.publishing_date),
-            post_audience_role: selected_post.as_ref().map(|post| post.audience_role),
+            post_public_link_eligible: selected_post.as_ref().map(|post| post.public_link_eligible),
         }
     } else {
         let post = selected_post.expect("non-owner album item views require a visible post");
@@ -229,7 +214,7 @@ fn album_item_view_from_trace_and_post(
             interaction_date: trace.interaction_date,
             published_post_id: Some(post.id),
             publishing_date: post.publishing_date,
-            post_audience_role: Some(post.audience_role),
+            post_public_link_eligible: Some(post.public_link_eligible),
         }
     };
 

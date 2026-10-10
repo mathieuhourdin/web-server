@@ -166,9 +166,8 @@ impl PostGrant {
         post_id: Uuid,
         grantee_user_id: Option<Uuid>,
         grantee_scope: Option<PostGrantScope>,
-        pool: &DbPool,
+        conn: &mut PgConnection,
     ) -> Result<Option<PostGrant>, PpdcError> {
-        let mut conn = pool.get()?;
         let mut query = post_grants::table
             .filter(post_grants::post_id.eq(post_id))
             .into_boxed();
@@ -190,6 +189,7 @@ impl PostGrant {
                 post_grants::status,
                 post_grants::created_at,
                 post_grants::updated_at,
+                post_grants::audience_id,
             ))
             .first::<(
                 Uuid,
@@ -201,7 +201,8 @@ impl PostGrant {
                 String,
                 chrono::NaiveDateTime,
                 chrono::NaiveDateTime,
-            )>(&mut conn)
+                Option<Uuid>,
+            )>(conn)
             .optional()?;
 
         row.map(|row| {
@@ -215,77 +216,11 @@ impl PostGrant {
                 status: PostGrantStatus::from_db(&row.6),
                 created_at: row.7,
                 updated_at: row.8,
+                audience_id: row.9,
+                sources: Vec::new(),
             })
         })
         .transpose()
-    }
-
-    pub(crate) fn upsert_direct_grants_for_posts_with_conn(
-        post_ids: &[Uuid],
-        owner_user_id: Uuid,
-        grantee_user_id: Uuid,
-        conn: &mut PgConnection,
-    ) -> Result<usize, PpdcError> {
-        use std::collections::HashSet;
-
-        if post_ids.is_empty() {
-            return Ok(0);
-        }
-
-        let existing_rows = post_grants::table
-            .filter(post_grants::post_id.eq_any(post_ids))
-            .filter(post_grants::owner_user_id.eq(owner_user_id))
-            .filter(post_grants::grantee_user_id.eq(Some(grantee_user_id)))
-            .filter(post_grants::grantee_scope.is_null())
-            .select((post_grants::id, post_grants::post_id, post_grants::status))
-            .load::<(Uuid, Uuid, String)>(conn)?;
-
-        let reactivated_count = existing_rows
-            .iter()
-            .filter(|(_, _, status)| status != PostGrantStatus::Active.to_db())
-            .count();
-        let existing_ids = existing_rows
-            .iter()
-            .map(|(id, _, _)| *id)
-            .collect::<Vec<_>>();
-        let existing_post_ids = existing_rows
-            .into_iter()
-            .map(|(_, post_id, _)| post_id)
-            .collect::<HashSet<_>>();
-
-        if !existing_ids.is_empty() {
-            diesel::update(post_grants::table.filter(post_grants::id.eq_any(existing_ids)))
-                .set((
-                    post_grants::access_level.eq(PostGrantAccessLevel::Read.to_db()),
-                    post_grants::status.eq(PostGrantStatus::Active.to_db()),
-                    post_grants::updated_at.eq(diesel::dsl::now),
-                ))
-                .execute(conn)?;
-        }
-
-        let new_values = post_ids
-            .iter()
-            .filter(|post_id| !existing_post_ids.contains(post_id))
-            .map(|post_id| {
-                (
-                    post_grants::id.eq(Uuid::new_v4()),
-                    post_grants::post_id.eq(*post_id),
-                    post_grants::owner_user_id.eq(owner_user_id),
-                    post_grants::grantee_user_id.eq(Some(grantee_user_id)),
-                    post_grants::grantee_scope.eq::<Option<String>>(None),
-                    post_grants::access_level.eq(PostGrantAccessLevel::Read.to_db()),
-                    post_grants::status.eq(PostGrantStatus::Active.to_db()),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        if !new_values.is_empty() {
-            diesel::insert_into(post_grants::table)
-                .values(&new_values)
-                .execute(conn)?;
-        }
-
-        Ok(reactivated_count + new_values.len())
     }
 
     pub(crate) fn revoke_all_direct_between_users_with_conn(
@@ -310,6 +245,11 @@ impl PostGrant {
         ))
         .execute(conn)?;
 
+        diesel::sql_query("UPDATE audience_members m SET future_access_enabled=FALSE,status='REVOKED',updated_at=NOW()
+            FROM audiences a WHERE m.audience_id=a.id AND
+            ((a.owner_user_id=$1 AND m.user_id=$2) OR (a.owner_user_id=$2 AND m.user_id=$1))")
+            .bind::<diesel::sql_types::Uuid,_>(user_a_id)
+            .bind::<diesel::sql_types::Uuid,_>(user_b_id).execute(conn)?;
         Ok(())
     }
 
@@ -358,33 +298,47 @@ impl PostGrant {
             }
         }
 
-        if let Some(existing) = Self::find_existing(post.id, grantee_user_id, grantee_scope, pool)?
-        {
-            let mut conn = pool.get()?;
-            diesel::update(post_grants::table.filter(post_grants::id.eq(existing.id)))
-                .set((
+        let mut conn = pool.get()?;
+        conn.transaction::<_, PpdcError, _>(|conn| {
+            posts::table
+                .filter(posts::id.eq(post.id))
+                .select(posts::id)
+                .for_update()
+                .first::<Uuid>(conn)?;
+            if let Some(existing) =
+                Self::find_existing(post.id, grantee_user_id, grantee_scope, conn)?
+            {
+                diesel::update(post_grants::table.filter(post_grants::id.eq(existing.id)))
+                    .set((
+                        post_grants::access_level.eq(access_level.to_db()),
+                        post_grants::status.eq(PostGrantStatus::Active.to_db()),
+                        post_grants::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+                diesel::sql_query(
+                    "INSERT INTO post_grant_sources(post_grant_id,source_type,status)
+                VALUES($1,'MANUAL','ACTIVE') ON CONFLICT(post_grant_id) WHERE source_type='MANUAL'
+                DO UPDATE SET status='ACTIVE',updated_at=NOW()",
+                )
+                .bind::<diesel::sql_types::Uuid, _>(existing.id)
+                .execute(conn)?;
+                return Self::find_with_conn(existing.id, conn);
+            }
+
+            let id = Uuid::new_v4();
+            diesel::insert_into(post_grants::table)
+                .values((
+                    post_grants::id.eq(id),
+                    post_grants::post_id.eq(post.id),
+                    post_grants::owner_user_id.eq(owner_user_id),
+                    post_grants::grantee_user_id.eq(grantee_user_id),
+                    post_grants::grantee_scope.eq(grantee_scope.map(|scope| scope.to_db())),
                     post_grants::access_level.eq(access_level.to_db()),
                     post_grants::status.eq(PostGrantStatus::Active.to_db()),
-                    post_grants::updated_at.eq(diesel::dsl::now),
                 ))
-                .execute(&mut conn)?;
-            return PostGrant::find(existing.id, pool);
-        }
-
-        let mut conn = pool.get()?;
-        let id = Uuid::new_v4();
-        diesel::insert_into(post_grants::table)
-            .values((
-                post_grants::id.eq(id),
-                post_grants::post_id.eq(post.id),
-                post_grants::owner_user_id.eq(owner_user_id),
-                post_grants::grantee_user_id.eq(grantee_user_id),
-                post_grants::grantee_scope.eq(grantee_scope.map(|scope| scope.to_db())),
-                post_grants::access_level.eq(access_level.to_db()),
-                post_grants::status.eq(PostGrantStatus::Active.to_db()),
-            ))
-            .execute(&mut conn)?;
-        PostGrant::find(id, pool)
+                .execute(conn)?;
+            Self::find_with_conn(id, conn)
+        })
     }
 
     pub fn revoke(
@@ -417,13 +371,47 @@ impl PostGrant {
         }
 
         let mut conn = pool.get()?;
-        diesel::update(post_grants::table.filter(post_grants::id.eq(grant_id)))
-            .set((
-                post_grants::status.eq(PostGrantStatus::Revoked.to_db()),
-                post_grants::updated_at.eq(diesel::dsl::now),
-            ))
-            .execute(&mut conn)?;
-        PostGrant::find(grant_id, pool)
+        conn.transaction::<_, PpdcError, _>(|conn| {
+            // Serialize source changes and last-source cleanup for this post.
+            posts::table.filter(posts::id.eq(post_id)).select(posts::id)
+                .for_update().first::<Uuid>(conn)?;
+            let (status, reader, source): (String, Option<Uuid>, Option<Uuid>) = post_grants::table
+                .filter(post_grants::id.eq(grant_id))
+                .select((
+                    post_grants::status,
+                    post_grants::grantee_user_id,
+                    post_grants::source_grant_id,
+                ))
+                .for_update()
+                .first(conn)?;
+            #[derive(QueryableByName)]
+            struct Origin {
+                #[diesel(sql_type = diesel::sql_types::Uuid)]
+                audience_id: Uuid,
+            }
+            let origins = diesel::sql_query("SELECT audience_id FROM post_grant_sources
+                WHERE post_grant_id=$1 AND source_type='AUDIENCE' AND status='ACTIVE'")
+                .bind::<diesel::sql_types::Uuid,_>(grant_id).load::<Origin>(conn)?;
+            // The database revocation trigger clears every source, including manual.
+            diesel::update(post_grants::table.filter(post_grants::id.eq(grant_id)))
+                .set((
+                    post_grants::status.eq(PostGrantStatus::Revoked.to_db()),
+                    post_grants::updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
+            // Only an explicit active individual withdrawal changes history scope.
+            // Repeating DELETE, bulk revocation, and overlapping empty audiences do not.
+            if status == PostGrantStatus::Active.to_db() && reader.is_some() && source.is_none() {
+                for origin in origins {
+                    diesel::sql_query("DELETE FROM post_audiences pa WHERE pa.post_id=$1 AND pa.audience_id=$2
+                        AND NOT EXISTS (SELECT 1 FROM post_grants g JOIN post_grant_sources s ON s.post_grant_id=g.id
+                            WHERE g.post_id=pa.post_id AND s.audience_id=pa.audience_id AND s.status='ACTIVE')")
+                        .bind::<diesel::sql_types::Uuid,_>(post_id)
+                        .bind::<diesel::sql_types::Uuid,_>(origin.audience_id).execute(conn)?;
+                }
+            }
+            Self::find_with_conn(grant_id, conn)
+        })
     }
 
     pub fn user_can_read_post(

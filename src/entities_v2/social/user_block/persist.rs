@@ -6,7 +6,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     post_grant::PostGrant,
 };
-use crate::schema::{journal_sharing_policies, relationships, user_blocks};
+use crate::schema::{relationships, user_blocks};
 
 use super::model::UserBlock;
 
@@ -135,22 +135,6 @@ impl UserBlock {
                 conn,
             )?;
 
-            diesel::update(
-                journal_sharing_policies::table.filter(
-                    journal_sharing_policies::owner_user_id
-                        .eq(blocker_user_id)
-                        .and(journal_sharing_policies::grantee_user_id.eq(blocked_user_id))
-                        .or(journal_sharing_policies::owner_user_id
-                            .eq(blocked_user_id)
-                            .and(journal_sharing_policies::grantee_user_id.eq(blocker_user_id))),
-                ),
-            )
-            .set((
-                journal_sharing_policies::status.eq("REVOKED"),
-                journal_sharing_policies::default_future_access_enabled.eq(false),
-                journal_sharing_policies::updated_at.eq(diesel::dsl::now),
-            ))
-            .execute(conn)?;
             Ok(())
         })
     }

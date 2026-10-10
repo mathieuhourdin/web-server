@@ -12,12 +12,12 @@ use tower_http::{
 };
 
 use crate::entities_v2::{
-    album, analysis_summary, asset, content_report, device, document, element,
+    album, analysis_summary, asset, audience, content_report, device, document, element,
     error::{ErrorType, PpdcError},
-    feed, journal, journal_share_link, journal_sharing_policy, landmark, landscape_analysis, lens,
-    llm_call, mailer, message, post, post_grant, reference, relationship, trace, trace_mirror,
-    trace_search, transcription, url_preview, usage_event, user, user_block, user_post_state,
-    user_secure_action, wal,
+    feed, journal, journal_share_link, landmark, landscape_analysis, lens, llm_call, mailer,
+    message, post, post_grant, reference, relationship, trace, trace_mirror, trace_search,
+    transcription, url_preview, usage_event, user, user_block, user_post_state, user_secure_action,
+    wal,
 };
 use crate::{environment, logging, sessions_service};
 
@@ -213,6 +213,11 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let posts_router = Router::new()
+        .route("/:id/audiences", get(audience::routes::get_post_audiences))
+        .route(
+            "/:post_id/audiences/:audience_id",
+            put(audience::routes::put_post_audience).delete(audience::routes::delete_post_audience),
+        )
         .route("/drafts", get(post::get_post_drafts_route))
         .route("/feed", get(feed::get_feed_route))
         .route("/", get(post::get_posts_route).post(post::post_post_route))
@@ -284,6 +289,10 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()
+        .route(
+            "/:id/default_audiences",
+            get(audience::routes::get_journal_defaults).put(audience::routes::put_journal_defaults),
+        )
         .route("/", post(journal::post_journal_route))
         .route(
             "/shared/recent",
@@ -314,11 +323,6 @@ pub fn create_router() -> Router {
             "/:journal_id/audience/:user_id/traces",
             get(journal::get_journal_audience_user_traces_route),
         )
-        .route(
-            "/:id/sharing_policies",
-            get(journal_sharing_policy::get_journal_sharing_policies_route)
-                .post(journal_sharing_policy::post_journal_sharing_policy_route),
-        )
         .route("/:id/posts", get(post::get_journal_posts_route))
         .route(
             "/:id/messages",
@@ -328,17 +332,46 @@ pub fn create_router() -> Router {
             "/:id/traces/finalized",
             post(trace::post_finalized_journal_trace_route),
         )
-        .route(
-            "/:journal_id/sharing_policies/:policy_id",
-            delete(journal_sharing_policy::delete_journal_sharing_policy_route)
-                .patch(journal_sharing_policy::patch_journal_sharing_policy_route),
-        )
-        .route(
-            "/:journal_id/sharing_policies/:policy_id/history_decision",
-            post(journal_sharing_policy::post_journal_sharing_policy_history_decision_route),
-        )
         .route("/:id/traces", get(trace::get_traces_for_journal_route))
         .route("/:id/imports", post(journal::post_journal_import_route))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
+    let audiences_router = Router::new()
+        .route(
+            "/",
+            get(audience::routes::get_audiences).post(audience::routes::post_audience),
+        )
+        .route(
+            "/history_reviews",
+            get(audience::routes::get_pending_reviews),
+        )
+        .route(
+            "/:id",
+            get(audience::routes::get_audience)
+                .patch(audience::routes::patch_audience)
+                .delete(audience::routes::delete_audience),
+        )
+        .route("/:id/members", get(audience::routes::get_members))
+        .route(
+            "/:id/members/:user_id",
+            get(audience::routes::get_member)
+                .put(audience::routes::put_member)
+                .patch(audience::routes::patch_member)
+                .delete(audience::routes::delete_member),
+        )
+        .route(
+            "/:id/members/:user_id/history_posts",
+            get(audience::routes::get_history_posts),
+        )
+        .route(
+            "/:id/members/:user_id/history_decision",
+            post(audience::routes::post_history_decision),
+        )
+        .route(
+            "/:id/members/:user_id/history_review",
+            post(audience::routes::post_history_review),
+        )
+        .route("/:id/posts", get(audience::routes::get_posts))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let relationships_router = Router::new()
@@ -551,12 +584,6 @@ pub fn create_router() -> Router {
     let feed_router = Router::new()
         .route("/", get(feed::get_feed_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
-    let journal_sharing_policies_router = Router::new()
-        .route(
-            "/pending_reviews",
-            get(journal_sharing_policy::get_journal_sharing_policy_pending_reviews_route),
-        )
-        .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
         .route("/account", delete(user::delete_my_account_route))
         .route("/wal", get(wal::get_wal_route).post(wal::post_wal_route))
@@ -637,11 +664,11 @@ pub fn create_router() -> Router {
         .nest("/llm_calls", llm_calls_router)
         .nest("/messages", messages_router)
         .nest("/relationships", relationships_router)
+        .nest("/audiences", audiences_router)
         .nest("/landmarks", landmarks_router)
         .nest("/elements", elements_router)
         .nest("/trace_mirrors", trace_mirrors_router)
         .nest("/feed", feed_router)
-        .nest("/journal_sharing_policies", journal_sharing_policies_router)
         .nest("/me", me_router)
         .nest("/shared", shared_router)
         .fallback(fallback_handler)

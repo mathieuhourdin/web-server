@@ -11,13 +11,12 @@ use crate::entities_v2::{
     document::{Document, DocumentStatus},
     error::{ErrorType, PpdcError},
     journal::Journal,
-    journal_sharing_policy::JournalSharingPolicy,
     notification,
     platform_infra::mailer::{self, NewOutboundEmail, OutboundEmail, OutboundEmailProvider},
     post_grant::PostGrant,
     session::Session,
     source_projection::SourceProjection,
-    trace::{Trace, TraceStatus, TraceType},
+    trace::{Trace, TraceType},
     trace_attachment::TraceAttachment,
     trace_mention::TraceMention,
     user::{User, UserPrincipalType},
@@ -30,8 +29,7 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use super::model::{
-    FeedPostResponse, NewPost, NewPostDto, Post, PostAudienceRole, PostInteractionType, PostStatus,
-    PostType,
+    FeedPostResponse, NewPost, NewPostDto, Post, PostInteractionType, PostStatus, PostType,
 };
 use super::persist::ensure_source_permits_published_post;
 
@@ -72,24 +70,40 @@ pub struct DraftPostsQuery {
 
 #[derive(Deserialize)]
 pub struct PutTracePostDto {
+    #[serde(
+        rename = "audience_role",
+        default,
+        deserialize_with = "super::model::reject_removed_audience_role"
+    )]
+    pub removed_audience_role: (),
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
     pub status: Option<PostStatus>,
-    pub audience_role: Option<PostAudienceRole>,
 }
 
 #[derive(Deserialize)]
 pub struct PutSourceRecordPostDto {
+    #[serde(
+        rename = "audience_role",
+        default,
+        deserialize_with = "super::model::reject_removed_audience_role"
+    )]
+    pub removed_audience_role: (),
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
     pub status: Option<PostStatus>,
-    pub audience_role: Option<PostAudienceRole>,
     pub post_type: Option<PostType>,
     pub interaction_type: Option<PostInteractionType>,
 }
 
 #[derive(Deserialize)]
 pub struct UpdatePostDto {
+    #[serde(
+        rename = "audience_role",
+        default,
+        deserialize_with = "super::model::reject_removed_audience_role"
+    )]
+    pub removed_audience_role: (),
     pub source_trace_id: Option<Option<Uuid>>,
     pub source_document_id: Option<Option<Uuid>>,
     pub source_album_id: Option<Option<Uuid>>,
@@ -97,7 +111,6 @@ pub struct UpdatePostDto {
     pub interaction_type: Option<PostInteractionType>,
     pub publishing_date: Option<Option<chrono::NaiveDateTime>>,
     pub status: Option<PostStatus>,
-    pub audience_role: Option<PostAudienceRole>,
 }
 
 pub(crate) fn enqueue_post_published_notification_emails(
@@ -537,7 +550,7 @@ pub async fn get_journal_posts_route(
 ) -> Result<Json<PaginatedResponse<Post>>, PpdcError> {
     let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    if !JournalSharingPolicy::user_can_read_journal(&journal, viewer_user_id, &pool)? {
+    if !journal.user_can_read(viewer_user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.pagination.validate()?;
@@ -642,10 +655,9 @@ pub async fn put_trace_post_route(
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
-            audience_role: PostAudienceRole::Default,
+            public_link_eligible: true,
         }
         .create(&pool)?;
-        JournalSharingPolicy::materialize_default_post_grants_for_post(&post, &pool)?;
         post
     };
 
@@ -666,11 +678,8 @@ pub async fn put_trace_post_route(
     if let Some(status) = payload.status {
         post.status = status;
     }
-    if let Some(audience_role) = payload.audience_role {
-        post.audience_role = audience_role;
-    }
     if trace.trace_type == TraceType::TraceComplement {
-        post.audience_role = PostAudienceRole::Restricted;
+        post.public_link_eligible = false;
     }
     if post.status == PostStatus::Published {
         ensure_source_permits_published_post(trace.status.permits_published_post())?;
@@ -699,14 +708,6 @@ pub async fn delete_trace_post_route(
     Path(trace_id): Path<Uuid>,
 ) -> Result<Json<Post>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let trace = Trace::find_full_trace(trace_id, &pool)?;
-    if trace.user_id == user_id && trace.status != TraceStatus::Draft {
-        return Err(PpdcError::new(
-            400,
-            ErrorType::ApiError,
-            "Only draft author traces can have their staged post deleted".to_string(),
-        ));
-    }
     let post = Post::find_for_trace_and_publisher(trace_id, user_id, &pool)?.ok_or_else(|| {
         PpdcError::new(
             404,
@@ -789,9 +790,6 @@ pub async fn put_post_route(
     if let Some(status) = payload.status {
         post.status = status;
     }
-    if let Some(audience_role) = payload.audience_role {
-        post.audience_role = audience_role;
-    }
     if previous_status != PostStatus::Published
         && post.status == PostStatus::Published
         && post.publishing_date.is_none()
@@ -840,7 +838,7 @@ pub async fn put_document_post_route(
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
-            audience_role: PostAudienceRole::Default,
+            public_link_eligible: true,
         }
         .create(&pool)?
     };
@@ -866,9 +864,6 @@ pub async fn put_document_post_route(
     }
     if let Some(status) = payload.status {
         post.status = status;
-    }
-    if let Some(audience_role) = payload.audience_role {
-        post.audience_role = audience_role;
     }
     if previous_status != PostStatus::Published
         && post.status == PostStatus::Published
@@ -910,7 +905,7 @@ pub async fn put_album_post_route(
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
-            audience_role: PostAudienceRole::Default,
+            public_link_eligible: true,
         }
         .create(&pool)?
     };
@@ -936,9 +931,6 @@ pub async fn put_album_post_route(
     }
     if let Some(status) = payload.status {
         post.status = status;
-    }
-    if let Some(audience_role) = payload.audience_role {
-        post.audience_role = audience_role;
     }
     if post.status == PostStatus::Published {
         ensure_source_permits_published_post(album.completion_status.permits_published_post())?;

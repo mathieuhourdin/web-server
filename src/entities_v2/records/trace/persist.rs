@@ -6,8 +6,8 @@ use crate::db::DbPool;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::journal::{Journal, JournalStatus, JournalType};
 use crate::entities_v2::post::{
-    enforce_publication_invariant_for_source, Post, PostAudienceRole, PostInteractionType,
-    PostSourceRef, PostStatus, PostType,
+    enforce_publication_invariant_for_source, Post, PostInteractionType, PostSourceRef, PostStatus,
+    PostType,
 };
 use crate::entities_v2::post_grant::{PostGrant, PostGrantAccessLevel, PostGrantStatus};
 use crate::entities_v2::relationship::Relationship;
@@ -333,7 +333,7 @@ impl Trace {
                         PostStatus::Draft
                     }
                     .to_db()),
-                    posts::audience_role.eq(PostAudienceRole::Restricted.to_db()),
+                    posts::public_link_eligible.eq(false),
                 ))
                 .execute(conn)?;
 
