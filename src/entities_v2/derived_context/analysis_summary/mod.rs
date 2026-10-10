@@ -6,7 +6,7 @@ pub mod routes;
 
 pub use model::{
     AnalysisSummary, AnalysisSummaryType, MeaningfulEvent, NewAnalysisSummary,
-    NewAnalysisSummaryDto,
+    NewAnalysisSummaryDto, SummaryEmojiKind, SummaryEmojis,
 };
 pub use routes::{
     get_analysis_summaries_route, get_analysis_summary_route, post_analysis_summary_route,

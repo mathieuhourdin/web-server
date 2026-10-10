@@ -75,6 +75,16 @@ pub async fn put_analysis_summary_route(
         .unwrap_or_else(|| payload.content.clone());
     summary.content = payload.content;
     summary.meaningful_event = payload.meaningful_event;
+    // Older clients can edit summary text without erasing generated emoji cues.
+    if let Some(emoji) = payload.activity_emoji {
+        summary.activity_emoji = emoji;
+    }
+    if let Some(emoji) = payload.mood_emoji {
+        summary.mood_emoji = emoji;
+    }
+    if let Some(kind) = payload.dominant_emoji_kind {
+        summary.dominant_emoji_kind = kind;
+    }
     let summary = summary.update(&pool)?;
     Ok(Json(summary))
 }

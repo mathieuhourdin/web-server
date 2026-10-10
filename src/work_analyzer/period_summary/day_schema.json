@@ -10,7 +10,17 @@
     },
     "content": {
       "type": "string"
+    },
+    "activity_emoji": {
+      "type": ["string", "null"]
+    },
+    "mood_emoji": {
+      "type": ["string", "null"]
+    },
+    "dominant_emoji_kind": {
+      "type": ["string", "null"],
+      "enum": ["activity", "mood", null]
     }
   },
-  "required": ["title", "short_content", "content"]
+  "required": ["title", "short_content", "content", "activity_emoji", "mood_emoji", "dominant_emoji_kind"]
 }

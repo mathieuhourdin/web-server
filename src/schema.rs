@@ -64,6 +64,9 @@ diesel::table! {
         meaningful_event_title -> Nullable<Text>,
         meaningful_event_description -> Nullable<Text>,
         meaningful_event_date -> Nullable<Text>,
+        activity_emoji -> Nullable<Text>,
+        mood_emoji -> Nullable<Text>,
+        dominant_emoji_kind -> Nullable<Text>,
     }
 }
 

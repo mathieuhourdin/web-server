@@ -50,6 +50,7 @@ Return JSON only, with exactly these fields:
 - `title`: a short title for the day recap
 - `short_content`: a very short recap of the day in about 2 to 3 sentences
 - `content`: the daily summary itself
+- `activity_emoji`, `mood_emoji`, `dominant_emoji_kind`: the memory cues defined below
 
 Writing rules:
 

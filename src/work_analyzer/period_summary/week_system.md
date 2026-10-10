@@ -41,6 +41,7 @@ Return JSON only, with exactly these fields:
 - `title`: short weekly title
 - `short_content`: very short weekly recap in about 2 to 3 sentences
 - `content`: full weekly recap
+- `activity_emoji`, `mood_emoji`, `dominant_emoji_kind`: the memory cues defined below
 - `meaningful_event`: either `null` or one object describing the most meaningful event of the week with:
   - `title`
   - `description`

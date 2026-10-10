@@ -11,6 +11,16 @@
     "content": {
       "type": "string"
     },
+    "activity_emoji": {
+      "type": ["string", "null"]
+    },
+    "mood_emoji": {
+      "type": ["string", "null"]
+    },
+    "dominant_emoji_kind": {
+      "type": ["string", "null"],
+      "enum": ["activity", "mood", null]
+    },
     "meaningful_event": {
       "anyOf": [
         {
@@ -35,5 +45,5 @@
       ]
     }
   },
-  "required": ["title", "short_content", "content", "meaningful_event"]
+  "required": ["title", "short_content", "content", "meaningful_event", "activity_emoji", "mood_emoji", "dominant_emoji_kind"]
 }
