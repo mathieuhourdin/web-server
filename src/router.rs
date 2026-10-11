@@ -78,6 +78,10 @@ pub fn create_router() -> Router {
         .route("/:id/journals", get(journal::get_user_journals_route))
         .route("/:id/heatmaps", get(trace::get_user_heatmap_route))
         .route(
+            "/:id/emoji_heatmaps",
+            get(analysis_summary::get_user_emoji_heatmap_route),
+        )
+        .route(
             "/:id/closest_followers",
             get(user::get_closest_followers_route),
         )

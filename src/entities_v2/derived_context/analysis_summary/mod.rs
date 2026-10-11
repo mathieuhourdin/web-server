@@ -1,9 +1,11 @@
 pub mod enums;
+pub mod heatmap;
 pub mod hydrate;
 pub mod model;
 pub mod persist;
 pub mod routes;
 
+pub use heatmap::get_user_emoji_heatmap_route;
 pub use model::{
     AnalysisSummary, AnalysisSummaryType, MeaningfulEvent, NewAnalysisSummary,
     NewAnalysisSummaryDto, SummaryEmojiKind, SummaryEmojis,
