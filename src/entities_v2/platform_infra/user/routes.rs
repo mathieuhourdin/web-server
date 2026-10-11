@@ -311,9 +311,18 @@ pub async fn get_user_search_route(
         SELECT COUNT(*)::bigint AS total
         FROM users
         WHERE (NOT ($4 OR $6) OR users.id <> $2)
+          -- Who is findable at all: people who actually hold an account, and
+          -- mentors. A mentor is `principal_type = 'SERVICE'`, the predicate
+          -- `GET /mentors` and the AI usage guard already use; the role row
+          -- alone matched no mentor at all, because `to_service_user` creates
+          -- them with the MEMBER role and only an explicit `add_role` ever
+          -- adds MENTOR. The MENTOR arm stays for a human granted the role.
+          -- The bare `principal_type = 'HUMAN'` arm this replaces also let
+          -- through human records that are not platform users — imported or
+          -- placeholder rows no caller means to find.
           AND (
-            principal_type = 'HUMAN'
-            OR is_platform_user = TRUE
+            (principal_type = 'HUMAN' AND is_platform_user = TRUE)
+            OR principal_type = 'SERVICE'
             OR EXISTS (
               SELECT 1 FROM user_roles ur
               WHERE ur.user_id = users.id AND ur.role = 'MENTOR'
@@ -411,9 +420,18 @@ pub async fn get_user_search_route(
             pseudonym
         FROM users
         WHERE (NOT ($8 OR $10) OR users.id <> $6)
+          -- Who is findable at all: people who actually hold an account, and
+          -- mentors. A mentor is `principal_type = 'SERVICE'`, the predicate
+          -- `GET /mentors` and the AI usage guard already use; the role row
+          -- alone matched no mentor at all, because `to_service_user` creates
+          -- them with the MEMBER role and only an explicit `add_role` ever
+          -- adds MENTOR. The MENTOR arm stays for a human granted the role.
+          -- The bare `principal_type = 'HUMAN'` arm this replaces also let
+          -- through human records that are not platform users — imported or
+          -- placeholder rows no caller means to find.
           AND (
-            principal_type = 'HUMAN'
-            OR is_platform_user = TRUE
+            (principal_type = 'HUMAN' AND is_platform_user = TRUE)
+            OR principal_type = 'SERVICE'
             OR EXISTS (
               SELECT 1 FROM user_roles ur
               WHERE ur.user_id = users.id AND ur.role = 'MENTOR'
