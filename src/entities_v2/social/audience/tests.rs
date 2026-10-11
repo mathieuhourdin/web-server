@@ -213,6 +213,304 @@ async fn trace_albums_route_respects_trace_and_album_access_and_pagination() {
     assert_eq!(page(&f, f.owner, empty, 0, 20).await.unwrap().0.total, 0);
 }
 
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn documents_read_access_follows_posts_and_trace_attachments() {
+    use crate::entities_v2::document::{
+        routes::{get_document_route, put_document_route},
+        Document, DocumentRole, UpdateDocumentDto,
+    };
+    use crate::entities_v2::session::Session;
+    use axum::{
+        extract::{Extension, Path},
+        Json,
+    };
+    let f = Fixture::new();
+    let shared = Uuid::new_v4();
+    let private = Uuid::new_v4();
+    let standalone = Uuid::new_v4();
+    let document_post = Uuid::new_v4();
+    let (trace_a, post_a) = f.publication();
+    let (trace_b, post_b) = f.publication();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO documents(id,owner_user_id,document_role,content_source,title) VALUES
+            ('{shared}','{}','REFERENCE','REFERENCE_ONLY','Shared'),
+            ('{private}','{}','CREATION','REFERENCE_ONLY','Private'),
+            ('{standalone}','{}','CREATION','REFERENCE_ONLY','Published');
+         INSERT INTO trace_attachments(trace_id,document_id,attachment_name) VALUES
+            ('{trace_a}','{shared}','Reference'),('{trace_b}','{shared}','Reference');
+         INSERT INTO posts(id,user_id,source_document_id,title,subtitle,content,interaction_type,post_type,status,publishing_date)
+            VALUES('{document_post}','{}','{standalone}','','','','OUTPUT','IDEA','PUBLISHED',NOW());",
+        f.owner, f.owner, f.owner, f.owner
+    )).unwrap();
+    let list = |viewer, role, offset, limit| {
+        Document::find_for_user_filtered_paginated(
+            viewer, f.owner, role, None, None, None, offset, limit, &f.pool,
+        )
+        .unwrap()
+    };
+    assert_eq!(list(f.owner, None, 0, 20).1, 3);
+    assert_eq!(list(f.reader, None, 0, 20).1, 0);
+    for post in [post_a, post_b, document_post] {
+        PostGrant::create_or_update(
+            &Post::find_full(post, &f.pool).unwrap(),
+            f.owner,
+            NewPostGrantDto {
+                grantee_user_id: Some(f.reader),
+                grantee_scope: None,
+                access_level: None,
+            },
+            &f.pool,
+        )
+        .unwrap();
+    }
+    let first = list(f.reader, None, 0, 1);
+    let second = list(f.reader, None, 1, 1);
+    assert_eq!(first.1, 2, "Two attachments must not duplicate a document");
+    assert_ne!(first.0[0].id, second.0[0].id);
+    assert_eq!(list(f.reader, Some(DocumentRole::Reference), 0, 20).1, 1);
+    assert_eq!(list(f.stranger, None, 0, 20).1, 0);
+    let mut session = Session::anonymous();
+    session.user_id = Some(f.reader);
+    assert!(get_document_route(
+        Extension(f.pool.clone()),
+        Extension(session.clone()),
+        Path(shared)
+    )
+    .await
+    .is_ok());
+    assert!(get_document_route(
+        Extension(f.pool.clone()),
+        Extension(session.clone()),
+        Path(standalone)
+    )
+    .await
+    .is_ok());
+    assert_eq!(
+        get_document_route(
+            Extension(f.pool.clone()),
+            Extension(session.clone()),
+            Path(private)
+        )
+        .await
+        .err()
+        .unwrap()
+        .status_code,
+        401
+    );
+    assert_eq!(
+        put_document_route(
+            Extension(f.pool.clone()),
+            Extension(session),
+            Path(shared),
+            Json(UpdateDocumentDto::default())
+        )
+        .await
+        .err()
+        .unwrap()
+        .status_code,
+        401
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE post_grants SET status='REVOKED' WHERE post_id IN ('{post_a}','{post_b}');"
+        ))
+        .unwrap();
+    assert_eq!(list(f.reader, None, 0, 20).1, 1);
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO trace_mentions(trace_id,mentioned_user_id) VALUES('{trace_a}','{}');",
+            f.reader
+        ))
+        .unwrap();
+    assert_eq!(
+        list(f.reader, None, 0, 20).1,
+        2,
+        "Mention-only trace access also shares attachments"
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE traces SET is_encrypted=TRUE WHERE id='{trace_a}';"
+        ))
+        .unwrap();
+    assert_eq!(list(f.reader, None, 0, 20).1, 1);
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE traces SET is_encrypted=FALSE,status='DRAFT' WHERE id='{trace_a}';"
+        ))
+        .unwrap();
+    assert_eq!(list(f.reader, None, 0, 20).1, 1);
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO user_blocks(blocker_user_id,blocked_user_id) VALUES('{}','{}');",
+            f.owner, f.reader
+        ))
+        .unwrap();
+    assert_eq!(list(f.reader, None, 0, 20).1, 0);
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn content_counts_track_viewer_acl_and_oldest_finalization() {
+    use crate::entities_v2::{session::Session, user::get_user_content_counts_route};
+    use axum::extract::{Extension, Path};
+    let f = Fixture::new();
+    let (private, _) = f.publication();
+    let (mentioned, _) = f.publication();
+    let (trace_a, post_a) = f.publication();
+    let (trace_b, post_b) = f.publication();
+    let doc = Uuid::new_v4();
+    let album_a = Uuid::new_v4();
+    let album_b = Uuid::new_v4();
+    let album_private = Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET finalized_at='2026-01-01',is_encrypted=TRUE WHERE id='{private}';
+         UPDATE traces SET finalized_at='2026-02-01' WHERE id='{mentioned}';
+         UPDATE traces SET finalized_at='2026-03-01' WHERE id='{trace_a}';
+         UPDATE traces SET finalized_at='2026-05-01' WHERE id='{trace_b}';
+         INSERT INTO traces(user_id,journal_id,title,subtitle,content,interaction_date,trace_type,status,start_writing_at)
+             VALUES('{}','{}','Draft','','',NOW(),'USER_TRACE','DRAFT',NOW());
+         INSERT INTO documents(id,owner_user_id,document_role,content_source,title)
+             VALUES('{doc}','{}','REFERENCE','REFERENCE_ONLY','Shared');
+         INSERT INTO documents(owner_user_id,document_role,content_source,title,status) VALUES
+             ('{}','CREATION','REFERENCE_ONLY','Private','ACTIVE'),
+             ('{}','CREATION','REFERENCE_ONLY','Archived','ARCHIVED');
+         INSERT INTO trace_attachments(trace_id,document_id,attachment_name) VALUES
+             ('{trace_a}','{doc}','Reference'),('{trace_b}','{doc}','Reference');
+         INSERT INTO albums(id,owner_user_id,title,visibility) VALUES
+             ('{album_a}','{}','First','PUBLISHED'),('{album_b}','{}','Second','PUBLISHED'),
+             ('{album_private}','{}','Private','PRIVATE');
+         INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES
+             ('{album_a}','{trace_a}',0),('{album_b}','{trace_b}',0),('{album_private}','{trace_a}',0);",
+        f.owner, f.journal, f.owner, f.owner, f.owner, f.owner, f.owner, f.owner
+    )).unwrap();
+    async fn counts(f: &Fixture, viewer: Uuid) -> crate::entities_v2::user::UserContentCounts {
+        let mut session = Session::anonymous();
+        session.user_id = Some(viewer);
+        get_user_content_counts_route(Extension(f.pool.clone()), Extension(session), Path(f.owner))
+            .await
+            .unwrap()
+            .0
+    }
+    let empty = counts(&f, f.reader).await;
+    assert_eq!(
+        (
+            empty.traces_count,
+            empty.albums_count,
+            empty.documents_count
+        ),
+        (0, 0, 0)
+    );
+    assert!(empty.oldest_trace_finalized_at.is_none());
+    let owner = counts(&f, f.owner).await;
+    assert_eq!(
+        (
+            owner.traces_count,
+            owner.albums_count,
+            owner.documents_count
+        ),
+        (4, 3, 2)
+    );
+    assert_eq!(
+        owner.oldest_trace_finalized_at.unwrap().to_rfc3339(),
+        "2026-01-01T00:00:00+00:00"
+    );
+    for post in [post_a, post_b] {
+        PostGrant::create_or_update(
+            &Post::find_full(post, &f.pool).unwrap(),
+            f.owner,
+            NewPostGrantDto {
+                grantee_user_id: Some(f.reader),
+                grantee_scope: None,
+                access_level: None,
+            },
+            &f.pool,
+        )
+        .unwrap();
+    }
+    Trace::create_complement(
+        trace_a,
+        f.owner,
+        String::new(),
+        String::new(),
+        "Excluded complement".to_string(),
+        TraceComplementAudienceMode::Parent,
+        &[],
+        &f.pool,
+    )
+    .unwrap();
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO trace_mentions(trace_id,mentioned_user_id) VALUES('{mentioned}','{}');",
+            f.reader
+        ))
+        .unwrap();
+    let shared = counts(&f, f.reader).await;
+    assert_eq!(
+        (
+            shared.traces_count,
+            shared.albums_count,
+            shared.documents_count
+        ),
+        (3, 2, 1)
+    );
+    assert_eq!(
+        shared.oldest_trace_finalized_at.unwrap().to_rfc3339(),
+        "2026-02-01T00:00:00+00:00"
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE traces SET status='ARCHIVED' WHERE id='{mentioned}';
+         UPDATE post_grants SET status='REVOKED' WHERE post_id='{post_a}';"
+        ))
+        .unwrap();
+    let revoked = counts(&f, f.reader).await;
+    assert_eq!(
+        (
+            revoked.traces_count,
+            revoked.albums_count,
+            revoked.documents_count
+        ),
+        (1, 1, 1)
+    );
+    assert_eq!(
+        revoked.oldest_trace_finalized_at.unwrap().to_rfc3339(),
+        "2026-05-01T00:00:00+00:00"
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO user_blocks(blocker_user_id,blocked_user_id) VALUES('{}','{}');",
+            f.owner, f.reader
+        ))
+        .unwrap();
+    let blocked = counts(&f, f.reader).await;
+    assert_eq!(
+        (
+            blocked.traces_count,
+            blocked.albums_count,
+            blocked.documents_count
+        ),
+        (0, 0, 0)
+    );
+    assert!(blocked.oldest_trace_finalized_at.is_none());
+}
+
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 fn shared_journal_follower_automation_uses_audiences_only() {

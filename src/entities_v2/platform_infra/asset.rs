@@ -27,9 +27,7 @@ use crate::entities_v2::{
     session::Session,
     trace::Trace,
 };
-use crate::schema::{
-    albums, assets, documents, trace_attachments, trace_source_assets, traces, users,
-};
+use crate::schema::{albums, assets, documents, trace_source_assets, traces, users};
 
 #[derive(Debug, Clone, Copy)]
 enum AssetUsage {
@@ -421,17 +419,7 @@ impl Asset {
             AssetUsage::DocumentCover { document_id }
             | AssetUsage::DocumentContentAsset { document_id } => {
                 let document = Document::find_full(document_id, pool)?;
-                if document.user_can_read(viewer_user_id) {
-                    return Ok(true);
-                }
-                if Self::can_user_read_via_published_post(
-                    Post::find_for_document(document_id, pool)?,
-                    viewer_user_id,
-                    pool,
-                )? {
-                    return Ok(true);
-                }
-                Self::can_user_read_via_trace_attachment(document_id, viewer_user_id, pool)
+                document.user_can_read(viewer_user_id, pool)
             }
             AssetUsage::AlbumCover { album_id } => {
                 let album = Album::find(album_id, pool)?;
@@ -445,27 +433,6 @@ impl Asset {
                 )
             }
         }
-    }
-
-    fn can_user_read_via_trace_attachment(
-        document_id: Uuid,
-        viewer_user_id: Uuid,
-        pool: &DbPool,
-    ) -> Result<bool, PpdcError> {
-        let mut conn = pool.get()?;
-        let trace_ids = trace_attachments::table
-            .filter(trace_attachments::document_id.eq(document_id))
-            .select(trace_attachments::trace_id)
-            .load::<Uuid>(&mut conn)?;
-
-        for trace_id in trace_ids {
-            let trace = Trace::find_full_trace(trace_id, pool)?;
-            if trace.user_can_read(viewer_user_id, pool)? {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
     }
 
     fn can_user_read_via_published_post(

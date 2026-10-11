@@ -45,12 +45,10 @@ pub async fn get_user_documents_route(
     Query(params): Query<UserDocumentsQuery>,
 ) -> Result<Json<PaginatedResponse<Document>>, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    if session_user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
 
     let pagination = params.pagination.validate()?;
     let (items, total) = Document::find_for_user_filtered_paginated(
+        session_user_id,
         user_id,
         params.document_role,
         params.document_type,
@@ -71,7 +69,7 @@ pub async fn get_document_route(
 ) -> Result<Json<Document>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let document = Document::find_full(id, &pool)?;
-    if document.owner_user_id != user_id {
+    if !document.user_can_read(user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
     Ok(Json(document))

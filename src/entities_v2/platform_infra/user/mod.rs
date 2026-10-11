@@ -1,4 +1,5 @@
 mod admin;
+mod content_counts;
 mod enums;
 mod model;
 mod purge;
@@ -18,6 +19,7 @@ pub use admin::{
     AdminUserListItem, AdminUserLlmCostAggregate, AdminUserLlmCostByModel,
     AdminUserLlmCostsResponse, AdminUserRecentActivity,
 };
+pub use content_counts::{get_user_content_counts_route, UserContentCounts};
 pub use enums::{
     EmailNotificationMode, HomeFocusView, JournalTheme, UserPrincipalType, UserRole,
     WeekAnalysisWeekday,
