@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::{count_star, not};
 use diesel::prelude::*;
-use diesel::sql_types::Timestamp;
+use diesel::sql_types::{Array, BigInt, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -17,17 +17,76 @@ use crate::schema::{journals, posts, traces, user_post_states};
 
 use super::model::{FeedItem, FeedSourceKind};
 
-type FeedPostRow = (
-    Uuid,
-    Uuid,
-    Option<Uuid>,
-    Option<Uuid>,
-    Option<Uuid>,
-    Option<NaiveDateTime>,
-    String,
-    NaiveDateTime,
-    NaiveDateTime,
-);
+#[derive(QueryableByName)]
+struct FeedCandidate {
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    post_id: Option<Uuid>,
+    #[diesel(sql_type = SqlUuid)]
+    owner_user_id: Uuid,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    source_trace_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    source_document_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    source_album_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    publishing_date: Option<NaiveDateTime>,
+    #[diesel(sql_type = Text)]
+    status: String,
+    #[diesel(sql_type = Timestamp)]
+    created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    updated_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    feed_date: NaiveDateTime,
+}
+
+impl FeedCandidate {
+    fn source_ref(&self) -> Option<PostSourceRef> {
+        self.source_trace_id
+            .map(PostSourceRef::Trace)
+            .or_else(|| self.source_document_id.map(PostSourceRef::Document))
+            .or_else(|| self.source_album_id.map(PostSourceRef::Album))
+    }
+}
+
+#[derive(QueryableByName)]
+struct FeedCount {
+    #[diesel(sql_type = BigInt)]
+    total: i64,
+}
+
+// Merge only lightweight candidates before global sorting/pagination. Album
+// cards use album visibility + a readable child publication, not album-post ACLs.
+// Backing album posts are deliberately absent to avoid duplicate cards/counts.
+const FEED_CANDIDATES: &str = "
+WITH feed_candidates AS (
+    SELECT p.id AS entry_id, p.id AS post_id, p.user_id AS owner_user_id,
+        p.source_trace_id, p.source_document_id, NULL::uuid AS source_album_id,
+        p.publishing_date, p.status, p.created_at, p.updated_at,
+        COALESCE(p.publishing_date, p.created_at) AS feed_date
+    FROM posts p LEFT JOIN traces t ON t.id = p.source_trace_id
+    WHERE p.status = 'PUBLISHED' AND p.user_id <> $1
+      AND p.id = ANY($2) AND p.source_album_id IS NULL
+      AND (p.source_trace_id IS NOT NULL OR p.source_document_id IS NOT NULL)
+      AND t.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'
+      AND ($3::boolean IS NULL OR $3 = EXISTS (
+          SELECT 1 FROM user_post_states s WHERE s.post_id = p.id AND s.user_id = $1
+      ))
+    UNION ALL
+    SELECT a.id AS entry_id, NULL::uuid AS post_id, a.owner_user_id,
+        NULL::uuid AS source_trace_id, NULL::uuid AS source_document_id,
+        a.id AS source_album_id, NULL::timestamp AS publishing_date,
+        'PUBLISHED'::text AS status, a.created_at, a.updated_at,
+        a.created_at AS feed_date
+    FROM albums a
+    WHERE $3::boolean IS NULL AND a.owner_user_id <> $1
+      AND a.visibility = 'PUBLISHED' AND a.completion_status <> 'ARCHIVED'
+      AND EXISTS (
+          SELECT 1 FROM album_items i JOIN posts child ON child.source_trace_id = i.trace_id
+          WHERE i.album_id = a.id AND trace_publication_readable(child.id, $1)
+      )
+)";
 
 pub fn find_feed_items_paginated(
     viewer_user_id: Uuid,
@@ -37,113 +96,94 @@ pub fn find_feed_items_paginated(
     pool: &DbPool,
 ) -> Result<(Vec<FeedItem>, i64), PpdcError> {
     let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
-    if visible_post_ids.is_empty() {
-        return Ok((vec![], 0));
-    }
-
     let mut conn = pool.get()?;
-    let seen_post_ids = if seen.is_some() {
-        user_post_states::table
-            .filter(user_post_states::user_id.eq(viewer_user_id))
-            .select(user_post_states::post_id)
-            .load::<Uuid>(&mut conn)?
-    } else {
-        vec![]
-    };
-    if seen == Some(true) && seen_post_ids.is_empty() {
-        return Ok((vec![], 0));
-    }
+    let total = diesel::sql_query(format!(
+        "{FEED_CANDIDATES} SELECT COUNT(*)::bigint AS total FROM feed_candidates"
+    ))
+    .bind::<SqlUuid, _>(viewer_user_id)
+    .bind::<Array<SqlUuid>, _>(&visible_post_ids)
+    .bind::<Nullable<diesel::sql_types::Bool>, _>(seen)
+    .get_result::<FeedCount>(&mut conn)?
+    .total;
+    let rows = diesel::sql_query(format!(
+        "{FEED_CANDIDATES} SELECT * FROM feed_candidates
+         ORDER BY feed_date DESC, created_at DESC, entry_id DESC, (post_id IS NULL) DESC
+         OFFSET $4 LIMIT $5"
+    ))
+    .bind::<SqlUuid, _>(viewer_user_id)
+    .bind::<Array<SqlUuid>, _>(&visible_post_ids)
+    .bind::<Nullable<diesel::sql_types::Bool>, _>(seen)
+    .bind::<BigInt, _>(offset)
+    .bind::<BigInt, _>(limit)
+    .load::<FeedCandidate>(&mut conn)?;
 
-    // Feed eligibility is now fully captured by `posts.status = 'published'`: the
-    // publication invariant (doc/publication.md) guarantees a published post always
-    // has an eligible source, so no read-time source-state filter is needed. That
-    // lets us filter, order, and paginate entirely in SQL and hydrate only the page.
-    // The count query mirrors the page predicates so `total` stays exact. The
-    // source-backed predicate keeps source-less custom posts out of the feed.
-    let total: i64 = {
-        let mut count_query = posts::table
-            .left_join(traces::table.on(traces::id.nullable().eq(posts::source_trace_id)))
-            .filter(posts::status.eq(PostStatus::Published.to_db()))
-            .filter(posts::user_id.ne(viewer_user_id))
-            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
-                "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
-            ))
-            .filter(posts::id.eq_any(visible_post_ids.clone()))
-            .filter(
-                posts::source_trace_id
-                    .is_not_null()
-                    .or(posts::source_document_id.is_not_null())
-                    .or(posts::source_album_id.is_not_null()),
-            )
-            .into_boxed();
-        if let Some(seen) = seen {
-            count_query = if seen {
-                count_query.filter(posts::id.eq_any(seen_post_ids.clone()))
-            } else {
-                count_query.filter(not(posts::id.eq_any(seen_post_ids.clone())))
-            };
-        }
-        count_query.select(count_star()).get_result(&mut conn)?
-    };
+    drop(conn);
+    Ok((hydrate_feed_candidates(rows, pool)?, total))
+}
 
-    let mut page_query = posts::table
-        .left_join(traces::table.on(traces::id.nullable().eq(posts::source_trace_id)))
-        .filter(posts::status.eq(PostStatus::Published.to_db()))
-        .filter(posts::user_id.ne(viewer_user_id))
-        .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
-            "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
-        ))
-        .filter(posts::id.eq_any(visible_post_ids))
-        .filter(
-            posts::source_trace_id
-                .is_not_null()
-                .or(posts::source_document_id.is_not_null())
-                .or(posts::source_album_id.is_not_null()),
-        )
-        .into_boxed();
-    if let Some(seen) = seen {
-        page_query = if seen {
-            page_query.filter(posts::id.eq_any(seen_post_ids))
-        } else {
-            page_query.filter(not(posts::id.eq_any(seen_post_ids)))
-        };
-    }
-    let rows = page_query
-        .select((
-            posts::id,
-            posts::user_id,
-            posts::source_trace_id,
-            posts::source_document_id,
-            posts::source_album_id,
-            posts::publishing_date,
-            posts::status,
-            posts::created_at,
-            posts::updated_at,
-        ))
-        .order(posts::publishing_date.desc().nulls_last())
-        .then_order_by(posts::created_at.desc())
-        .limit(limit)
-        .offset(offset)
-        .load::<FeedPostRow>(&mut conn)?;
+const MY_FEED_CANDIDATES: &str = "
+WITH feed_candidates AS (
+    SELECT t.id AS entry_id, p.id AS post_id, t.user_id AS owner_user_id,
+        t.id AS source_trace_id, NULL::uuid AS source_document_id, NULL::uuid AS source_album_id,
+        p.publishing_date, COALESCE(p.status, 'DRAFT') AS status, t.created_at, t.updated_at,
+        COALESCE(t.finalized_at, t.interaction_date, t.created_at) AS feed_date
+    FROM traces t LEFT JOIN LATERAL (
+        SELECT id, status, publishing_date FROM posts
+        WHERE source_trace_id = t.id AND user_id = t.user_id
+        ORDER BY (status = 'PUBLISHED') DESC, created_at DESC, id DESC LIMIT 1
+    ) p ON TRUE
+    WHERE t.user_id = $1 AND t.trace_type = 'USER_TRACE' AND t.status = 'FINALIZED'
+    UNION ALL
+    SELECT a.id AS entry_id, NULL::uuid AS post_id, a.owner_user_id,
+        NULL::uuid AS source_trace_id, NULL::uuid AS source_document_id,
+        a.id AS source_album_id, NULL::timestamp AS publishing_date,
+        CASE WHEN a.visibility = 'PUBLISHED' THEN 'PUBLISHED' ELSE 'DRAFT' END AS status,
+        a.created_at, a.updated_at, a.created_at AS feed_date
+    FROM albums a WHERE a.owner_user_id = $1 AND a.completion_status <> 'ARCHIVED'
+)";
+
+pub fn find_my_feed_items_paginated(
+    user_id: Uuid,
+    offset: i64,
+    limit: i64,
+    pool: &DbPool,
+) -> Result<(Vec<FeedItem>, i64), PpdcError> {
+    let mut conn = pool.get()?;
+    let total = diesel::sql_query(format!(
+        "{MY_FEED_CANDIDATES} SELECT COUNT(*)::bigint AS total FROM feed_candidates"
+    ))
+    .bind::<SqlUuid, _>(user_id)
+    .get_result::<FeedCount>(&mut conn)?
+    .total;
+    let rows = diesel::sql_query(format!(
+        "{MY_FEED_CANDIDATES} SELECT * FROM feed_candidates
+         ORDER BY feed_date DESC, created_at DESC, entry_id DESC, (source_album_id IS NOT NULL) DESC
+         OFFSET $2 LIMIT $3"
+    ))
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<BigInt, _>(offset)
+    .bind::<BigInt, _>(limit)
+    .load::<FeedCandidate>(&mut conn)?;
+    drop(conn);
+    Ok((hydrate_feed_candidates(rows, pool)?, total))
+}
+
+fn hydrate_feed_candidates(
+    rows: Vec<FeedCandidate>,
+    pool: &DbPool,
+) -> Result<Vec<FeedItem>, PpdcError> {
+    let mut conn = pool.get()?;
 
     let source_refs = rows
         .iter()
-        .filter_map(|row| {
-            if let Some(trace_id) = row.2 {
-                Some(PostSourceRef::Trace(trace_id))
-            } else if let Some(document_id) = row.3 {
-                Some(PostSourceRef::Document(document_id))
-            } else {
-                row.4.map(PostSourceRef::Album)
-            }
-        })
+        .filter_map(FeedCandidate::source_ref)
         .collect::<Vec<_>>();
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
     drop(conn);
 
     let mut displayed_user_ids: Vec<Uuid> = rows
         .iter()
-        .map(|row| row.1)
+        .map(|row| row.owner_user_id)
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
@@ -185,77 +225,61 @@ pub fn find_feed_items_paginated(
 
     let items = rows
         .into_iter()
-        .filter_map(
-            |(
-                post_id,
-                owner_user_id,
-                source_trace_id,
-                source_document_id,
-                source_album_id,
-                publishing_date,
-                status_raw,
-                created_at,
-                updated_at,
-            )| {
-                let source_ref = if let Some(trace_id) = source_trace_id {
-                    Some(PostSourceRef::Trace(trace_id))
-                } else if let Some(document_id) = source_document_id {
-                    Some(PostSourceRef::Document(document_id))
-                } else {
-                    source_album_id.map(PostSourceRef::Album)
-                }?;
+        .filter_map(|row| {
+            let source_ref = row.source_ref()?;
+            let owner_user_id = row.owner_user_id;
 
-                let projection = projections.get(&source_ref)?;
-                // The publication invariant should guarantee this never fires; if it
-                // does, a published post has drifted out of sync with its source.
-                // Log for observability but keep the item so SQL pagination stays exact.
-                if !projection.is_feed_eligible() {
-                    tracing::warn!(
-                        target: "feed",
-                        "published_post_with_ineligible_source post_id={} source={:?}",
-                        post_id,
-                        source_ref
-                    );
-                }
-                Some(FeedItem {
-                    post_id,
-                    source_kind: match projection.source_kind {
-                        SourceProjectionKind::Trace => FeedSourceKind::Trace,
-                        SourceProjectionKind::Document => FeedSourceKind::Document,
-                        SourceProjectionKind::Album => FeedSourceKind::Album,
-                    },
-                    source_id: projection.source_id,
-                    original_source_id: projection.original_source_id,
-                    original_author_user_id: projection.original_author_user_id,
-                    original_author_display_name: projection
-                        .original_author_user_id
-                        .and_then(|id| display_name_map.get(&id).cloned()),
-                    original_author_profile_picture_display_url: projection
-                        .original_author_user_id
-                        .and_then(|id| profile_picture_map.get(&id).cloned().flatten()),
-                    owner_user_id,
-                    journal_id: projection.journal_id,
-                    status: PostStatus::from_db(&status_raw),
-                    publishing_date,
-                    title: projection.title.clone(),
-                    subtitle: projection.subtitle.clone(),
-                    content: projection.content.clone(),
-                    cover_image_asset_id: projection.cover_image_asset_id,
-                    owner_display_name: display_name_map
-                        .get(&owner_user_id)
-                        .cloned()
-                        .unwrap_or_default(),
-                    journal_title: projection
-                        .journal_id
-                        .and_then(|jid| journal_title_map.get(&jid).cloned()),
-                    created_at,
-                    updated_at,
-                })
-            },
-        )
+            let projection = projections.get(&source_ref)?;
+            // The publication invariant should guarantee this never fires; if it
+            // does, a published post has drifted out of sync with its source.
+            // Log for observability but keep the item so SQL pagination stays exact.
+            if row.post_id.is_some() && !projection.is_feed_eligible() {
+                tracing::warn!(
+                    target: "feed",
+                    "published_post_with_ineligible_source post_id={:?} source={:?}",
+                    row.post_id,
+                    source_ref
+                );
+            }
+            Some(FeedItem {
+                post_id: row.post_id,
+                source_kind: match projection.source_kind {
+                    SourceProjectionKind::Trace => FeedSourceKind::Trace,
+                    SourceProjectionKind::Document => FeedSourceKind::Document,
+                    SourceProjectionKind::Album => FeedSourceKind::Album,
+                },
+                source_id: projection.source_id,
+                original_source_id: projection.original_source_id,
+                original_author_user_id: projection.original_author_user_id,
+                original_author_display_name: projection
+                    .original_author_user_id
+                    .and_then(|id| display_name_map.get(&id).cloned()),
+                original_author_profile_picture_display_url: projection
+                    .original_author_user_id
+                    .and_then(|id| profile_picture_map.get(&id).cloned().flatten()),
+                owner_user_id,
+                journal_id: projection.journal_id,
+                status: PostStatus::from_db(&row.status),
+                publishing_date: row.publishing_date,
+                feed_date: row.feed_date,
+                title: projection.title.clone(),
+                subtitle: projection.subtitle.clone(),
+                content: projection.content.clone(),
+                cover_image_asset_id: projection.cover_image_asset_id,
+                owner_display_name: display_name_map
+                    .get(&owner_user_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                journal_title: projection
+                    .journal_id
+                    .and_then(|jid| journal_title_map.get(&jid).cloned()),
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            })
+        })
         .collect::<Vec<_>>();
 
-    Ok((items, total))
+    Ok(items)
 }
 
 pub fn count_recent_unread_feed_items(
@@ -282,11 +306,11 @@ pub fn count_recent_unread_feed_items(
             "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
         ))
         .filter(posts::id.eq_any(visible_post_ids))
+        .filter(posts::source_album_id.is_null())
         .filter(
             posts::source_trace_id
                 .is_not_null()
-                .or(posts::source_document_id.is_not_null())
-                .or(posts::source_album_id.is_not_null()),
+                .or(posts::source_document_id.is_not_null()),
         )
         .filter(
             diesel::dsl::sql::<Timestamp>("COALESCE(posts.publishing_date, posts.created_at)")

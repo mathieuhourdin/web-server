@@ -14,7 +14,7 @@ pub enum FeedSourceKind {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct FeedItem {
-    pub post_id: Uuid,
+    pub post_id: Option<Uuid>,
     pub source_kind: FeedSourceKind,
     pub source_id: Uuid,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -29,6 +29,7 @@ pub struct FeedItem {
     pub journal_id: Option<Uuid>,
     pub status: PostStatus,
     pub publishing_date: Option<NaiveDateTime>,
+    pub feed_date: NaiveDateTime,
     pub title: String,
     pub subtitle: String,
     pub content: String,

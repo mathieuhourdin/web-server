@@ -620,6 +620,7 @@ pub fn create_router() -> Router {
         )
         .route("/unread_counts", get(user::get_me_unread_counts_route))
         .route("/traces", get(trace::get_me_traces_route))
+        .route("/feed", get(feed::get_my_feed_route))
         .route("/landmarks", get(landmark::get_me_landmarks_route))
         .route(
             "/high_level_projects",

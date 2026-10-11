@@ -513,6 +513,251 @@ async fn content_counts_track_viewer_acl_and_oldest_finalization() {
 
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn feed_merges_album_creation_cards_without_seen_tracking_or_duplicates() {
+    use crate::entities_v2::feed::{
+        hydrate::{count_recent_unread_feed_items, find_feed_items_paginated},
+        model::FeedSourceKind,
+    };
+    use chrono::NaiveDateTime;
+    let f = Fixture::new();
+    let (trace_a, post_a) = f.publication();
+    let (_, post_b) = f.publication();
+    let (hidden_trace, _) = f.publication();
+    let album = Uuid::new_v4();
+    let private_album = Uuid::new_v4();
+    let archived_album = Uuid::new_v4();
+    let hidden_album = Uuid::new_v4();
+    let album_post = Uuid::new_v4();
+    let hidden_album_post = Uuid::new_v4();
+    let document = Uuid::new_v4();
+    let document_post = Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE posts SET publishing_date='2026-10-05' WHERE id='{post_a}';
+         UPDATE posts SET publishing_date='2026-10-01' WHERE id='{post_b}';
+         INSERT INTO albums(id,owner_user_id,title,visibility,completion_status,created_at,updated_at) VALUES
+            ('{album}','{}','Album','PUBLISHED','IN_PROGRESS','2026-10-04','2026-10-10'),
+            ('{private_album}','{}','Private','PRIVATE','IN_PROGRESS','2026-10-09','2026-10-09'),
+            ('{archived_album}','{}','Archived','PUBLISHED','ARCHIVED','2026-10-09','2026-10-09'),
+            ('{hidden_album}','{}','Hidden','PUBLISHED','IN_PROGRESS','2026-10-09','2026-10-09');
+         INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES
+            ('{album}','{trace_a}',0),('{private_album}','{trace_a}',0),
+            ('{archived_album}','{trace_a}',0),('{hidden_album}','{hidden_trace}',0);
+         INSERT INTO documents(id,owner_user_id,document_role,content_source,title)
+            VALUES('{document}','{}','CREATION','REFERENCE_ONLY','Document');
+         INSERT INTO posts(id,user_id,source_album_id,source_document_id,title,subtitle,content,interaction_type,post_type,status,publishing_date) VALUES
+            ('{album_post}','{}','{album}',NULL,'','','','OUTPUT','IDEA','PUBLISHED','2026-10-09'),
+            ('{hidden_album_post}','{}','{hidden_album}',NULL,'','','','OUTPUT','IDEA','PUBLISHED','2026-10-09'),
+            ('{document_post}','{}',NULL,'{document}','','','','OUTPUT','IDEA','PUBLISHED','2026-10-03');",
+        f.owner, f.owner, f.owner, f.owner, f.owner, f.owner, f.owner, f.owner
+    )).unwrap();
+    for post in [post_a, post_b, album_post, hidden_album_post, document_post] {
+        PostGrant::create_or_update(
+            &Post::find_full(post, &f.pool).unwrap(),
+            f.owner,
+            NewPostGrantDto {
+                grantee_user_id: Some(f.reader),
+                grantee_scope: None,
+                access_level: None,
+            },
+            &f.pool,
+        )
+        .unwrap();
+    }
+    let (items, total) = find_feed_items_paginated(f.reader, None, 0, 20, &f.pool).unwrap();
+    assert_eq!(total, 4);
+    assert_eq!(
+        items.iter().map(|item| item.source_id).collect::<Vec<_>>(),
+        vec![
+            trace_a,
+            album,
+            document,
+            Post::find_full(post_b, &f.pool)
+                .unwrap()
+                .source_trace_id
+                .unwrap()
+        ]
+    );
+    let card = &items[1];
+    assert_eq!(card.source_kind, FeedSourceKind::Album);
+    assert!(card.post_id.is_none());
+    assert!(card.publishing_date.is_none());
+    assert_eq!(card.feed_date.to_string(), "2026-10-04 00:00:00");
+    assert_eq!(card.updated_at.to_string(), "2026-10-10 00:00:00");
+    let (page, page_total) = find_feed_items_paginated(f.reader, None, 1, 1, &f.pool).unwrap();
+    assert_eq!(page_total, 4);
+    assert_eq!(page[0].source_id, album);
+    assert_eq!(
+        find_feed_items_paginated(f.reader, None, 50, 1, &f.pool)
+            .unwrap()
+            .1,
+        4
+    );
+    assert_eq!(
+        find_feed_items_paginated(f.stranger, None, 0, 20, &f.pool)
+            .unwrap()
+            .1,
+        0
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO user_post_states(user_id,post_id,first_seen_at,last_seen_at)
+            VALUES('{}','{post_b}',NOW(),NOW());",
+            f.reader
+        ))
+        .unwrap();
+    let (unseen, unseen_total) =
+        find_feed_items_paginated(f.reader, Some(false), 0, 20, &f.pool).unwrap();
+    assert_eq!(unseen_total, 2);
+    assert!(unseen
+        .iter()
+        .all(|item| item.source_kind != FeedSourceKind::Album));
+    assert_eq!(
+        find_feed_items_paginated(f.reader, Some(true), 0, 20, &f.pool)
+            .unwrap()
+            .1,
+        1
+    );
+    let cutoff = "2026-10-01T00:00:00".parse::<NaiveDateTime>().unwrap();
+    assert_eq!(
+        count_recent_unread_feed_items(f.reader, cutoff, &f.pool).unwrap(),
+        2
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE post_grants SET status='REVOKED' WHERE post_id='{album_post}';"
+        ))
+        .unwrap();
+    assert_eq!(
+        find_feed_items_paginated(f.reader, None, 0, 20, &f.pool)
+            .unwrap()
+            .1,
+        4,
+        "Album cards require child access, not a backing album post grant"
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE post_grants SET status='REVOKED' WHERE post_id='{post_a}';"
+        ))
+        .unwrap();
+    assert_eq!(
+        find_feed_items_paginated(f.reader, None, 0, 20, &f.pool)
+            .unwrap()
+            .1,
+        2
+    );
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn own_feed_includes_private_traces_and_albums_without_changing_trace_collection() {
+    use crate::entities_v2::{
+        feed::{get_my_feed_route, model::FeedSourceKind},
+        session::Session,
+    };
+    use crate::pagination::PaginationParams;
+    use axum::extract::{Extension, Query};
+    let f = Fixture::new();
+    let (published, published_post) = f.publication();
+    let private_trace = Uuid::new_v4();
+    let private_album = Uuid::new_v4();
+    let published_album = Uuid::new_v4();
+    let archived_album = Uuid::new_v4();
+    let foreign_album = Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET finalized_at='2026-10-05' WHERE id='{published}';
+         UPDATE posts SET publishing_date='2026-10-10' WHERE id='{published_post}';
+         INSERT INTO traces(id,user_id,journal_id,title,subtitle,content,interaction_date,trace_type,status,start_writing_at,finalized_at) VALUES
+            ('{private_trace}','{}','{}','Private','','Owner only','2026-01-01','USER_TRACE','FINALIZED',NOW(),'2026-10-01');
+         INSERT INTO traces(user_id,journal_id,title,subtitle,content,interaction_date,trace_type,status,start_writing_at)
+            VALUES('{}','{}','Draft','','',NOW(),'USER_TRACE','DRAFT',NOW());
+         INSERT INTO albums(id,owner_user_id,title,visibility,completion_status,created_at,updated_at) VALUES
+            ('{private_album}','{}','Private album','PRIVATE','IN_PROGRESS','2026-10-04','2026-10-11'),
+            ('{published_album}','{}','Published album','PUBLISHED','COMPLETE','2026-10-03','2026-10-03'),
+            ('{archived_album}','{}','Archived album','PRIVATE','ARCHIVED','2026-10-09','2026-10-09'),
+            ('{foreign_album}','{}','Other user','PRIVATE','IN_PROGRESS','2026-10-09','2026-10-09');",
+        f.owner, f.journal, f.owner, f.journal, f.owner, f.owner, f.owner, f.reader
+    )).unwrap();
+    Trace::create_complement(
+        published,
+        f.owner,
+        String::new(),
+        String::new(),
+        "Excluded complement".to_string(),
+        TraceComplementAudienceMode::Parent,
+        &[],
+        &f.pool,
+    )
+    .unwrap();
+    async fn page(
+        f: &Fixture,
+        user: Uuid,
+        offset: i64,
+        limit: i64,
+    ) -> crate::pagination::PaginatedResponse<crate::entities_v2::feed::FeedItem> {
+        let mut session = Session::anonymous();
+        session.user_id = Some(user);
+        get_my_feed_route(
+            Extension(f.pool.clone()),
+            Extension(session),
+            Query(PaginationParams::from_parts(Some(offset), Some(limit))),
+        )
+        .await
+        .unwrap()
+        .0
+    }
+    let all = page(&f, f.owner, 0, 20).await;
+    assert_eq!(all.total, 4);
+    assert_eq!(
+        all.items
+            .iter()
+            .map(|item| item.source_id)
+            .collect::<Vec<_>>(),
+        vec![published, private_album, published_album, private_trace]
+    );
+    assert_eq!(all.items[0].post_id, Some(published_post));
+    assert_eq!(
+        all.items[0].feed_date.to_string(),
+        "2026-10-05 00:00:00",
+        "Owned traces use finalization, not their publication date"
+    );
+    assert!(all.items[1].post_id.is_none());
+    assert_eq!(all.items[1].source_kind, FeedSourceKind::Album);
+    assert!(all.items[3].post_id.is_none());
+    assert_eq!(all.items[3].content, "Owner only");
+    assert!(all.items.iter().all(|item| item.owner_user_id == f.owner));
+    let second = page(&f, f.owner, 1, 1).await;
+    assert_eq!(second.total, 4);
+    assert_eq!(second.items[0].source_id, private_album);
+    assert!(page(&f, f.owner, 100, 1).await.items.is_empty());
+    let other = page(&f, f.reader, 0, 20).await;
+    assert_eq!(other.total, 1);
+    assert_eq!(other.items[0].source_id, foreign_album);
+    let (_, trace_total) = Trace::find_list_items_for_owner_paginated(
+        f.owner,
+        0,
+        20,
+        crate::entities_v2::trace::TraceStatus::Finalized,
+        None,
+        None,
+        None,
+        None,
+        &f.pool,
+    )
+    .unwrap();
+    assert_eq!(
+        trace_total, 2,
+        "The existing trace collection still contains traces only"
+    );
+}
+
+#[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 fn shared_journal_follower_automation_uses_audiences_only() {
     let f = Fixture::new();
     f.pool

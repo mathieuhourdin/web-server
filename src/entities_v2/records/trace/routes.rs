@@ -647,7 +647,7 @@ async fn finalize_expired_trace_if_needed(
     }
 }
 
-async fn finalize_expired_drafts_for_user(
+pub(crate) async fn finalize_expired_drafts_for_user(
     user_id: Uuid,
     pool: &DbPool,
     session_id: Option<Uuid>,

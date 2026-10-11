@@ -3,4 +3,4 @@ pub mod model;
 pub mod routes;
 
 pub use model::{FeedItem, FeedSourceKind};
-pub use routes::get_feed_route;
+pub use routes::{get_feed_route, get_my_feed_route};

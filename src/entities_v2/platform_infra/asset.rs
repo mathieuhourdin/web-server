@@ -423,7 +423,7 @@ impl Asset {
             }
             AssetUsage::AlbumCover { album_id } => {
                 let album = Album::find(album_id, pool)?;
-                if album.owner_user_id == viewer_user_id {
+                if album.user_can_read(viewer_user_id, pool)? {
                     return Ok(true);
                 }
                 Self::can_user_read_via_published_post(
