@@ -10,6 +10,7 @@ use crate::entities_v2::{
     error::PpdcError,
     platform_infra::asset::{upload_image_asset_for_user_from_multipart, AssetUploadResponse},
     session::Session,
+    trace::Trace,
 };
 use crate::pagination::{PaginatedResponse, PaginationParams};
 
@@ -38,6 +39,29 @@ pub async fn get_user_albums_route(
     let (albums, total) = Album::find_for_user_paginated(
         viewer_user_id,
         user_id,
+        pagination.offset,
+        pagination.limit,
+        &pool,
+    )?;
+    Ok(Json(PaginatedResponse::new(albums, pagination, total)))
+}
+
+#[debug_handler]
+pub async fn get_trace_albums_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(trace_id): Path<Uuid>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Album>>, PpdcError> {
+    let viewer_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    let pagination = params.validate()?;
+    let trace = Trace::find_full_trace(trace_id, &pool)?;
+    if !trace.user_can_read(viewer_user_id, &pool)? {
+        return Err(PpdcError::unauthorized());
+    }
+    let (albums, total) = Album::find_for_trace_paginated(
+        viewer_user_id,
+        &trace,
         pagination.offset,
         pagination.limit,
         &pool,

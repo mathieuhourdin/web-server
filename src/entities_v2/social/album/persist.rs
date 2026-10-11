@@ -200,7 +200,6 @@ fn album_item_view_from_trace_and_post(
             interaction_date: trace.interaction_date,
             published_post_id: selected_post.as_ref().map(|post| post.id),
             publishing_date: selected_post.as_ref().and_then(|post| post.publishing_date),
-            post_public_link_eligible: selected_post.as_ref().map(|post| post.public_link_eligible),
         }
     } else {
         let post = selected_post.expect("non-owner album item views require a visible post");
@@ -214,7 +213,6 @@ fn album_item_view_from_trace_and_post(
             interaction_date: trace.interaction_date,
             published_post_id: Some(post.id),
             publishing_date: post.publishing_date,
-            post_public_link_eligible: Some(post.public_link_eligible),
         }
     };
 
@@ -364,6 +362,61 @@ impl Album {
             .filter(albums::id.eq_any(album_ids))
             .select(select_album_columns())
             .order(albums::updated_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .load::<AlbumTuple>(&mut conn)?;
+        Ok((rows.into_iter().map(tuple_to_album).collect(), total))
+    }
+
+    /// Reverse album membership lookup, using the same visibility rule as
+    /// user_can_read: owners see private albums; others need a published album
+    /// containing at least one post visible to them. Trace access is checked
+    /// by the route separately and does not itself grant access to an album.
+    pub fn find_for_trace_paginated(
+        viewer_user_id: Uuid,
+        trace: &Trace,
+        offset: i64,
+        limit: i64,
+        pool: &DbPool,
+    ) -> Result<(Vec<Album>, i64), PpdcError> {
+        let mut conn = pool.get()?;
+        let visible_album_ids = if viewer_user_id == trace.user_id {
+            vec![]
+        } else {
+            let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
+            album_items::table
+                .inner_join(
+                    posts::table.on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
+                )
+                .filter(posts::id.eq_any(visible_post_ids))
+                .filter(posts::status.eq(PostStatus::Published.to_db()))
+                .select(album_items::album_id)
+                .distinct()
+                .load::<Uuid>(&mut conn)?
+        };
+
+        let query = || {
+            albums::table
+                .filter(albums::owner_user_id.eq(trace.user_id))
+                .filter(
+                    albums::id.eq_any(
+                        album_items::table
+                            .filter(album_items::trace_id.eq(trace.id))
+                            .select(album_items::album_id),
+                    ),
+                )
+                .filter(
+                    albums::owner_user_id
+                        .eq(viewer_user_id)
+                        .or(albums::visibility
+                            .eq(AlbumVisibility::Published.to_db())
+                            .and(albums::id.eq_any(visible_album_ids.clone()))),
+                )
+        };
+        let total = query().count().get_result::<i64>(&mut conn)?;
+        let rows = query()
+            .select(select_album_columns())
+            .order((albums::updated_at.desc(), albums::id.desc()))
             .offset(offset)
             .limit(limit)
             .load::<AlbumTuple>(&mut conn)?;

@@ -16,7 +16,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     session::Session,
     source_projection::SourceProjection,
-    trace::{Trace, TraceType},
+    trace::Trace,
     trace_attachment::TraceAttachment,
     trace_mention::TraceMention,
     user::{User, UserPrincipalType},
@@ -655,7 +655,6 @@ pub async fn put_trace_post_route(
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
-            public_link_eligible: true,
         }
         .create(&pool)?;
         post
@@ -677,9 +676,6 @@ pub async fn put_trace_post_route(
     }
     if let Some(status) = payload.status {
         post.status = status;
-    }
-    if trace.trace_type == TraceType::TraceComplement {
-        post.public_link_eligible = false;
     }
     if post.status == PostStatus::Published {
         ensure_source_permits_published_post(trace.status.permits_published_post())?;
@@ -838,7 +834,6 @@ pub async fn put_document_post_route(
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
-            public_link_eligible: true,
         }
         .create(&pool)?
     };
@@ -905,7 +900,6 @@ pub async fn put_album_post_route(
             user_id,
             publishing_date: None,
             status: PostStatus::Draft,
-            public_link_eligible: true,
         }
         .create(&pool)?
     };

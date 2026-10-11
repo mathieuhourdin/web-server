@@ -8,6 +8,7 @@ pub use model::{
     AlbumVisibility, AlbumWithItems, NewAlbum, NewAlbumDto, NewAlbumItemDto, UpdateAlbumDto,
 };
 pub use routes::{
-    delete_album_item_route, get_album_items_route, get_album_route, get_user_albums_route,
-    post_album_asset_route, post_album_item_route, post_album_route, put_album_route,
+    delete_album_item_route, get_album_items_route, get_album_route, get_trace_albums_route,
+    get_user_albums_route, post_album_asset_route, post_album_item_route, post_album_route,
+    put_album_route,
 };

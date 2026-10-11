@@ -142,6 +142,8 @@ pub fn create_router() -> Router {
     let traces_router = Router::new()
         .route("/drafts", get(trace::get_trace_drafts_route))
         .route("/search", get(trace_search::get_trace_search_route))
+        .route("/:id/edit_origin", get(trace::get_trace_edit_origin_route))
+        .route("/:id/albums", get(album::get_trace_albums_route))
         .route(
             "/:id/complements",
             get(trace::get_trace_complements_route).post(trace::post_trace_complement_route),

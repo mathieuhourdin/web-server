@@ -411,15 +411,22 @@ fn update_trace_with_mentions(
     trace: Trace,
     expected_version_integer: i32,
     mention_update: &MentionUpdate,
+    device_id: Option<Uuid>,
     pool: &DbPool,
 ) -> Result<Trace, PpdcError> {
     match mention_update {
-        MentionUpdate::Legacy(ids) => {
-            trace.update_with_mentions_and_expected_version(expected_version_integer, ids, pool)
-        }
-        MentionUpdate::Rich(mentions) => trace.update_with_mention_inputs_and_expected_version(
-            expected_version_integer,
-            mentions,
+        MentionUpdate::Legacy(ids) => trace.update_from_device(
+            Some(expected_version_integer),
+            Some(ids),
+            None,
+            device_id,
+            pool,
+        ),
+        MentionUpdate::Rich(mentions) => trace.update_from_device(
+            Some(expected_version_integer),
+            None,
+            Some(mentions),
+            device_id,
             pool,
         ),
     }
@@ -585,7 +592,15 @@ async fn finalize_trace_transition(
     trace.timeout_at = None;
 
     let trace = if let Some(expected_version_integer) = expected_version_integer {
-        trace.update_with_expected_version(expected_version_integer, pool)?
+        let device_id = if !auto_finalized {
+            session_id
+                .map(|id| Session::find(&id, pool))
+                .transpose()?
+                .and_then(|s| s.device_id)
+        } else {
+            None
+        };
+        trace.update_from_device(Some(expected_version_integer), None, None, device_id, pool)?
     } else {
         trace.update(pool)?
     };
@@ -1023,11 +1038,21 @@ fn apply_create_draft_payload(
     if !changed && mention_update.is_none() {
         return Ok(trace);
     }
+    let device_id = session_id
+        .map(|id| Session::find(&id, pool))
+        .transpose()?
+        .and_then(|s| s.device_id);
     let trace = if let Some(mention_update) = mention_update.as_ref() {
         let expected_version_integer = trace.version_integer;
-        update_trace_with_mentions(trace, expected_version_integer, mention_update, pool)?
+        update_trace_with_mentions(
+            trace,
+            expected_version_integer,
+            mention_update,
+            device_id,
+            pool,
+        )?
     } else {
-        trace.update(pool)?
+        trace.update_from_device(None, None, None, device_id, pool)?
     };
     if let Some(timeout_at) = trace.timeout_at {
         let _ = create_usage_event(
@@ -1295,9 +1320,21 @@ pub async fn patch_journal_draft_route(
     }
 
     let trace = if let Some(mention_update) = mention_update.as_ref() {
-        update_trace_with_mentions(trace, expected_version_integer, mention_update, &pool)?
+        update_trace_with_mentions(
+            trace,
+            expected_version_integer,
+            mention_update,
+            session.device_id,
+            &pool,
+        )?
     } else {
-        trace.update_with_expected_version(expected_version_integer, &pool)?
+        trace.update_from_device(
+            Some(expected_version_integer),
+            None,
+            None,
+            session.device_id,
+            &pool,
+        )?
     };
     if let Some(Some(timeout_at)) = payload.timeout_at {
         let _ = create_usage_event(
@@ -1503,9 +1540,21 @@ pub async fn put_trace_route(
     }
 
     let trace = if let Some(mention_update) = mention_update.as_ref() {
-        update_trace_with_mentions(trace, expected_version_integer, mention_update, &pool)?
+        update_trace_with_mentions(
+            trace,
+            expected_version_integer,
+            mention_update,
+            session.device_id,
+            &pool,
+        )?
     } else {
-        trace.update_with_expected_version(expected_version_integer, &pool)?
+        trace.update_from_device(
+            Some(expected_version_integer),
+            None,
+            None,
+            session.device_id,
+            &pool,
+        )?
     };
     if let Some(mention_update) = mention_update.as_ref() {
         let mentioned_user_ids = mention_update.user_ids();
@@ -1587,9 +1636,21 @@ pub async fn patch_trace_route(
     }
 
     let trace = if let Some(mention_update) = mention_update.as_ref() {
-        update_trace_with_mentions(trace, expected_version_integer, mention_update, &pool)?
+        update_trace_with_mentions(
+            trace,
+            expected_version_integer,
+            mention_update,
+            session.device_id,
+            &pool,
+        )?
     } else {
-        trace.update_with_expected_version(expected_version_integer, &pool)?
+        trace.update_from_device(
+            Some(expected_version_integer),
+            None,
+            None,
+            session.device_id,
+            &pool,
+        )?
     };
     if let Some(mention_update) = mention_update.as_ref() {
         let mentioned_user_ids = mention_update.user_ids();
@@ -1640,7 +1701,13 @@ pub async fn post_trace_asset_route(
     } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
     trace.content_image_asset_id = Some(asset.id);
-    let trace = trace.update_with_expected_version(query.expected_version_integer, &pool)?;
+    let trace = trace.update_from_device(
+        Some(query.expected_version_integer),
+        None,
+        None,
+        session.device_id,
+        &pool,
+    )?;
 
     Ok(Json(TraceAssetUploadResponse {
         trace,
@@ -2069,7 +2136,13 @@ pub async fn post_trace_extend_timeout_route(
     validate_timeout_at(new_timeout_at)?;
 
     trace.timeout_at = Some(new_timeout_at);
-    let trace = trace.update_with_expected_version(expected_version_integer, &pool)?;
+    let trace = trace.update_from_device(
+        Some(expected_version_integer),
+        None,
+        None,
+        session.device_id,
+        &pool,
+    )?;
 
     let _ = create_usage_event(
         user_id,

@@ -87,13 +87,13 @@ impl Fixture {
         }
     }
 
-    fn publication(&self, public_link_eligible: bool) -> (Uuid, Uuid) {
+    fn publication(&self) -> (Uuid, Uuid) {
         let trace = Uuid::new_v4();
         let post = Uuid::new_v4();
         self.pool.get().unwrap().batch_execute(&format!("INSERT INTO traces(id,user_id,journal_id,title,subtitle,content,interaction_date,trace_type,status,start_writing_at,finalized_at)
             VALUES('{trace}','{}','{}','Test','','Content',NOW(),'USER_TRACE','FINALIZED',NOW(),NOW());
-            INSERT INTO posts(id,user_id,source_trace_id,title,subtitle,content,interaction_type,post_type,status,public_link_eligible,publishing_date)
-            VALUES('{post}','{}','{trace}','','','','OUTPUT','IDEA','PUBLISHED',{public_link_eligible},NOW());",self.owner,self.journal,self.owner)).unwrap();
+            INSERT INTO posts(id,user_id,source_trace_id,title,subtitle,content,interaction_type,post_type,status,publishing_date)
+            VALUES('{post}','{}','{trace}','','','','OUTPUT','IDEA','PUBLISHED',NOW());",self.owner,self.journal,self.owner)).unwrap();
         (trace, post)
     }
 
@@ -126,6 +126,93 @@ impl Drop for Fixture {
     }
 }
 
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn trace_albums_route_respects_trace_and_album_access_and_pagination() {
+    use crate::{
+        entities_v2::{
+            album::{routes::get_trace_albums_route, Album},
+            session::Session,
+        },
+        pagination::{PaginatedResponse, PaginationParams},
+    };
+    use axum::{
+        extract::{Extension, Path, Query},
+        Json,
+    };
+    let f = Fixture::new();
+    let (tid, pid) = f.publication();
+    let private = Uuid::new_v4();
+    let published = Uuid::new_v4();
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO albums(id,owner_user_id,title,visibility) VALUES
+            ('{private}','{}','Private album','PRIVATE'),
+            ('{published}','{}','Published album','PUBLISHED');
+         INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES
+            ('{private}','{tid}',0),('{published}','{tid}',0);",
+            f.owner, f.owner
+        ))
+        .unwrap();
+    async fn page(
+        f: &Fixture,
+        user: Uuid,
+        trace: Uuid,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Json<PaginatedResponse<Album>>, crate::entities_v2::error::PpdcError> {
+        let mut session = Session::anonymous();
+        session.user_id = Some(user);
+        get_trace_albums_route(
+            Extension(f.pool.clone()),
+            Extension(session),
+            Path(trace),
+            Query(PaginationParams::from_parts(Some(offset), Some(limit))),
+        )
+        .await
+    }
+    let first = page(&f, f.owner, tid, 0, 1).await.unwrap().0;
+    let second = page(&f, f.owner, tid, 1, 1).await.unwrap().0;
+    assert_eq!(first.total, 2);
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(second.items.len(), 1);
+    assert_ne!(first.items[0].id, second.items[0].id);
+    assert_eq!(
+        page(&f, f.reader, tid, 0, 20)
+            .await
+            .err()
+            .unwrap()
+            .status_code,
+        401
+    );
+    PostGrant::create_or_update(
+        &Post::find_full(pid, &f.pool).unwrap(),
+        f.owner,
+        NewPostGrantDto {
+            grantee_user_id: Some(f.reader),
+            grantee_scope: None,
+            access_level: None,
+        },
+        &f.pool,
+    )
+    .unwrap();
+    let reader = page(&f, f.reader, tid, 0, 20).await.unwrap().0;
+    assert_eq!(reader.total, 1);
+    assert_eq!(reader.items[0].id, published);
+    assert_eq!(
+        page(&f, f.stranger, tid, 0, 20)
+            .await
+            .err()
+            .unwrap()
+            .status_code,
+        401
+    );
+    let (empty, _) = f.publication();
+    assert_eq!(page(&f, f.owner, empty, 0, 20).await.unwrap().0.total, 0);
+}
+
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 fn shared_journal_follower_automation_uses_audiences_only() {
@@ -138,7 +225,7 @@ fn shared_journal_follower_automation_uses_audiences_only() {
             f.journal
         ))
         .unwrap();
-    let (_, historical) = f.publication(false);
+    let (_, historical) = f.publication();
     let journal = Journal::find_full(f.journal, &f.pool).unwrap();
     let pending =
         persist::create_missing_members_for_existing_followers(&journal, &f.pool).unwrap();
@@ -154,7 +241,7 @@ fn shared_journal_follower_automation_uses_audiences_only() {
             .unwrap()
             .is_empty()
     );
-    let (_, future) = f.publication(true);
+    let (_, future) = f.publication();
     assert!(!f.can_read(future));
     persist::attach(f.owner, aid, future, &f.pool).unwrap();
     assert!(f.can_read(future));
@@ -191,21 +278,9 @@ fn shared_journal_follower_automation_uses_audiences_only() {
 
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
-fn public_links_use_sensitivity_and_preserve_legacy_exclusions() {
+fn public_links_use_sensitivity_independently_of_grants() {
     let f = Fixture::new();
-    let (_, legacy_excluded) = f.publication(false);
-    assert!(
-        !Post::find_full(legacy_excluded, &f.pool)
-            .unwrap()
-            .public_link_eligible
-    );
-    assert_eq!(
-        Post::find_public_default_for_journal_paginated(f.journal, 0, 20, &f.pool)
-            .unwrap()
-            .1,
-        0
-    );
-    let (tid, normal) = f.publication(true);
+    let (tid, normal) = f.publication();
     assert!(
         !f.can_read(normal),
         "Public links are independent of individual grants"
@@ -260,7 +335,7 @@ fn public_links_use_sensitivity_and_preserve_legacy_exclusions() {
 fn only_me_deletes_preparation_but_preserves_publication_history() {
     use crate::entities_v2::post::PostStatus;
     let f = Fixture::new();
-    let (_, published) = f.publication(true);
+    let (_, published) = f.publication();
     assert_eq!(
         Post::find_full(published, &f.pool)
             .unwrap()
@@ -279,7 +354,7 @@ fn only_me_deletes_preparation_but_preserves_publication_history() {
             .status_code,
         400
     );
-    let (tid, prepared) = f.publication(true);
+    let (tid, prepared) = f.publication();
     f.pool
         .get()
         .unwrap()
@@ -323,7 +398,7 @@ fn publication_uses_only_prepared_grants() {
     let a = persist::create(f.owner, "Prepared", &f.pool).unwrap();
     persist::add_member(f.owner, a.id, f.reader, true, &f.pool).unwrap();
     persist::replace_defaults(f.owner, f.journal, &[a.id], &f.pool).unwrap();
-    let (tid, pid) = f.publication(true);
+    let (tid, pid) = f.publication();
     assert!(
         !f.can_read(pid),
         "Publication never applies journal defaults"
@@ -421,12 +496,12 @@ fn audience_trace_counts_match_the_eligible_collection() {
         .unwrap()
         .is_empty());
 
-    let (_, published) = f.publication(false);
+    let (_, published) = f.publication();
     persist::attach(f.owner, a.id, published, &f.pool).unwrap();
-    let (_, staged) = f.publication(false);
-    let (_, archived) = f.publication(false);
-    let (encrypted_trace, encrypted_post) = f.publication(false);
-    let (archived_trace, archived_trace_post) = f.publication(false);
+    let (_, staged) = f.publication();
+    let (_, archived) = f.publication();
+    let (encrypted_trace, encrypted_post) = f.publication();
+    let (archived_trace, archived_trace_post) = f.publication();
     for pid in [staged, archived, encrypted_post, archived_trace_post] {
         persist::attach(f.owner, a.id, pid, &f.pool).unwrap();
     }
@@ -501,7 +576,7 @@ fn individual_removal_revokes_all_sources_and_detaches_empty_origins() {
         persist::add_member(f.owner, a.id, user, true, &f.pool).unwrap();
         persist::add_member(f.owner, b.id, user, true, &f.pool).unwrap();
     }
-    let (_, pid) = f.publication(true);
+    let (_, pid) = f.publication();
     persist::attach(f.owner, a.id, pid, &f.pool).unwrap();
     persist::attach(f.owner, b.id, pid, &f.pool).unwrap();
     let reader = f.grant(pid);
@@ -560,7 +635,7 @@ fn audience_access_and_history_integration() {
     let f = Fixture::new();
     let a = persist::create(f.owner, "Friends", &f.pool).unwrap();
     let b = persist::create(f.owner, "Family", &f.pool).unwrap();
-    let (_, past) = f.publication(false);
+    let (_, past) = f.publication();
     persist::attach(f.owner, a.id, past, &f.pool).unwrap();
     persist::attach(f.owner, b.id, past, &f.pool).unwrap();
     assert_eq!(
@@ -655,7 +730,7 @@ fn audience_access_and_history_integration() {
     persist::remove_member(f.owner, a.id, f.reader, false, true, &f.pool).unwrap();
     persist::remove_member(f.owner, a.id, f.reader, true, false, &f.pool).unwrap();
     persist::replace_defaults(f.owner, f.journal, &[a.id, b.id], &f.pool).unwrap();
-    let (future_trace, future) = f.publication(true);
+    let (future_trace, future) = f.publication();
     assert!(!f.can_read(future));
     persist::attach(f.owner, b.id, future, &f.pool).unwrap();
     persist::attach(f.owner, a.id, future, &f.pool).unwrap();
@@ -673,7 +748,7 @@ fn audience_access_and_history_integration() {
             .len(),
         2
     );
-    let (_, manual) = f.publication(false);
+    let (_, manual) = f.publication();
     PostGrant::create_or_update(
         &Post::find_full(manual, &f.pool).unwrap(),
         f.owner,
@@ -777,7 +852,7 @@ fn concurrent_audiences_keep_one_grant_with_multiple_sources() {
     let b = persist::create(f.owner, "B", &f.pool).unwrap();
     persist::add_member(f.owner, a.id, f.reader, true, &f.pool).unwrap();
     persist::add_member(f.owner, b.id, f.reader, true, &f.pool).unwrap();
-    let (_, post) = f.publication(false);
+    let (_, post) = f.publication();
     f.pool
         .get()
         .unwrap()

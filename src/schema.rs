@@ -529,7 +529,6 @@ diesel::table! {
         updated_at -> Timestamp,
         source_trace_id -> Nullable<Uuid>,
         status -> Text,
-        public_link_eligible -> Bool,
         source_document_id -> Nullable<Uuid>,
         source_album_id -> Nullable<Uuid>,
         audience_source_post_id -> Nullable<Uuid>,
@@ -681,6 +680,7 @@ diesel::table! {
         complement_audience_mode -> Nullable<Text>,
         is_blank -> Bool,
         version_integer -> Int4,
+        last_edit_device_id -> Nullable<Uuid>,
     }
 }
 

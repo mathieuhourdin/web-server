@@ -20,7 +20,6 @@ impl Post {
                 posts::post_type.eq(self.post_type.to_db()),
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
-                posts::public_link_eligible.eq(self.public_link_eligible),
                 posts::user_id.eq(self.user_id),
             ))
             .execute(&mut conn)?;
@@ -87,7 +86,6 @@ impl NewPost {
                 posts::user_id.eq(self.user_id),
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
-                posts::public_link_eligible.eq(self.public_link_eligible),
             ))
             .returning(posts::id)
             .get_result(&mut conn)?;

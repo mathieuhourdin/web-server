@@ -27,7 +27,6 @@ pub struct Post {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
-    pub public_link_eligible: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -78,7 +77,6 @@ pub struct NewPost {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
-    pub public_link_eligible: bool,
 }
 
 impl NewPost {
@@ -95,7 +93,6 @@ impl NewPost {
             user_id,
             publishing_date: payload.publishing_date,
             status,
-            public_link_eligible: true,
         }
     }
 }

@@ -457,13 +457,6 @@ impl JournalShareLink {
                 "Cannot scope a journal share link to a non-published post".to_string(),
             ));
         }
-        if !post.public_link_eligible {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "This post is excluded from public journal links".to_string(),
-            ));
-        }
         let trace_id = post.source_trace_id.ok_or_else(|| {
             PpdcError::new(
                 400,

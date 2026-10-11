@@ -39,7 +39,6 @@ pub struct AlbumItemTraceView {
     pub interaction_date: NaiveDateTime,
     pub published_post_id: Option<Uuid>,
     pub publishing_date: Option<NaiveDateTime>,
-    pub post_public_link_eligible: Option<bool>,
 }
 
 #[derive(Serialize, Debug, Clone)]

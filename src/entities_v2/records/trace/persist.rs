@@ -333,7 +333,6 @@ impl Trace {
                         PostStatus::Draft
                     }
                     .to_db()),
-                    posts::public_link_eligible.eq(false),
                 ))
                 .execute(conn)?;
 
@@ -411,7 +410,13 @@ impl Trace {
         mentioned_user_ids: Option<&[uuid::Uuid]>,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
-        self.update_internal_impl(expected_version_integer, mentioned_user_ids, None, pool)
+        self.update_internal_impl(
+            expected_version_integer,
+            mentioned_user_ids,
+            None,
+            None,
+            pool,
+        )
     }
 
     fn update_internal_with_mention_inputs(
@@ -420,7 +425,31 @@ impl Trace {
         mentions: Option<&[TraceMentionInput]>,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
-        self.update_internal_impl(expected_version_integer, None, mentions, pool)
+        self.update_internal_impl(expected_version_integer, None, mentions, None, pool)
+    }
+
+    /// The device comes from the authenticated session, never from an edit DTO.
+    pub fn update_from_device(
+        self,
+        expected_version_integer: Option<i32>,
+        mentioned_user_ids: Option<&[uuid::Uuid]>,
+        mentions: Option<&[TraceMentionInput]>,
+        device_id: Option<uuid::Uuid>,
+        pool: &DbPool,
+    ) -> Result<Trace, PpdcError> {
+        let ids = mentioned_user_ids
+            .map(|ids| TraceMention::validate_targets(self.user_id, ids, pool))
+            .transpose()?;
+        let mentions = mentions
+            .map(|mentions| TraceMention::validate_inputs(self.user_id, mentions, pool))
+            .transpose()?;
+        self.update_internal_impl(
+            expected_version_integer,
+            ids.as_deref(),
+            mentions.as_deref(),
+            device_id,
+            pool,
+        )
     }
 
     fn update_internal_impl(
@@ -428,6 +457,7 @@ impl Trace {
         expected_version_integer: Option<i32>,
         mentioned_user_ids: Option<&[uuid::Uuid]>,
         mentions: Option<&[TraceMentionInput]>,
+        device_id: Option<uuid::Uuid>,
         pool: &DbPool,
     ) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
@@ -447,6 +477,20 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let updated = conn.transaction::<bool, diesel::result::Error, _>(|conn| {
+            // Check ownership again inside the write transaction. A revoked or
+            // reassigned device is an unknown origin, not another user's device.
+            let device_id = if let Some(id) = device_id {
+                crate::schema::devices::table
+                    .filter(crate::schema::devices::id.eq(id))
+                    .filter(crate::schema::devices::user_id.eq(self.user_id))
+                    .filter(crate::schema::devices::revoked_at.is_null())
+                    .select(crate::schema::devices::id)
+                    .for_share()
+                    .first::<uuid::Uuid>(conn)
+                    .optional()?
+            } else {
+                None
+            };
             let previous_is_blank = self.is_blank;
             self.is_blank = compute_is_blank_with_conn(conn, &self)?;
             if previous_is_blank && !self.is_blank {
@@ -474,6 +518,7 @@ impl Trace {
                             start_writing_at = $17,
                             finalized_at = $18,
                             version_integer = version_integer + 1,
+                            last_edit_device_id = $20,
                             updated_at = NOW()
                         WHERE id = $1
                           AND version_integer = $19
@@ -504,6 +549,7 @@ impl Trace {
                 .bind::<Timestamp, _>(self.start_writing_at)
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
                 .bind::<diesel::sql_types::Int4, _>(expected_version_integer)
+                .bind::<Nullable<SqlUuid>, _>(device_id)
                 .get_result::<AffectedRows>(conn)?
                 .count
             } else {
@@ -528,6 +574,7 @@ impl Trace {
                             start_writing_at = $17,
                             finalized_at = $18,
                             version_integer = version_integer + 1,
+                            last_edit_device_id = $19,
                             updated_at = NOW()
                         WHERE id = $1
                         RETURNING 1
@@ -556,6 +603,7 @@ impl Trace {
                 .bind::<Bool, _>(self.is_blank)
                 .bind::<Timestamp, _>(self.start_writing_at)
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
+                .bind::<Nullable<SqlUuid>, _>(device_id)
                 .get_result::<AffectedRows>(conn)?
                 .count
             };
