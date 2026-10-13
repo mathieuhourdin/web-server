@@ -39,7 +39,7 @@ use crate::entities_v2::{
         TraceAttachmentWithDocument,
     },
     user::{ensure_user_has_any_lens, User},
-    user_post_state::{PostSeenByPreview, PostSeenByUser, UserPostState},
+    user_post_state::{PostSeenByPreview, PostSeenByUser, UserPostState, SEEN_BY_PREVIEW_LIMIT},
 };
 use crate::pagination::{PaginatedResponse, PaginationParams, ValidatedPagination};
 use crate::work_analyzer;
@@ -86,7 +86,6 @@ pub struct MeTracesQuery {
 }
 
 const JOURNAL_TRACE_POSITION_BATCH_SIZE: i64 = 20;
-const JOURNAL_TRACE_SEEN_BY_PREVIEW_LIMIT: i64 = 3;
 
 fn attach_content_images_to_trace_list_items(
     mut items: Vec<TraceListItem>,
@@ -714,7 +713,7 @@ fn attach_seen_by_preview_to_trace_list_items(
     let previews = UserPostState::find_seen_by_preview_by_trace_ids(
         owner_user_id,
         &trace_ids,
-        JOURNAL_TRACE_SEEN_BY_PREVIEW_LIMIT,
+        SEEN_BY_PREVIEW_LIMIT,
         pool,
     )?;
 
@@ -1967,16 +1966,13 @@ pub async fn get_trace_seen_by_route(
 ) -> Result<Json<Vec<PostSeenByUser>>, PpdcError> {
     let owner_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let trace = Trace::find_full_trace(id, &pool)?;
-    let _ = trace;
     let post = Post::find_for_trace_and_publisher(id, owner_user_id, &pool)?
-        .filter(|post| post.status == PostStatus::Published)
-        .ok_or_else(|| {
-            PpdcError::new(
-                404,
-                ErrorType::ApiError,
-                "Trace has no published post".to_string(),
-            )
-        })?;
+        .filter(|post| post.status == PostStatus::Published);
+    let Some(post) = post else {
+        // Do not expose even an empty private-trace result to unrelated callers.
+        if trace.user_id != owner_user_id { return Err(PpdcError::unauthorized()); }
+        return Ok(Json(Vec::new()));
+    };
     let seen_by = UserPostState::find_seen_by_for_post(owner_user_id, post.id, &pool)?;
     Ok(Json(seen_by))
 }

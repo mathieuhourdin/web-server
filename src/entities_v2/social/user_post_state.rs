@@ -55,6 +55,8 @@ pub struct PostSeenByPreview {
     pub users: Vec<PostSeenByPreviewUser>,
 }
 
+pub(crate) const SEEN_BY_PREVIEW_LIMIT: i64 = 3;
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct NewUserPostStateDto {
     pub post_id: Uuid,
@@ -244,6 +246,7 @@ impl UserPostState {
                 INNER JOIN user_post_states ups ON ups.post_id = p.id
                 INNER JOIN users u ON u.id = ups.user_id
                 WHERE p.user_id = $1
+                  AND p.status = 'PUBLISHED'
                   AND p.source_trace_id = ANY($2)
                   AND ups.user_id <> $1
             )

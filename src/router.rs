@@ -65,7 +65,10 @@ pub fn create_router() -> Router {
         )
         .route("/:id/albums", get(album::get_user_albums_route))
         .route("/:id/documents", get(document::get_user_documents_route))
-        .route("/:id/content_counts", get(user::get_user_content_counts_route))
+        .route(
+            "/:id/content_counts",
+            get(user::get_user_content_counts_route),
+        )
         .route("/:id/posts", get(post::get_user_posts_route))
         .route(
             "/:id/analysis",

@@ -14,6 +14,7 @@ use crate::entities_v2::{
     source_projection::{load_source_projection_map, SourceProjectionKind},
     trace::TraceContentImage,
     user::User,
+    user_post_state::{PostSeenByPreview, UserPostState, SEEN_BY_PREVIEW_LIMIT},
 };
 use crate::schema::{journals, posts, traces, user_post_states};
 
@@ -168,7 +169,28 @@ pub fn find_my_feed_items_paginated(
     .bind::<BigInt, _>(limit)
     .load::<FeedCandidate>(&mut conn)?;
     drop(conn);
-    Ok((hydrate_feed_candidates(rows, user_id, pool)?, total))
+    let trace_ids = rows
+        .iter()
+        .filter_map(|row| row.source_trace_id)
+        .collect::<Vec<_>>();
+    let previews = UserPostState::find_seen_by_preview_by_trace_ids(
+        user_id,
+        &trace_ids,
+        SEEN_BY_PREVIEW_LIMIT,
+        pool,
+    )?;
+    let mut items = hydrate_feed_candidates(rows, user_id, pool)?;
+    for item in &mut items {
+        if item.source_kind == FeedSourceKind::Trace {
+            item.seen_by_preview = Some(
+                previews
+                    .get(&item.source_id)
+                    .cloned()
+                    .unwrap_or_else(PostSeenByPreview::default),
+            );
+        }
+    }
+    Ok((items, total))
 }
 
 fn hydrate_feed_candidates(
@@ -300,6 +322,7 @@ fn hydrate_feed_candidates(
                 subtitle: projection.subtitle.clone(),
                 content: projection.content.clone(),
                 cover_image_asset_id: projection.cover_image_asset_id,
+                seen_by_preview: None,
                 cover_image: projection
                     .cover_image_asset_id
                     .and_then(|id| image_by_id.get(&id).cloned()),

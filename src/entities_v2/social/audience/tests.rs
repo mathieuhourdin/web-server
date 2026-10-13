@@ -22,6 +22,44 @@ fn validates_audience_names() {
     assert!(persist::validate_name(&"a".repeat(101)).is_err());
 }
 
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn my_feed_batches_seen_previews_and_private_trace_seen_by_is_empty() {
+    use crate::entities_v2::{
+        feed::hydrate::{find_my_feed_items_paginated,find_feed_items_paginated},
+        session::Session, trace::routes::get_trace_seen_by_route, user_post_state::UserPostState,
+    };
+    use axum::extract::{Extension,Path};
+    let f=Fixture::new();
+    let (published,post)=f.publication();
+    let (private,private_post)=f.publication();
+    let (staged,staged_post)=f.publication();
+    for pid in [post,staged_post] {
+        PostGrant::create_or_update(&Post::find_full(pid,&f.pool).unwrap(),f.owner,NewPostGrantDto {
+            grantee_user_id:Some(f.reader),grantee_scope:None,access_level:None,
+        },&f.pool).unwrap();
+        UserPostState::create_or_mark_seen(f.reader,pid,&f.pool).unwrap();
+    }
+    UserPostState::create_or_mark_seen(f.owner,post,&f.pool).unwrap();
+    f.pool.get().unwrap().batch_execute(&format!("DELETE FROM posts WHERE id='{private_post}'; UPDATE posts SET status='DRAFT' WHERE id='{staged_post}';")).unwrap();
+    let (items,total)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    assert_eq!(total,3);
+    let preview=items.iter().find(|i|i.source_id==published).unwrap().seen_by_preview.as_ref().unwrap();
+    assert_eq!(preview.seen_count,1);
+    assert_eq!(preview.users[0].user_id,f.reader);
+    for id in [private,staged] {
+        let preview=items.iter().find(|i|i.source_id==id).unwrap().seen_by_preview.as_ref().unwrap();
+        assert_eq!(preview.seen_count,0);
+        assert!(preview.users.is_empty());
+        let mut session=Session::anonymous();session.user_id=Some(f.owner);
+        assert!(get_trace_seen_by_route(Extension(f.pool.clone()),Extension(session),Path(id)).await.unwrap().0.is_empty());
+    }
+    let mut stranger=Session::anonymous();stranger.user_id=Some(f.stranger);
+    assert!(get_trace_seen_by_route(Extension(f.pool.clone()),Extension(stranger),Path(private)).await.is_err());
+    let (shared,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    assert!(shared.iter().all(|i|i.seen_by_preview.is_none()));
+}
+
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 fn message_sends_require_an_accepted_relationship_except_for_mentors() {
