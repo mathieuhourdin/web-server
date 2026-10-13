@@ -373,6 +373,10 @@ pub fn create_router() -> Router {
                 .delete(audience::routes::delete_member),
         )
         .route(
+            "/:id/members/:user_id/history_summary",
+            get(audience::routes::get_history_summary),
+        )
+        .route(
             "/:id/members/:user_id/history_posts",
             get(audience::routes::get_history_posts),
         )

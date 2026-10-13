@@ -220,12 +220,7 @@ fn auto_add_member(
     if inserted == 0 {
         return Ok(false);
     }
-    let inserted_member = member(conn, aid, reader)?;
-    if history_ids(conn, owner, aid, &inserted_member, false)?.is_empty() {
-        mark_review(conn, aid, reader, "NONE")?;
-        return Ok(false);
-    }
-    Ok(true)
+    prepare_history_review(conn, owner, aid, reader)
 }
 
 pub(crate) fn create_members_for_new_follower_pair_with_conn(
@@ -369,8 +364,8 @@ pub fn add_member(
                 history_reviewed_at=CASE WHEN $4 THEN NULL ELSE audience_members.history_reviewed_at END,updated_at=NOW()")
             .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(uid).bind::<Bool,_>(future).bind::<Bool,_>(reset).execute(conn)?;
         let mut result=member(conn,aid,uid)?;
-        if reset && history_ids(conn,owner,aid,&result,false)?.is_empty() {
-            mark_review(conn,aid,uid,"NONE")?;
+        if reset {
+            prepare_history_review(conn,owner,aid,uid)?;
             result=member(conn,aid,uid)?;
         }
         let notify=reset && result.history_review_state=="unreviewed";
@@ -438,8 +433,7 @@ pub fn restart_history_review(
         diesel::sql_query("UPDATE audience_members SET history_cutoff_at=NOW(),history_review_state='UNREVIEWED',
             history_decision=NULL,history_reviewed_at=NULL,updated_at=NOW() WHERE audience_id=$1 AND user_id=$2")
             .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(uid).execute(conn)?;
-        let result=member(conn,aid,uid)?;
-        if history_ids(conn,owner,aid,&result,false)?.is_empty() {mark_review(conn,aid,uid,"NONE")?;}
+        prepare_history_review(conn,owner,aid,uid)?;
         member(conn,aid,uid)
     })
 }
@@ -468,6 +462,119 @@ pub fn remove_member(
     })
 }
 
+// Ordinary trace access, including mentions and alternative publications. Audience
+// history excludes complements, so their parent-specific rules do not apply here.
+const HISTORY_TRACE_READABLE: &str = "(t.user_id=$4 OR (
+    t.status='FINALIZED' AND NOT t.is_encrypted
+    AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE
+        (b.blocker_user_id=t.user_id AND b.blocked_user_id=$4)
+        OR (b.blocker_user_id=$4 AND b.blocked_user_id=t.user_id))
+    AND (EXISTS (SELECT 1 FROM trace_mentions m WHERE m.trace_id=t.id
+        AND m.mentioned_user_id=$4 AND m.removed_at IS NULL)
+        OR EXISTS (SELECT 1 FROM posts visible WHERE visible.source_trace_id=t.id
+            AND trace_publication_readable(visible.id,$4)))))";
+
+#[derive(QueryableByName)]
+struct HistoryCandidate {
+    #[diesel(sql_type = SqlUuid)]
+    post_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    trace_id: Uuid,
+    #[diesel(sql_type = Bool)]
+    has_access: bool,
+    #[diesel(sql_type = Bool)]
+    is_normal: bool,
+}
+
+fn history_candidates(
+    conn: &mut PgConnection,
+    owner: Uuid,
+    aid: Uuid,
+    member: &AudienceMember,
+) -> Result<Vec<HistoryCandidate>, PpdcError> {
+    Ok(diesel::sql_query(format!("SELECT p.id AS post_id,t.id AS trace_id,
+        {HISTORY_TRACE_READABLE} AS has_access,t.sharing_sensitivity='NORMAL' AS is_normal
+        FROM post_audiences pa JOIN posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
+        WHERE pa.audience_id=$1 AND p.user_id=$2 AND t.trace_type='USER_TRACE'
+          AND trace_publication_eligible(p.id,p.user_id) AND trace_publication_eligible(p.id,$4)
+          AND COALESCE(p.publishing_date,p.created_at)<=$3 AND pa.created_at<=$3"))
+        .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(owner)
+        .bind::<Timestamp,_>(member.history_cutoff_at).bind::<SqlUuid,_>(member.user_id)
+        .load(conn)?)
+}
+
+fn summarize_history(rows: &[HistoryCandidate], member: &AudienceMember) -> HistorySummary {
+    let mut result = HistorySummary::default();
+    let mut counted = HashSet::new();
+    for row in rows {
+        if !counted.insert(row.trace_id) {
+            continue;
+        }
+        result.eligible_trace_count += 1;
+        if row.has_access {
+            result.already_accessible_trace_count += 1;
+        } else {
+            result.newly_shareable_trace_count += 1;
+            if row.is_normal {
+                result.newly_shareable_normal_trace_count += 1;
+            } else {
+                result.newly_shareable_sensitive_trace_count += 1;
+            }
+        }
+    }
+    result.review_required = member.history_review_state != "reviewed"
+        && matches!(member.status.as_str(), "active" | "suggested")
+        && result.newly_shareable_trace_count > 0;
+    result
+}
+
+pub fn history_summary(
+    owner: Uuid,
+    aid: Uuid,
+    uid: Uuid,
+    pool: &DbPool,
+) -> Result<HistorySummary, PpdcError> {
+    let mut conn = pool.get()?;
+    owned(&mut conn, owner, aid)?;
+    let member = member(&mut conn, aid, uid)?;
+    let rows = history_candidates(&mut conn, owner, aid, &member)?;
+    Ok(summarize_history(&rows, &member))
+}
+
+/// Capture visibility before adding any source, then preserve each already-readable
+/// publication through this audience. Membership writes already lock the audience.
+fn prepare_history_review(
+    conn: &mut PgConnection,
+    owner: Uuid,
+    aid: Uuid,
+    uid: Uuid,
+) -> Result<bool, PpdcError> {
+    let current = member(conn, aid, uid)?;
+    let rows = history_candidates(conn, owner, aid, &current)?;
+    let summary = summarize_history(&rows, &current);
+    for row in rows.iter().filter(|row| row.has_access) {
+        diesel::sql_query("SELECT grant_audience_post($1,$2,$3,TRUE) AS changed")
+            .bind::<SqlUuid, _>(aid)
+            .bind::<SqlUuid, _>(row.post_id)
+            .bind::<SqlUuid, _>(uid)
+            .get_result::<Changed>(conn)?;
+    }
+    if summary.newly_shareable_trace_count == 0 {
+        mark_review(
+            conn,
+            aid,
+            uid,
+            if summary.eligible_trace_count == 0 {
+                "NONE"
+            } else {
+                "ALL_INCLUDING_SENSITIVE"
+            },
+        )?;
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 fn history_ids(
     conn: &mut PgConnection,
     owner: Uuid,
@@ -475,13 +582,11 @@ fn history_ids(
     member: &AudienceMember,
     normal: bool,
 ) -> Result<Vec<Uuid>, PpdcError> {
-    let rows=diesel::sql_query("SELECT p.id FROM post_audiences pa JOIN posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
-        WHERE pa.audience_id=$1 AND p.user_id=$2 AND t.trace_type='USER_TRACE'
-          AND trace_publication_eligible(p.id,p.user_id)
-          AND COALESCE(p.publishing_date,p.created_at)<=$3 AND pa.created_at<=$3
-          AND (NOT $4 OR t.sharing_sensitivity='NORMAL') ORDER BY p.id")
-        .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(owner).bind::<Timestamp,_>(member.history_cutoff_at).bind::<Bool,_>(normal).load::<Id>(conn)?;
-    Ok(rows.into_iter().map(|row| row.id).collect())
+    Ok(history_candidates(conn, owner, aid, member)?
+        .into_iter()
+        .filter(|row| !normal || row.is_normal)
+        .map(|row| row.post_id)
+        .collect())
 }
 
 fn mark_review(
@@ -535,10 +640,13 @@ pub fn apply_history(
                 ids.into_iter().collect::<HashSet<_>>().into_iter().collect()
             }
         };
+        let already_readable=history_candidates(conn,owner,aid,&current)?.into_iter()
+            .filter(|row|row.has_access).map(|row|row.post_id).collect::<HashSet<_>>();
         let mut changed=0;
         for pid in ids {
             if diesel::sql_query("SELECT grant_audience_post($1,$2,$3,TRUE) AS changed")
-                .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(pid).bind::<SqlUuid,_>(uid).get_result::<Changed>(conn)?.changed { changed+=1; }
+                .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(pid).bind::<SqlUuid,_>(uid).get_result::<Changed>(conn)?.changed
+                && !already_readable.contains(&pid) { changed+=1; }
         }
         mark_review(conn,aid,uid,payload.decision.to_db())?;
         Ok(HistoryDecisionResult{member:member(conn,aid,uid)?,newly_shared_post_count:changed})
@@ -596,7 +704,7 @@ pub fn list_posts(
         .get_result::<Count>(&mut conn)?
         .count;
     let items=diesel::sql_query(format!("SELECT p.id AS post_id,t.id AS trace_id,t.journal_id,t.user_id AS author_user_id,t.title,t.content,
-        lower(t.sharing_sensitivity) AS sharing_sensitivity,p.publishing_date,trace_publication_readable(p.id,$4) AS has_access{predicate}
+        lower(t.sharing_sensitivity) AS sharing_sensitivity,p.publishing_date,{HISTORY_TRACE_READABLE} AS has_access{predicate}
         ORDER BY COALESCE(p.publishing_date,p.created_at) DESC,p.id DESC OFFSET $5 LIMIT $6"))
         .bind::<SqlUuid,_>(aid).bind::<SqlUuid,_>(owner).bind::<Nullable<Timestamp>,_>(cutoff).bind::<SqlUuid,_>(reader)
         .bind::<BigInt,_>(offset).bind::<BigInt,_>(limit).load(&mut conn)?;

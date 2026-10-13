@@ -300,6 +300,20 @@ pub async fn get_pending_reviews(
 }
 
 #[debug_handler]
+pub async fn get_history_summary(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path((aid, uid)): Path<(Uuid, Uuid)>,
+) -> Result<Json<HistorySummary>, PpdcError> {
+    Ok(Json(persist::history_summary(
+        actor(&session)?,
+        aid,
+        uid,
+        &pool,
+    )?))
+}
+
+#[debug_handler]
 pub async fn get_history_posts(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,

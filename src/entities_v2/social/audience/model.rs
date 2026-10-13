@@ -120,6 +120,16 @@ pub struct PendingReview {
     pub review_reasons: Vec<AudienceReviewReason>,
 }
 
+#[derive(Debug, Serialize, Default)]
+pub struct HistorySummary {
+    pub eligible_trace_count: i64,
+    pub already_accessible_trace_count: i64,
+    pub newly_shareable_trace_count: i64,
+    pub newly_shareable_normal_trace_count: i64,
+    pub newly_shareable_sensitive_trace_count: i64,
+    pub review_required: bool,
+}
+
 #[derive(Serialize, QueryableByName)]
 pub struct AudiencePost {
     #[diesel(sql_type = SqlUuid)]

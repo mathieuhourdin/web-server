@@ -23,6 +23,56 @@ fn validates_audience_names() {
 }
 
 #[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn overlapping_history_adds_sources_and_reviews_only_new_access() {
+    let f = Fixture::new();
+    let a = persist::create(f.owner, "Original", &f.pool).unwrap();
+    let b = persist::create(f.owner, "Overlapping", &f.pool).unwrap();
+    let c = persist::create(f.owner, "Mixed", &f.pool).unwrap();
+    let (_, shared) = f.publication();
+    let (_, private) = f.publication();
+    for audience in [&a, &b, &c] {
+        persist::attach(f.owner, audience.id, shared, &f.pool).unwrap();
+    }
+    persist::attach(f.owner, c.id, private, &f.pool).unwrap();
+    persist::add_member(f.owner, a.id, f.reader, true, &f.pool).unwrap();
+    persist::apply_history(f.owner, a.id, f.reader, HistoryDecisionDto {
+        decision: JournalHistoryDecision::AllIncludingSensitive, post_ids: None,
+    }, &f.pool).unwrap();
+
+    let (member, notify) = persist::add_member(f.owner, b.id, f.reader, true, &f.pool).unwrap();
+    assert!(!notify);
+    assert_eq!(member.history_review_state, "reviewed");
+    let summary = persist::history_summary(f.owner, b.id, f.reader, &f.pool).unwrap();
+    assert_eq!(summary.eligible_trace_count, 1);
+    assert_eq!(summary.already_accessible_trace_count, 1);
+    assert_eq!(summary.newly_shareable_trace_count, 0);
+    assert!(!summary.review_required);
+    assert_eq!(f.grant(shared).sources.iter().filter(|s| s.status == "active").count(), 2);
+    persist::remove_member(f.owner, a.id, f.reader, true, true, &f.pool).unwrap();
+    assert!(f.can_read(shared), "The overlapping audience must preserve access");
+
+    let (_, notify) = persist::add_member(f.owner, c.id, f.reader, true, &f.pool).unwrap();
+    assert!(notify);
+    let summary = persist::history_summary(f.owner, c.id, f.reader, &f.pool).unwrap();
+    assert_eq!(summary.eligible_trace_count, 2);
+    assert_eq!(summary.already_accessible_trace_count, 1);
+    assert_eq!(summary.newly_shareable_normal_trace_count, 1);
+    assert!(summary.review_required);
+    assert!(!f.can_read(private));
+    persist::remove_member(f.owner, b.id, f.reader, true, true, &f.pool).unwrap();
+    assert!(f.can_read(shared));
+    persist::apply_history(f.owner, c.id, f.reader, HistoryDecisionDto {
+        decision: JournalHistoryDecision::None, post_ids: None,
+    }, &f.pool).unwrap();
+    assert!(f.can_read(shared), "Declining new history must preserve automatically added sources");
+    assert!(!f.can_read(private));
+    persist::remove_member(f.owner, c.id, f.reader, true, true, &f.pool).unwrap();
+    assert!(!f.can_read(shared));
+    assert!(persist::history_summary(f.stranger, c.id, f.reader, &f.pool).is_err());
+}
+
+#[test]
 fn removed_audience_role_is_rejected_instead_of_silently_broadening_public_links() {
     use crate::entities_v2::post::{routes::PutTracePostDto, NewPostDto};
     assert!(serde_json::from_str::<PutTracePostDto>(r#"{"status":"published"}"#).is_ok());
