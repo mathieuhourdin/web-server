@@ -7,10 +7,12 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::Asset,
     error::PpdcError,
     post::{PostSourceRef, PostStatus},
     post_grant::PostGrant,
     source_projection::{load_source_projection_map, SourceProjectionKind},
+    trace::TraceContentImage,
     user::User,
 };
 use crate::schema::{journals, posts, traces, user_post_states};
@@ -118,7 +120,8 @@ pub fn find_feed_items_paginated(
     .load::<FeedCandidate>(&mut conn)?;
 
     drop(conn);
-    Ok((hydrate_feed_candidates(rows, pool)?, total))
+
+    Ok((hydrate_feed_candidates(rows, viewer_user_id, pool)?, total))
 }
 
 const MY_FEED_CANDIDATES: &str = "
@@ -165,11 +168,12 @@ pub fn find_my_feed_items_paginated(
     .bind::<BigInt, _>(limit)
     .load::<FeedCandidate>(&mut conn)?;
     drop(conn);
-    Ok((hydrate_feed_candidates(rows, pool)?, total))
+    Ok((hydrate_feed_candidates(rows, user_id, pool)?, total))
 }
 
 fn hydrate_feed_candidates(
     rows: Vec<FeedCandidate>,
+    viewer_user_id: Uuid,
     pool: &DbPool,
 ) -> Result<Vec<FeedItem>, PpdcError> {
     let mut conn = pool.get()?;
@@ -180,6 +184,36 @@ fn hydrate_feed_candidates(
         .collect::<Vec<_>>();
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
     drop(conn);
+
+    let image_ids = projections
+        .values()
+        .filter_map(|p| p.cover_image_asset_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let image_by_id = Asset::find_image_dimensions_by_ids(&image_ids, pool)?
+        .into_iter()
+        .map(|image| {
+            (
+                image.id,
+                TraceContentImage {
+                    id: image.id,
+                    width: image.width,
+                    height: image.height,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    let album_ids = rows
+        .iter()
+        .filter_map(|row| row.source_album_id)
+        .collect::<Vec<_>>();
+    let album_ranges = crate::entities_v2::album::Album::visible_date_ranges_for_ids(
+        &album_ids,
+        viewer_user_id,
+        pool,
+    )?;
 
     let mut displayed_user_ids: Vec<Uuid> = rows
         .iter()
@@ -266,6 +300,9 @@ fn hydrate_feed_candidates(
                 subtitle: projection.subtitle.clone(),
                 content: projection.content.clone(),
                 cover_image_asset_id: projection.cover_image_asset_id,
+                cover_image: projection
+                    .cover_image_asset_id
+                    .and_then(|id| image_by_id.get(&id).cloned()),
                 owner_display_name: display_name_map
                     .get(&owner_user_id)
                     .cloned()
@@ -275,6 +312,9 @@ fn hydrate_feed_candidates(
                     .and_then(|jid| journal_title_map.get(&jid).cloned()),
                 created_at: row.created_at,
                 updated_at: row.updated_at,
+                visible_trace_date_range: row
+                    .source_album_id
+                    .and_then(|id| album_ranges.get(&id).cloned()),
             })
         })
         .collect::<Vec<_>>();

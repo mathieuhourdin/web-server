@@ -756,6 +756,211 @@ async fn own_feed_includes_private_traces_and_albums_without_changing_trace_coll
     );
 }
 
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn chronological_album_ranges_use_visible_finalization_dates() {
+    use crate::entities_v2::{
+        album::{routes::get_album_route, Album},
+        feed::hydrate::find_feed_items_paginated,
+        session::Session,
+    };
+    use axum::extract::{Extension, Path};
+    let f = Fixture::new();
+    let (hidden, _) = f.publication();
+    let (late, late_post) = f.publication();
+    let (early, early_post) = f.publication();
+    let album = Uuid::new_v4();
+    let empty = Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET finalized_at='2026-01-01' WHERE id='{hidden}';
+         UPDATE traces SET finalized_at='2026-05-01',interaction_date='2025-01-01' WHERE id='{late}';
+         UPDATE traces SET finalized_at='2026-03-01',interaction_date='2027-01-01' WHERE id='{early}';
+         INSERT INTO albums(id,owner_user_id,title,visibility) VALUES
+             ('{album}','{}','Chronological','PUBLISHED'),('{empty}','{}','Empty','PRIVATE');
+         INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES
+             ('{album}','{hidden}',0),('{album}','{late}',1),('{album}','{early}',2);", f.owner, f.owner
+    )).unwrap();
+    for post in [late_post, early_post] {
+        PostGrant::create_or_update(
+            &Post::find_full(post, &f.pool).unwrap(),
+            f.owner,
+            NewPostGrantDto {
+                grantee_user_id: Some(f.reader),
+                grantee_scope: None,
+                access_level: None,
+            },
+            &f.pool,
+        )
+        .unwrap();
+    }
+    let mut session = Session::anonymous();
+    session.user_id = Some(f.reader);
+    let response = get_album_route(Extension(f.pool.clone()), Extension(session), Path(album))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        response
+            .items
+            .iter()
+            .map(|i| i.trace.id)
+            .collect::<Vec<_>>(),
+        vec![early, late]
+    );
+    let reader_range = response.album.visible_trace_date_range.unwrap();
+    assert_eq!(reader_range.from.to_rfc3339(), "2026-03-01T00:00:00+00:00");
+    assert_eq!(reader_range.to.to_rfc3339(), "2026-05-01T00:00:00+00:00");
+    let owner_album = Album::find(album, &f.pool)
+        .unwrap()
+        .with_visible_date_range(f.owner, &f.pool)
+        .unwrap();
+    assert_eq!(
+        owner_album
+            .visible_trace_date_range
+            .unwrap()
+            .from
+            .to_rfc3339(),
+        "2026-01-01T00:00:00+00:00"
+    );
+    assert!(Album::find(album, &f.pool)
+        .unwrap()
+        .with_visible_date_range(f.stranger, &f.pool)
+        .unwrap()
+        .visible_trace_date_range
+        .is_none());
+    assert!(Album::find(empty, &f.pool)
+        .unwrap()
+        .with_visible_date_range(f.owner, &f.pool)
+        .unwrap()
+        .visible_trace_date_range
+        .is_none());
+    let card = find_feed_items_paginated(f.reader, None, 0, 20, &f.pool)
+        .unwrap()
+        .0
+        .into_iter()
+        .find(|item| item.source_id == album)
+        .unwrap();
+    assert_eq!(card.visible_trace_date_range.unwrap(), reader_range);
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE albums SET ordering_mode='MANUAL' WHERE id='{album}';"
+        ))
+        .unwrap();
+    assert!(Album::find(album, &f.pool)
+        .unwrap()
+        .with_visible_date_range(f.reader, &f.pool)
+        .unwrap()
+        .visible_trace_date_range
+        .is_none());
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn mobile_update_policy_is_publicly_readable_but_admin_writable() {
+    use crate::entities_v2::{platform_infra::platform_settings::*, session::Session};
+    use axum::extract::{Extension, Json, Query};
+    let f = Fixture::new();
+    let read = || {
+        get_mobile_version_policy_route(
+            Extension(f.pool.clone()),
+            Query(MobilePolicyQuery {
+                platform: MobilePlatform::Ios,
+            }),
+        )
+    };
+    let default = read().await.unwrap().0;
+    assert_eq!(default.policy.minimum_required.build, 0);
+    assert!(default.updated_at.is_none());
+    let mut member = Session::anonymous();
+    member.user_id = Some(f.reader);
+    assert_eq!(
+        put_admin_mobile_update_policy_route(
+            Extension(f.pool.clone()),
+            Extension(member.clone()),
+            Json(MobileUpdatePolicy::default())
+        )
+        .await
+        .err()
+        .unwrap()
+        .status_code,
+        403
+    );
+    assert_eq!(
+        get_admin_mobile_update_policy_route(
+            Extension(f.pool.clone()),
+            Extension(Session::anonymous())
+        )
+        .await
+        .err()
+        .unwrap()
+        .status_code,
+        401
+    );
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "INSERT INTO user_roles(user_id,role) VALUES('{}','ADMIN');",
+            f.owner
+        ))
+        .unwrap();
+    let mut admin = Session::anonymous();
+    admin.user_id = Some(f.owner);
+    let mut policy = MobileUpdatePolicy::default();
+    policy.ios.minimum_required = MobileBuildVersion {
+        version: "1.0.2".to_string(),
+        build: 40,
+    };
+    policy.ios.recommended = MobileBuildVersion {
+        version: "1.0.3".to_string(),
+        build: 46,
+    };
+    policy.ios.store_url = Some("https://apps.apple.com/fr/app/hupo/id123".to_string());
+    let saved = put_admin_mobile_update_policy_route(
+        Extension(f.pool.clone()),
+        Extension(admin.clone()),
+        Json(policy.clone()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(saved.updated_by, Some(f.owner));
+    assert!(saved.updated_at.is_some());
+    let public = read().await.unwrap().0;
+    assert_eq!(public.policy.recommended.build, 46);
+    assert!(!serde_json::to_value(public)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .contains_key("updated_by"));
+    let android = get_mobile_version_policy_route(
+        Extension(f.pool.clone()),
+        Query(MobilePolicyQuery {
+            platform: MobilePlatform::Android,
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(android.policy.minimum_required.build, 0);
+    policy.ios.minimum_required.build = 100;
+    assert_eq!(
+        put_admin_mobile_update_policy_route(
+            Extension(f.pool.clone()),
+            Extension(admin),
+            Json(policy)
+        )
+        .await
+        .err()
+        .unwrap()
+        .status_code,
+        400
+    );
+    assert_eq!(read().await.unwrap().0.policy.minimum_required.build, 40);
+}
+
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 fn shared_journal_follower_automation_uses_audiences_only() {

@@ -17,6 +17,14 @@ pub struct Album {
     pub cover_image_asset_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    #[serde(default)]
+    pub visible_trace_date_range: Option<AlbumTraceDateRange>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct AlbumTraceDateRange {
+    pub from: chrono::DateTime<chrono::Utc>,
+    pub to: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,7 +44,9 @@ pub struct AlbumItemTraceView {
     pub subtitle: String,
     pub content: String,
     pub content_image_asset_id: Option<Uuid>,
+    pub content_image: Option<crate::entities_v2::trace::TraceContentImage>,
     pub interaction_date: NaiveDateTime,
+    pub finalized_at: Option<chrono::DateTime<chrono::Utc>>,
     pub published_post_id: Option<Uuid>,
     pub publishing_date: Option<NaiveDateTime>,
 }

@@ -6,6 +6,7 @@ pub mod external_auth;
 pub mod llm_call;
 pub mod mailer;
 pub mod notification;
+pub mod platform_settings;
 pub mod push;
 pub mod session;
 pub mod transcription;

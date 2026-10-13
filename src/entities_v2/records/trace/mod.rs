@@ -12,7 +12,7 @@ mod transcription_pipeline;
 pub use heatmap::get_user_heatmap_route;
 pub use edit_origin::get_trace_edit_origin_route;
 pub use model::{
-    NewTrace, NewTraceDto, PatchTraceDto, Trace, TraceComplementAudienceMode, TraceListItem,
+    NewTrace, NewTraceDto, PatchTraceDto, Trace, TraceComplementAudienceMode, TraceContentImage, TraceListItem,
     TraceSharingSensitivity, TraceStatus, TraceType, UpdateTraceDto,
 };
 pub use routes::{

@@ -1,4 +1,5 @@
 use diesel::prelude::*;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -7,7 +8,7 @@ use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     post::{enforce_publication_invariant_for_source, Post, PostSourceRef, PostStatus},
     post_grant::PostGrant,
-    trace::{Trace, TraceType},
+    trace::{Trace, TraceContentImage, TraceType},
 };
 use crate::schema::{album_items, albums, posts};
 
@@ -45,6 +46,7 @@ fn tuple_to_album(row: AlbumTuple) -> Album {
         cover_image_asset_id: row.8,
         created_at: row.9,
         updated_at: row.10,
+        visible_trace_date_range: None,
     }
 }
 
@@ -197,7 +199,9 @@ fn album_item_view_from_trace_and_post(
             subtitle: trace.subtitle,
             content: trace.content,
             content_image_asset_id: trace.content_image_asset_id,
+            content_image: None,
             interaction_date: trace.interaction_date,
+            finalized_at: trace.finalized_at.map(|date| date.and_utc()),
             published_post_id: selected_post.as_ref().map(|post| post.id),
             publishing_date: selected_post.as_ref().and_then(|post| post.publishing_date),
         }
@@ -210,7 +214,9 @@ fn album_item_view_from_trace_and_post(
             subtitle: trace.subtitle,
             content: trace.content,
             content_image_asset_id: trace.content_image_asset_id,
+            content_image: None,
             interaction_date: trace.interaction_date,
+            finalized_at: trace.finalized_at.map(|date| date.and_utc()),
             published_post_id: Some(post.id),
             publishing_date: post.publishing_date,
         }
@@ -480,9 +486,43 @@ impl Album {
             }
         }
 
+        // Fetch metadata only for returned, authorized items, in one batch.
+        let image_ids = items
+            .iter()
+            .filter_map(|item| item.trace.content_image_asset_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let image_by_id = Asset::find_image_dimensions_by_ids(&image_ids, pool)?
+            .into_iter()
+            .map(|image| {
+                (
+                    image.id,
+                    TraceContentImage {
+                        id: image.id,
+                        width: image.width,
+                        height: image.height,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        for item in &mut items {
+            item.trace.content_image = item
+                .trace
+                .content_image_asset_id
+                .and_then(|id| image_by_id.get(&id).cloned());
+        }
+
         match self.ordering_mode {
             AlbumOrderingMode::Chronological => {
-                items.sort_by_key(|item| (item.trace.interaction_date, item.created_at));
+                items.sort_by_key(|item| {
+                    (
+                        item.trace.finalized_at.is_none(),
+                        item.trace.finalized_at,
+                        item.created_at,
+                        item.id,
+                    )
+                });
             }
             AlbumOrderingMode::Manual => {
                 items.sort_by_key(|item| (item.ordering_index, item.created_at));

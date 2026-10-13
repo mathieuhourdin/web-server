@@ -536,6 +536,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    platform_settings (key) {
+        key -> Text,
+        value -> Jsonb,
+        updated_at -> Timestamp,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
     references (id) {
         id -> Uuid,
         tag_id -> Int4,
@@ -1023,6 +1032,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     post_grants,
     post_relations,
     posts,
+    platform_settings,
     references,
     relationships,
     sessions,

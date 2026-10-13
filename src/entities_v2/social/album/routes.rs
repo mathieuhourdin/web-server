@@ -43,6 +43,7 @@ pub async fn get_user_albums_route(
         pagination.limit,
         &pool,
     )?;
+    let albums = Album::hydrate_visible_date_ranges(albums, viewer_user_id, &pool)?;
     Ok(Json(PaginatedResponse::new(albums, pagination, total)))
 }
 
@@ -66,6 +67,7 @@ pub async fn get_trace_albums_route(
         pagination.limit,
         &pool,
     )?;
+    let albums = Album::hydrate_visible_date_ranges(albums, viewer_user_id, &pool)?;
     Ok(Json(PaginatedResponse::new(albums, pagination, total)))
 }
 
@@ -77,7 +79,7 @@ pub async fn post_album_route(
 ) -> Result<Json<Album>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let album = Album::create(NewAlbum::new(payload, user_id), &pool)?;
-    Ok(Json(album))
+    Ok(Json(album.with_visible_date_range(user_id, &pool)?))
 }
 
 #[debug_handler]
@@ -92,6 +94,7 @@ pub async fn get_album_route(
         return Err(PpdcError::unauthorized());
     }
     let items = album.find_items_for_viewer(viewer_user_id, &pool)?;
+    let album = album.with_visible_date_range(viewer_user_id, &pool)?;
     Ok(Json(AlbumWithItems { album, items }))
 }
 
@@ -130,7 +133,11 @@ pub async fn put_album_route(
         album.cover_image_asset_id = cover_image_asset_id;
     }
 
-    Ok(Json(album.update(&pool)?))
+    Ok(Json(
+        album
+            .update(&pool)?
+            .with_visible_date_range(user_id, &pool)?,
+    ))
 }
 
 #[debug_handler]
@@ -154,7 +161,9 @@ pub async fn post_album_asset_route(
     } = upload_image_asset_for_user_from_multipart(user_id, &pool, multipart).await?;
 
     album.cover_image_asset_id = Some(asset.id);
-    let album = album.update(&pool)?;
+    let album = album
+        .update(&pool)?
+        .with_visible_date_range(user_id, &pool)?;
 
     Ok(Json(AlbumAssetUploadResponse {
         album,

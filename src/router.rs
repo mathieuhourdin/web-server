@@ -11,6 +11,7 @@ use tower_http::{
     services::ServeDir,
 };
 
+use crate::entities_v2::platform_infra::platform_settings;
 use crate::entities_v2::{
     album, analysis_summary, asset, audience, content_report, device, document, element,
     error::{ErrorType, PpdcError},
@@ -111,6 +112,11 @@ pub fn create_router() -> Router {
         );
 
     let admin_router = Router::new()
+        .route(
+            "/mobile/update_policy",
+            get(platform_settings::get_admin_mobile_update_policy_route)
+                .put(platform_settings::put_admin_mobile_update_policy_route),
+        )
         .nest("/analytics", admin_analytics_router)
         .route("/users", get(user::get_admin_users_route))
         .route(
@@ -639,6 +645,10 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
+        .route(
+            "/mobile/version_policy",
+            get(platform_settings::get_mobile_version_policy_route),
+        )
         .route("/users", post(user::post_user))
         .route(
             "/users/google",
