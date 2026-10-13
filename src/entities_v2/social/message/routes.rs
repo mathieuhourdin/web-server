@@ -14,6 +14,7 @@ use crate::entities_v2::{
     platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     post::{Post, PostStatus},
     post_grant::PostGrant,
+    relationship::{Relationship, RelationshipStatus},
     session::Session,
     trace::Trace,
     user::{User, UserPrincipalType, UserRole},
@@ -238,6 +239,30 @@ pub(crate) fn is_service_mentor(recipient: &User, pool: &DbPool) -> Result<bool,
     }
 
     Ok(recipient.has_role(UserRole::Mentor, pool)?)
+}
+
+/// User-initiated sends only; system-generated mentor replies do not use this gate.
+/// A follow accepted in either direction is enough, but blocks always take precedence.
+pub(crate) fn ensure_can_send_message(
+    sender: Uuid,
+    recipient: Uuid,
+    pool: &DbPool,
+) -> Result<(), PpdcError> {
+    UserBlock::ensure_can_interact(sender, recipient, pool)?;
+    if is_service_mentor(&User::find(&recipient, pool)?, pool)? {
+        return Ok(());
+    }
+    let relationship = Relationship::find_follow_summary_between(sender, recipient, pool)?;
+    if relationship.viewer_to_user == Some(RelationshipStatus::Accepted)
+        || relationship.user_to_viewer == Some(RelationshipStatus::Accepted)
+    {
+        return Ok(());
+    }
+    Err(PpdcError::new(
+        403,
+        ErrorType::ApiError,
+        "Sending messages requires an accepted follow relationship in either direction".to_string(),
+    ))
 }
 
 fn find_published_trace_post(
@@ -502,7 +527,7 @@ pub async fn post_message_route(
     let sender_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let sender_user = User::find(&sender_user_id, &pool)?;
     let recipient = User::find(&payload.recipient_user_id, &pool)?;
-    UserBlock::ensure_can_interact(sender_user_id, recipient.id, &pool)?;
+    ensure_can_send_message(sender_user_id, recipient.id, &pool)?;
     let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
     let message_type = match payload.message_type {
         Some(MessageType::General) if recipient_is_service_mentor => MessageType::Question,
@@ -824,7 +849,7 @@ pub async fn post_post_message_route(
     } else {
         post.user_id
     };
-    UserBlock::ensure_can_interact(sender_user_id, recipient_user_id, &pool)?;
+    ensure_can_send_message(sender_user_id, recipient_user_id, &pool)?;
 
     let reply_context = resolve_reply_context(
         payload.reply_to_message_id,
@@ -879,6 +904,7 @@ pub async fn put_message_route(
         return Err(PpdcError::unauthorized());
     }
     let recipient = User::find(&payload.recipient_user_id, &pool)?;
+    ensure_can_send_message(sender_user_id, recipient.id, &pool)?;
     let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
 
     if payload.post_id.is_some() && payload.trace_id.is_some() {

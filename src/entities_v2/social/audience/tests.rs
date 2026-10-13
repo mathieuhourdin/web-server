@@ -24,6 +24,27 @@ fn validates_audience_names() {
 
 #[test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn message_sends_require_an_accepted_relationship_except_for_mentors() {
+    use crate::entities_v2::message::routes::ensure_can_send_message;
+    let f = Fixture::new();
+    assert!(ensure_can_send_message(f.reader, f.owner, &f.pool).is_ok());
+    assert!(ensure_can_send_message(f.owner, f.reader, &f.pool).is_ok());
+    assert_eq!(ensure_can_send_message(f.owner, f.stranger, &f.pool).unwrap_err().status_code, 403);
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE relationships SET status='PENDING' WHERE requester_user_id='{}' AND target_user_id='{}';",
+        f.reader, f.owner)).unwrap();
+    assert!(ensure_can_send_message(f.reader, f.owner, &f.pool).is_err());
+    assert!(ensure_can_send_message(f.owner, f.reader, &f.pool).is_err());
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO user_roles(user_id,role) VALUES('{}','MENTOR');", f.stranger)).unwrap();
+    assert!(ensure_can_send_message(f.owner, f.stranger, &f.pool).is_ok());
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO user_blocks(blocker_user_id,blocked_user_id) VALUES('{}','{}');", f.stranger, f.owner)).unwrap();
+    assert!(ensure_can_send_message(f.owner, f.stranger, &f.pool).is_err());
+}
+
+#[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 fn overlapping_history_adds_sources_and_reviews_only_new_access() {
     let f = Fixture::new();
     let a = persist::create(f.owner, "Original", &f.pool).unwrap();
