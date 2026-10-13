@@ -36,6 +36,9 @@ struct ResendSendEmailResponse {
 }
 
 pub async fn send_email(request: SendEmailRequest) -> Result<SentEmail, PpdcError> {
+    if request.to.iter().any(|to| to.trim().to_ascii_lowercase().ends_with(super::super::automation::DEMO_DOMAIN)) {
+        return Err(PpdcError::new(403,ErrorType::ApiError,"Demo email delivery is suppressed".to_string()));
+    }
     if request.to.is_empty() {
         return Err(PpdcError::new(
             400,

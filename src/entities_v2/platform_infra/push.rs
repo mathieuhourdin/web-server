@@ -346,6 +346,7 @@ pub async fn send_to_user(
     notification: PushNotification,
     pool: &DbPool,
 ) -> Result<PushDispatchResult, PpdcError> {
+    if super::automation::demo_owner(user_id, pool)?.is_some() { return Ok(PushDispatchResult::default()); }
     let devices = Device::find_active_fcm_targets_for_user(user_id, pool)?;
     send_to_devices(devices, notification, pool).await
 }
@@ -355,6 +356,7 @@ pub async fn send_to_mobile_user(
     notification: PushNotification,
     pool: &DbPool,
 ) -> Result<PushDispatchResult, PpdcError> {
+    if super::automation::demo_owner(user_id, pool)?.is_some() { return Ok(PushDispatchResult::default()); }
     let devices = Device::find_active_mobile_fcm_targets_for_user(user_id, pool)?;
     send_to_devices(devices, notification, pool).await
 }
@@ -364,6 +366,7 @@ pub async fn send_silent_to_mobile_user(
     notification: SilentPush,
     pool: &DbPool,
 ) -> Result<PushDispatchResult, PpdcError> {
+    if super::automation::demo_owner(user_id, pool)?.is_some() { return Ok(PushDispatchResult::default()); }
     let devices = Device::find_active_mobile_fcm_targets_for_user(user_id, pool)?;
     let mut result = PushDispatchResult {
         attempted_count: devices.len(),

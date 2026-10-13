@@ -83,6 +83,7 @@ pub fn ensure_ai_usage_allowed(
         })));
     }
 
+    super::automation::reserve_ai(user.id, session_id, kind.as_api_value(), pool)?;
     let event_type = match kind {
         AiUsageKind::Transcription => Some(UsageEventType::AiTranscriptionRequested),
         AiUsageKind::WalCompilation => Some(UsageEventType::AiWalCompilationRequested),

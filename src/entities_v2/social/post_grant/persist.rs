@@ -25,7 +25,7 @@ impl PostGrant {
             #[diesel(sql_type = diesel::sql_types::Bool)]
             eligible: bool,
         }
-        let row = diesel::sql_query("SELECT trace_publication_eligible($1, $2) AS eligible")
+        let row = diesel::sql_query("SELECT trace_publication_eligible($1, $2) AND EXISTS (SELECT 1 FROM posts p WHERE p.id=$1 AND automation_same_sandbox(p.user_id,$2)) AS eligible")
             .bind::<diesel::sql_types::Uuid, _>(post_id)
             .bind::<diesel::sql_types::Uuid, _>(viewer_id)
             .get_result::<Eligible>(&mut pool.get()?)?;
@@ -43,7 +43,7 @@ impl PostGrant {
             id: Uuid,
         }
         let rows = diesel::sql_query(
-            "SELECT id FROM posts WHERE id = ANY($1) AND trace_publication_eligible(id, $2)",
+            "SELECT id FROM posts WHERE id = ANY($1) AND trace_publication_eligible(id, $2) AND automation_same_sandbox(user_id,$2)",
         )
         .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(ids)
         .bind::<diesel::sql_types::Uuid, _>(viewer_id)

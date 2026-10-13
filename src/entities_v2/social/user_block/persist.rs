@@ -16,6 +16,7 @@ impl UserBlock {
         user_b_id: Uuid,
         pool: &DbPool,
     ) -> Result<(), PpdcError> {
+        crate::entities_v2::platform_infra::automation::ensure_interaction(user_a_id, user_b_id, pool)?;
         if user_a_id != user_b_id && Self::exists_in_either_direction(user_a_id, user_b_id, pool)? {
             return Err(PpdcError::new(
                 404,

@@ -329,6 +329,9 @@ impl JournalShareLink {
         if journal.user_id != owner_user_id {
             return Err(PpdcError::unauthorized());
         }
+        if crate::entities_v2::platform_infra::automation::demo_owner(owner_user_id, pool)?.is_some() {
+            return Err(PpdcError::new(403, ErrorType::ApiError,"Demo accounts cannot create public sharing links".to_string()));
+        }
         if journal.is_encrypted {
             return Err(PpdcError::new(
                 400,

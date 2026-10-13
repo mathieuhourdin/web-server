@@ -112,6 +112,7 @@ impl Relationship {
         payload: NewRelationshipDto,
         pool: &DbPool,
     ) -> Result<(Relationship, bool), PpdcError> {
+        crate::entities_v2::platform_infra::automation::ensure_same_sandbox(requester_user_id, payload.target_user_id, pool)?;
         if requester_user_id == payload.target_user_id {
             return Err(PpdcError::new(
                 400,

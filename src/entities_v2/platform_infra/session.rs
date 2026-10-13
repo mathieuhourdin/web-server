@@ -140,12 +140,12 @@ impl Session {
         Uuid::parse_str(auth_value).ok()
     }
 
-    fn generate_secret() -> String {
+    pub(crate) fn generate_secret() -> String {
         let bytes: [u8; SESSION_SECRET_BYTES] = rand::thread_rng().gen();
         bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
     }
 
-    fn hash_secret(secret: &str) -> Result<String, PpdcError> {
+    pub(crate) fn hash_secret(secret: &str) -> Result<String, PpdcError> {
         let salt: [u8; 32] = rand::thread_rng().gen();
         let config = Config::default();
         argon2::hash_encoded(secret.as_bytes(), &salt, &config).map_err(|err| {
@@ -157,7 +157,7 @@ impl Session {
         })
     }
 
-    fn verify_secret(secret_hash: &str, candidate: &str) -> Result<bool, PpdcError> {
+    pub(crate) fn verify_secret(secret_hash: &str, candidate: &str) -> Result<bool, PpdcError> {
         argon2::verify_encoded(secret_hash, candidate.as_bytes()).map_err(|err| {
             PpdcError::new(
                 500,
@@ -175,6 +175,24 @@ impl Session {
     }
 
     pub fn create_authenticated_for_device(
+        user_id: Uuid,
+        device_id: Option<Uuid>,
+        pool: &DbPool,
+    ) -> Result<(Session, String), PpdcError> {
+        if super::automation::demo_owner(user_id, pool)?.is_some() {
+            return Err(PpdcError::unauthorized());
+        }
+        Self::create_authenticated_internal(user_id, device_id, pool)
+    }
+
+    pub(crate) fn create_delegated(
+        user_id: Uuid,
+        pool: &DbPool,
+    ) -> Result<(Session, String), PpdcError> {
+        Self::create_authenticated_internal(user_id, None, pool)
+    }
+
+    fn create_authenticated_internal(
         user_id: Uuid,
         device_id: Option<Uuid>,
         pool: &DbPool,
@@ -276,6 +294,7 @@ impl Session {
             if !matches {
                 return Err(PpdcError::unauthorized());
             }
+            super::automation::delegated_context(&session, pool)?;
             Session::touch(session.id, pool)?;
             return Ok(session);
         }
@@ -289,6 +308,7 @@ impl Session {
             if session.secret_hash.is_some() {
                 return Err(PpdcError::unauthorized());
             }
+            super::automation::delegated_context(&session, pool)?;
             Session::touch(session.id, pool)?;
             return Ok(session);
         }
@@ -311,6 +331,11 @@ where
             .expect("Extension DbPool should be set");
         if let Some(auth_header) = parts.headers.get("Authorization") {
             if let Ok(auth_str) = auth_header.to_str() {
+                // Automation keys are authenticated by the outer automation gate,
+                // not mistaken for malformed user-session credentials.
+                if auth_str.starts_with("Bearer agent.") {
+                    return Ok(Session::anonymous());
+                }
                 if let Ok(session) = Session::get_valid_session_from_authorization(auth_str, &pool)
                 {
                     return Ok(session);

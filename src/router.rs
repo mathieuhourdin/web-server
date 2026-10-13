@@ -12,6 +12,7 @@ use tower_http::{
 };
 
 use crate::entities_v2::platform_infra::platform_settings;
+use crate::entities_v2::platform_infra::automation;
 use crate::entities_v2::{
     album, analysis_summary, asset, audience, content_report, device, document, element,
     error::{ErrorType, PpdcError},
@@ -112,6 +113,9 @@ pub fn create_router() -> Router {
         );
 
     let admin_router = Router::new()
+        .route("/automation/clients", get(automation::list_clients).post(automation::create_client))
+        .route("/automation/clients/:id", delete(automation::revoke_client))
+        .route("/automation/clients/:id/token", post(automation::rotate_client))
         .route(
             "/mobile/update_policy",
             get(platform_settings::get_admin_mobile_update_policy_route)
@@ -649,6 +653,11 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     Router::new()
+        .route("/me/capabilities", get(automation::capabilities))
+        .route("/automation/contract", get(automation::contract))
+        .route("/automation/demo_users", get(automation::list_demos).post(automation::create_demos))
+        .route("/automation/demo_users/:id", get(automation::get_demo).put(automation::update_demo).delete(automation::delete_demo))
+        .route("/automation/demo_users/:id/delegations", post(automation::delegate))
         .route(
             "/mobile/version_policy",
             get(platform_settings::get_mobile_version_policy_route),
@@ -696,6 +705,7 @@ pub fn create_router() -> Router {
         .fallback(fallback_handler)
         .route("/", get(root_handler))
         .layer(from_fn(logging::request_context_middleware))
+        .layer(from_fn(automation::gate))
         .layer(from_fn(sessions_service::add_session_to_request))
         .nest_service("/public", ServeDir::new("public"))
         .layer(cors)

@@ -20,6 +20,7 @@ pub enum OutboundEmailStatus {
     Running,
     Sent,
     Failed,
+    Suppressed,
 }
 
 impl OutboundEmailStatus {
@@ -29,6 +30,7 @@ impl OutboundEmailStatus {
             OutboundEmailStatus::Running => "RUNNING",
             OutboundEmailStatus::Sent => "SENT",
             OutboundEmailStatus::Failed => "FAILED",
+            OutboundEmailStatus::Suppressed => "SUPPRESSED",
         }
     }
 
@@ -37,6 +39,7 @@ impl OutboundEmailStatus {
             "RUNNING" => OutboundEmailStatus::Running,
             "SENT" => OutboundEmailStatus::Sent,
             "FAILED" => OutboundEmailStatus::Failed,
+            "SUPPRESSED" => OutboundEmailStatus::Suppressed,
             _ => OutboundEmailStatus::Pending,
         }
     }

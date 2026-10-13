@@ -254,6 +254,7 @@ pub async fn get_users(
     let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, &pool)?;
 
     let mut count_query = crate::schema::users::table.into_boxed();
+    count_query = count_query.filter(diesel::dsl::sql::<diesel::sql_types::Bool>(&format!("automation_user_discoverable(users.id,'{user_id}')")));
     if let Some(principal_type) = params.principal_type {
         count_query = count_query.filter(crate::schema::users::principal_type.eq(principal_type));
     }
@@ -267,6 +268,7 @@ pub async fn get_users(
     let total = count_query.count().get_result::<i64>(&mut conn)?;
 
     let mut query = crate::schema::users::table.into_boxed();
+    query = query.filter(diesel::dsl::sql::<diesel::sql_types::Bool>(&format!("automation_user_discoverable(users.id,'{user_id}')")));
     if let Some(principal_type) = params.principal_type {
         query = query.filter(crate::schema::users::principal_type.eq(principal_type));
     }
@@ -311,6 +313,7 @@ pub async fn get_user_search_route(
         SELECT COUNT(*)::bigint AS total
         FROM users
         WHERE (NOT ($4 OR $6) OR users.id <> $2)
+          AND automation_user_discoverable(users.id,$2)
           -- Who is findable at all: people who actually hold an account, and
           -- mentors. A mentor is `principal_type = 'SERVICE'`, the predicate
           -- `GET /mentors` and the AI usage guard already use; the role row
@@ -420,6 +423,7 @@ pub async fn get_user_search_route(
             pseudonym
         FROM users
         WHERE (NOT ($8 OR $10) OR users.id <> $6)
+          AND automation_user_discoverable(users.id,$6)
           -- Who is findable at all: people who actually hold an account, and
           -- mentors. A mentor is `principal_type = 'SERVICE'`, the predicate
           -- `GET /mentors` and the AI usage guard already use; the role row
@@ -604,6 +608,7 @@ pub async fn get_suggested_users_route(
           AND p.status = 'PUBLISHED'
           AND COALESCE(p.publishing_date, p.created_at) >= $2
         WHERE u.principal_type = 'HUMAN'
+          AND automation_user_discoverable(u.id,$1)
           AND u.is_platform_user = TRUE
           AND u.id <> $1
           AND NOT EXISTS (
