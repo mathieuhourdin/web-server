@@ -24,6 +24,77 @@ fn validates_audience_names() {
 
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn continuation_previews_are_batched_and_follow_reader_permissions() {
+    use crate::entities_v2::{
+        album::Album, feed::hydrate::{find_feed_items_paginated,find_my_feed_items_paginated},
+        session::Session, trace::{continuation::hydrate_continuations,routes::get_trace_route},
+        trace_mention::TraceMention,
+    };
+    use axum::extract::{Extension,Path,Query};
+    let f=Fixture::new();
+    let (parent,parent_post)=f.publication();
+    let (child,child_post)=f.publication();
+    let mut linked=Trace::find_full_trace(child,&f.pool).unwrap();
+    linked.continues_trace_id=Some(parent);linked.update(&f.pool).unwrap();
+    fn share(f:&Fixture,post:Uuid) {
+        PostGrant::create_or_update(&Post::find_full(post,&f.pool).unwrap(),f.owner,
+            NewPostGrantDto { grantee_user_id:Some(f.reader),grantee_scope:None,access_level:None },&f.pool).unwrap();
+    }
+    async fn read(f:&Fixture,user:Uuid,id:Uuid)->crate::entities_v2::trace::model::TraceReadableView {
+        let mut session=Session::anonymous();session.user_id=Some(user);
+        get_trace_route(Extension(f.pool.clone()),Extension(session),Path(id)).await.unwrap().0
+    }
+    share(&f,child_post);
+    let hidden=read(&f,f.reader,child).await;
+    assert!(hidden.continues_trace_id.is_none() && hidden.continues_from.is_none());
+    assert!(!serde_json::to_string(&hidden).unwrap().contains(&parent.to_string()));
+    assert_eq!(read(&f,f.owner,child).await.continues_from.unwrap().id,parent);
+    let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    assert!(feed.iter().find(|i|i.source_id==child).unwrap().continues_from.is_none());
+    share(&f,parent_post);
+    let visible=read(&f,f.reader,child).await;
+    assert_eq!(visible.continues_trace_id,Some(parent));
+    assert_eq!(visible.continues_from.unwrap().title,"Test");
+    let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    assert_eq!(feed.iter().find(|i|i.source_id==child).unwrap().continues_from.as_ref().unwrap().id,parent);
+    let (own_feed,_)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    assert_eq!(own_feed.iter().find(|i|i.source_id==child).unwrap().continues_trace_id,Some(parent));
+    let mut session=Session::anonymous();session.user_id=Some(f.reader);
+    let query=serde_json::from_value(serde_json::json!({})).unwrap();
+    let journal=crate::entities_v2::trace::routes::get_traces_for_journal_route(
+        Extension(f.pool.clone()),Extension(session),Path(f.journal),Query(query)).await.unwrap().0;
+    assert_eq!(journal.items.iter().find(|i|i.id==child).unwrap().continues_from.as_ref().unwrap().id,parent);
+    let album=Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO albums(id,owner_user_id,title,visibility,completion_status) VALUES('{album}','{}','Test','PUBLISHED','COMPLETE');
+        INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES('{album}','{child}',0);",f.owner)).unwrap();
+    let items=Album::find(album,&f.pool).unwrap().find_items_for_viewer(f.reader,&f.pool).unwrap();
+    assert_eq!(items[0].trace.continues_from.as_ref().unwrap().id,parent);
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE post_grants SET status='REVOKED' WHERE post_id='{parent_post}'")).unwrap();
+    assert!(read(&f,f.reader,child).await.continues_from.is_none());
+    TraceMention::replace_active(parent,&[f.reader],&f.pool).unwrap();
+    assert_eq!(read(&f,f.reader,child).await.continues_trace_id,Some(parent));
+    TraceMention::replace_active(parent,&[],&f.pool).unwrap();
+    assert!(read(&f,f.reader,child).await.continues_from.is_none());
+    TraceMention::replace_active(parent,&[f.reader],&f.pool).unwrap();
+    for sql in [
+        format!("UPDATE traces SET status='ARCHIVED' WHERE id='{parent}'"),
+        format!("UPDATE traces SET status='FINALIZED',is_encrypted=TRUE,encryption_metadata='{{}}'::jsonb WHERE id='{parent}'"),
+    ] {
+        f.pool.get().unwrap().batch_execute(&sql).unwrap();
+        let result=read(&f,f.reader,child).await;
+        assert!(result.continues_trace_id.is_none() && result.continues_from.is_none());
+    }
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET is_encrypted=FALSE,encryption_metadata=NULL WHERE id='{parent}';
+        INSERT INTO user_blocks(blocker_user_id,blocked_user_id) VALUES('{}','{}');",f.owner,f.reader)).unwrap();
+    let mut items=vec![Trace::find_full_trace(child,&f.pool).unwrap();3];
+    hydrate_continuations(f.reader,items.iter_mut(),&f.pool).unwrap();
+    assert!(items.iter().all(|t|t.continues_from.is_none() && t.continues_trace_id.is_none()));
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     use crate::entities_v2::{journal::Journal,writing_thread::{persist as threads,service}};
     let f=Fixture::new();

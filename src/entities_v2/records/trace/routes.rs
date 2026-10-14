@@ -120,6 +120,7 @@ fn attach_content_images_to_trace_list_items(
 
 fn attach_metadata_to_traces(
     mut traces: Vec<Trace>,
+    viewer: Uuid,
     pool: &DbPool,
 ) -> Result<Vec<Trace>, PpdcError> {
     let trace_ids = traces.iter().map(|trace| trace.id).collect::<Vec<_>>();
@@ -132,6 +133,7 @@ fn attach_metadata_to_traces(
             .remove(&trace.id)
             .unwrap_or_default();
     }
+    super::continuation::hydrate_continuations(viewer, traces.iter_mut(), pool)?;
     Ok(traces)
 }
 
@@ -686,9 +688,10 @@ fn resolve_readable_source_trace(
 
 fn attach_seen_state_to_trace_list_items(
     user_id: Uuid,
-    items: Vec<TraceListItem>,
+    mut items: Vec<TraceListItem>,
     pool: &DbPool,
 ) -> Result<Vec<TraceListItem>, PpdcError> {
+    super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -734,9 +737,10 @@ fn attach_seen_by_preview_to_trace_list_items(
 
 fn attach_seen_state_to_trace_readable_views(
     user_id: Uuid,
-    items: Vec<TraceReadableView>,
+    mut items: Vec<TraceReadableView>,
     pool: &DbPool,
 ) -> Result<Vec<TraceReadableView>, PpdcError> {
+    super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -772,6 +776,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         },
         parent_trace_id: trace.parent_trace_id,
         continues_trace_id: if include_owner_fields { trace.continues_trace_id } else { None },
+        continues_from: None,
         complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
             Some(trace.is_encrypted)
@@ -1274,7 +1279,8 @@ pub async fn get_journal_draft_route(
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let draft = get_current_journal_draft(&journal, user_id, &pool)?;
+    let mut draft = get_current_journal_draft(&journal, user_id, &pool)?;
+    super::continuation::hydrate_continuations(user_id, std::iter::once(&mut draft), &pool)?;
     Ok(Json(draft))
 }
 
@@ -2214,7 +2220,7 @@ pub async fn get_all_traces_for_user_route(
     let pagination = params.validate()?;
     let (traces, total) =
         Trace::get_all_for_user_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
-    let traces = attach_metadata_to_traces(traces, &pool)?;
+    let traces = attach_metadata_to_traces(traces, user_id, &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
@@ -2259,7 +2265,7 @@ pub async fn get_trace_drafts_route(
         pagination.limit,
         &pool,
     )?;
-    let drafts = attach_metadata_to_traces(drafts, &pool)?;
+    let drafts = attach_metadata_to_traces(drafts, user_id, &pool)?;
     Ok(Json(PaginatedResponse::new(drafts, pagination, total)))
 }
 

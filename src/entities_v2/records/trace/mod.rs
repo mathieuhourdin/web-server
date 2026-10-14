@@ -1,4 +1,5 @@
 pub mod enums;
+pub mod continuation;
 pub mod edit_origin;
 pub mod heatmap;
 pub mod hydrate;

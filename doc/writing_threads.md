@@ -4,9 +4,38 @@ Threads are explicit single chains. Traces store a `continues_trace_id`.
 A thread stores its start, latest finalized trace and an internal pending-draft
 pointer. A branch starts another thread at the selected source trace; its analysis
 uses that trace and its descendants, not the earlier prefix of another thread.
-There is no trace–thread membership table and no access inheritance. All routes require
-authentication and are owner-only; other users get 404. Ordinary trace reads hide
-continuation IDs from nonowners.
+There is no trace–thread membership table and no access inheritance. Thread routes require
+authentication and are owner-only; other users get 404. Authenticated trace reads
+expose a continuation link to readers only when its predecessor is readable.
+
+## Reader continuation previews
+
+Single trace reads, journal/user trace collections, trace search, both feeds,
+album trace items and owner-only thread trace collections include:
+
+```json
+{
+  "continues_trace_id": "predecessor-uuid",
+  "continues_from": {
+    "id": "predecessor-uuid",
+    "title": "Earlier reflection",
+    "finalized_at": "2026-10-14T10:00:00"
+  }
+}
+```
+
+Both fields are null when there is no link or the viewer cannot read its predecessor.
+Owners retain access to their own predecessors; other viewers require a finalized,
+unencrypted trace, an active mention or a readable publication, and no blocking or
+demo-sandbox boundary. Each predecessor is authorized independently: the link itself
+never grants access. Opening it checks current permissions again.
+
+One shared batch hydrator adds at most one SQL query per returned page. It deduplicates
+predecessors, returns only their ID/title/finalization date, and does not recursively
+expand the chain. Album previews are nested in each item's trace; feed previews are
+on the feed item (null for documents/albums). Owner audience-inspection trace lists
+use the selected reader's access when computing these previews. No thread ID or AI
+analysis is exposed to readers; those may describe inaccessible traces.
 
 ## Link a draft
 

@@ -22,7 +22,7 @@ pub async fn get_trace_search_route(
     let landmark_ids = parse_repeated_query_param(raw_query.as_deref(), "landmark_id")?;
     let high_level_project_landmark_ids =
         parse_repeated_query_param(raw_query.as_deref(), "high_level_project_landmark_id")?;
-    let (items, total) = TraceSearchDocument::search_for_user(
+    let (mut items, total) = TraceSearchDocument::search_for_user(
         user_id,
         params.q.as_deref(),
         &journal_ids,
@@ -33,5 +33,10 @@ pub async fn get_trace_search_route(
         &pool,
     )?;
 
+    crate::entities_v2::trace::continuation::hydrate_continuations(
+        user_id,
+        items.iter_mut().map(|i| &mut i.trace),
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }

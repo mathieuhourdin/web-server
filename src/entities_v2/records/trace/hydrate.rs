@@ -76,6 +76,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         id,
         derived_from_trace_id,
         continues_trace_id,
+        continues_from: None,
         parent_trace_id,
         complement_audience_mode: complement_audience_mode
             .as_deref()

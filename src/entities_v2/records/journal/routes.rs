@@ -117,12 +117,17 @@ pub async fn get_journal_audience_user_traces_route(
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.validate()?;
-    let (items, total) = Journal::find_audience_user_traces_paginated(
+    let (mut items, total) = Journal::find_audience_user_traces_paginated(
         journal.id,
         journal.user_id,
         audience_user_id,
         pagination.offset,
         pagination.limit,
+        &pool,
+    )?;
+    crate::entities_v2::trace::continuation::hydrate_continuations(
+        audience_user_id,
+        items.iter_mut().map(|i| &mut i.trace),
         &pool,
     )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))

@@ -279,7 +279,7 @@ fn hydrate_feed_candidates(
             .collect()
     };
 
-    let items = rows
+    let mut items = rows
         .into_iter()
         .filter_map(|row| {
             let source_ref = row.source_ref()?;
@@ -305,6 +305,8 @@ fn hydrate_feed_candidates(
                     SourceProjectionKind::Album => FeedSourceKind::Album,
                 },
                 source_id: projection.source_id,
+                continues_trace_id: None,
+                continues_from: None,
                 original_source_id: projection.original_source_id,
                 original_author_user_id: projection.original_author_user_id,
                 original_author_display_name: projection
@@ -342,6 +344,9 @@ fn hydrate_feed_candidates(
         })
         .collect::<Vec<_>>();
 
+    crate::entities_v2::trace::continuation::hydrate_continuations(
+        viewer_user_id, items.iter_mut(), pool,
+    )?;
     Ok(items)
 }
 

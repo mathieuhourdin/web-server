@@ -194,6 +194,8 @@ fn album_item_view_from_trace_and_post(
     let trace_view = if viewer_is_owner {
         AlbumItemTraceView {
             id: trace.id,
+            continues_trace_id: None,
+            continues_from: None,
             journal_id: trace.journal_id,
             title: trace.title,
             subtitle: trace.subtitle,
@@ -209,6 +211,8 @@ fn album_item_view_from_trace_and_post(
         let post = selected_post.expect("non-owner album item views require a visible post");
         AlbumItemTraceView {
             id: trace.id,
+            continues_trace_id: None,
+            continues_from: None,
             journal_id: trace.journal_id,
             title: trace.title,
             subtitle: trace.subtitle,
@@ -531,6 +535,11 @@ impl Album {
                 items.sort_by_key(|item| item.created_at);
             }
         }
+        crate::entities_v2::trace::continuation::hydrate_continuations(
+            viewer_user_id,
+            items.iter_mut().map(|i| &mut i.trace),
+            pool,
+        )?;
         Ok(items)
     }
 }
