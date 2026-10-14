@@ -13,19 +13,34 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Projection {
-    pub description: String,
+    pub title: String,
+    pub ongoing_question: Option<String>,
+    pub journey_summary: String,
     pub search_tags: Vec<String>,
 }
 fn schema() -> serde_json::Value {
     serde_json::json!({"type":"object","additionalProperties":false,
-    "properties":{"description":{"type":"string"},"search_tags":{"type":"array","items":{"type":"string"}}},
-    "required":["description","search_tags"]})
+    "properties":{"title":{"type":"string"},"ongoing_question":{"type":["string","null"]},
+        "journey_summary":{"type":"string"},"search_tags":{"type":"array","items":{"type":"string"}}},
+    "required":["title","ongoing_question","journey_summary","search_tags"]})
 }
 pub(crate) fn validate(mut projection: Projection) -> Result<Projection, PpdcError> {
-    projection.description = projection.description.trim().to_string();
-    if projection.description.is_empty()
-        || projection.description.chars().count() > 1500
+    projection.title = projection.title.trim().to_string();
+    projection.journey_summary = projection.journey_summary.trim().to_string();
+    projection.ongoing_question = projection
+        .ongoing_question
+        .map(|q| q.trim().to_string())
+        .filter(|q| !q.is_empty());
+    if projection.title.is_empty()
+        || projection.title.chars().count() > 300
+        || projection.journey_summary.is_empty()
+        || projection.journey_summary.chars().count() > 4000
+        || projection
+            .ongoing_question
+            .as_ref()
+            .is_some_and(|q| q.chars().count() > 1000)
         || projection.search_tags.len() > 12
     {
         return Err(PpdcError::new(
@@ -94,7 +109,7 @@ async fn generate_inner(thread: &WritingThread, pool: &DbPool) -> Result<(), Ppd
         Some(schema()),
         None,
     )
-    .with_display_name("Writing Thread / Description and Tags")
+    .with_display_name("Writing Thread / Analysis")
     .with_user_id(thread.user_id)
     .execute::<Projection>()
     .await?;
@@ -109,7 +124,9 @@ async fn generate_inner(thread: &WritingThread, pool: &DbPool) -> Result<(), Ppd
     }
     if !persist::finish(
         thread,
-        &projection.description,
+        &projection.title,
+        projection.ongoing_question.as_deref(),
+        &projection.journey_summary,
         &projection.search_tags,
         pool,
     )? {
@@ -164,16 +181,26 @@ pub fn start_generation_worker(pool: DbPool) {
 mod tests {
     use super::*;
     #[test]
-    fn projection_validation_is_small_and_deduplicates_tags() {
+    fn projection_validation_accepts_null_question_and_deduplicates_tags() {
         let output = validate(Projection {
-            description: " A recognizable thread. ".into(),
+            title: " Attention and writing places ".into(),
+            ongoing_question: None,
+            journey_summary: " A recognizable journey. ".into(),
             search_tags: vec![" attention ".into(), "Attention".into(), "".into()],
         })
         .unwrap();
-        assert_eq!(output.description, "A recognizable thread.");
+        assert_eq!(output.title, "Attention and writing places");
+        assert_eq!(output.journey_summary, "A recognizable journey.");
+        assert!(output.ongoing_question.is_none());
+        assert_eq!(
+            schema()["properties"]["ongoing_question"]["type"],
+            serde_json::json!(["string", "null"])
+        );
         assert_eq!(output.search_tags, vec!["attention"]);
         assert!(validate(Projection {
-            description: "".into(),
+            title: "".into(),
+            ongoing_question: Some(" Is attention also social? ".into()),
+            journey_summary: "A recognizable journey.".into(),
             search_tags: vec![]
         })
         .is_err());

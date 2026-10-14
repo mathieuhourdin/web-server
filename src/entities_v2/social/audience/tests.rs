@@ -93,16 +93,22 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
 
     f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
     let claimed=threads::claim(&f.pool).unwrap().unwrap();
-    assert!(threads::finish(&claimed,"Réflexion sur les lieux et l’attention",&["réflexion".into()],&f.pool).unwrap());
+    assert!(threads::finish(&claimed,"Lieux et attention",None,"Réflexion sur les lieux et l’attention",&["réflexion".into()],&f.pool).unwrap());
+    let output=serde_json::to_value(threads::view(f.owner,claimed.id,&f.pool).unwrap()).unwrap();
+    assert_eq!(output["title"],"Lieux et attention");
+    assert!(output["ongoing_question"].is_null());
+    assert_eq!(output["journey_summary"],"Réflexion sur les lieux et l’attention");
+    assert_eq!(output["search_tags"],serde_json::json!(["réflexion"]));
+    assert!(output.get("description").is_none());
     assert_eq!(threads::list(f.owner,None,None,"reflexion",0,20,&f.pool).unwrap().1,1);
     let mut edited=Trace::find_full_trace(b,&f.pool).unwrap();edited.content.push_str(" The question is also social.");
     edited.update(&f.pool).unwrap();
-    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.description.is_none());
-    assert!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.description.is_none());
+    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.journey_summary.is_none());
+    assert!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.journey_summary.is_none());
     f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
     let stale=threads::claim(&f.pool).unwrap().unwrap();
     let mut edited=Trace::find_full_trace(b,&f.pool).unwrap();edited.content.push_str(" Another revision.");edited.update(&f.pool).unwrap();
-    assert!(!threads::finish(&stale,"Stale description",&[],&f.pool).unwrap());
+    assert!(!threads::finish(&stale,"Stale title",Some("Stale question?"),"Stale journey",&[],&f.pool).unwrap());
     f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
     let disabled=threads::claim(&f.pool).unwrap().unwrap();let disabled_id=disabled.id;
     f.pool.get().unwrap().batch_execute(&format!("UPDATE users SET ai_features_enabled=FALSE WHERE id='{}'",f.owner)).unwrap();
@@ -143,7 +149,7 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     // An already finalized root can acquire its first link, even with descendants.
     let (source,_)=f.publication();
     f.pool.get().unwrap().batch_execute(&format!(
-        "UPDATE writing_threads SET description='Old projection',generation_status='READY',compiled_revision=input_revision WHERE id='{thread}'"
+        "UPDATE writing_threads SET journey_summary='Old projection',title='Old title',generation_status='READY',compiled_revision=input_revision WHERE id='{thread}'"
     )).unwrap();
     let root=Trace::find_full_trace(a,&f.pool).unwrap();
     let mut session=crate::entities_v2::session::Session::anonymous();
@@ -157,12 +163,14 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     assert_eq!(attached.continues_trace_id,Some(source));
     assert_eq!(attached.status,crate::entities_v2::trace::TraceStatus::Finalized);
     assert_eq!(attached.content,root.content);
-    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.description.is_none());
-    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![a,b,c]);
+    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.journey_summary.is_none());
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![source,a,b,c]);
     let incoming=threads::list(f.owner,None,Some(source),"",0,20,&f.pool).unwrap().0;
     assert_eq!(incoming.len(),1);
-    assert_eq!(incoming[0].thread.latest_trace_id,Some(a));
+    assert_eq!(incoming[0].thread.id,thread);
+    assert_eq!(incoming[0].thread.latest_trace_id,Some(c));
     assert_eq!(incoming[0].thread.generation_status,"PENDING");
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![source,a,b,c]);
     for replacement in [None,Some(d)] {
         let payload=serde_json::from_value(serde_json::json!({
             "continues_trace_id":replacement,"expected_version_integer":attached.version_integer
@@ -172,6 +180,38 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
             axum::extract::Path(a),axum::extract::Json(payload)).await.err().unwrap();
         assert_eq!(error.status_code,400);
     }
+    // Adding another predecessor keeps one thread, regardless of link creation order.
+    let count=threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1;
+    let (p,_)=f.publication();
+    let (q,_)=f.publication();
+    let mut upstream=Trace::find_full_trace(p,&f.pool).unwrap();
+    upstream.continues_trace_id=Some(q);
+    upstream.update(&f.pool).unwrap();
+    let upstream_id=threads::list(f.owner,None,Some(q),"",0,20,&f.pool).unwrap().0[0].thread.id;
+    assert_eq!(threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1,count+1);
+    let mut join=Trace::find_full_trace(source,&f.pool).unwrap();
+    join.continues_trace_id=Some(p);
+    join.update(&f.pool).unwrap();
+    assert_eq!(threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1,count);
+    assert!(threads::view(f.owner,upstream_id,&f.pool).is_err());
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![q,p,source,a,b,c]);
+    assert_eq!(threads::traces(f.owner,branch_id,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![b,d,end.id]);
+
+    // Reproduce the old split, then apply the production repair migration.
+    let base=threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1;
+    f.pool.get().unwrap().batch_execute(include_str!("../../../../migrations/2026-10-14-110000_merge_writing_thread_chains/down.sql")).unwrap();
+    let (m,_)=f.publication();
+    let (n,_)=f.publication();
+    let (o,_)=f.publication();
+    let mut tail=Trace::find_full_trace(n,&f.pool).unwrap();tail.continues_trace_id=Some(m);tail.update(&f.pool).unwrap();
+    let retained=threads::list(f.owner,None,Some(m),"",0,20,&f.pool).unwrap().0[0].thread.id;
+    let mut head=Trace::find_full_trace(m,&f.pool).unwrap();head.continues_trace_id=Some(o);head.update(&f.pool).unwrap();
+    assert_eq!(threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1,base+2);
+    f.pool.get().unwrap().batch_execute(include_str!("../../../../migrations/2026-10-14-110000_merge_writing_thread_chains/up.sql")).unwrap();
+    assert_eq!(threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1,base+1);
+    assert_eq!(threads::traces(f.owner,retained,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![o,m,n]);
+    assert_eq!(threads::view(f.owner,retained,&f.pool).unwrap().thread.generation_status,"PENDING");
+    assert_eq!(threads::traces(f.owner,branch_id,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![b,d,end.id]);
 }
 
 #[tokio::test]

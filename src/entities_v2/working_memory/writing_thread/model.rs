@@ -1,7 +1,7 @@
 use crate::pagination::PaginationParams;
 use chrono::NaiveDateTime;
 use diesel::{
-    sql_types::{Array, BigInt, Bool, Nullable, Text, Timestamp, Uuid as SqlUuid},
+    sql_types::{BigInt, Bool, Nullable, Text, Timestamp, Uuid as SqlUuid},
     QueryableByName,
 };
 use serde::{Deserialize, Serialize};
@@ -20,8 +20,12 @@ pub struct WritingThread {
     #[diesel(sql_type=Nullable<SqlUuid>)]
     pub pending_trace_id: Option<Uuid>,
     #[diesel(sql_type=Nullable<Text>)]
-    pub description: Option<String>,
-    #[diesel(sql_type=Array<Text>)]
+    pub title: Option<String>,
+    #[diesel(sql_type=Nullable<Text>)]
+    pub ongoing_question: Option<String>,
+    #[diesel(sql_type=Nullable<Text>)]
+    pub journey_summary: Option<String>,
+    #[diesel(sql_type=diesel::sql_types::Array<Text>)]
     pub search_tags: Vec<String>,
     #[diesel(sql_type=BigInt)]
     pub input_revision: i64,

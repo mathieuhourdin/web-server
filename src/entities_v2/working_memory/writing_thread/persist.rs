@@ -148,17 +148,22 @@ pub fn claim(pool: &DbPool) -> Result<Option<WritingThread>, PpdcError> {
 }
 pub fn finish(
     thread: &WritingThread,
-    description: &str,
+    title: &str,
+    ongoing_question: Option<&str>,
+    journey_summary: &str,
     tags: &[String],
     pool: &DbPool,
 ) -> Result<bool, PpdcError> {
-    Ok(diesel::sql_query("UPDATE writing_threads SET description=$4,search_tags=$5,
-        search_vector=to_tsvector('simple',unaccent($4||' '||array_to_string($5,' '))),
+    Ok(diesel::sql_query("UPDATE writing_threads SET title=$4,ongoing_question=$5,journey_summary=$6,search_tags=$7,
+        search_vector=setweight(to_tsvector('simple',unaccent($4)),'A')
+            || setweight(to_tsvector('simple',unaccent(array_to_string($7,' '))),'A')
+            || setweight(to_tsvector('simple',unaccent(COALESCE($5,'')||' '||$6)),'B'),
         compiled_revision=input_revision,generation_status='READY',generated_at=NOW(),generation_error=NULL,
         generation_claim_id=NULL,generation_lease_until=NULL
         WHERE id=$1 AND input_revision=$2 AND generation_claim_id=$3")
         .bind::<SqlUuid,_>(thread.id).bind::<BigInt,_>(thread.input_revision)
-        .bind::<Nullable<SqlUuid>,_>(thread.generation_claim_id).bind::<Text,_>(description)
+        .bind::<Nullable<SqlUuid>,_>(thread.generation_claim_id).bind::<Text,_>(title)
+        .bind::<Nullable<Text>,_>(ongoing_question).bind::<Text,_>(journey_summary)
         .bind::<Array<Text>,_>(tags).execute(&mut pool.get()?)?>0)
 }
 pub fn fail(

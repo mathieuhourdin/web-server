@@ -703,7 +703,6 @@ diesel::table! {
         start_trace_id -> Uuid,
         latest_trace_id -> Nullable<Uuid>,
         pending_trace_id -> Nullable<Uuid>,
-        description -> Nullable<Text>,
         search_tags -> Array<Text>,
         search_vector -> Tsvector,
         input_revision -> Int8,
@@ -716,6 +715,10 @@ diesel::table! {
         generated_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        title -> Nullable<Text>,
+        ongoing_question -> Nullable<Text>,
+        journey_summary -> Nullable<Text>,
+        description -> Nullable<Text>,
     }
 }
 
