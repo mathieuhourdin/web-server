@@ -1,6 +1,6 @@
 # Writing threads — owner-only MVP
 
-Threads are explicit single chains. Traces store a draft-editable `continues_trace_id`.
+Threads are explicit single chains. Traces store a `continues_trace_id`.
 A thread stores its start, latest finalized trace and an internal pending-draft
 pointer. A branch starts another thread at the selected source trace; its description
 uses that trace and its descendants, not the earlier prefix of another thread.
@@ -21,7 +21,9 @@ continuation IDs from nonowners.
 
 Returns the updated Trace with its incremented version. Missing `continues_trace_id`
 leaves the link unchanged; explicit `null` removes it. Links can be assigned,
-removed or changed only while the target is a draft. Content and linking can be
+removed or changed while the target is a draft. A finalized trace without a link
+may also receive its first link; existing finalized links remain immutable.
+Content and linking can be
 saved together, and PUT may link and finalize in the same request.
 
 The frontend chooses whether to reuse a draft, finish it or create another.
@@ -111,5 +113,5 @@ AI is enabled; it does not wait for the LLM or repeat already-current generation
 Fetch the thread to observe completion. Failures require this explicit retry or a new
 content change; expired worker leases are recovered automatically.
 
-Cross-journal chains, finalized-trace relinking/disconnection, reader thread navigation, AI
+Cross-journal chains, changing/removing existing finalized links, reader thread navigation, AI
 discovered links and membership materialization are deliberately not in this version.

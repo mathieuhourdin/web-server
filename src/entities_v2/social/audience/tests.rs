@@ -139,6 +139,39 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     combined.continues_trace_id=Some(d);
     let end=finalize(combined,"Continuation finalized together with its link.",&f.pool);
     assert_eq!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.latest_trace_id,Some(end.id));
+
+    // An already finalized root can acquire its first link, even with descendants.
+    let (source,_)=f.publication();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE writing_threads SET description='Old projection',generation_status='READY',compiled_revision=input_revision WHERE id='{thread}'"
+    )).unwrap();
+    let root=Trace::find_full_trace(a,&f.pool).unwrap();
+    let mut session=crate::entities_v2::session::Session::anonymous();
+    session.user_id=Some(f.owner);
+    let payload=serde_json::from_value(serde_json::json!({
+        "continues_trace_id":source,"expected_version_integer":root.version_integer
+    })).unwrap();
+    let attached=crate::entities_v2::trace::routes::patch_trace_route(
+        axum::extract::Extension(f.pool.clone()),axum::extract::Extension(session.clone()),
+        axum::extract::Path(a),axum::extract::Json(payload)).await.unwrap().0;
+    assert_eq!(attached.continues_trace_id,Some(source));
+    assert_eq!(attached.status,crate::entities_v2::trace::TraceStatus::Finalized);
+    assert_eq!(attached.content,root.content);
+    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.description.is_none());
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![a,b,c]);
+    let incoming=threads::list(f.owner,None,Some(source),"",0,20,&f.pool).unwrap().0;
+    assert_eq!(incoming.len(),1);
+    assert_eq!(incoming[0].thread.latest_trace_id,Some(a));
+    assert_eq!(incoming[0].thread.generation_status,"PENDING");
+    for replacement in [None,Some(d)] {
+        let payload=serde_json::from_value(serde_json::json!({
+            "continues_trace_id":replacement,"expected_version_integer":attached.version_integer
+        })).unwrap();
+        let error=crate::entities_v2::trace::routes::put_trace_route(
+            axum::extract::Extension(f.pool.clone()),axum::extract::Extension(session.clone()),
+            axum::extract::Path(a),axum::extract::Json(payload)).await.err().unwrap();
+        assert_eq!(error.status_code,400);
+    }
 }
 
 #[tokio::test]

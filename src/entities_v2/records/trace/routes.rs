@@ -1300,11 +1300,15 @@ pub async fn patch_journal_draft_route(
         trace.content = content;
     }
     if let Some(source) = payload.continues_trace_id {
-        if source != trace.continues_trace_id && trace.status != super::enums::TraceStatus::Draft {
+        if source != trace.continues_trace_id
+            && trace.status != super::enums::TraceStatus::Draft
+            && !(trace.status == super::enums::TraceStatus::Finalized
+                && trace.continues_trace_id.is_none() && source.is_some())
+        {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Continuation links can only be changed on drafts".to_string(),
+                "Existing finalized continuation links cannot be changed".to_string(),
             ));
         }
         trace.continues_trace_id = source;
@@ -1387,11 +1391,15 @@ pub async fn put_trace_route(
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
 
     if let Some(source) = payload.continues_trace_id {
-        if source != trace.continues_trace_id && trace.status != super::enums::TraceStatus::Draft {
+        if source != trace.continues_trace_id
+            && trace.status != super::enums::TraceStatus::Draft
+            && !(trace.status == super::enums::TraceStatus::Finalized
+                && trace.continues_trace_id.is_none() && source.is_some())
+        {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Continuation links can only be changed on drafts".to_string(),
+                "Existing finalized continuation links cannot be changed".to_string(),
             ));
         }
         trace.continues_trace_id = source;
@@ -1637,11 +1645,15 @@ pub async fn patch_trace_route(
         trace.content = content;
     }
     if let Some(source) = payload.continues_trace_id {
-        if source != trace.continues_trace_id && trace.status != super::enums::TraceStatus::Draft {
+        if source != trace.continues_trace_id
+            && trace.status != super::enums::TraceStatus::Draft
+            && !(trace.status == super::enums::TraceStatus::Finalized
+                && trace.continues_trace_id.is_none() && source.is_some())
+        {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,
-                "Continuation links can only be changed on drafts".to_string(),
+                "Existing finalized continuation links cannot be changed".to_string(),
             ));
         }
         trace.continues_trace_id = source;
