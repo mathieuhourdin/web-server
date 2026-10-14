@@ -771,6 +771,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
             None
         },
         parent_trace_id: trace.parent_trace_id,
+        continues_trace_id: if include_owner_fields { trace.continues_trace_id } else { None },
         complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
             Some(trace.is_encrypted)
@@ -1298,6 +1299,16 @@ pub async fn patch_journal_draft_route(
     if let Some(content) = payload.content {
         trace.content = content;
     }
+    if let Some(source) = payload.continues_trace_id {
+        if source != trace.continues_trace_id && trace.status != super::enums::TraceStatus::Draft {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Continuation links can only be changed on drafts".to_string(),
+            ));
+        }
+        trace.continues_trace_id = source;
+    }
     if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
         trace.derived_from_trace_id = derived_from_trace_id;
     }
@@ -1374,6 +1385,17 @@ pub async fn put_trace_route(
         ));
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+
+    if let Some(source) = payload.continues_trace_id {
+        if source != trace.continues_trace_id && trace.status != super::enums::TraceStatus::Draft {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Continuation links can only be changed on drafts".to_string(),
+            ));
+        }
+        trace.continues_trace_id = source;
+    }
 
     let title_changed = payload
         .title
@@ -1613,6 +1635,16 @@ pub async fn patch_trace_route(
     }
     if let Some(content) = payload.content {
         trace.content = content;
+    }
+    if let Some(source) = payload.continues_trace_id {
+        if source != trace.continues_trace_id && trace.status != super::enums::TraceStatus::Draft {
+            return Err(PpdcError::new(
+                400,
+                ErrorType::ApiError,
+                "Continuation links can only be changed on drafts".to_string(),
+            ));
+        }
+        trace.continues_trace_id = source;
     }
     if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
         trace.derived_from_trace_id = derived_from_trace_id;

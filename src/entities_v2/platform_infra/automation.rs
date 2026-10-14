@@ -197,6 +197,12 @@ fn authenticate(header: &str, pool: &DbPool) -> Result<AgentContext, PpdcError> 
 // Exact patterns: adding an ordinary route never implicitly grants agent access.
 // IDs must be UUIDs; path normalization tricks and arbitrary subroutes are denied.
 const DELEGATED_ROUTES: &[(&str, &str, &str)] = &[
+    ("GET", "/writing_threads", "content:read"),
+    ("GET", "/writing_threads/:id", "content:read"),
+    ("GET", "/writing_threads/:id/traces", "content:read"),
+    ("POST", "/writing_threads/:id/generation", "ai:use"),
+    ("GET", "/journals/:id/writing_threads", "content:read"),
+    ("GET", "/traces/:id/writing_threads", "content:read"),
     ("GET", "/me/feed", "content:read"),
     ("GET", "/me/traces", "content:read"),
     ("GET", "/me/unread_counts", "content:read"),

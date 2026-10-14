@@ -519,6 +519,7 @@ impl Trace {
                             finalized_at = $18,
                             version_integer = version_integer + 1,
                             last_edit_device_id = $20,
+                            continues_trace_id = $21,
                             updated_at = NOW()
                         WHERE id = $1
                           AND version_integer = $19
@@ -550,6 +551,7 @@ impl Trace {
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
                 .bind::<diesel::sql_types::Int4, _>(expected_version_integer)
                 .bind::<Nullable<SqlUuid>, _>(device_id)
+                .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
                 .get_result::<AffectedRows>(conn)?
                 .count
             } else {
@@ -575,6 +577,7 @@ impl Trace {
                             finalized_at = $18,
                             version_integer = version_integer + 1,
                             last_edit_device_id = $19,
+                            continues_trace_id = $20,
                             updated_at = NOW()
                         WHERE id = $1
                         RETURNING 1
@@ -604,6 +607,7 @@ impl Trace {
                 .bind::<Timestamp, _>(self.start_writing_at)
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
                 .bind::<Nullable<SqlUuid>, _>(device_id)
+                .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
                 .get_result::<AffectedRows>(conn)?
                 .count
             };

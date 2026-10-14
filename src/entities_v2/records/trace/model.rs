@@ -37,6 +37,21 @@ mod timeout_update_tests {
     }
 
     #[test]
+    fn continuation_update_distinguishes_absent_null_and_id() {
+        let id = Uuid::new_v4();
+        for (payload, expected) in [
+            (serde_json::json!({}), None),
+            (serde_json::json!({"continues_trace_id": null}), Some(None)),
+            (serde_json::json!({"continues_trace_id": id}), Some(Some(id))),
+        ] {
+            let patch: PatchTraceDto = serde_json::from_value(payload.clone()).unwrap();
+            let update: UpdateTraceDto = serde_json::from_value(payload).unwrap();
+            assert_eq!(patch.continues_trace_id, expected);
+            assert_eq!(update.continues_trace_id, expected);
+        }
+    }
+
+    #[test]
     fn null_timeout_explicitly_clears_deadline() {
         assert_timeout(serde_json::json!({"timeout_at": null}), Some(None));
     }
@@ -90,6 +105,8 @@ pub struct UpdateTraceDto {
     pub title: Option<String>,
     pub content: Option<String>,
     pub derived_from_trace_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
+    pub continues_trace_id: Option<Option<Uuid>>,
     pub interaction_date: Option<NaiveDateTime>,
     pub status: Option<TraceStatus>,
     #[serde(alias = "image_asset_id")]
@@ -109,6 +126,8 @@ pub struct PatchTraceDto {
     pub title: Option<String>,
     pub content: Option<String>,
     pub derived_from_trace_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
+    pub continues_trace_id: Option<Option<Uuid>>,
     pub interaction_date: Option<NaiveDateTime>,
     #[serde(alias = "image_asset_id")]
     pub content_image_asset_id: Option<Option<Uuid>>,
@@ -125,6 +144,8 @@ pub struct PatchTraceDto {
 pub struct Trace {
     pub id: Uuid,
     pub derived_from_trace_id: Option<Uuid>,
+    #[serde(default)]
+    pub continues_trace_id: Option<Uuid>,
     pub parent_trace_id: Option<Uuid>,
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub title: String,
@@ -172,6 +193,8 @@ pub struct TraceListItem {
     pub subtitle: Option<String>,
     pub content: String,
     pub derived_from_trace_id: Option<Uuid>,
+    #[serde(default)]
+    pub continues_trace_id: Option<Uuid>,
     pub parent_trace_id: Option<Uuid>,
     pub is_encrypted: Option<bool>,
     pub encryption_metadata: Option<Value>,
@@ -208,6 +231,8 @@ pub struct TraceReadableView {
     pub subtitle: Option<String>,
     pub content: String,
     pub derived_from_trace_id: Option<Uuid>,
+    #[serde(default)]
+    pub continues_trace_id: Option<Uuid>,
     pub parent_trace_id: Option<Uuid>,
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub is_encrypted: Option<bool>,
@@ -237,6 +262,8 @@ pub(crate) struct TraceRow {
     pub id: Uuid,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     pub derived_from_trace_id: Option<Uuid>,
+    #[diesel(sql_type = Nullable<SqlUuid>)]
+    pub continues_trace_id: Option<Uuid>,
     #[diesel(sql_type = Nullable<SqlUuid>)]
     pub parent_trace_id: Option<Uuid>,
     #[diesel(sql_type = Text)]
@@ -286,6 +313,7 @@ impl From<TraceRow> for Trace {
         Trace {
             id: row.id,
             derived_from_trace_id: row.derived_from_trace_id,
+            continues_trace_id: row.continues_trace_id,
             parent_trace_id: row.parent_trace_id,
             // TraceRow is only used by collection queries that explicitly exclude
             // complements; complement hydration goes through `hydrate.rs`.
@@ -451,7 +479,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
-            "SELECT t.id, t.derived_from_trace_id, t.parent_trace_id, t.title, t.subtitle, t.interaction_date, t.content, t.is_encrypted, t.encryption_metadata::text AS encryption_metadata, t.content_image_asset_id, t.sharing_sensitivity, t.timeout_start_at, t.timeout_at, t.journal_id, t.user_id, t.trace_type, t.status, t.version_integer, t.is_blank, t.start_writing_at, t.finalized_at, t.created_at, t.updated_at
+            "SELECT t.id, t.derived_from_trace_id, t.continues_trace_id, t.parent_trace_id, t.title, t.subtitle, t.interaction_date, t.content, t.is_encrypted, t.encryption_metadata::text AS encryption_metadata, t.content_image_asset_id, t.sharing_sensitivity, t.timeout_start_at, t.timeout_at, t.journal_id, t.user_id, t.trace_type, t.status, t.version_integer, t.is_blank, t.start_writing_at, t.finalized_at, t.created_at, t.updated_at
              FROM journals j
              JOIN traces t
                ON t.id = j.current_draft_id
@@ -474,7 +502,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -495,7 +523,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let row = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
@@ -524,7 +552,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
@@ -550,7 +578,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
@@ -568,7 +596,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let latest_hlp = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'HIGH_LEVEL_PROJECTS_DEFINITION'
@@ -584,7 +612,7 @@ impl Trace {
         }
 
         let latest_bio = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'BIO_TRACE'
@@ -613,7 +641,7 @@ impl Trace {
             let mut conn = pool.get()?;
 
             let latest_bio = diesel::sql_query(
-                "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, is_blank, start_writing_at, finalized_at, created_at, updated_at
+                "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, is_blank, start_writing_at, finalized_at, created_at, updated_at
                  FROM traces
                  WHERE user_id = $1
                    AND trace_type = 'BIO_TRACE'
@@ -639,7 +667,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let next = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -679,7 +707,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
@@ -721,6 +749,7 @@ impl Trace {
     ) -> Result<(Vec<Trace>, i64), PpdcError> {
         type TraceTuple = (
             Uuid,
+            Option<Uuid>,
             Option<Uuid>,
             Option<Uuid>,
             String,
@@ -797,6 +826,7 @@ impl Trace {
             .select((
                 traces::id,
                 traces::derived_from_trace_id,
+                traces::continues_trace_id,
                 traces::parent_trace_id,
                 traces::title,
                 traces::subtitle,
@@ -831,6 +861,7 @@ impl Trace {
                     |(
                         id,
                         derived_from_trace_id,
+                        continues_trace_id,
                         parent_trace_id,
                         title,
                         subtitle,
@@ -855,6 +886,7 @@ impl Trace {
                     )| Trace {
                         id,
                         derived_from_trace_id,
+                        continues_trace_id,
                         parent_trace_id,
                         complement_audience_mode: None,
                         title,
@@ -953,6 +985,7 @@ impl Trace {
     ) -> Result<(Vec<TraceListItem>, i64), PpdcError> {
         type TraceListItemTuple = (
             Uuid,
+            Option<Uuid>,
             Option<Uuid>,
             Option<Uuid>,
             Option<Uuid>,
@@ -1058,6 +1091,7 @@ impl Trace {
                 traces::id,
                 posts::id.nullable(),
                 traces::derived_from_trace_id,
+                traces::continues_trace_id,
                 traces::parent_trace_id,
                 traces::title,
                 traces::subtitle,
@@ -1092,6 +1126,7 @@ impl Trace {
                     id,
                     post_id,
                     derived_from_trace_id,
+                    continues_trace_id,
                     parent_trace_id,
                     title,
                     subtitle,
@@ -1121,6 +1156,7 @@ impl Trace {
                     subtitle: Some(subtitle),
                     content,
                     derived_from_trace_id,
+                    continues_trace_id,
                     parent_trace_id,
                     is_encrypted: Some(is_encrypted),
                     encryption_metadata: encryption_metadata
@@ -1266,6 +1302,7 @@ impl Trace {
                     subtitle: None,
                     content,
                     derived_from_trace_id: None,
+                    continues_trace_id: None,
                     parent_trace_id: None,
                     is_encrypted: None,
                     encryption_metadata: None,
@@ -1367,7 +1404,7 @@ impl Trace {
         .count;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, version_integer, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
@@ -1392,7 +1429,7 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let rows = diesel::sql_query(
-            "SELECT id, derived_from_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, is_blank, start_writing_at, finalized_at, created_at, updated_at
+            "SELECT id, derived_from_trace_id, continues_trace_id, parent_trace_id, title, subtitle, interaction_date, content, is_encrypted, encryption_metadata::text AS encryption_metadata, content_image_asset_id, sharing_sensitivity, timeout_start_at, timeout_at, journal_id, user_id, trace_type, status, is_blank, start_writing_at, finalized_at, created_at, updated_at
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'

@@ -19,6 +19,7 @@ pub enum AiUsageKind {
     Transcription,
     LandscapeAnalysis,
     WalCompilation,
+    WritingThreadCompilation,
 }
 
 impl AiUsageKind {
@@ -29,6 +30,7 @@ impl AiUsageKind {
             AiUsageKind::Transcription => "transcription",
             AiUsageKind::LandscapeAnalysis => "landscape_analysis",
             AiUsageKind::WalCompilation => "wal_compilation",
+            AiUsageKind::WritingThreadCompilation => "writing_thread_compilation",
         }
     }
 
@@ -39,6 +41,7 @@ impl AiUsageKind {
             AiUsageKind::Transcription => 20,
             AiUsageKind::LandscapeAnalysis => 5,
             AiUsageKind::WalCompilation => 20,
+            AiUsageKind::WritingThreadCompilation => 20,
         }
     }
 }
@@ -87,6 +90,7 @@ pub fn ensure_ai_usage_allowed(
     let event_type = match kind {
         AiUsageKind::Transcription => Some(UsageEventType::AiTranscriptionRequested),
         AiUsageKind::WalCompilation => Some(UsageEventType::AiWalCompilationRequested),
+        AiUsageKind::WritingThreadCompilation => Some(UsageEventType::AiWritingThreadCompilationRequested),
         _ => None,
     };
     if let Some(event_type) = event_type {
@@ -154,6 +158,10 @@ fn count_recent_ai_usage(
               AND la.landscape_analysis_type IN ('TRACE_INCREMENTAL', 'HLP', 'BIO')
               AND la.created_at >= NOW() - INTERVAL '24 hours'
             "#
+        }
+        AiUsageKind::WritingThreadCompilation => {
+            "SELECT COUNT(*)::bigint AS value FROM usage_events WHERE user_id=$1
+                AND event_type='AI_WRITING_THREAD_COMPILATION_REQUESTED' AND occurred_at>=NOW()-INTERVAL '24 hours'"
         }
         AiUsageKind::WalCompilation => {
             r#"

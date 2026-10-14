@@ -19,7 +19,7 @@ use crate::entities_v2::{
     feed, journal, journal_share_link, landmark, landscape_analysis, lens, llm_call, mailer,
     message, post, post_grant, reference, relationship, trace, trace_mirror, trace_search,
     transcription, url_preview, usage_event, user, user_block, user_post_state, user_secure_action,
-    wal,
+    wal, writing_thread,
 };
 use crate::{environment, logging, sessions_service};
 
@@ -154,6 +154,7 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
+        .route("/:id/writing_threads", get(writing_thread::routes::for_trace))
         .route("/drafts", get(trace::get_trace_drafts_route))
         .route("/search", get(trace_search::get_trace_search_route))
         .route("/:id/edit_origin", get(trace::get_trace_edit_origin_route))
@@ -309,6 +310,7 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let journals_router = Router::new()
+        .route("/:id/writing_threads", get(writing_thread::routes::for_journal))
         .route(
             "/:id/default_audiences",
             get(audience::routes::get_journal_defaults).put(audience::routes::put_journal_defaults),
@@ -655,7 +657,14 @@ pub fn create_router() -> Router {
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
+    let writing_threads_router = Router::new()
+        .route("/",get(writing_thread::routes::list))
+        .route("/:id",get(writing_thread::routes::get))
+        .route("/:id/traces",get(writing_thread::routes::traces))
+        .route("/:id/generation",post(writing_thread::routes::generate))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
     Router::new()
+        .nest("/writing_threads",writing_threads_router)
         .route("/me/capabilities", get(automation::capabilities))
         .route("/automation/contract", get(automation::contract))
         .route("/automation/demo_users", get(automation::list_demos).post(automation::create_demos))

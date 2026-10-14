@@ -23,3 +23,4 @@ pub use social::{
     source_projection, user_block, user_post_state,
 };
 pub use working_memory::wal;
+pub use working_memory::writing_thread;

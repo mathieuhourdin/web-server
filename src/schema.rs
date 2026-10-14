@@ -690,6 +690,32 @@ diesel::table! {
         is_blank -> Bool,
         version_integer -> Int4,
         last_edit_device_id -> Nullable<Uuid>,
+        continues_trace_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::Tsvector;
+    writing_threads (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        start_trace_id -> Uuid,
+        latest_trace_id -> Nullable<Uuid>,
+        pending_trace_id -> Nullable<Uuid>,
+        description -> Nullable<Text>,
+        search_tags -> Array<Text>,
+        search_vector -> Tsvector,
+        input_revision -> Int8,
+        compiled_revision -> Nullable<Int8>,
+        generation_status -> Text,
+        generation_due_at -> Timestamp,
+        generation_claim_id -> Nullable<Uuid>,
+        generation_lease_until -> Nullable<Timestamp>,
+        generation_error -> Nullable<Text>,
+        generated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -921,6 +947,7 @@ diesel::joinable!(user_post_states -> users (user_id));
 diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
 diesel::joinable!(wal_days -> users (user_id));
+diesel::joinable!(writing_threads -> users (user_id));
 diesel::joinable!(wal_entries -> wal_days (wal_day_id));
 diesel::joinable!(wal_projections -> wal_days (wal_day_id));
 
@@ -1049,6 +1076,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_secure_actions,
     users,
     wal_days,
+    writing_threads,
     wal_entries,
     wal_projections,
 );

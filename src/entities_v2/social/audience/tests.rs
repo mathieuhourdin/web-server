@@ -24,6 +24,125 @@ fn validates_audience_names() {
 
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn writing_threads_chain_branch_drafts_and_projection_fences() {
+    use crate::entities_v2::{journal::Journal,writing_thread::{persist as threads,service}};
+    let f=Fixture::new();
+    let (a,_)=f.publication();
+    fn fresh_draft(f:&Fixture)->Trace {
+        let mut journal=Journal::find_full(f.journal,&f.pool).unwrap();
+        let draft=Trace::create_blank_draft_for_journal(&journal,&f.pool).unwrap();
+        journal.current_draft_id=Some(draft.id);journal.update(&f.pool).unwrap();draft
+    }
+    fn finalize(mut draft:Trace,content:&str,pool:&DbPool)->Trace {
+        draft.content=content.to_string();draft.status=crate::entities_v2::trace::TraceStatus::Finalized;
+        draft.finalized_at=Some(chrono::Utc::now().naive_utc());draft.update(pool).unwrap()
+    }
+    fn link(mut draft:Trace,source:Uuid,f:&Fixture)->(Trace,Uuid) {
+        draft.continues_trace_id=Some(source);
+        let version=draft.version_integer;
+        let draft=draft.update_with_expected_version(version,&f.pool).unwrap();
+        let id=threads::list(f.owner,None,Some(source),"",0,20,&f.pool).unwrap().0
+            .into_iter().find(|w|w.thread.pending_trace_id==Some(draft.id)).unwrap().thread.id;
+        (draft,id)
+    }
+    let draft=fresh_draft(&f);
+    let (mut writing,thread)=link(draft,a,&f);
+    writing.content="I am thinking about attention and the places where I write.".into();
+    let version=writing.version_integer;
+    writing=writing.update_with_expected_version(version,&f.pool).unwrap();
+    assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.pending_trace_id,Some(writing.id));
+    let b=finalize(writing,"The library gives me a different kind of attention.",&f.pool).id;
+    assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.latest_trace_id,Some(b));
+    let (next,next_thread)=link(fresh_draft(&f),b,&f);
+    assert_eq!(next_thread,thread);
+    let c=finalize(next,"I want to explore this relation between space and attention.",&f.pool).id;
+    let (branch,branch_id)=link(fresh_draft(&f),b,&f);
+    assert_ne!(thread,branch_id);
+    let d=finalize(branch,"What makes the library a shared space, rather than just a quiet place?",&f.pool).id;
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![a,b,c]);
+    assert_eq!(threads::traces(f.owner,branch_id,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![b,d]);
+    assert_eq!(threads::view(f.owner,branch_id,&f.pool).unwrap().trace_count,2);
+    let publication=Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!("INSERT INTO posts(id,user_id,source_trace_id,title,subtitle,content,interaction_type,post_type,status,publishing_date)
+        VALUES('{publication}','{}','{b}','','','','OUTPUT','IDEA','PUBLISHED',NOW());",f.owner)).unwrap();
+    PostGrant::create_or_update(&Post::find_full(publication,&f.pool).unwrap(),f.owner,NewPostGrantDto {
+        grantee_user_id:Some(f.reader),grantee_scope:None,access_level:None,
+    },&f.pool).unwrap();
+    assert!(!Trace::find_full_trace(a,&f.pool).unwrap().user_can_read(f.reader,&f.pool).unwrap());
+    let mut reader_session=crate::entities_v2::session::Session::anonymous();reader_session.user_id=Some(f.reader);
+    let readable=crate::entities_v2::trace::routes::get_trace_route(axum::extract::Extension(f.pool.clone()),
+        axum::extract::Extension(reader_session),axum::extract::Path(b)).await.unwrap().0;
+    assert!(readable.continues_trace_id.is_none());
+    assert!(threads::view(f.reader,thread,&f.pool).is_err());
+    assert_eq!(threads::list(f.reader,None,None,"",0,20,&f.pool).unwrap().1,0);
+    assert_eq!(threads::list(f.owner,None,Some(b),"",0,20,&f.pool).unwrap().1,2);
+    let mut unrelated=fresh_draft(&f);unrelated.content="Unrelated existing writing".into();
+    let unrelated=unrelated.update(&f.pool).unwrap();
+    let (mut linked,linked_thread)=link(unrelated.clone(),c,&f);
+    assert_eq!(linked_thread,thread);
+    assert_eq!(linked.content,unrelated.content);
+    linked.continues_trace_id=Some(d);
+    let linked=linked.update(&f.pool).unwrap();
+    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.pending_trace_id.is_none());
+    let mut linked=linked;
+    linked.continues_trace_id=None;
+    linked.update(&f.pool).unwrap();
+    assert!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.pending_trace_id.is_none());
+    assert_eq!(Trace::find_full_trace(unrelated.id,&f.pool).unwrap().content,unrelated.content);
+    assert!(f.pool.get().unwrap().batch_execute(&format!("UPDATE traces SET continues_trace_id='{c}' WHERE id='{a}'")).is_err());
+
+    f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
+    let claimed=threads::claim(&f.pool).unwrap().unwrap();
+    assert!(threads::finish(&claimed,"Réflexion sur les lieux et l’attention",&["réflexion".into()],&f.pool).unwrap());
+    assert_eq!(threads::list(f.owner,None,None,"reflexion",0,20,&f.pool).unwrap().1,1);
+    let mut edited=Trace::find_full_trace(b,&f.pool).unwrap();edited.content.push_str(" The question is also social.");
+    edited.update(&f.pool).unwrap();
+    assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.description.is_none());
+    assert!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.description.is_none());
+    f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
+    let stale=threads::claim(&f.pool).unwrap().unwrap();
+    let mut edited=Trace::find_full_trace(b,&f.pool).unwrap();edited.content.push_str(" Another revision.");edited.update(&f.pool).unwrap();
+    assert!(!threads::finish(&stale,"Stale description",&[],&f.pool).unwrap());
+    f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
+    let disabled=threads::claim(&f.pool).unwrap().unwrap();let disabled_id=disabled.id;
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE users SET ai_features_enabled=FALSE WHERE id='{}'",f.owner)).unwrap();
+    service::process_claimed(disabled,f.pool.clone()).await;
+    assert_eq!(threads::view(f.owner,disabled_id,&f.pool).unwrap().thread.generation_status,"DISABLED");
+    let mut archived=Trace::find_full_trace(c,&f.pool).unwrap();archived.status=crate::entities_v2::trace::TraceStatus::Archived;archived.update(&f.pool).unwrap();
+    assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.latest_trace_id,Some(c));
+    assert!(!threads::view(f.owner,thread,&f.pool).unwrap().can_continue);
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().1,2);
+    let mut restored=Trace::find_full_trace(c,&f.pool).unwrap();restored.status=crate::entities_v2::trace::TraceStatus::Finalized;restored.update(&f.pool).unwrap();
+    assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().1,3);
+    // Public PATCH uses the same versioned write, including explicit null.
+    let draft=Trace::find_full_trace(unrelated.id,&f.pool).unwrap();
+    let mut session=crate::entities_v2::session::Session::anonymous();
+    session.user_id=Some(f.owner);
+    let payload=serde_json::from_value(serde_json::json!({
+        "continues_trace_id":d,"content":"Existing draft text",
+        "expected_version_integer":draft.version_integer
+    })).unwrap();
+    let linked=crate::entities_v2::trace::routes::patch_trace_route(
+        axum::extract::Extension(f.pool.clone()),axum::extract::Extension(session.clone()),
+        axum::extract::Path(draft.id),axum::extract::Json(payload)).await.unwrap().0;
+    assert_eq!(linked.continues_trace_id,Some(d));
+    let payload=serde_json::from_value(serde_json::json!({
+        "continues_trace_id":null,"expected_version_integer":linked.version_integer
+    })).unwrap();
+    let unlinked=crate::entities_v2::trace::routes::patch_trace_route(
+        axum::extract::Extension(f.pool.clone()),axum::extract::Extension(session),
+        axum::extract::Path(draft.id),axum::extract::Json(payload)).await.unwrap().0;
+    assert!(unlinked.continues_trace_id.is_none());
+    assert_eq!(unlinked.content,"Existing draft text");
+    // Assigning the link and finalizing in one database update also advances the end.
+    let mut combined=unlinked;
+    combined.continues_trace_id=Some(d);
+    let end=finalize(combined,"Continuation finalized together with its link.",&f.pool);
+    assert_eq!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.latest_trace_id,Some(end.id));
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn my_feed_batches_seen_previews_and_private_trace_seen_by_is_empty() {
     use crate::entities_v2::{
         feed::hydrate::{find_my_feed_items_paginated,find_feed_items_paginated},
