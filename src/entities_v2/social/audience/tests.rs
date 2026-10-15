@@ -93,12 +93,138 @@ async fn continuation_previews_are_batched_and_follow_reader_permissions() {
     assert!(items.iter().all(|t|t.continues_from.is_none() && t.continues_trace_id.is_none()));
 }
 
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn publication_notification_selection_preserves_access_and_filters_delivery() {
+    use axum::extract::{Extension,Json,Path};
+    use crate::entities_v2::{session::Session,post::{notifications::{NotificationOptions,PublicationNotificationMode as Mode,get_notification_settings},
+        routes::{put_trace_post_route,PutTracePostDto,enqueue_post_published_notification_emails}}};
+    let f=Fixture::new();
+    let (trace,id)=f.publication();
+    let mut post=Post::find_full(id,&f.pool).unwrap();
+    assert_eq!(post.notification_mode,Mode::All);
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO relationships(requester_user_id,target_user_id,relationship_type,status,accepted_at)
+        VALUES('{}','{}','FOLLOW','ACCEPTED',NOW());
+        UPDATE users SET shared_journal_activity_email_mode='instant' WHERE id IN ('{}','{}')",
+        f.stranger,f.owner,f.reader,f.stranger)).unwrap();
+    for reader in [f.reader,f.stranger] {
+        PostGrant::create_or_update(&post,f.owner,NewPostGrantDto{
+            grantee_user_id:Some(reader),grantee_scope:None,access_level:None},&f.pool).unwrap();
+    }
+    assert!(post.notification_allows(f.reader) && post.notification_allows(f.stranger));
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE posts SET status='DRAFT' WHERE id='{id}'")).unwrap();
+    post=Post::find_full(id,&f.pool).unwrap();
+    post.apply_notification_options(NotificationOptions{notification_mode:Some(Mode::Selected),
+        notification_user_ids:Some(vec![f.reader,f.reader])},&f.pool).unwrap();
+    post=post.update(&f.pool).unwrap();
+    assert_eq!(post.notification_user_ids,vec![f.reader]);
+    assert!(post.notification_allows(f.reader) && !post.notification_allows(f.stranger));
+    assert!(post.apply_notification_options(NotificationOptions{notification_mode:Some(Mode::Selected),
+        notification_user_ids:Some(vec![Uuid::new_v4()])},&f.pool).is_err());
+    let mut session=Session::anonymous();session.user_id=Some(f.owner);
+    let settings=get_notification_settings(Extension(f.pool.clone()),Extension(session.clone()),Path(id)).await.unwrap().0;
+    assert_eq!(settings.notification_user_ids,vec![f.reader]);
+    let mut other=Session::anonymous();other.user_id=Some(f.reader);
+    assert_eq!(get_notification_settings(Extension(f.pool.clone()),Extension(other),Path(id)).await.err().unwrap().status_code,404);
+    assert!(serde_json::to_value(&post).unwrap().get("notification_user_ids").is_none());
+    // Publish silently through the real route: no asynchronous push/mail tasks run.
+    let payload:PutTracePostDto=serde_json::from_value(serde_json::json!({
+        "status":"published","notification_mode":"none"})).unwrap();
+    post=put_trace_post_route(Extension(f.pool.clone()),Extension(session.clone()),Path(trace),Json(payload)).await.unwrap().0;
+    assert_eq!(post.notification_mode,Mode::None);
+    assert!(post.notification_user_ids.is_empty());
+    assert!(enqueue_post_published_notification_emails(&post,&[],&f.pool).unwrap().is_empty());
+    assert!(PostGrant::user_can_read_post(&post,f.reader,&f.pool).unwrap());
+    assert!(PostGrant::user_can_read_post(&post,f.stranger,&f.pool).unwrap());
+    let (feed,_)=crate::entities_v2::feed::hydrate::find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    assert!(feed.iter().any(|item|item.source_id==trace));
+    // Updating an already-published selection must not create another publication event.
+    let payload:PutTracePostDto=serde_json::from_value(serde_json::json!({
+        "notification_mode":"selected","notification_user_ids":[f.reader]})).unwrap();
+    post=put_trace_post_route(Extension(f.pool.clone()),Extension(session),Path(trace),Json(payload)).await.unwrap().0;
+    let emails=enqueue_post_published_notification_emails(&post,&[],&f.pool).unwrap();
+    assert_eq!(emails.len(),1);
+    #[derive(QueryableByName)]
+    struct Recipient { #[diesel(sql_type=SqlUuid)] recipient_user_id:Uuid }
+    let recipient=diesel::sql_query("SELECT recipient_user_id FROM outbound_emails WHERE id=$1")
+        .bind::<SqlUuid,_>(emails[0]).get_result::<Recipient>(&mut f.pool.get().unwrap()).unwrap();
+    assert_eq!(recipient.recipient_user_id,f.reader);
+    assert!(enqueue_post_published_notification_emails(&post,&[f.reader],&f.pool).unwrap().is_empty());
+    // Revoked grants cannot be revived by the selection list.
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE post_grants SET status='REVOKED' WHERE post_id='{id}' AND grantee_user_id='{}'",f.reader)).unwrap();
+    assert!(enqueue_post_published_notification_emails(&post,&[],&f.pool).unwrap().is_empty());
+}
+
+
+#[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn draft_mentor_context_is_owned_versioned_and_immutable() {
+    use crate::entities_v2::message::{draft_context, NewMessage, NewMessageDto};
+    let f = Fixture::new();
+    let (parent, _) = f.publication();
+    let draft = Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO traces(id,user_id,journal_id,title,subtitle,content,interaction_date,trace_type,status,start_writing_at,continues_trace_id)
+        VALUES('{draft}','{}','{}','Draft','','An unfinished thought',NOW(),'USER_TRACE','DRAFT',NOW(),'{parent}')",
+        f.owner,f.journal)).unwrap();
+    let version = Trace::find_full_trace(draft,&f.pool).unwrap().version_integer;
+    let prepare = |owner,expected,thread,question: &str| draft_context::prepare(
+        owner,Some(draft),Some(f.reader),expected,thread,question,&f.pool);
+    assert_eq!(prepare(f.owner,None,None,"Where next?").err().unwrap().status_code,400);
+    assert_eq!(prepare(f.owner,Some(version+1),None,"Where next?").err().unwrap().status_code,409);
+    assert_eq!(prepare(f.stranger,Some(version),None,"Where next?").err().unwrap().status_code,404);
+    assert_eq!(prepare(f.owner,Some(version),Some(Uuid::new_v4()),"Where next?").err().unwrap().status_code,404);
+    let prepared = prepare(f.owner,Some(version),None,"Where next?").unwrap().unwrap();
+    assert!(prepared.source.writing_thread_id.is_some());
+    assert_eq!(prepared.input["draft"]["content"],"An unfinished thought");
+    assert_eq!(prepared.input["thread_traces"][0]["id"],parent.to_string());
+    assert_eq!(prepared.source.omitted_thread_trace_count,0);
+    let dto: NewMessageDto = serde_json::from_value(serde_json::json!({
+        "recipient_user_id":f.reader,"trace_id":draft,"content":"Where next?","message_type":"question"
+    })).unwrap();
+    let mut new = NewMessage::new(dto,f.owner);
+    new.metadata = Some(prepared.metadata());
+    let message = new.create_with_draft_context(Some(&prepared),&f.pool).unwrap();
+    let public = serde_json::to_string(&message).unwrap();
+    assert!(!public.contains("An unfinished thought"));
+    assert_eq!(message.metadata.unwrap().draft_trace.unwrap().trace_version_integer,version);
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET content='Later edited writing' WHERE id IN ('{draft}','{parent}')")).unwrap();
+    assert_eq!(draft_context::load(message.id,f.owner,&f.pool).unwrap(),prepared.input);
+    assert_eq!(draft_context::load(message.id,f.stranger,&f.pool).err().unwrap().status_code,409);
+    let current = Trace::find_full_trace(draft,&f.pool).unwrap().version_integer;
+    let huge = "x".repeat(100_001);
+    assert_eq!(prepare(f.owner,Some(current),None,&huge).err().unwrap().status_code,413);
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET is_encrypted=TRUE,encryption_metadata='{{}}'::jsonb WHERE id='{draft}'")).unwrap();
+    let current = Trace::find_full_trace(draft,&f.pool).unwrap().version_integer;
+    assert_eq!(prepare(f.owner,Some(current),None,"Where next?").err().unwrap().status_code,403);
+}
+
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     use crate::entities_v2::{journal::Journal,writing_thread::{persist as threads,service}};
     let f=Fixture::new();
     let (a,_)=f.publication();
+    fn assert_cache(f:&Fixture) {
+        #[derive(diesel::QueryableByName)]
+        struct Check { #[diesel(sql_type=diesel::sql_types::Bool)] valid:bool }
+        let result=diesel::sql_query("SELECT COALESCE(bool_and(
+            w.trace_count=(SELECT count(*) FROM writing_thread_trace_ids(w.id) c JOIN traces t ON t.id=c.trace_id WHERE t.status='FINALIZED')
+            AND w.character_count=(SELECT COALESCE(sum(char_length(t.title)::bigint+char_length(t.content)::bigint),0)
+                FROM writing_thread_trace_ids(w.id) c JOIN traces t ON t.id=c.trace_id WHERE t.status='FINALIZED' AND NOT t.is_encrypted)
+            AND w.last_activity_at IS NOT DISTINCT FROM (SELECT max(t.finalized_at)
+                FROM writing_thread_trace_ids(w.id) c JOIN traces t ON t.id=c.trace_id WHERE t.status='FINALIZED')
+            AND COALESCE((SELECT array_agg(m.trace_id ORDER BY m.position) FROM writing_thread_traces m WHERE m.thread_id=w.id),'{}'::uuid[])
+                = COALESCE((SELECT array_agg(c.trace_id ORDER BY c.depth DESC) FROM writing_thread_trace_ids(w.id) c),'{}'::uuid[])
+            ),TRUE) AS valid FROM writing_threads w WHERE w.user_id=$1")
+            .bind::<SqlUuid,_>(f.owner).get_result::<Check>(&mut f.pool.get().unwrap()).unwrap();
+        assert!(result.valid,"Memberships and cached metrics must match the authoritative chain");
+    }
     fn fresh_draft(f:&Fixture)->Trace {
         let mut journal=Journal::find_full(f.journal,&f.pool).unwrap();
         let draft=Trace::create_blank_draft_for_journal(&journal,&f.pool).unwrap();
@@ -122,6 +248,7 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     let version=writing.version_integer;
     writing=writing.update_with_expected_version(version,&f.pool).unwrap();
     assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.pending_trace_id,Some(writing.id));
+    assert_cache(&f);
     let b=finalize(writing,"The library gives me a different kind of attention.",&f.pool).id;
     assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.latest_trace_id,Some(b));
     let (next,next_thread)=link(fresh_draft(&f),b,&f);
@@ -133,6 +260,7 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![a,b,c]);
     assert_eq!(threads::traces(f.owner,branch_id,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![b,d]);
     assert_eq!(threads::view(f.owner,branch_id,&f.pool).unwrap().trace_count,2);
+    assert_cache(&f);
     let publication=Uuid::new_v4();
     f.pool.get().unwrap().batch_execute(&format!("INSERT INTO posts(id,user_id,source_trace_id,title,subtitle,content,interaction_type,post_type,status,publishing_date)
         VALUES('{publication}','{}','{b}','','','','OUTPUT','IDEA','PUBLISHED',NOW());",f.owner)).unwrap();
@@ -176,6 +304,7 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     edited.update(&f.pool).unwrap();
     assert!(threads::view(f.owner,thread,&f.pool).unwrap().thread.journey_summary.is_none());
     assert!(threads::view(f.owner,branch_id,&f.pool).unwrap().thread.journey_summary.is_none());
+    assert_cache(&f);
     f.pool.get().unwrap().batch_execute("UPDATE writing_threads SET generation_due_at=NOW() WHERE generation_status='PENDING'").unwrap();
     let stale=threads::claim(&f.pool).unwrap().unwrap();
     let mut edited=Trace::find_full_trace(b,&f.pool).unwrap();edited.content.push_str(" Another revision.");edited.update(&f.pool).unwrap();
@@ -189,8 +318,10 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.latest_trace_id,Some(c));
     assert!(!threads::view(f.owner,thread,&f.pool).unwrap().can_continue);
     assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().1,2);
+    assert_cache(&f);
     let mut restored=Trace::find_full_trace(c,&f.pool).unwrap();restored.status=crate::entities_v2::trace::TraceStatus::Finalized;restored.update(&f.pool).unwrap();
     assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().1,3);
+    assert_cache(&f);
     // Public PATCH uses the same versioned write, including explicit null.
     let draft=Trace::find_full_trace(unrelated.id,&f.pool).unwrap();
     let mut session=crate::entities_v2::session::Session::anonymous();
@@ -267,6 +398,7 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     assert!(threads::view(f.owner,upstream_id,&f.pool).is_err());
     assert_eq!(threads::traces(f.owner,thread,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![q,p,source,a,b,c]);
     assert_eq!(threads::traces(f.owner,branch_id,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![b,d,end.id]);
+    assert_cache(&f);
 
     // Reproduce the old split, then apply the production repair migration.
     let base=threads::list(f.owner,None,None,"",0,20,&f.pool).unwrap().1;
@@ -283,6 +415,35 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     assert_eq!(threads::traces(f.owner,retained,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![o,m,n]);
     assert_eq!(threads::view(f.owner,retained,&f.pool).unwrap().thread.generation_status,"PENDING");
     assert_eq!(threads::traces(f.owner,branch_id,0,20,&f.pool).unwrap().0.iter().map(|t|t.id).collect::<Vec<_>>(),vec![b,d,end.id]);
+    assert_cache(&f);
+    let mut shared=Trace::find_full_trace(b,&f.pool).unwrap();
+    shared.title="café 📚".into();shared.content.push_str(" Écriture et réflexion.");
+    shared=shared.update(&f.pool).unwrap();assert_cache(&f);
+    let characters=threads::view(f.owner,branch_id,&f.pool).unwrap().character_count;
+    shared.is_encrypted=true;shared.encryption_metadata=Some(serde_json::json!({}));
+    shared=shared.update(&f.pool).unwrap();assert_cache(&f);
+    assert_eq!(threads::view(f.owner,branch_id,&f.pool).unwrap().character_count,
+        characters-(shared.title.chars().count()+shared.content.chars().count()) as i64);
+    shared.is_encrypted=false;shared.encryption_metadata=None;shared.update(&f.pool).unwrap();assert_cache(&f);
+    let barrier=Arc::new(Barrier::new(2));
+    let jobs=[b,c].into_iter().map(|id| {
+        let pool=f.pool.clone();let barrier=barrier.clone();
+        std::thread::spawn(move|| {
+            let mut trace=Trace::find_full_trace(id,&pool).unwrap();
+            barrier.wait();trace.content.push_str(" Concurrent edit.");trace.update(&pool).unwrap();
+        })
+    }).collect::<Vec<_>>();
+    for job in jobs { job.join().unwrap(); }
+    assert_cache(&f);
+    // Backfill from the graph repairs deliberately damaged caches without new AI calls.
+    let revision=threads::view(f.owner,thread,&f.pool).unwrap().thread.input_revision;
+    f.pool.get().unwrap().batch_execute(&format!("DELETE FROM writing_thread_traces WHERE thread_id='{thread}';
+        UPDATE writing_threads SET trace_count=0,character_count=0,last_activity_at=NULL WHERE id='{thread}';
+        SELECT rebuild_writing_thread_memberships('{thread}');")).unwrap();
+    assert_cache(&f);
+    assert_eq!(threads::view(f.owner,thread,&f.pool).unwrap().thread.input_revision,revision);
+    f.pool.get().unwrap().batch_execute(&format!("DELETE FROM traces WHERE id='{m}';")).unwrap();
+    assert_cache(&f);
 }
 
 #[tokio::test]

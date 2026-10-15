@@ -21,6 +21,8 @@ impl Post {
                 posts::publishing_date.eq(self.publishing_date),
                 posts::status.eq(self.status.to_db()),
                 posts::user_id.eq(self.user_id),
+                posts::notification_mode.eq(self.notification_mode.to_db()),
+                posts::notification_user_ids.eq(&self.notification_user_ids),
             ))
             .execute(&mut conn)?;
         Post::find_full(self.id, pool)

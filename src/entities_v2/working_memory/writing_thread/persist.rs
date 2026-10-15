@@ -38,8 +38,6 @@ const VIEW_FROM: &str =
     LEFT JOIN traces start ON start.id=w.start_trace_id";
 const VIEW_SELECT:&str="SELECT w.*,COALESCE(latest.journal_id,start.journal_id) AS journal_id,
     CASE WHEN latest.status='FINALIZED' THEN latest.title ELSE NULL END AS latest_trace_title,
-    (SELECT max(t.finalized_at) FROM writing_thread_trace_ids(w.id) c JOIN traces t ON t.id=c.trace_id WHERE t.status='FINALIZED') AS last_activity_at,
-    (SELECT count(*)::bigint FROM writing_thread_trace_ids(w.id) c JOIN traces t ON t.id=c.trace_id WHERE t.status='FINALIZED') AS trace_count,
     COALESCE(latest.status='FINALIZED' AND NOT latest.is_encrypted,FALSE) AS can_continue";
 pub fn view(owner: Uuid, id: Uuid, pool: &DbPool) -> Result<ThreadView, PpdcError> {
     diesel::sql_query(format!(
@@ -69,7 +67,7 @@ pub fn list(
         Some(q.trim())
     };
     let predicate=" WHERE w.user_id=$1 AND ($2::uuid IS NULL OR COALESCE(latest.journal_id,start.journal_id)=$2)
-        AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM writing_thread_trace_ids(w.id) c WHERE c.trace_id=$3)
+        AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM writing_thread_traces m WHERE m.thread_id=w.id AND m.trace_id=$3)
             OR w.pending_trace_id=$3)
         AND ($4::text IS NULL OR w.search_vector @@ plainto_tsquery('simple',unaccent($4))
             OR (latest.status='FINALIZED' AND unaccent(COALESCE(latest.title,'')) ILIKE '%'||unaccent($4)||'%'))";
@@ -85,7 +83,7 @@ pub fn list(
     .count;
     let rows = diesel::sql_query(format!(
         "{VIEW_SELECT}{VIEW_FROM}{predicate}
-        ORDER BY last_activity_at DESC NULLS LAST,w.created_at DESC,w.id DESC OFFSET $5 LIMIT $6"
+        ORDER BY w.last_activity_at DESC NULLS LAST,w.created_at DESC,w.id DESC OFFSET $5 LIMIT $6"
     ))
     .bind::<SqlUuid, _>(owner)
     .bind::<Nullable<SqlUuid>, _>(journal)
@@ -106,11 +104,11 @@ pub fn traces(
 ) -> Result<(Vec<Trace>, i64), PpdcError> {
     let mut conn = pool.get()?;
     owned(owner, id, &mut conn)?;
-    let total=diesel::sql_query("SELECT count(*)::bigint AS count FROM writing_thread_trace_ids($1) c JOIN traces t ON t.id=c.trace_id WHERE t.status='FINALIZED'")
+    let total=diesel::sql_query("SELECT trace_count AS count FROM writing_threads WHERE id=$1")
         .bind::<SqlUuid,_>(id).get_result::<Count>(&mut conn)?.count;
     let ids = diesel::sql_query(
-        "SELECT t.id FROM writing_thread_trace_ids($1) c JOIN traces t ON t.id=c.trace_id
-        WHERE t.status='FINALIZED' ORDER BY c.depth DESC OFFSET $2 LIMIT $3",
+        "SELECT trace_id AS id FROM writing_thread_traces
+        WHERE thread_id=$1 AND is_counted ORDER BY position OFFSET $2 LIMIT $3",
     )
     .bind::<SqlUuid, _>(id)
     .bind::<BigInt, _>(offset)

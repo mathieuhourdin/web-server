@@ -58,6 +58,8 @@ pub struct ThreadView {
     pub last_activity_at: Option<NaiveDateTime>,
     #[diesel(sql_type=BigInt)]
     pub trace_count: i64,
+    #[diesel(sql_type=BigInt)]
+    pub character_count: i64,
     #[diesel(sql_type=Bool)]
     pub can_continue: bool,
 }

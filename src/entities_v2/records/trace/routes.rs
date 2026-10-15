@@ -176,6 +176,9 @@ pub struct NewTraceMessageDto {
     pub message_type: Option<MessageType>,
     pub attachment_type: Option<MessageAttachmentType>,
     pub attachment: Option<MessageAttachment>,
+    pub writing_thread_id: Option<Uuid>,
+    #[serde(alias = "expected_version")]
+    pub expected_version_integer: Option<i32>,
 }
 
 #[derive(Serialize)]
@@ -2413,6 +2416,17 @@ pub async fn post_trace_message_route(
         ));
     }
 
+    let draft_context = crate::entities_v2::message::draft_context::prepare(
+        user_id,
+        Some(trace_id),
+        payload.recipient_user_id.filter(|_| {
+            recipient_is_service_mentor && message_type == MessageType::Question
+        }),
+        payload.expected_version_integer,
+        payload.writing_thread_id,
+        &payload.content,
+        &pool,
+    )?;
     if matches!(
         message_type,
         MessageType::Question | MessageType::TarotReadingRequest
@@ -2491,9 +2505,9 @@ pub async fn post_trace_message_route(
             attachment_type: payload.attachment_type,
             attachment: payload.attachment,
             suggested_actions: Vec::new(),
-            metadata: None,
+            metadata: draft_context.as_ref().map(|context| context.metadata()),
         }
-        .create(&pool)?;
+        .create_with_draft_context(draft_context.as_ref(), &pool)?;
 
         let pending_reply_message = NewMessage {
             sender_user_id: mentor.id,
@@ -2510,7 +2524,7 @@ pub async fn post_trace_message_route(
             attachment_type: None,
             attachment: None,
             suggested_actions: Vec::new(),
-            metadata: None,
+            metadata: question_message.metadata.clone(),
         }
         .create(&pool)?;
 

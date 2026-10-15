@@ -556,7 +556,11 @@ pub fn spawn_post_published_push_notification(
     excluded_recipient_ids: Vec<Uuid>,
     pool: DbPool,
 ) {
-    if post.status != PostStatus::Published || post.source_ref().is_none() {
+    if post.status != PostStatus::Published
+        || post.source_ref().is_none()
+        || post.notification_mode
+            == crate::entities_v2::post::notifications::PublicationNotificationMode::None
+    {
         return;
     }
 
@@ -606,6 +610,7 @@ pub fn spawn_post_published_push_notification(
         let mut email_exclusions = excluded_recipient_ids.clone();
         for recipient in recipients.into_iter().filter(|recipient| {
             recipient.id != post.user_id
+                && post.notification_allows(recipient.id)
                 && recipient.principal_type == UserPrincipalType::Human
                 && !excluded_recipient_ids.contains(&recipient.id)
         }) {

@@ -97,16 +97,6 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
         )
     })?;
     let question_message = Message::find(question_message_id, pool)?;
-    let trace = reply_message
-        .trace_id
-        .or(question_message.trace_id)
-        .map(|trace_id| Trace::find_full_trace(trace_id, pool))
-        .transpose()?;
-    let journal = reply_message
-        .journal_id
-        .or(question_message.journal_id)
-        .map(|journal_id| Journal::find_full(journal_id, pool))
-        .transpose()?;
     let mentor_user = User::find(&reply_message.sender_user_id, pool)?;
     let recipient_user = User::find(&reply_message.recipient_user_id, pool)?;
     if !recipient_user.allows_ai_features() {
@@ -119,6 +109,32 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
             ),
         ));
     }
+
+    if question_message
+        .metadata
+        .as_ref()
+        .and_then(|m| m.draft_trace.as_ref())
+        .is_some()
+    {
+        return run_draft_reply_pipeline(
+            &reply_message,
+            &question_message,
+            &mentor_user,
+            &recipient_user,
+            pool,
+        )
+        .await;
+    }
+    let trace = reply_message
+        .trace_id
+        .or(question_message.trace_id)
+        .map(|trace_id| Trace::find_full_trace(trace_id, pool))
+        .transpose()?;
+    let journal = reply_message
+        .journal_id
+        .or(question_message.journal_id)
+        .map(|journal_id| Journal::find_full(journal_id, pool))
+        .transpose()?;
 
     if matches!(
         question_message.message_type,
@@ -450,4 +466,47 @@ async fn run_tarot_reply_pipeline(
     processed_message.attachment = None;
     processed_message.processing_state = MessageProcessingState::Processed;
     processed_message.update(pool)
+}
+
+async fn run_draft_reply_pipeline(
+    reply_message: &Message,
+    question_message: &Message,
+    mentor: &User,
+    recipient: &User,
+    pool: &DbPool,
+) -> Result<Message, PpdcError> {
+    let mut context =
+        crate::entities_v2::message::draft_context::load(question_message.id, recipient.id, pool)?;
+    context["mentor_name"] =
+        serde_json::json!(format!("{} {}", mentor.first_name, mentor.last_name));
+    context["mentor_biography"] = serde_json::json!(mentor.biography);
+    context["mentor_specific_prompt"] = serde_json::json!(mentor.mentor_specific_prompt);
+    let reply = GptRequestConfig::new(
+        MENTOR_OPENAI_MODEL.to_string(),
+        include_str!("draft_trace_system.md"),
+        serde_json::to_string(&context)?,
+        Some(serde_json::from_str(include_str!("schema.json"))?),
+        None,
+    )
+    .with_reasoning_effort(GptReasoningEffort::Low)
+    .with_verbosity(GptVerbosity::Low)
+    .with_display_name("Message Processing / Draft Writing Guidance")
+    .with_message_id(reply_message.id)
+    .with_user_id(recipient.id)
+    .execute::<TraceReplyDraft>()
+    .await?;
+    // Consent can be revoked while the provider request is in flight.
+    if !User::find(&recipient.id, pool)?.allows_ai_features() {
+        return Err(PpdcError::new(
+            403,
+            ErrorType::ApiError,
+            "AI features are disabled for this account".to_string(),
+        ));
+    }
+    let mut processed = Message::find(reply_message.id, pool)?;
+    processed.title = reply.title;
+    processed.content = reply.content;
+    processed.suggested_actions = normalize_suggested_actions(reply.suggested_actions);
+    processed.processing_state = MessageProcessingState::Processed;
+    processed.update(pool)
 }

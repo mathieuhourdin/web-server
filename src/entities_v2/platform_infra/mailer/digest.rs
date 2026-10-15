@@ -435,6 +435,9 @@ fn create_shared_journal_digest_for_user(
     let visible_posts = visible_posts
         .into_iter()
         .filter(|visible_post| {
+            if !visible_post.post.notification_allows(recipient.id) {
+                return false;
+            }
             let trace_id = visible_post.post.source_trace_id;
             include_publication_in_digest(
                 weekly,

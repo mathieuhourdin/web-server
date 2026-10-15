@@ -678,6 +678,15 @@ pub async fn post_message_route(
             normalized_trace_id = post.source_trace_id;
         }
     }
+    let draft_context = crate::entities_v2::message::draft_context::prepare(
+        sender_user_id,
+        normalized_trace_id,
+        (recipient_is_service_mentor && message_type == MessageType::Question).then_some(recipient.id),
+        payload.expected_version_integer,
+        payload.writing_thread_id,
+        &payload.content,
+        &pool,
+    )?;
     if is_mentor_request(message_type) {
         let ai_usage_kind = if message_type == MessageType::TarotReadingRequest {
             AiUsageKind::TarotReading
@@ -752,9 +761,9 @@ pub async fn post_message_route(
             attachment_type: payload.attachment_type,
             attachment: payload.attachment,
             suggested_actions: Vec::new(),
-            metadata: None,
+            metadata: draft_context.as_ref().map(|context| context.metadata()),
         }
-        .create(&pool)?;
+        .create_with_draft_context(draft_context.as_ref(), &pool)?;
         let pending_reply_message = NewMessage {
             sender_user_id: question_message.recipient_user_id,
             recipient_user_id: sender_user_id,
@@ -770,7 +779,7 @@ pub async fn post_message_route(
             attachment_type: None,
             attachment: None,
             suggested_actions: Vec::new(),
-            metadata: None,
+            metadata: question_message.metadata.clone(),
         }
         .create(&pool)?;
 

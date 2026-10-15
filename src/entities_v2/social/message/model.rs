@@ -50,6 +50,8 @@ pub struct MentorFeedbackMetadata {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct MessageMetadata {
     pub mentor_feedback: Option<MentorFeedbackMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_trace: Option<super::draft_context::DraftMentorSource>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +72,7 @@ impl MessageMetadata {
     pub fn mentor_feedback(metadata: MentorFeedbackMetadata) -> Self {
         Self {
             mentor_feedback: Some(metadata),
+            draft_trace: None,
         }
     }
 }
@@ -121,6 +124,9 @@ pub struct NewMessageDto {
     pub content: String,
     pub attachment_type: Option<MessageAttachmentType>,
     pub attachment: Option<MessageAttachment>,
+    pub writing_thread_id: Option<Uuid>,
+    #[serde(alias = "expected_version")]
+    pub expected_version_integer: Option<i32>,
 }
 
 #[derive(Debug, Clone)]

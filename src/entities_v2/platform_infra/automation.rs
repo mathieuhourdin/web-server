@@ -239,6 +239,7 @@ const DELEGATED_ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/traces/:id/post", "content:read"),
     ("GET", "/posts/feed", "content:read"),
     ("GET", "/posts/:id", "content:read"),
+    ("GET", "/posts/:id/notification_settings", "content:read"),
     ("POST", "/posts/:id/messages", "social:write"),
     ("GET", "/posts/:id/grants", "social:read"),
     ("POST", "/posts/:id/grants", "social:write"),

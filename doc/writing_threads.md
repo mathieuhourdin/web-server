@@ -4,7 +4,7 @@ Threads are explicit single chains. Traces store a `continues_trace_id`.
 A thread stores its start, latest finalized trace and an internal pending-draft
 pointer. A branch starts another thread at the selected source trace; its analysis
 uses that trace and its descendants, not the earlier prefix of another thread.
-There is no trace–thread membership table and no access inheritance. Thread routes require
+Memberships are materialized in writing_thread_traces, without access inheritance. Thread routes require
 authentication and are owner-only; other users get 404. Authenticated trace reads
 expose a continuation link to readers only when its predecessor is readable.
 
@@ -111,6 +111,7 @@ A ThreadView contains:
   "latest_trace_title": "The latest trace title",
   "last_activity_at": "2026-10-13T12:00:00",
   "trace_count": 2,
+  "character_count": 28450,
   "can_continue": true,
   "title": null,
   "ongoing_question": null,
@@ -125,6 +126,34 @@ A ThreadView contains:
   "updated_at": "2026-10-13T12:00:00"
 }
 ```
+
+## Materialized membership and metrics
+
+Single-thread and collection responses return persisted metrics:
+
+- `trace_count`: finalized, unarchived member traces (including encrypted traces).
+- `character_count`: Unicode character count of their titles + content, excluding
+  encrypted text; pending drafts and archived traces contribute zero.
+- `last_activity_at`: latest finalization date among finalized, unarchived members.
+
+These metrics are size indicators, not token counts or a promise that the thread fits
+a model. The generation pipeline still checks its actual serialized input size.
+
+`continues_trace_id` and the thread boundaries remain the source of truth.
+`writing_thread_traces` stores ordered membership, retaining archived records so
+restoration preserves their positions. Pending drafts remain separate. Each member
+also caches its count/character/activity contribution for incremental metric updates.
+
+Collection/detail reads use stored metrics. Navigation, generation and trace-to-thread
+lookup use indexed memberships, without recursive traversal. Structural changes rebuild
+only affected memberships; ordinary edits update contributions by delta in the same
+transaction. Removing the current activity maximum recomputes it from membership
+metadata, without reading all trace contents. Shared branch members update every
+affected thread.
+
+The migration backfills memberships/metrics without regenerating valid AI analyses.
+For repair, `SELECT rebuild_writing_thread_memberships('thread-uuid');` rebuilds these
+projections from the links; ordinary reads never invoke it.
 
 ## AI generation
 
@@ -163,5 +192,5 @@ AI is enabled; it does not wait for the LLM or repeat already-current generation
 Fetch the thread to observe completion. Failures require this explicit retry or a new
 content change; expired worker leases are recovered automatically.
 
-Cross-journal chains, changing/removing existing finalized links, reader thread navigation, AI
-discovered links and membership materialization are deliberately not in this version.
+Cross-journal chains, changing/removing existing finalized links, reader thread navigation
+and AI-discovered links are deliberately not in this version.

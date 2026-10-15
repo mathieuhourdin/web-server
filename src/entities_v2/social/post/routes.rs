@@ -70,6 +70,8 @@ pub struct DraftPostsQuery {
 
 #[derive(Deserialize)]
 pub struct PutTracePostDto {
+    #[serde(flatten)]
+    pub notifications: super::notifications::NotificationOptions,
     #[serde(
         rename = "audience_role",
         default,
@@ -84,6 +86,8 @@ pub struct PutTracePostDto {
 
 #[derive(Deserialize)]
 pub struct PutSourceRecordPostDto {
+    #[serde(flatten)]
+    pub notifications: super::notifications::NotificationOptions,
     #[serde(
         rename = "audience_role",
         default,
@@ -98,6 +102,8 @@ pub struct PutSourceRecordPostDto {
 
 #[derive(Deserialize)]
 pub struct UpdatePostDto {
+    #[serde(flatten)]
+    pub notifications: super::notifications::NotificationOptions,
     #[serde(
         rename = "audience_role",
         default,
@@ -118,6 +124,11 @@ pub(crate) fn enqueue_post_published_notification_emails(
     excluded_recipient_ids: &[Uuid],
     pool: &DbPool,
 ) -> Result<Vec<Uuid>, PpdcError> {
+    if post.status != PostStatus::Published
+        || post.notification_mode == super::notifications::PublicationNotificationMode::None
+    {
+        return Ok(vec![]);
+    }
     const POST_PUBLISHED_EMAIL_REASON: &str = "POST_PUBLISHED";
     const POST_PUBLISHED_INSTANT_EMAIL_MAX_PER_24H: i64 = 2;
 
@@ -151,6 +162,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
     for recipient in recipients.into_iter().filter(|recipient| {
         recipient.id != owner.id
             && !excluded_recipient_ids.contains(&recipient.id)
+            && post.notification_allows(recipient.id)
             && recipient.principal_type == UserPrincipalType::Human
             && !recipient.email.trim().is_empty()
             && recipient.allows_instant_shared_journal_activity_email()
@@ -218,6 +230,9 @@ pub(crate) fn dispatch_post_published_notification_emails(
 }
 
 pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) {
+    if post.notification_mode == super::notifications::PublicationNotificationMode::None {
+        return;
+    }
     let trace = post
         .source_trace_id
         .and_then(|id| Trace::find_full_trace(id, pool).ok());
@@ -316,7 +331,10 @@ pub(crate) fn dispatch_trace_mention_notifications(
     let Some(trace_id) = post.source_trace_id else {
         return;
     };
-    if post.status != PostStatus::Published || candidate_recipient_ids.is_empty() {
+    if post.status != PostStatus::Published
+        || candidate_recipient_ids.is_empty()
+        || post.notification_mode == super::notifications::PublicationNotificationMode::None
+    {
         return;
     }
 
@@ -376,7 +394,8 @@ pub(crate) fn dispatch_trace_mention_notifications(
         .iter()
         .copied()
         .filter(|user_id| {
-            unnotified.contains(user_id)
+            post.notification_allows(*user_id)
+                && unnotified.contains(user_id)
                 && !blocked.contains(user_id)
                 && (readable.contains(user_id) || active_mentions.contains(user_id))
         })
@@ -690,6 +709,7 @@ pub async fn put_trace_post_route(
         post.publishing_date = Some(Utc::now().naive_utc());
     }
 
+    post.apply_notification_options(payload.notifications, &pool)?;
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         dispatch_post_published_notifications(&post, &pool);
@@ -732,8 +752,24 @@ pub async fn post_post_route(
                 .to_string(),
         ));
     }
+    let options = payload.notifications.clone();
+    // A new custom post has no grants yet. Prepare it first, then add grants and publish.
+    if options.notification_mode == Some(super::notifications::PublicationNotificationMode::Selected)
+        || options
+            .notification_user_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+    {
+        return Err(PpdcError::new(
+            400,
+            ErrorType::ApiError,
+            "Create a draft post and its grants before selecting notification recipients".to_string(),
+        ));
+    }
     let new_post = NewPost::new(payload, session.user_id.unwrap());
-    let post = new_post.create(&pool)?;
+    let mut post = new_post.create(&pool)?;
+    post.apply_notification_options(options, &pool)?;
+    let post = post.update(&pool)?;
     if post.status == PostStatus::Published {
         dispatch_post_published_notifications(&post, &pool);
     }
@@ -792,6 +828,7 @@ pub async fn put_post_route(
     {
         post.publishing_date = Some(Utc::now().naive_utc());
     }
+    post.apply_notification_options(payload.notifications, &pool)?;
     let post = post.update(&pool)?;
 
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
@@ -867,6 +904,7 @@ pub async fn put_document_post_route(
         post.publishing_date = Some(Utc::now().naive_utc());
     }
 
+    post.apply_notification_options(payload.notifications, &pool)?;
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         dispatch_post_published_notifications(&post, &pool);
@@ -936,6 +974,7 @@ pub async fn put_album_post_route(
         post.publishing_date = Some(Utc::now().naive_utc());
     }
 
+    post.apply_notification_options(payload.notifications, &pool)?;
     let post = post.update(&pool)?;
     if previous_status != PostStatus::Published && post.status == PostStatus::Published {
         dispatch_post_published_notifications(&post, &pool);

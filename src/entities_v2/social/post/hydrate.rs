@@ -25,6 +25,8 @@ type PostTuple = (
     String,
     NaiveDateTime,
     NaiveDateTime,
+    String,
+    Vec<Uuid>,
 );
 
 type DigestVisiblePostTuple = (
@@ -39,6 +41,8 @@ type DigestVisiblePostTuple = (
     String,
     NaiveDateTime,
     NaiveDateTime,
+    String,
+    Vec<Uuid>,
     Uuid,
 );
 
@@ -54,6 +58,8 @@ type FeedPostTuple = (
     String,
     NaiveDateTime,
     NaiveDateTime,
+    String,
+    Vec<Uuid>,
     Option<Uuid>,
     Option<String>,
 );
@@ -78,6 +84,8 @@ fn tuple_to_post(row: PostTuple) -> Post {
         status_raw,
         created_at,
         updated_at,
+        notification_mode_raw,
+        notification_user_ids,
     ) = row;
 
     Post {
@@ -93,6 +101,10 @@ fn tuple_to_post(row: PostTuple) -> Post {
         status: PostStatus::from_db(&status_raw),
         created_at,
         updated_at,
+        notification_mode: super::notifications::PublicationNotificationMode::from_db(
+            &notification_mode_raw,
+        ),
+        notification_user_ids,
     }
 }
 
@@ -108,6 +120,8 @@ fn select_post_columns() -> (
     posts::status,
     posts::created_at,
     posts::updated_at,
+    posts::notification_mode,
+    posts::notification_user_ids,
 ) {
     (
         posts::id,
@@ -121,6 +135,8 @@ fn select_post_columns() -> (
         posts::status,
         posts::created_at,
         posts::updated_at,
+        posts::notification_mode,
+        posts::notification_user_ids,
     )
 }
 
@@ -137,6 +153,8 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         status_raw,
         created_at,
         updated_at,
+        notification_mode_raw,
+        notification_user_ids,
         journal_id,
     ) = row;
 
@@ -154,6 +172,10 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             status: PostStatus::from_db(&status_raw),
             created_at,
             updated_at,
+            notification_mode: super::notifications::PublicationNotificationMode::from_db(
+                &notification_mode_raw,
+            ),
+            notification_user_ids,
         },
         journal_id,
         content: String::new(),
@@ -173,6 +195,8 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         status_raw,
         created_at,
         updated_at,
+        notification_mode_raw,
+        notification_user_ids,
         journal_id,
         journal_title,
     ) = row;
@@ -191,6 +215,10 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             status: PostStatus::from_db(&status_raw),
             created_at,
             updated_at,
+            notification_mode: super::notifications::PublicationNotificationMode::from_db(
+                &notification_mode_raw,
+            ),
+            notification_user_ids,
         },
         journal_id,
         journal_title,
@@ -316,6 +344,8 @@ impl Post {
                 posts::status,
                 posts::created_at,
                 posts::updated_at,
+                posts::notification_mode,
+                posts::notification_user_ids,
                 traces::journal_id.nullable(),
                 journals::title.nullable(),
             ))
@@ -509,6 +539,8 @@ impl Post {
                 posts::status,
                 posts::created_at,
                 posts::updated_at,
+                posts::notification_mode,
+                posts::notification_user_ids,
                 journals::id,
             ))
             .order(posts::publishing_date.desc().nulls_last())

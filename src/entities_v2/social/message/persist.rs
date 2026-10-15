@@ -275,7 +275,29 @@ impl Message {
 
 impl NewMessage {
     pub fn create(self, pool: &DbPool) -> Result<Message, PpdcError> {
+        self.create_with_draft_context(None, pool)
+    }
+
+    pub fn create_with_draft_context(
+        self,
+        context: Option<&super::draft_context::PreparedDraftContext>,
+        pool: &DbPool,
+    ) -> Result<Message, PpdcError> {
         let mut conn = pool.get()?;
+        let id = if let Some(context) = context {
+            conn.transaction::<_, PpdcError, _>(|conn| {
+                let id = self.insert(conn)?;
+                super::draft_context::save(id, context, conn)?;
+                Ok(id)
+            })?
+        } else {
+            self.insert(&mut conn)?
+        };
+        drop(conn);
+        Message::find(id, pool)
+    }
+
+    fn insert(self, conn: &mut diesel::PgConnection) -> Result<Uuid, PpdcError> {
         let (attachment_type_db, attachment_json) =
             serialize_attachment(self.attachment_type, self.attachment.as_ref())?;
         let metadata_json = serialize_metadata(self.metadata.as_ref())?;
@@ -322,8 +344,8 @@ impl NewMessage {
         .bind::<Nullable<Text>, _>(attachment_json)
         .bind::<Nullable<Text>, _>(metadata_json)
         .bind::<Text, _>(suggested_actions_json)
-        .get_result::<IdRow>(&mut conn)?
+        .get_result::<IdRow>(conn)?
         .id;
-        Message::find(id, pool)
+        Ok(id)
     }
 }

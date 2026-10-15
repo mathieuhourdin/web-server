@@ -1,6 +1,7 @@
 pub mod enums;
 pub mod hydrate;
 pub mod model;
+pub mod notifications;
 pub mod persist;
 pub mod routes;
 

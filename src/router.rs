@@ -243,6 +243,10 @@ pub fn create_router() -> Router {
         .route("/feed", get(feed::get_feed_route))
         .route("/", get(post::get_posts_route).post(post::post_post_route))
         .route("/:id", get(post::get_post_route).put(post::put_post_route))
+        .route(
+            "/:id/notification_settings",
+            get(post::notifications::get_notification_settings),
+        )
         .route("/:id/attachments", get(post::get_post_attachments_route))
         .route("/:id/seen_by", get(post::get_post_seen_by_route))
         .route(

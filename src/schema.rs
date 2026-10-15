@@ -532,6 +532,8 @@ diesel::table! {
         source_document_id -> Nullable<Uuid>,
         source_album_id -> Nullable<Uuid>,
         audience_source_post_id -> Nullable<Uuid>,
+        notification_mode -> Text,
+        notification_user_ids -> Array<Uuid>,
     }
 }
 
@@ -719,6 +721,20 @@ diesel::table! {
         ongoing_question -> Nullable<Text>,
         journey_summary -> Nullable<Text>,
         description -> Nullable<Text>,
+        trace_count -> Int8,
+        character_count -> Int8,
+        last_activity_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    writing_thread_traces (thread_id, trace_id) {
+        thread_id -> Uuid,
+        trace_id -> Uuid,
+        position -> Int4,
+        is_counted -> Bool,
+        character_count -> Int8,
+        finalized_at -> Nullable<Timestamp>,
     }
 }
 
@@ -951,6 +967,8 @@ diesel::joinable!(user_roles -> users (user_id));
 diesel::joinable!(user_secure_actions -> users (user_id));
 diesel::joinable!(wal_days -> users (user_id));
 diesel::joinable!(writing_threads -> users (user_id));
+diesel::joinable!(writing_thread_traces -> writing_threads (thread_id));
+diesel::joinable!(writing_thread_traces -> traces (trace_id));
 diesel::joinable!(wal_entries -> wal_days (wal_day_id));
 diesel::joinable!(wal_projections -> wal_days (wal_day_id));
 
@@ -1025,7 +1043,18 @@ diesel::joinable!(post_grants -> audiences (audience_id));
 diesel::joinable!(post_grant_sources -> post_grants (post_grant_id));
 diesel::joinable!(post_grant_sources -> audiences (audience_id));
 
+diesel::table! {
+    mentor_message_contexts (message_id) {
+        message_id -> Uuid,
+        input_json -> Jsonb,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::joinable!(mentor_message_contexts -> messages (message_id));
+
 diesel::allow_tables_to_appear_in_same_query!(
+    mentor_message_contexts,
     audiences,
     audience_members,
     post_audiences,
@@ -1080,6 +1109,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     users,
     wal_days,
     writing_threads,
+    writing_thread_traces,
     wal_entries,
     wal_projections,
 );

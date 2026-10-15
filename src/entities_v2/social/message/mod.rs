@@ -1,4 +1,5 @@
 pub mod attachment;
+pub mod draft_context;
 pub mod enums;
 pub mod hydrate;
 pub mod model;

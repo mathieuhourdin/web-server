@@ -27,6 +27,10 @@ pub struct Post {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     pub status: PostStatus,
+    pub notification_mode: super::notifications::PublicationNotificationMode,
+    // Recipient selection is private to the publisher; use the owner-only settings route.
+    #[serde(skip)]
+    pub notification_user_ids: Vec<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -48,6 +52,8 @@ pub enum PostSourceRef {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewPostDto {
+    #[serde(flatten)]
+    pub notifications: super::notifications::NotificationOptions,
     #[serde(
         rename = "audience_role",
         default,
