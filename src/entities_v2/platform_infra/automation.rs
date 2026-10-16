@@ -309,6 +309,13 @@ fn required_scope(method: &str, path: &str) -> Option<&'static str> {
         .then_some(*scope)
     })
 }
+/// Documentation uses the exact same allowlist matcher as runtime authorization.
+pub(crate) fn documentation_scope(method: &str, pattern: &str) -> Option<&'static str> {
+    let path = pattern.split('/').map(|segment| {
+        if segment.starts_with(':') { "00000000-0000-0000-0000-000000000000" } else { segment }
+    }).collect::<Vec<_>>().join("/");
+    required_scope(method, &path)
+}
 pub async fn gate(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
@@ -339,7 +346,9 @@ pub async fn gate(
     let method = req.method().as_str().to_string();
     let mut permitted = if ctx.acting_user_id.is_none() {
         path.starts_with("/automation/") || path == "/me/capabilities"
-    } else if path == "/me/capabilities" {
+            || (method == "GET" && matches!(path.as_str(), "/api/schema" | "/api/docs"))
+    } else if path == "/me/capabilities"
+        || (method == "GET" && matches!(path.as_str(), "/api/schema" | "/api/docs")) {
         true
     } else {
         required_scope(&method, &path)
@@ -712,7 +721,7 @@ pub async fn capabilities(ctx: Option<Extension<AgentContext>>) -> Result<Json<V
 }
 pub async fn contract(Extension(_ctx): Extension<AgentContext>) -> Json<Value> {
     Json(
-        json!({"version":1,"scopes":SCOPES,"delegated_routes":DELEGATED_ROUTES.iter().map(|(method,path,scope)|json!({"method":method,"path":path,"scope":scope})).collect::<Vec<_>>(),
+        json!({"version":1,"openapi_url":"/api/schema","documentation_url":"/api/docs","scopes":SCOPES,"delegated_routes":DELEGATED_ROUTES.iter().map(|(method,path,scope)|json!({"method":method,"path":path,"scope":scope})).collect::<Vec<_>>(),
         "automation_contract_markdown":include_str!("../../../doc/automation_api.md"),
         "platform_contract_markdown":include_str!("../../../doc/api_quick.md")}),
     )

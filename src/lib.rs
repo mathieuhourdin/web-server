@@ -6,6 +6,7 @@ pub mod logging;
 pub mod openai_handler;
 pub mod pagination;
 pub mod router;
+pub mod api_schema;
 pub mod schema;
 pub mod serde_helpers;
 pub mod sessions_service;
