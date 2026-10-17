@@ -309,6 +309,9 @@ impl Trace {
             .bind::<Timestamp, _>(now)
             .execute(conn)?;
 
+            let language_code = super::language::detect_language(&title, &content);
+            super::language::store(conn, trace_id, language_code.as_deref())?;
+
             let post_id = uuid::Uuid::new_v4();
             diesel::insert_into(posts::table)
                 .values((
@@ -496,6 +499,7 @@ impl Trace {
             if previous_is_blank && !self.is_blank {
                 self.start_writing_at = Utc::now().naive_utc();
             }
+            let language_code = super::language::for_update(&self, conn)?;
             let rows_affected = if let Some(expected_version_integer) = expected_version_integer {
                 diesel::sql_query(
                     "WITH updated AS (
@@ -520,6 +524,7 @@ impl Trace {
                             version_integer = version_integer + 1,
                             last_edit_device_id = $20,
                             continues_trace_id = $21,
+                            language_code = $22,
                             updated_at = NOW()
                         WHERE id = $1
                           AND version_integer = $19
@@ -552,6 +557,7 @@ impl Trace {
                 .bind::<diesel::sql_types::Int4, _>(expected_version_integer)
                 .bind::<Nullable<SqlUuid>, _>(device_id)
                 .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
+                .bind::<Nullable<Text>, _>(&language_code)
                 .get_result::<AffectedRows>(conn)?
                 .count
             } else {
@@ -578,6 +584,7 @@ impl Trace {
                             version_integer = version_integer + 1,
                             last_edit_device_id = $19,
                             continues_trace_id = $20,
+                            language_code = $21,
                             updated_at = NOW()
                         WHERE id = $1
                         RETURNING 1
@@ -608,6 +615,7 @@ impl Trace {
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
                 .bind::<Nullable<SqlUuid>, _>(device_id)
                 .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
+                .bind::<Nullable<Text>, _>(&language_code)
                 .get_result::<AffectedRows>(conn)?
                 .count
             };
@@ -860,6 +868,11 @@ impl NewTrace {
             .bind::<Timestamp, _>(self.start_writing_at)
             .bind::<Timestamp, _>(finalized_at)
             .get_result::<IdRow>(conn)?;
+
+            if !self.is_encrypted {
+                let language_code = super::language::detect_language(&self.title, &self.content);
+                super::language::store(conn, inserted.id, language_code.as_deref())?;
+            }
 
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
 

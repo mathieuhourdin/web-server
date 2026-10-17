@@ -23,6 +23,7 @@ pub enum SourceProjectionState {
 
 #[derive(Debug, Clone)]
 pub struct SourceProjection {
+    pub language_code: Option<String>,
     pub source_kind: SourceProjectionKind,
     pub source_id: Uuid,
     pub original_source_id: Option<Uuid>,
@@ -39,6 +40,7 @@ pub struct SourceProjection {
 impl SourceProjection {
     pub fn from_trace(trace: &Trace) -> Self {
         Self {
+            language_code: trace.language_code.clone(),
             source_kind: SourceProjectionKind::Trace,
             source_id: trace.id,
             original_source_id: None,
@@ -55,6 +57,7 @@ impl SourceProjection {
 
     pub fn from_document(document: &Document) -> Self {
         Self {
+            language_code: None,
             source_kind: SourceProjectionKind::Document,
             source_id: document.id,
             original_source_id: None,
@@ -74,6 +77,7 @@ impl SourceProjection {
 
     pub fn from_album(album: &Album) -> Self {
         Self {
+            language_code: None,
             source_kind: SourceProjectionKind::Album,
             source_id: album.id,
             original_source_id: None,

@@ -91,6 +91,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
     Post {
         id,
         resource_id: id,
+            language_code: None,
         source_trace_id,
         source_document_id,
         source_album_id,
@@ -162,6 +163,7 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         post: Post {
             id,
             resource_id: id,
+            language_code: None,
             source_trace_id,
             source_document_id,
             source_album_id,
@@ -205,6 +207,7 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         post: Post {
             id,
             resource_id: id,
+            language_code: None,
             source_trace_id,
             source_document_id,
             source_album_id,

@@ -57,6 +57,7 @@ pub fn load_source_projection_map(
                 traces::content,
                 traces::content_image_asset_id,
                 traces::status,
+                traces::language_code,
             ))
             .load::<(
                 Uuid,
@@ -67,6 +68,7 @@ pub fn load_source_projection_map(
                 String,
                 Option<Uuid>,
                 String,
+                Option<String>,
             )>(conn)?;
 
         projections.extend(rows.into_iter().filter_map(
@@ -79,11 +81,13 @@ pub fn load_source_projection_map(
                 content,
                 cover_image_asset_id,
                 status_raw,
+                language_code,
             )| {
                 Some((
                     PostSourceRef::Trace(id),
                     SourceProjection {
                         source_kind: SourceProjectionKind::Trace,
+                        language_code,
                         source_id: id,
                         original_source_id: None,
                         original_author_user_id: Some(user_id),
@@ -139,6 +143,7 @@ pub fn load_source_projection_map(
                     PostSourceRef::Document(id),
                     SourceProjection {
                         source_kind: SourceProjectionKind::Document,
+                        language_code: None,
                         source_id: id,
                         original_source_id: None,
                         original_author_user_id: None,
@@ -179,6 +184,7 @@ pub fn load_source_projection_map(
                     PostSourceRef::Album(id),
                     SourceProjection {
                         source_kind: SourceProjectionKind::Album,
+                        language_code: None,
                         source_id: id,
                         original_source_id: None,
                         original_author_user_id: None,
@@ -208,6 +214,7 @@ pub fn apply_source_projection_to_post(post: &mut Post, projections: &SourceProj
         return;
     };
 
+    post.language_code = projection.language_code.clone();
     if matches!(post.post_type, PostType::Idea) {
         post.post_type = projection.default_post_type;
     }

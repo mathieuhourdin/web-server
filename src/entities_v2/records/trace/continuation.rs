@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, QueryableByName)]
 pub struct TraceContinuationPreview {
+    #[diesel(sql_type=Nullable<Text>)]
+    pub language_code: Option<String>,
     #[diesel(sql_type=SqlUuid)]
     pub id: Uuid,
     #[diesel(sql_type=Text)]
@@ -60,7 +62,7 @@ pub(crate) fn hydrate_continuations<'a, T: ContinuationTarget + 'a>(
         "WITH candidates AS MATERIALIZED (
             SELECT id AS trace_id,continues_trace_id FROM traces WHERE id=ANY($1)
         ), readable AS MATERIALIZED (
-            SELECT parent.id,parent.title,parent.finalized_at FROM traces parent
+            SELECT parent.id,parent.title,parent.finalized_at,parent.language_code FROM traces parent
             JOIN (SELECT DISTINCT continues_trace_id FROM candidates WHERE continues_trace_id IS NOT NULL) refs
                 ON refs.continues_trace_id=parent.id
             WHERE parent.trace_type='USER_TRACE' AND (
@@ -76,7 +78,7 @@ pub(crate) fn hydrate_continuations<'a, T: ContinuationTarget + 'a>(
                             AND trace_publication_readable(p.id,$2)))
                 )
             )
-        ) SELECT c.trace_id,r.id,r.title,r.finalized_at FROM candidates c
+        ) SELECT c.trace_id,r.id,r.title,r.finalized_at,r.language_code FROM candidates c
             JOIN readable r ON r.id=c.continues_trace_id"
     ).bind::<Array<SqlUuid>,_>(ids).bind::<SqlUuid,_>(viewer)
         .load::<Row>(&mut pool.get()?)?;

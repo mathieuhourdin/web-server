@@ -785,6 +785,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         continues_trace_id: if include_owner_fields { trace.continues_trace_id } else { None },
         continues_from: None,
         translation_message: None,
+        language_code: trace.language_code,
         complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
             Some(trace.is_encrypted)

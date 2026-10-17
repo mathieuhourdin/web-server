@@ -3,7 +3,7 @@
 - `GET /api/schema`: OpenAPI 3.1 route catalog, generated from the actual router.
 - `GET /api/docs`: this guide (Markdown).
 - `GET /api/docs?topic=platform`: general API conventions and route contracts.
-- Other topics: `automation`, `writing_threads`, `draft_mentor`, `publication_notifications`, `trace_translations`.
+- Other topics: `automation`, `writing_threads`, `draft_mentor`, `publication_notifications`, `trace_translations`, `trace_languages`.
 
 These documentation endpoints are public and contain no live user data, credentials
 or configuration secrets. Reading documentation never grants permission to call a route.

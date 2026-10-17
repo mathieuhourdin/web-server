@@ -693,6 +693,7 @@ diesel::table! {
         version_integer -> Int4,
         last_edit_device_id -> Nullable<Uuid>,
         continues_trace_id -> Nullable<Uuid>,
+        language_code -> Nullable<Text>,
     }
 }
 

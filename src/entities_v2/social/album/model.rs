@@ -42,6 +42,7 @@ pub struct AlbumItemTraceView {
     pub continues_trace_id: Option<Uuid>,
     pub continues_from: Option<crate::entities_v2::trace::continuation::TraceContinuationPreview>,
     pub translation_message: Option<crate::entities_v2::message::Message>,
+    pub language_code: Option<String>,
     pub journal_id: Option<Uuid>,
     pub title: String,
     pub subtitle: String,

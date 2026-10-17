@@ -24,6 +24,58 @@ fn validates_audience_names() {
 
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn trace_languages_persist_without_ai_and_reach_readers() {
+    use crate::entities_v2::{
+        feed::hydrate::{find_feed_items_paginated, find_my_feed_items_paginated},
+        session::Session,
+        trace::{language, model::{NewTrace, TraceStatus}, routes::get_trace_route},
+    };
+    use axum::extract::{Extension, Path};
+    let f = Fixture::new();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE users SET ai_features_enabled=FALSE, ai_features_enabled_by_admin=FALSE WHERE id='{}'", f.owner)).unwrap();
+    let french = "Je me suis promené dans la forêt ce matin. Les arbres étaient magnifiques et j'ai pris le temps de regarder les oiseaux.";
+    let english = "I spent the afternoon walking through the countryside and thinking about the book I have been reading this week.";
+    let make = || NewTrace::new("Language test".into(), "".into(), french.into(), chrono::Utc::now().naive_utc(), f.owner, f.journal);
+    let draft = make().create(&f.pool).unwrap();
+    assert_eq!(draft.language_code, None);
+    let mut trace = draft;
+    trace.status = TraceStatus::Finalized;
+    trace.finalized_at = Some(chrono::Utc::now().naive_utc());
+    let mut trace = trace.update(&f.pool).unwrap();
+    assert_eq!(trace.language_code.as_deref(), Some("fr"));
+    trace.content = english.into();
+    assert_eq!(trace.update(&f.pool).unwrap().language_code.as_deref(), Some("en"));
+    assert_eq!(make().create_finalized(&f.pool).unwrap().language_code.as_deref(), Some("fr"));
+    let mut encrypted = make();
+    encrypted.is_encrypted = true;
+    encrypted.encryption_metadata = Some(serde_json::json!({}));
+    assert!(encrypted.create_finalized(&f.pool).unwrap().language_code.is_none());
+    let (id, post) = f.publication();
+    let complement = Trace::create_complement(id, f.owner, "".into(), "".into(),
+        french.into(), TraceComplementAudienceMode::Parent, &[], &f.pool).unwrap();
+    assert_eq!(complement.trace.language_code.as_deref(), Some("fr"));
+    let before = Trace::find_full_trace(id, &f.pool).unwrap();
+    // The maintenance write must not look like an edit or increment a version.
+    language::store(&mut f.pool.get().unwrap(), id, Some("fr")).unwrap();
+    let after = Trace::find_full_trace(id, &f.pool).unwrap();
+    assert_eq!(before.version_integer, after.version_integer);
+    assert_eq!(before.updated_at, after.updated_at);
+    PostGrant::create_or_update(&Post::find_full(post, &f.pool).unwrap(), f.owner,
+        NewPostGrantDto { grantee_user_id: Some(f.reader), grantee_scope: None, access_level: None }, &f.pool).unwrap();
+    let mut session = Session::anonymous(); session.user_id = Some(f.reader);
+    let read = get_trace_route(Extension(f.pool.clone()), Extension(session), Path(id)).await.unwrap().0;
+    assert_eq!(read.language_code.as_deref(), Some("fr"));
+    let (journal, _) = Trace::get_shared_for_journal_paginated(f.reader, f.journal, 0, 20, None, &f.pool).unwrap();
+    assert_eq!(journal.iter().find(|t| t.id == id).unwrap().language_code.as_deref(), Some("fr"));
+    let (feed, _) = find_feed_items_paginated(f.reader, None, 0, 20, &f.pool).unwrap();
+    assert_eq!(feed.iter().find(|t| t.source_id == id).unwrap().language_code.as_deref(), Some("fr"));
+    let (feed, _) = find_my_feed_items_paginated(f.owner, 0, 20, &f.pool).unwrap();
+    assert_eq!(feed.iter().find(|t| t.source_id == id).unwrap().language_code.as_deref(), Some("fr"));
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn continuation_previews_are_batched_and_follow_reader_permissions() {
     use crate::entities_v2::{
         album::Album, feed::hydrate::{find_feed_items_paginated,find_my_feed_items_paginated},

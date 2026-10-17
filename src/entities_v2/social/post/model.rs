@@ -16,6 +16,8 @@ where
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Post {
+    #[serde(default)]
+    pub language_code: Option<String>,
     pub id: Uuid,
     #[serde(skip_serializing, skip_deserializing)]
     pub resource_id: Uuid,

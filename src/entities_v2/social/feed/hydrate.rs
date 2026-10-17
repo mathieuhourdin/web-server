@@ -308,6 +308,7 @@ fn hydrate_feed_candidates(
                 continues_trace_id: None,
                 continues_from: None,
                 translation_message: None,
+                language_code: projection.language_code.clone(),
                 original_source_id: projection.original_source_id,
                 original_author_user_id: projection.original_author_user_id,
                 original_author_display_name: projection

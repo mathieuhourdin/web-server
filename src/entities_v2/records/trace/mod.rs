@@ -4,6 +4,7 @@ pub mod edit_origin;
 pub mod heatmap;
 pub mod hydrate;
 pub mod llm_qualify;
+pub mod language;
 pub mod model;
 pub mod persist;
 pub mod routes;
