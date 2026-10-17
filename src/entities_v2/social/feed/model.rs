@@ -19,6 +19,7 @@ pub struct FeedItem {
     pub source_id: Uuid,
     pub continues_trace_id: Option<Uuid>,
     pub continues_from: Option<crate::entities_v2::trace::continuation::TraceContinuationPreview>,
+    pub translation_message: Option<crate::entities_v2::message::Message>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_source_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]

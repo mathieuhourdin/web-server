@@ -134,6 +134,7 @@ fn attach_metadata_to_traces(
             .unwrap_or_default();
     }
     super::continuation::hydrate_continuations(viewer, traces.iter_mut(), pool)?;
+    super::translation::hydrate_translations(viewer, traces.iter_mut(), pool)?;
     Ok(traces)
 }
 
@@ -308,7 +309,7 @@ pub async fn get_trace_complements_route(
         return Err(PpdcError::unauthorized());
     }
     let pagination = params.validate()?;
-    let (traces, total) = Trace::find_visible_complements_for_parent_paginated(
+    let (mut traces, total) = Trace::find_visible_complements_for_parent_paginated(
         parent_trace_id,
         user_id,
         parent.user_id == user_id,
@@ -316,6 +317,7 @@ pub async fn get_trace_complements_route(
         pagination.limit,
         &pool,
     )?;
+    super::translation::hydrate_translations(user_id, traces.iter_mut(), &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
@@ -695,6 +697,7 @@ fn attach_seen_state_to_trace_list_items(
     pool: &DbPool,
 ) -> Result<Vec<TraceListItem>, PpdcError> {
     super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
+    super::translation::hydrate_translations(user_id, items.iter_mut(), pool)?;
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -744,6 +747,7 @@ fn attach_seen_state_to_trace_readable_views(
     pool: &DbPool,
 ) -> Result<Vec<TraceReadableView>, PpdcError> {
     super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
+    super::translation::hydrate_translations(user_id, items.iter_mut(), pool)?;
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -780,6 +784,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         parent_trace_id: trace.parent_trace_id,
         continues_trace_id: if include_owner_fields { trace.continues_trace_id } else { None },
         continues_from: None,
+        translation_message: None,
         complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
             Some(trace.is_encrypted)
@@ -1284,6 +1289,7 @@ pub async fn get_journal_draft_route(
     let journal = Journal::find_full(journal_id, &pool)?;
     let mut draft = get_current_journal_draft(&journal, user_id, &pool)?;
     super::continuation::hydrate_continuations(user_id, std::iter::once(&mut draft), &pool)?;
+    super::translation::hydrate_translations(user_id, std::iter::once(&mut draft), &pool)?;
     Ok(Json(draft))
 }
 

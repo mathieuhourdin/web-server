@@ -259,10 +259,13 @@ pub async fn schema() -> Json<Value> {
                 "x-delegated-agent-allowed":scope.is_some() || matches!(path.as_str(),"/api/schema"|"/api/docs"|"/me/capabilities"),
                 "externalDocs":{"url":format!("/api/docs?topic={topic}"),"description":"Detailed feature contract"}
             });
+            if path.contains("traces") || path.ends_with("/feed") || path == "/feed" {
+                operation["x-related-contracts"] = json!(["/api/docs?topic=trace_translations"]);
+            }
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -280,7 +283,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -297,6 +300,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "writing_threads" => include_str!("../doc/writing_threads.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
         "publication_notifications" => include_str!("../doc/publication_notifications.md"),
+        "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
         _ => return (StatusCode::NOT_FOUND, "Unknown documentation topic").into_response(),
     };
     (

@@ -307,6 +307,7 @@ fn hydrate_feed_candidates(
                 source_id: projection.source_id,
                 continues_trace_id: None,
                 continues_from: None,
+                translation_message: None,
                 original_source_id: projection.original_source_id,
                 original_author_user_id: projection.original_author_user_id,
                 original_author_display_name: projection
@@ -345,6 +346,9 @@ fn hydrate_feed_candidates(
         .collect::<Vec<_>>();
 
     crate::entities_v2::trace::continuation::hydrate_continuations(
+        viewer_user_id, items.iter_mut(), pool,
+    )?;
+    crate::entities_v2::trace::translation::hydrate_translations(
         viewer_user_id, items.iter_mut(), pool,
     )?;
     Ok(items)

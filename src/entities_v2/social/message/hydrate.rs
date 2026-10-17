@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use diesel::dsl::sql;
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Nullable, Text, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Array, BigInt, Bool, Nullable, Text, Timestamp, Uuid as SqlUuid};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -127,6 +127,48 @@ fn tuple_to_message(row: MessageTuple) -> Message {
 }
 
 impl Message {
+    /// Latest completed translation reply belonging to this reader, not the author
+    /// or another grantee. One selection/load query for the entire page, followed
+    /// by the existing batched reaction hydration (no per-trace message queries).
+    pub(crate) fn find_translation_replies_by_trace_ids(
+        reader: Uuid,
+        trace_ids: &[Uuid],
+        pool: &DbPool,
+    ) -> Result<HashMap<Uuid, Message>, PpdcError> {
+        if trace_ids.is_empty() { return Ok(HashMap::new()); }
+        let mut conn = pool.get()?;
+        let rows = messages::table
+            .filter(sql::<Bool>("messages.id IN (
+                SELECT DISTINCT ON (reply.trace_id) reply.id FROM messages reply
+                JOIN messages request ON request.id=reply.reply_to_message_id
+                WHERE reply.recipient_user_id=")
+                .bind::<SqlUuid,_>(reader)
+                .sql(" AND reply.trace_id=ANY(").bind::<Array<SqlUuid>,_>(trace_ids)
+                .sql(") AND reply.message_type='MENTOR_REPLY' AND reply.processing_state='PROCESSED'
+                AND btrim(reply.content)<>''
+                AND request.message_type='SHARED_TRACE_TRANSLATION_REQUEST'
+                AND request.sender_user_id=reply.recipient_user_id
+                AND request.recipient_user_id=reply.sender_user_id
+                AND request.trace_id=reply.trace_id
+                AND NOT EXISTS(SELECT 1 FROM user_blocks b
+                    WHERE (b.blocker_user_id=reply.sender_user_id AND b.blocked_user_id=reply.recipient_user_id)
+                    OR (b.blocked_user_id=reply.sender_user_id AND b.blocker_user_id=reply.recipient_user_id))
+                ORDER BY reply.trace_id,reply.created_at DESC,reply.id DESC
+            )"))
+            .select((
+                messages::id,messages::sender_user_id,messages::recipient_user_id,
+                messages::landscape_analysis_id,messages::journal_id,messages::trace_id,
+                messages::post_id,messages::reply_to_message_id,messages::message_type,
+                messages::processing_state,messages::title,messages::content,messages::attachment_type,
+                sql::<Nullable<Text>>("attachment::text"),sql::<Nullable<Text>>("metadata::text"),
+                sql::<Text>("suggested_actions::text"),messages::seen_at,messages::created_at,messages::updated_at,
+            ))
+            .load::<MessageTuple>(&mut conn)?;
+        let messages=rows.into_iter().map(tuple_to_message).collect();
+        Ok(MessageReaction::hydrate_messages_with_conn(reader,messages,&mut conn)?
+            .into_iter().filter_map(|message|message.trace_id.map(|id|(id,message))).collect())
+    }
+
     pub fn count_recent_unread_received_messages(
         user_id: Uuid,
         created_since: NaiveDateTime,

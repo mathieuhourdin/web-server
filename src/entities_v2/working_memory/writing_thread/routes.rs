@@ -52,6 +52,7 @@ pub async fn traces(
     let owner = actor(&session)?;
     let (mut items, total) = persist::traces(owner, id, p.offset, p.limit, &pool)?;
     crate::entities_v2::trace::continuation::hydrate_continuations(owner, items.iter_mut(), &pool)?;
+    crate::entities_v2::trace::translation::hydrate_translations(owner, items.iter_mut(), &pool)?;
     Ok(Json(PaginatedResponse::new(items, p, total)))
 }
 pub async fn for_journal(

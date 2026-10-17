@@ -96,6 +96,89 @@ async fn continuation_previews_are_batched_and_follow_reader_permissions() {
 
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn translation_messages_are_batched_personal_and_completed_only() {
+    use axum::extract::{Extension,Path,Query};
+    use crate::entities_v2::{
+        message::{Message,MessageReaction,NewMessage,NewMessageDto,MessageProcessingState},
+        session::Session,
+        trace::{routes::{get_trace_route,get_traces_for_journal_route},translation::hydrate_translations},
+        journal::routes::get_journal_audience_user_traces_route,
+        feed::hydrate::{find_feed_items_paginated,find_my_feed_items_paginated},
+    };
+    let f=Fixture::new();
+    let (trace,post)=f.publication();
+    let (without_translation,_)=f.publication();
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO relationships(requester_user_id,target_user_id,relationship_type,status,accepted_at)
+         VALUES('{}','{}','FOLLOW','ACCEPTED',NOW())",f.stranger,f.owner)).unwrap();
+    let post=Post::find_full(post,&f.pool).unwrap();
+    for user in [f.reader,f.stranger] {
+        PostGrant::create_or_update(&post,f.owner,NewPostGrantDto {
+            grantee_user_id:Some(user),grantee_scope:None,access_level:None },&f.pool).unwrap();
+    }
+    fn reply(f:&Fixture,reader:Uuid,mentor:Uuid,trace:Uuid,kind:&str,state:MessageProcessingState,content:&str)->Message {
+        let mut payload=serde_json::json!({"recipient_user_id":mentor,"trace_id":trace,"message_type":kind,"content":"Translate please"});
+        if kind=="shared_trace_translation_request" {
+            payload["attachment_type"]=serde_json::json!("shared_trace_translation");
+            payload["attachment"]=serde_json::json!({"target_locale":"fr"});
+        }
+        let request=NewMessage::new(serde_json::from_value::<NewMessageDto>(payload).unwrap(),reader).create(&f.pool).unwrap();
+        let mut response=NewMessage::new(serde_json::from_value::<NewMessageDto>(serde_json::json!({
+            "recipient_user_id":reader,"trace_id":trace,"reply_to_message_id":request.id,
+            "message_type":"mentor_reply","content":content})).unwrap(),mentor);
+        response.processing_state=state;
+        response.create(&f.pool).unwrap()
+    }
+    let old=reply(&f,f.reader,f.stranger,trace,"shared_trace_translation_request",MessageProcessingState::Processed,"Old translation");
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE messages SET created_at=NOW()-INTERVAL '1 hour' WHERE id='{}'",old.id)).unwrap();
+    let latest=reply(&f,f.reader,f.stranger,trace,"shared_trace_translation_request",MessageProcessingState::Processed,"Personal mentor comments\n\nFull translation");
+    let other=reply(&f,f.stranger,f.owner,trace,"shared_trace_translation_request",MessageProcessingState::Processed,"Other reader private translation");
+    for state in [MessageProcessingState::Pending,MessageProcessingState::Running,MessageProcessingState::Failed] {
+        reply(&f,f.reader,f.stranger,trace,"shared_trace_translation_request",state,"Not completed");
+    }
+    reply(&f,f.reader,f.stranger,trace,"shared_trace_explanation_request",MessageProcessingState::Processed,"Not a translation");
+    reply(&f,f.reader,f.stranger,trace,"shared_trace_translation_request",MessageProcessingState::Processed,"  ");
+    MessageReaction::upsert(latest.id,f.reader,"❤️",&f.pool).unwrap();
+    let mut items=vec![Trace::find_full_trace(trace,&f.pool).unwrap(),
+        Trace::find_full_trace(trace,&f.pool).unwrap(),Trace::find_full_trace(without_translation,&f.pool).unwrap()];
+    hydrate_translations(f.reader,items.iter_mut(),&f.pool).unwrap();
+    assert_eq!(items[0].translation_message.as_ref().unwrap().id,latest.id);
+    assert_eq!(items[1].translation_message.as_ref().unwrap().id,latest.id);
+    assert!(items[2].translation_message.is_none());
+    assert!(items[0].translation_message.as_ref().unwrap().reactions[0].reacted_by_me);
+    hydrate_translations(f.owner,items.iter_mut(),&f.pool).unwrap();
+    assert!(items.iter().all(|t|t.translation_message.is_none()));
+    hydrate_translations(f.stranger,items.iter_mut(),&f.pool).unwrap();
+    assert_eq!(items[0].translation_message.as_ref().unwrap().id,other.id);
+    let session=|user| {let mut session=Session::anonymous();session.user_id=Some(user);session};
+    let read=get_trace_route(Extension(f.pool.clone()),Extension(session(f.reader)),Path(trace)).await.unwrap().0;
+    assert_eq!(read.translation_message.unwrap().id,latest.id);
+    let query=serde_json::from_value(serde_json::json!({})).unwrap();
+    let journal=get_traces_for_journal_route(Extension(f.pool.clone()),Extension(session(f.reader)),Path(f.journal),Query(query)).await.unwrap().0;
+    assert_eq!(journal.items.iter().find(|t|t.id==trace).unwrap().translation_message.as_ref().unwrap().id,latest.id);
+    let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    assert_eq!(feed.iter().find(|t|t.source_id==trace).unwrap().translation_message.as_ref().unwrap().id,latest.id);
+    let (own_feed,_)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    assert!(own_feed.iter().all(|item|item.translation_message.is_none()));
+    let query=serde_json::from_value(serde_json::json!({})).unwrap();
+    let inspection=get_journal_audience_user_traces_route(Extension(f.pool.clone()),Extension(session(f.owner)),Path((f.journal,f.reader)),Query(query)).await.unwrap().0;
+    assert!(inspection.items.iter().all(|item|item.trace.translation_message.is_none()));
+    assert!(!serde_json::to_string(&inspection).unwrap().contains("Personal mentor comments"));
+    assert!(Message::find(latest.id,&f.pool).unwrap().seen_at.is_none());
+    f.pool.get().unwrap().batch_execute(&format!(
+        "INSERT INTO user_blocks(blocker_user_id,blocked_user_id) VALUES('{}','{}')",f.reader,f.stranger)).unwrap();
+    let read=get_trace_route(Extension(f.pool.clone()),Extension(session(f.reader)),Path(trace)).await.unwrap().0;
+    assert!(read.translation_message.is_none());
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE post_grants SET status='REVOKED' WHERE post_id='{}' AND grantee_user_id='{}'",post.id,f.reader)).unwrap();
+    assert!(get_trace_route(Extension(f.pool.clone()),Extension(session(f.reader)),Path(trace)).await.is_err());
+}
+
+
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn publication_notification_selection_preserves_access_and_filters_delivery() {
     use axum::extract::{Extension,Json,Path};
     use crate::entities_v2::{session::Session,post::{notifications::{NotificationOptions,PublicationNotificationMode as Mode,get_notification_settings},

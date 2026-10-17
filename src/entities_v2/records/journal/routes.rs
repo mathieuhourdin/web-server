@@ -130,6 +130,11 @@ pub async fn get_journal_audience_user_traces_route(
         items.iter_mut().map(|i| &mut i.trace),
         &pool,
     )?;
+    crate::entities_v2::trace::translation::hydrate_translations(
+        user_id,
+        items.iter_mut().map(|i| &mut i.trace),
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
 

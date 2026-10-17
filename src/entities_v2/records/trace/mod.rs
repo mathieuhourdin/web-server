@@ -8,6 +8,7 @@ pub mod model;
 pub mod persist;
 pub mod routes;
 pub mod transcription;
+pub(crate) mod translation;
 mod transcription_pipeline;
 
 pub use heatmap::get_user_heatmap_route;

@@ -148,6 +148,8 @@ pub struct Trace {
     pub continues_trace_id: Option<Uuid>,
     #[serde(default)]
     pub continues_from: Option<super::continuation::TraceContinuationPreview>,
+    #[serde(default)]
+    pub translation_message: Option<crate::entities_v2::message::Message>,
     pub parent_trace_id: Option<Uuid>,
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub title: String,
@@ -199,6 +201,8 @@ pub struct TraceListItem {
     pub continues_trace_id: Option<Uuid>,
     #[serde(default)]
     pub continues_from: Option<super::continuation::TraceContinuationPreview>,
+    #[serde(default)]
+    pub translation_message: Option<crate::entities_v2::message::Message>,
     pub parent_trace_id: Option<Uuid>,
     pub is_encrypted: Option<bool>,
     pub encryption_metadata: Option<Value>,
@@ -239,6 +243,8 @@ pub struct TraceReadableView {
     pub continues_trace_id: Option<Uuid>,
     #[serde(default)]
     pub continues_from: Option<super::continuation::TraceContinuationPreview>,
+    #[serde(default)]
+    pub translation_message: Option<crate::entities_v2::message::Message>,
     pub parent_trace_id: Option<Uuid>,
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub is_encrypted: Option<bool>,
@@ -321,6 +327,7 @@ impl From<TraceRow> for Trace {
             derived_from_trace_id: row.derived_from_trace_id,
             continues_trace_id: row.continues_trace_id,
             continues_from: None,
+            translation_message: None,
             parent_trace_id: row.parent_trace_id,
             // TraceRow is only used by collection queries that explicitly exclude
             // complements; complement hydration goes through `hydrate.rs`.
@@ -895,6 +902,7 @@ impl Trace {
                         derived_from_trace_id,
                         continues_trace_id,
                         continues_from: None,
+                        translation_message: None,
                         parent_trace_id,
                         complement_audience_mode: None,
                         title,
@@ -1166,6 +1174,7 @@ impl Trace {
                     derived_from_trace_id,
                     continues_trace_id,
                     continues_from: None,
+                    translation_message: None,
                     parent_trace_id,
                     is_encrypted: Some(is_encrypted),
                     encryption_metadata: encryption_metadata
@@ -1313,6 +1322,7 @@ impl Trace {
                     derived_from_trace_id: None,
                     continues_trace_id: None,
                     continues_from: None,
+                    translation_message: None,
                     parent_trace_id: None,
                     is_encrypted: None,
                     encryption_metadata: None,
