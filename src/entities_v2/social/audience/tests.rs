@@ -1692,9 +1692,11 @@ fn shared_journal_follower_automation_uses_audiences_only() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
-fn public_links_use_sensitivity_independently_of_grants() {
+async fn public_links_use_sensitivity_independently_of_grants() {
+    use crate::entities_v2::records::journal_share_link::{JournalShareLink, get_shared_journal_traces_route};
+    use axum::extract::{Extension, Path, Query};
     let f = Fixture::new();
     let (tid, normal) = f.publication();
     assert!(
@@ -1720,6 +1722,17 @@ fn public_links_use_sensitivity_independently_of_grants() {
             .1,
         0
     );
+    let journal = Journal::find_full(f.journal, &f.pool).unwrap();
+    let scoped = JournalShareLink::create(&journal, f.owner,
+        chrono::Utc::now() + chrono::Duration::hours(1), Some(normal), &f.pool).unwrap();
+    let token = url::Url::parse(&scoped.url).unwrap().query_pairs()
+        .find(|(key, _)| key == "token").unwrap().1.into_owned();
+    let response = get_shared_journal_traces_route(Extension(f.pool.clone()), Path(scoped.id),
+        Query(serde_json::from_value(serde_json::json!({"token": token})).unwrap())).await.unwrap().0;
+    assert_eq!(response.items.len(), 1, "Explicit links can read sensitive writing");
+    assert_eq!(response.items[0].id, tid);
+    assert!(JournalShareLink::create(&journal, f.reader,
+        chrono::Utc::now() + chrono::Duration::hours(1), Some(normal), &f.pool).is_err());
     f.pool
         .get()
         .unwrap()

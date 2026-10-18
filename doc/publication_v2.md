@@ -160,7 +160,9 @@ The frontend should display future-default review and history review as separate
 Public share links should use trace title and trace content for trace-backed views.
 
 Public share link filtering is separate from authenticated `post_grants` access and should be conservative:
-- Exclude sensitive traces unless explicitly allowed by the share-link design.
+
+- Whole-journal links exclude sensitive traces. Explicit single-trace links
+  (`scoped_post_id`) may include a sensitive trace chosen by its owner.
 - Exclude records whose source or post state is archived.
 - Avoid leaking owner-only fields.
 

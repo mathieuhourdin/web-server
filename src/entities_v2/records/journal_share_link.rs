@@ -19,7 +19,7 @@ use crate::entities_v2::{
     journal::{Journal, JournalStatus},
     post::{Post, PostStatus},
     session::Session,
-    trace::{Trace, TraceSharingSensitivity},
+    trace::Trace,
     user::User,
 };
 use crate::environment;
@@ -485,13 +485,8 @@ impl JournalShareLink {
                 "Scoped post must belong to the shared journal".to_string(),
             ));
         }
-        if trace.sharing_sensitivity != TraceSharingSensitivity::Normal {
-            return Err(PpdcError::new(
-                400,
-                ErrorType::ApiError,
-                "Cannot scope a journal share link to a sensitive trace".to_string(),
-            ));
-        }
+        // Explicit single-trace sharing is an owner decision, including sensitive
+        // writing. Whole-journal links still filter sensitive traces separately.
         if trace.status != crate::entities_v2::trace::TraceStatus::Finalized {
             return Err(PpdcError::new(
                 400,
