@@ -4,6 +4,8 @@ mod outbound_email;
 mod routes;
 mod templates;
 
+pub(crate) use templates::trace_url;
+
 pub use client::{send_email, SendEmailRequest, SentEmail};
 pub use digest::{
     generate_shared_journal_daily_digests, post_generate_shared_journal_daily_digests_route,

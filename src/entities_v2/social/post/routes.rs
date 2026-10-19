@@ -149,12 +149,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
     let owner = User::find(&post.user_id, pool)?;
     let recipient_ids = PostGrant::find_active_recipient_user_ids_for_post(post, pool)?;
     let recipients = User::find_many(&recipient_ids, pool)?;
-    let journal_url = format!(
-        "{}/me/journals/{}?post_id={}",
-        crate::environment::get_app_base_url().trim_end_matches('/'),
-        journal.id,
-        post.id
-    );
+    let journal_url = mailer::trace_url(trace.id);
     let owner_display_name = owner.display_name();
     let scheduled_at = Some(Utc::now().naive_utc());
     let mut email_ids = Vec::new();
@@ -280,12 +275,7 @@ fn enqueue_trace_mention_notification_emails(
 
     let owner = User::find(&post.user_id, pool)?;
     let recipients = User::find_many(recipient_ids, pool)?;
-    let journal_url = format!(
-        "{}/me/journals/{}?post_id={}",
-        crate::environment::get_app_base_url().trim_end_matches('/'),
-        journal.id,
-        post.id
-    );
+    let journal_url = mailer::trace_url(trace.id);
     let owner_display_name = owner.display_name();
     let scheduled_at = Some(Utc::now().naive_utc());
     let mut email_ids = Vec::new();

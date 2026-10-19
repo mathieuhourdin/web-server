@@ -312,15 +312,15 @@ fn build_shared_journal_digest_items(
         .map(|user| (user.id, user))
         .collect::<HashMap<_, _>>();
 
-    let app_base_url = environment::get_app_base_url()
-        .trim_end_matches('/')
-        .to_string();
     let mut items = Vec::new();
 
     for visible_post in visible_posts
         .into_iter()
         .take(SHARED_JOURNAL_DIGEST_MAX_ITEMS)
     {
+        let Some(trace_id) = visible_post.post.source_trace_id else {
+            continue;
+        };
         let Some(journal) = journals.get(&visible_post.journal_id) else {
             continue;
         };
@@ -339,10 +339,7 @@ fn build_shared_journal_digest_items(
         items.push(SharedJournalDigestEmailItem {
             owner_display_name: owner.display_name(),
             journal_title: journal.title.clone(),
-            journal_url: format!(
-                "{}/me/journals/{}?post_id={}",
-                app_base_url, journal.id, visible_post.post.id
-            ),
+            journal_url: super::trace_url(trace_id),
             publishing_date_label,
             excerpt: build_trace_excerpt(&visible_post.content, 180),
         });

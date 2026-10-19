@@ -97,6 +97,29 @@ fn app_url(path: &str) -> String {
     )
 }
 
+/// Canonical web/mobile link; opening it still requires the recipient's access.
+pub(crate) fn trace_url(trace_id: uuid::Uuid) -> String {
+    trace_url_with_base(&environment::get_app_base_url(), trace_id)
+}
+
+fn trace_url_with_base(base_url: &str, trace_id: uuid::Uuid) -> String {
+    format!("{}/traces/{trace_id}", base_url.trim_end_matches('/'))
+}
+
+#[cfg(test)]
+mod trace_link_tests {
+    #[test]
+    fn trace_email_links_match_the_web_and_mobile_route() {
+        let id = uuid::Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
+        for base in ["https://app.hupo.fr", "https://app.hupo.fr/"] {
+            assert_eq!(super::trace_url_with_base(base, id),
+                "https://app.hupo.fr/traces/00000000-0000-4000-8000-000000000001");
+        }
+        assert_eq!(super::trace_url_with_base("http://localhost:5173/", id),
+            "http://localhost:5173/traces/00000000-0000-4000-8000-000000000001");
+    }
+}
+
 fn append_contact_preferences_footer(template: EmailTemplate) -> EmailTemplate {
     let preferences_url = app_url("/me/user#email-preferences");
     let footer_title = "Réglez vos préférences de contact par mail";
