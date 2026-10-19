@@ -309,6 +309,7 @@ fn hydrate_feed_candidates(
                 continues_from: None,
                 translation_message: None,
                 language_code: projection.language_code.clone(),
+                plume: Default::default(),
                 original_source_id: projection.original_source_id,
                 original_author_user_id: projection.original_author_user_id,
                 original_author_display_name: projection
@@ -350,6 +351,9 @@ fn hydrate_feed_candidates(
         viewer_user_id, items.iter_mut(), pool,
     )?;
     crate::entities_v2::trace::translation::hydrate_translations(
+        viewer_user_id, items.iter_mut(), pool,
+    )?;
+    crate::entities_v2::trace::plume::hydrate(
         viewer_user_id, items.iter_mut(), pool,
     )?;
     Ok(items)

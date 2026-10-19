@@ -152,6 +152,8 @@ pub struct Trace {
     pub translation_message: Option<crate::entities_v2::message::Message>,
     #[serde(default)]
     pub language_code: Option<String>,
+    #[serde(flatten, default)]
+    pub plume: super::plume::PlumeSummary,
     pub parent_trace_id: Option<Uuid>,
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub title: String,
@@ -207,6 +209,8 @@ pub struct TraceListItem {
     pub translation_message: Option<crate::entities_v2::message::Message>,
     #[serde(default)]
     pub language_code: Option<String>,
+    #[serde(flatten, default)]
+    pub plume: super::plume::PlumeSummary,
     pub parent_trace_id: Option<Uuid>,
     pub is_encrypted: Option<bool>,
     pub encryption_metadata: Option<Value>,
@@ -251,6 +255,8 @@ pub struct TraceReadableView {
     pub translation_message: Option<crate::entities_v2::message::Message>,
     #[serde(default)]
     pub language_code: Option<String>,
+    #[serde(flatten, default)]
+    pub plume: super::plume::PlumeSummary,
     pub parent_trace_id: Option<Uuid>,
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub is_encrypted: Option<bool>,
@@ -363,6 +369,7 @@ impl From<TraceRow> for Trace {
             created_at: row.created_at,
             updated_at: row.updated_at,
             language_code: row.language_code,
+            plume: Default::default(),
             mentions: vec![],
             source_assets: vec![],
         }
@@ -941,6 +948,7 @@ impl Trace {
                         created_at,
                         updated_at,
                         language_code,
+                        plume: Default::default(),
                         mentions: vec![],
                         source_assets: vec![],
                     },
@@ -1216,6 +1224,7 @@ impl Trace {
                     created_at,
                     updated_at,
                     language_code,
+                    plume: Default::default(),
                 },
             )
             .collect();
@@ -1365,6 +1374,7 @@ impl Trace {
                     created_at,
                     updated_at,
                     language_code,
+                    plume: Default::default(),
                 },
             )
             .collect::<Vec<_>>();

@@ -135,6 +135,11 @@ pub async fn get_journal_audience_user_traces_route(
         items.iter_mut().map(|i| &mut i.trace),
         &pool,
     )?;
+    crate::entities_v2::trace::plume::hydrate(
+        user_id,
+        items.iter_mut().map(|i| &mut i.trace),
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }
 
@@ -364,13 +369,6 @@ pub async fn post_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::create(payload, user_id, &pool)?;
-    for (owner, aid, reader) in
-        crate::entities_v2::audience::persist::create_missing_members_for_existing_followers(
-            &journal, &pool,
-        )?
-    {
-        crate::entities_v2::audience::routes::notify(owner, reader, aid, true, 0, pool.clone());
-    }
     Ok(Json(journal))
 }
 
@@ -419,13 +417,6 @@ pub async fn put_journal_route(
     }
 
     let journal = journal.update(&pool)?;
-    for (owner, aid, reader) in
-        crate::entities_v2::audience::persist::create_missing_members_for_existing_followers(
-            &journal, &pool,
-        )?
-    {
-        crate::entities_v2::audience::routes::notify(owner, reader, aid, true, 0, pool.clone());
-    }
     Ok(Json(journal))
 }
 

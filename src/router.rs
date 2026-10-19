@@ -216,6 +216,8 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
+        .api_route("/traces", "/:id/plume", put(trace::plume::put).delete(trace::plume::delete))
+        .api_route("/traces", "/:id/plumes", get(trace::plume::readers))
         .api_route(
             "/traces",
             "/:id/writing_threads",
@@ -904,6 +906,7 @@ pub fn create_router() -> Router {
         .api_route("/feed", "/", get(feed::get_feed_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
+        .api_route("/me", "/audience/:user_id/traces", get(trace::access::for_reader))
         .api_route("/me", "/account", delete(user::delete_my_account_route))
         .api_route(
             "/me",

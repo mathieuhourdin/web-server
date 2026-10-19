@@ -125,12 +125,9 @@ impl WalDay {
                 .set((
                     wal_days::input.eq(input),
                     wal_days::input_revision.eq(current.input_revision + 1),
-                    wal_days::compiled_operational.eq::<Option<String>>(None),
-                    wal_days::compiled_thematic.eq::<Option<String>>(None),
-                    wal_days::compiled_at.eq::<Option<NaiveDateTime>>(None),
                     wal_days::compilation_due_at
                         .eq(schedule_compilation
-                            .then(|| Utc::now().naive_utc() + Duration::minutes(1))),
+                            .then(|| Utc::now().naive_utc() + Duration::minutes(5))),
                     wal_days::compilation_last_error.eq::<Option<String>>(None),
                     wal_days::updated_at.eq(diesel::dsl::now),
                 ))

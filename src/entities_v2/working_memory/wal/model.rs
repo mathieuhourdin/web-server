@@ -251,6 +251,7 @@ pub struct WalResponse {
     pub date: NaiveDate,
     pub content: String,
     pub entries: Vec<WalEntryResponse>,
+    pub automation: WalCompilationAutomation,
 }
 
 impl WalResponse {
@@ -260,6 +261,7 @@ impl WalResponse {
             date: wal.local_date,
             content: wal.input.clone(),
             entries: entries.into_iter().map(WalEntryResponse::from).collect(),
+            automation: wal.compilation_automation(),
         }
     }
 }
@@ -271,6 +273,7 @@ pub struct WalDayResponse {
     pub content: String,
     pub operational: Option<WalCompilation>,
     pub thematic: Option<WalCompilation>,
+    pub automation: WalCompilationAutomation,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -339,6 +342,7 @@ impl From<WalDay> for WalDayResponse {
             content: wal.input,
             operational: views.operational,
             thematic: views.thematic,
+            automation: views.automation,
             created_at: wal.created_at,
             updated_at: wal.updated_at,
         }

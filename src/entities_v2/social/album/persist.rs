@@ -198,6 +198,7 @@ fn album_item_view_from_trace_and_post(
             continues_from: None,
             translation_message: None,
             language_code: trace.language_code,
+            plume: Default::default(),
             journal_id: trace.journal_id,
             title: trace.title,
             subtitle: trace.subtitle,
@@ -217,6 +218,7 @@ fn album_item_view_from_trace_and_post(
             continues_from: None,
             translation_message: None,
             language_code: trace.language_code,
+            plume: Default::default(),
             journal_id: trace.journal_id,
             title: trace.title,
             subtitle: trace.subtitle,
@@ -545,6 +547,11 @@ impl Album {
             pool,
         )?;
     crate::entities_v2::trace::translation::hydrate_translations(
+            viewer_user_id,
+            items.iter_mut().map(|i| &mut i.trace),
+            pool,
+        )?;
+    crate::entities_v2::trace::plume::hydrate(
             viewer_user_id,
             items.iter_mut().map(|i| &mut i.trace),
             pool,

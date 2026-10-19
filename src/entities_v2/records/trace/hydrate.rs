@@ -106,6 +106,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         created_at,
         updated_at,
         language_code,
+        plume: Default::default(),
         mentions: vec![],
         source_assets: vec![],
     }

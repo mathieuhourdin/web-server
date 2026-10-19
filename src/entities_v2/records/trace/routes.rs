@@ -135,6 +135,7 @@ fn attach_metadata_to_traces(
     }
     super::continuation::hydrate_continuations(viewer, traces.iter_mut(), pool)?;
     super::translation::hydrate_translations(viewer, traces.iter_mut(), pool)?;
+    super::plume::hydrate(viewer, traces.iter_mut(), pool)?;
     Ok(traces)
 }
 
@@ -318,6 +319,7 @@ pub async fn get_trace_complements_route(
         &pool,
     )?;
     super::translation::hydrate_translations(user_id, traces.iter_mut(), &pool)?;
+    super::plume::hydrate(user_id, traces.iter_mut(), &pool)?;
     Ok(Json(PaginatedResponse::new(traces, pagination, total)))
 }
 
@@ -698,6 +700,7 @@ fn attach_seen_state_to_trace_list_items(
 ) -> Result<Vec<TraceListItem>, PpdcError> {
     super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
     super::translation::hydrate_translations(user_id, items.iter_mut(), pool)?;
+    super::plume::hydrate(user_id, items.iter_mut(), pool)?;
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -748,6 +751,7 @@ fn attach_seen_state_to_trace_readable_views(
 ) -> Result<Vec<TraceReadableView>, PpdcError> {
     super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
     super::translation::hydrate_translations(user_id, items.iter_mut(), pool)?;
+    super::plume::hydrate(user_id, items.iter_mut(), pool)?;
     let trace_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
     let last_seen_at_by_trace_id =
         UserPostState::find_last_seen_at_by_user_and_trace_ids(user_id, &trace_ids, pool)?;
@@ -786,6 +790,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         continues_from: None,
         translation_message: None,
         language_code: trace.language_code,
+        plume: Default::default(),
         complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
             Some(trace.is_encrypted)
@@ -1291,6 +1296,7 @@ pub async fn get_journal_draft_route(
     let mut draft = get_current_journal_draft(&journal, user_id, &pool)?;
     super::continuation::hydrate_continuations(user_id, std::iter::once(&mut draft), &pool)?;
     super::translation::hydrate_translations(user_id, std::iter::once(&mut draft), &pool)?;
+    super::plume::hydrate(user_id, std::iter::once(&mut draft), &pool)?;
     Ok(Json(draft))
 }
 

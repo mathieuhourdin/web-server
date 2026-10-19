@@ -5,6 +5,8 @@ pub mod heatmap;
 pub mod hydrate;
 pub mod llm_qualify;
 pub mod language;
+pub mod access;
+pub mod plume;
 pub mod model;
 pub mod persist;
 pub mod routes;

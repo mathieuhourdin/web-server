@@ -43,5 +43,10 @@ pub async fn get_trace_search_route(
         items.iter_mut().map(|i| &mut i.trace),
         &pool,
     )?;
+    crate::entities_v2::trace::plume::hydrate(
+        user_id,
+        items.iter_mut().map(|i| &mut i.trace),
+        &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }

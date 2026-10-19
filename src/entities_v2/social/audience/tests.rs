@@ -24,6 +24,93 @@ fn validates_audience_names() {
 
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn social_wal_plumes_and_access_audit() {
+    use crate::entities_v2::{trace::{plume, access}, trace_mention::TraceMention,
+        feed::hydrate::{find_feed_items_paginated,find_my_feed_items_paginated}, session::Session};
+    use axum::extract::{Extension, Path, Query};
+    let f=Fixture::new();
+    let (trace,post)=f.publication();
+    let (mentioned,_)=f.publication();
+    PostGrant::create_or_update(&Post::find_full(post,&f.pool).unwrap(),f.owner,
+        NewPostGrantDto { grantee_user_id:Some(f.reader),grantee_scope:None,access_level:None },&f.pool).unwrap();
+    TraceMention::replace_active(mentioned,&[f.reader],&f.pool).unwrap();
+    let session=|user| { let mut s=Session::anonymous();s.user_id=Some(user);s };
+    for _ in 0..2 {
+        let result=plume::put(Extension(f.pool.clone()),Extension(session(f.reader)),Path(trace)).await.unwrap().0;
+        assert_eq!(result.plume_count,1); assert!(result.plumed_by_me);
+    }
+    assert!(plume::put(Extension(f.pool.clone()),Extension(session(f.stranger)),Path(trace)).await.is_err());
+    assert!(plume::put(Extension(f.pool.clone()),Extension(session(f.owner)),Path(trace)).await.is_err());
+    let params=||serde_json::from_value(serde_json::json!({"limit":1,"offset":100})).unwrap();
+    let out=plume::readers(Extension(f.pool.clone()),Extension(session(f.owner)),Path(trace),Query(params())).await.unwrap().0;
+    assert_eq!(out.total,1); assert!(out.items.is_empty());
+    assert!(plume::readers(Extension(f.pool.clone()),Extension(session(f.reader)),Path(trace),Query(params())).await.is_err());
+    let audit=access::for_reader(Extension(f.pool.clone()),Extension(session(f.owner)),Path(f.reader),Query(params())).await.unwrap().0;
+    assert_eq!(audit.total,2); assert!(audit.items.is_empty());
+    let normal=||serde_json::from_value(serde_json::json!({})).unwrap();
+    let audit=access::for_reader(Extension(f.pool.clone()),Extension(session(f.owner)),Path(f.reader),Query(normal())).await.unwrap().0;
+    assert_eq!(audit.items.len(),2);
+    assert_eq!(audit.items.iter().find(|t|t.id==trace).unwrap().plume.plume_count,1);
+    let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    assert!(feed.iter().find(|i|i.source_id==trace).unwrap().plume.plumed_by_me);
+    let (feed,_)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    assert_eq!(feed.iter().find(|i|i.source_id==trace).unwrap().plume.plume_count,1);
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE post_grants SET status='REVOKED' WHERE post_id='{post}'")).unwrap();
+    let audit=access::for_reader(Extension(f.pool.clone()),Extension(session(f.owner)),Path(f.reader),Query(normal())).await.unwrap().0;
+    assert_eq!(audit.total,1);
+    let removed=plume::delete(Extension(f.pool.clone()),Extension(session(f.reader)),Path(trace)).await.unwrap().0;
+    assert_eq!(removed.plume_count,0);assert!(!removed.plumed_by_me);
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+async fn social_wal_follow_and_shared_journals_never_enroll_audiences() {
+    use crate::entities_v2::{session::Session,relationship::{Relationship,NewRelationshipDto,RelationshipStatus},
+        journal::{routes::{post_journal_route,put_journal_route},JournalSharingMode}};
+    use axum::{extract::{Extension,Path},Json};
+    let f=Fixture::new();
+    let mut s=Session::anonymous();s.user_id=Some(f.owner);
+    let journal=post_journal_route(Extension(f.pool.clone()),Extension(s.clone()),Json(
+        serde_json::from_value(serde_json::json!({"title":"Shared","sharing_mode":"shared"})).unwrap())).await.unwrap().0;
+    let _ = put_journal_route(Extension(f.pool.clone()),Extension(s),Path(f.journal),Json(
+        serde_json::from_value(serde_json::json!({"sharing_mode":"shared"})).unwrap())).await.unwrap();
+    assert_eq!(journal.sharing_mode,JournalSharingMode::Shared);
+    let aid=persist::create(f.owner,"Explicit only",&f.pool).unwrap().id;
+    persist::replace_defaults(f.owner,f.journal,&[aid],&f.pool).unwrap();
+    let (request,_)=Relationship::create_request(f.stranger,NewRelationshipDto {
+        target_user_id:f.owner,relationship_type:None },&f.pool).unwrap();
+    Relationship::update_status(request.id,f.owner,RelationshipStatus::Accepted,&f.pool).unwrap();
+    assert!(persist::member(&mut f.pool.get().unwrap(),aid,f.stranger).is_err());
+    assert!(persist::member(&mut f.pool.get().unwrap(),aid,f.reader).is_err());
+    assert!(crate::schema::audiences::table.filter(crate::schema::audiences::owner_user_id.eq(f.owner))
+        .count().get_result::<i64>(&mut f.pool.get().unwrap()).unwrap()==1);
+}
+
+#[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn social_wal_five_minute_debounce_retains_previous_compilation() {
+    use crate::entities_v2::wal::model::{WalDay,WalProjection,WalResponse};
+    let f=Fixture::new();
+    let date=chrono::Utc::now().date_naive();
+    let now=chrono::Utc::now().naive_utc();
+    let (first,_)=WalDay::append(f.owner,date,"First entry".into(),true,&f.pool).unwrap();
+    let delay=first.compilation_due_at.unwrap()-now;
+    assert!(delay.num_seconds()>=299 && delay.num_seconds()<=302);
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE wal_days SET compiled_operational='Previous view',compiled_thematic='Previous themes',compiled_at=NOW(),
+        compilation_due_at=NOW()-INTERVAL '1 minute' WHERE id='{}'",first.id)).unwrap();
+    let (next,_)=WalDay::append(f.owner,date,"Second entry".into(),true,&f.pool).unwrap();
+    assert!(next.compilation_due_at.unwrap()>first.compilation_due_at.unwrap());
+    assert_eq!(next.compiled_operational.as_deref(),Some("Previous view"));
+    assert!(next.compiled_at.is_some());
+    let response=WalResponse::new(&next,next.entries(&f.pool).unwrap());
+    assert_eq!(response.automation.scheduled_for,next.compilation_due_at);
+    assert_eq!(WalProjection::compilation_views(&next,&f.pool).unwrap().operational.unwrap().content,"Previous view");
+    assert!(WalDay::claim_due_compilations(5,600,&f.pool).unwrap().is_empty());
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn trace_languages_persist_without_ai_and_reach_readers() {
     use crate::entities_v2::{
         feed::hydrate::{find_feed_items_paginated, find_my_feed_items_paginated},
@@ -1627,69 +1714,6 @@ async fn mobile_update_policy_is_publicly_readable_but_admin_writable() {
         400
     );
     assert_eq!(read().await.unwrap().0.policy.minimum_required.build, 40);
-}
-
-#[test]
-#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
-fn shared_journal_follower_automation_uses_audiences_only() {
-    let f = Fixture::new();
-    f.pool
-        .get()
-        .unwrap()
-        .batch_execute(&format!(
-            "UPDATE journals SET sharing_mode='SHARED' WHERE id='{}';",
-            f.journal
-        ))
-        .unwrap();
-    let (_, historical) = f.publication();
-    let journal = Journal::find_full(f.journal, &f.pool).unwrap();
-    let pending =
-        persist::create_missing_members_for_existing_followers(&journal, &f.pool).unwrap();
-    assert_eq!(pending.len(), 1);
-    let (_, aid, reader) = pending[0];
-    assert_eq!(reader, f.reader);
-    assert!(
-        !f.can_read(historical),
-        "Auto membership must not share history"
-    );
-    assert!(
-        persist::create_missing_members_for_existing_followers(&journal, &f.pool)
-            .unwrap()
-            .is_empty()
-    );
-    let (_, future) = f.publication();
-    assert!(!f.can_read(future));
-    persist::attach(f.owner, aid, future, &f.pool).unwrap();
-    assert!(f.can_read(future));
-    persist::remove_member(f.owner, aid, reader, true, false, &f.pool).unwrap();
-    let mut conn = f.pool.get().unwrap();
-    assert!(
-        persist::create_members_for_new_follower_pair_with_conn(f.owner, reader, &mut conn)
-            .unwrap()
-            .is_empty()
-    );
-    drop(conn);
-    assert!(
-        !persist::member(&mut f.pool.get().unwrap(), aid, reader)
-            .unwrap()
-            .future_access_enabled
-    );
-    persist::replace_defaults(f.owner, f.journal, &[], &f.pool).unwrap();
-    assert!(
-        persist::create_missing_members_for_existing_followers(&journal, &f.pool)
-            .unwrap()
-            .is_empty()
-    );
-    use crate::schema::journal_sharing_policies;
-    let policies = journal_sharing_policies::table
-        .filter(journal_sharing_policies::journal_id.eq(f.journal))
-        .count()
-        .get_result::<i64>(&mut f.pool.get().unwrap())
-        .unwrap();
-    assert_eq!(
-        policies, 0,
-        "No retired policies may be created by automation"
-    );
 }
 
 #[tokio::test]

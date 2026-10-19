@@ -193,6 +193,10 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("POST","/automation/demo_users/:id/delegations")=>"Issue a one-hour scoped session acting as this agent's demo user on explicitly allowed platform routes.",
         ("GET","/automation/contract")=>"Read the agent-specific contract, limits and delegated-route allowlist. Documentation never expands permissions.",
         ("GET","/me/capabilities")=>"Inspect the automation credential's effective scopes, sandbox rules and limits.",
+        ("GET","/me/audience/:user_id/traces")=>"Audit which of your finalized traces this reader can currently access across journals. Owner only; limit/offset pagination with an accurate total.",
+        ("PUT","/traces/:id/plume")=>"Give one plume to accessible finalized writing by someone else. Idempotent; no request body. Returns plume_count and plumed_by_me.",
+        ("DELETE","/traces/:id/plume")=>"Retract your own plume, including after access revocation; inaccessible trace totals are not disclosed.",
+        ("GET","/traces/:id/plumes")=>"List people who gave a plume, newest first, with pagination. Trace author only.",
         ("PUT","/traces/:id/post")=>"Prepare/update the caller's trace publication. Configure grants/audiences before publishing. Supports all/none/selected notification targeting; a published-to-published update does not resend publication alerts.",
         ("GET","/posts/:id/notification_settings")=>"Read notification mode and selected recipient IDs; only the publisher can read the selection.",
         ("POST","/traces/:id/messages")=>"Send a trace-linked message. For a mentor question about an owned draft, save first and provide expected_version_integer; the server snapshots draft/thread context. Human messages require an accepted relationship.",
@@ -203,8 +207,8 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("POST","/writing_threads/:id/generation")=>"Queue generation of a writing thread's display information, subject to AI consent and quota.",
         ("GET","/feed")=>"Read accessible feed items; publication notification suppression does not remove items from this feed.",
         ("GET","/me/feed")=>"Read the caller's own feed, including batched seen-by previews for trace cards.",
-        ("POST","/me/wal")=>"Append raw input to today's Flux/WAL; new days are created lazily and do not overwrite previous days.",
-        ("GET","/me/wal")=>"Read today's Flux/WAL without replacing previous days.",
+        ("POST","/me/wal")=>"Append raw input to today's Flux/WAL and reschedule automatic compilation for five minutes after this append. Returns automation.scheduled_for.",
+        ("GET","/me/wal")=>"Read today's Flux/WAL, including its persisted compilation schedule, without replacing previous days.",
         ("GET","/me/wals")=>"List the caller's persisted daily Flux/WAL records with pagination.",
         ("POST","/me/wal/compilation")=>"Request operational and thematic WAL projections; AI-consent and usage limits apply.",
         _=>return format!("{fallback}. Consult the linked contracts for request fields, response shapes and domain-specific behavior."),
@@ -242,6 +246,8 @@ pub async fn schema() -> Json<Value> {
                     "automation"
                 } else if path.contains("writing_threads") {
                     "writing_threads"
+                } else if path.contains("/plume") || path.starts_with("/me/audience/") || path.starts_with("/me/wal") {
+                    "social_updates"
                 } else if path == "/traces/:id/messages" {
                     "draft_mentor"
                 } else if path == "/traces/:id/post" || path.ends_with("/notification_settings") {
@@ -265,7 +271,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -283,7 +289,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -302,6 +308,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "publication_notifications" => include_str!("../doc/publication_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
         "trace_languages" => include_str!("../doc/trace_languages.md"),
+        "social_updates" => include_str!("../doc/social_and_wal_updates.md"),
         _ => return (StatusCode::NOT_FOUND, "Unknown documentation topic").into_response(),
     };
     (
