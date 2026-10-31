@@ -6,6 +6,9 @@ DROP TRIGGER delete_publication_emails ON post_publications;
 DROP FUNCTION delete_publication_emails();
 DROP TRIGGER zz_record_post_publish_transition ON posts;
 DROP FUNCTION record_post_publish_transition();
+DROP TRIGGER validate_trace_publication ON posts;
+CREATE TRIGGER validate_trace_publication BEFORE INSERT OR UPDATE ON posts
+    FOR EACH ROW EXECUTE FUNCTION validate_trace_publication();
 DROP TRIGGER materialize_post_publication_event ON post_publications;
 DROP FUNCTION materialize_post_publication_event();
 DROP TRIGGER validate_post_publication_event ON post_publications;

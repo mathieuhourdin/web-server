@@ -40,6 +40,13 @@ ALTER TABLE posts ADD COLUMN last_publication_id UUID REFERENCES post_publicatio
 ALTER TABLE posts ADD COLUMN last_publication_at TIMESTAMP;
 CREATE INDEX posts_last_publication_idx ON posts(last_publication_at DESC,id DESC) WHERE status='PUBLISHED';
 
+-- Metadata-only updates must not reacquire source locks or revalidate legacy
+-- content. Source/authority mutations retain the existing validation, without
+-- introducing a post->trace lock inversion for explicit publication events.
+DROP TRIGGER validate_trace_publication ON posts;
+CREATE TRIGGER validate_trace_publication BEFORE INSERT OR UPDATE OF source_trace_id,user_id,status,audience_source_post_id ON posts
+    FOR EACH ROW EXECUTE FUNCTION validate_trace_publication();
+
 -- Compatibility columns on posts remain preferences for older clients only.
 -- Historical recipients are unknown unless a successful delivery was recorded.
 INSERT INTO post_publications(post_id,published_at,notification_mode,notification_user_ids,dispatch_started_at)
