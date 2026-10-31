@@ -804,12 +804,13 @@ pub(crate) async fn post_published_notification(
     );
     data.insert(
         "published_at".to_string(),
-        post.publishing_date
+        post.last_publication_at.or(post.publishing_date)
             .unwrap_or(post.created_at)
             .and_utc()
             .timestamp_millis()
             .to_string(),
     );
+    if let Some(id)=post.last_publication_id { data.insert("publication_id".into(),id.to_string()); }
     if let Some(asset_id) = projection.cover_image_asset_id {
         if let Some(url) = signed_asset_url(asset_id, pool, "post_cover_signed_url_failed").await {
             data.insert("cover_image_url".to_string(), url);

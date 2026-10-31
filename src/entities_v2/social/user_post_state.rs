@@ -242,7 +242,7 @@ impl UserPostState {
                         PARTITION BY ups.post_id
                         ORDER BY ups.last_seen_at DESC
                     ) AS seen_rank
-                FROM posts p
+                FROM social_posts p
                 INNER JOIN user_post_states ups ON ups.post_id = p.id
                 INNER JOIN users u ON u.id = ups.user_id
                 WHERE p.user_id = $1

@@ -3,6 +3,7 @@ pub mod hydrate;
 pub mod model;
 pub mod notifications;
 pub mod persist;
+pub mod publication;
 pub mod routes;
 
 pub use hydrate::DigestVisiblePost;

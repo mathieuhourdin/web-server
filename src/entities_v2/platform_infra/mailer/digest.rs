@@ -422,6 +422,8 @@ fn create_shared_journal_digest_for_user(
             pool,
         )?
     };
+    let targeted_ids=if weekly{HashSet::new()}else{crate::entities_v2::post::publication::targeted_posts(recipient.id,
+        &visible_posts.iter().map(|p|p.post.id).collect::<Vec<_>>(),pool)?};
     let seen_trace_ids = if weekly {
         UserPostState::find_last_seen_at_by_user_and_trace_ids(recipient.id, &trace_ids, pool)?
             .into_keys()
@@ -432,6 +434,7 @@ fn create_shared_journal_digest_for_user(
     let visible_posts = visible_posts
         .into_iter()
         .filter(|visible_post| {
+            if !weekly && !targeted_ids.contains(&visible_post.post.id) {return false;}
             if !visible_post.post.notification_allows(recipient.id) {
                 return false;
             }

@@ -1,0 +1,32 @@
+# Insert these server blocks INSIDE the http {} block in
+# /home/mathieu/nginx.conf on the production VM. Do not replace that file:
+# its existing API, application and static-site servers must remain.
+# Provision /etc/letsencrypt/live/blog.hupo.fr/ BEFORE enabling the TLS block.
+# The existing /etc/letsencrypt container mount already makes it available.
+# Set BLOG_BASE_URL=https://blog.hupo.fr on the backend.
+server {
+    listen 80;
+    server_name blog.hupo.fr;
+    # Keep an ACME challenge location here if required by your certbot setup.
+    location / { return 301 https://blog.hupo.fr$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name blog.hupo.fr;
+    ssl_certificate /etc/letsencrypt/live/blog.hupo.fr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/blog.hupo.fr/privkey.pem;
+
+    location / {
+        # Trailing slashes intentionally map /<slug> to /blog/<slug>.
+        proxy_pass http://web-server:3000/blog/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # This hostname only serves public pages, never authenticated API calls.
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        # Publication changes must not leave cached public HTML/redirects.
+        proxy_cache off;
+    }
+}

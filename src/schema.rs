@@ -516,6 +516,8 @@ diesel::table! {
 }
 
 diesel::table! {
+    // Intentional updatable view: legacy social code must not see channel posts.
+    #[sql_name = "social_posts"]
     posts (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -534,6 +536,8 @@ diesel::table! {
         audience_source_post_id -> Nullable<Uuid>,
         notification_mode -> Text,
         notification_user_ids -> Array<Uuid>,
+        last_publication_id -> Nullable<Uuid>,
+        last_publication_at -> Nullable<Timestamp>,
     }
 }
 

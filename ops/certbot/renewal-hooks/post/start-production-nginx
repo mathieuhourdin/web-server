@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 cd /home/mathieu
-/usr/bin/docker compose up -d nginx
+/usr/bin/docker compose up -d --no-deps nginx

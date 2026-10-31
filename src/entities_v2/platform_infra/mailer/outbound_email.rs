@@ -358,6 +358,23 @@ async fn process_claimed_email(
     }
     let id = email.id;
 
+    if email.resource_type.as_deref()==Some("POST_PUBLICATION") {
+        #[derive(QueryableByName)]
+        struct Allowed { #[diesel(sql_type=diesel::sql_types::Bool)] allowed:bool }
+        let allowed=sql_query("SELECT EXISTS(SELECT 1 FROM post_publication_recipients r JOIN post_publications e ON e.id=r.publication_id
+            WHERE e.id=$1 AND r.user_id=$2 AND trace_publication_readable(e.post_id,r.user_id)) AS allowed")
+            .bind::<diesel::sql_types::Nullable<SqlUuid>,_>(email.resource_id)
+            .bind::<diesel::sql_types::Nullable<SqlUuid>,_>(email.recipient_user_id)
+            .get_result::<Allowed>(&mut pool.get()?)?.allowed;
+        if !allowed {
+            diesel::update(outbound_emails::table.filter(outbound_emails::id.eq(id)))
+                .set((outbound_emails::status.eq("SUPPRESSED"),outbound_emails::last_error.eq(Some("Publication access revoked")),
+                    outbound_emails::lock_owner.eq::<Option<Uuid>>(None),outbound_emails::lock_until.eq::<Option<NaiveDateTime>>(None),outbound_emails::updated_at.eq(Utc::now().naive_utc())))
+                .execute(&mut pool.get()?)?;
+            return OutboundEmail::find(id,pool);
+        }
+    }
+
     let result = match email.provider_enum() {
         OutboundEmailProvider::Resend => send_email(SendEmailRequest {
             from: email.from_email.clone(),

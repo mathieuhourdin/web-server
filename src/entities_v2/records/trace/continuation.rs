@@ -74,7 +74,7 @@ pub(crate) fn hydrate_continuations<'a, T: ContinuationTarget + 'a>(
                         OR (b.blocked_user_id=parent.user_id AND b.blocker_user_id=$2))
                     AND (EXISTS(SELECT 1 FROM trace_mentions m WHERE m.trace_id=parent.id
                         AND m.mentioned_user_id=$2 AND m.removed_at IS NULL)
-                        OR EXISTS(SELECT 1 FROM posts p WHERE p.source_trace_id=parent.id
+                        OR EXISTS(SELECT 1 FROM social_posts p WHERE p.source_trace_id=parent.id
                             AND trace_publication_readable(p.id,$2)))
                 )
             )

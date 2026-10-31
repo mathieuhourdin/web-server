@@ -461,7 +461,7 @@ impl Trace {
                 SELECT 1 FROM traces parent WHERE parent.id = traces.parent_trace_id
                   AND parent.user_id = '{viewer_user_id}'
             ) OR EXISTS (
-                SELECT 1 FROM posts p WHERE p.source_trace_id = traces.id
+                SELECT 1 FROM social_posts p WHERE p.source_trace_id = traces.id
                   AND trace_publication_readable(p.id, '{viewer_user_id}')
             ))"
         );

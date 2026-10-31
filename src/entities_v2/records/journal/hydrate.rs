@@ -79,7 +79,7 @@ const JOURNAL_ACCESS_PATHS_CTE: &str = r#"
                CASE WHEN post.user_id = trace.user_id THEN 'direct_post_grant'
                     ELSE 'reshare' END::text AS access_via
         FROM journal_traces trace
-        INNER JOIN posts post
+        INNER JOIN social_posts post
             ON post.source_trace_id = trace.id
            AND post.status = 'PUBLISHED'
         INNER JOIN post_grants grant_row

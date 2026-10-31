@@ -124,6 +124,9 @@ fn access(method: &str, path: &str) -> (&'static str, Value) {
     if path.starts_with("/automation/") || path == "/me/capabilities" {
         return ("Automation credential and effective scopes. Management requires the agent key, not a delegated session.",json!([{"agentBearer":[]}]));
     }
+    if path.starts_with("/blog/") {
+        return ("Anonymous public blog HTML or image. Blog, publication and current source must be publicly available.",json!([]));
+    }
     if path.starts_with("/shared/") {
         return (
             "Public journal-sharing token, validated by the handler.",
@@ -244,6 +247,10 @@ pub async fn schema() -> Json<Value> {
             let topic =
                 if path.starts_with("/automation/") || path.starts_with("/admin/automation/") {
                     "automation"
+                } else if path.contains("/publications") || path.contains("/versions") {
+                    "post_publications"
+                } else if path.starts_with("/blogs") || path.starts_with("/blog/") {
+                    "blogs"
                 } else if path.contains("writing_threads") {
                     "writing_threads"
                 } else if path.contains("/plume") || path.starts_with("/me/audience/") || path.starts_with("/me/wal") {
@@ -271,7 +278,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -289,7 +296,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -309,6 +316,8 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
         "trace_languages" => include_str!("../doc/trace_languages.md"),
         "trace_chronology" => include_str!("../doc/trace_chronology.md"),
+        "blogs" => include_str!("../doc/blogs.md"),
+        "post_publications" => include_str!("../doc/post_publications.md"),
         "social_updates" => include_str!("../doc/social_and_wal_updates.md"),
         _ => return (StatusCode::NOT_FOUND, "Unknown documentation topic").into_response(),
     };

@@ -14,6 +14,7 @@ use tower_http::{
 use crate::api_schema::{self, delete, get, patch, post, put, DocumentedRoutes};
 use crate::entities_v2::platform_infra::automation;
 use crate::entities_v2::platform_infra::platform_settings;
+use crate::entities_v2::social::blog;
 use crate::entities_v2::{
     album, analysis_summary, asset, audience, content_report, device, document, element,
     error::{ErrorType, PpdcError},
@@ -224,6 +225,8 @@ pub fn create_router() -> Router {
             get(writing_thread::routes::for_trace),
         )
         .api_route("/traces", "/drafts", get(trace::get_trace_drafts_route))
+        .api_route("/traces", "/:id/versions", get(post::publication::get_trace_versions).post(post::publication::archive_trace))
+        .api_route("/traces", "/:id/versions/:version_id", get(post::publication::get_trace_version))
         .api_route(
             "/traces",
             "/search",
@@ -344,6 +347,8 @@ pub fn create_router() -> Router {
             put(audience::routes::put_post_audience).delete(audience::routes::delete_post_audience),
         )
         .api_route("/posts", "/drafts", get(post::get_post_drafts_route))
+        .api_route("/posts", "/:id/publications", get(post::publication::get_publications).post(post::publication::post_publication))
+        .api_route("/posts", "/:id/publications/:publication_id/recipients", get(post::publication::get_recipients))
         .api_route("/posts", "/feed", get(feed::get_feed_route))
         .api_route(
             "/posts",
@@ -1027,6 +1032,11 @@ pub fn create_router() -> Router {
         .nest("/admin", admin_router)
         .nest("/traces", traces_router)
         .nest("/posts", posts_router)
+        .nest(
+            "/blogs",
+            blog::management_router().layer(from_fn(sessions_service::auth_middleware_custom)),
+        )
+        .nest("/blog", blog::public_router())
         .nest("/albums", albums_router)
         .nest("/assets", assets_router)
         .nest("/documents", documents_router)

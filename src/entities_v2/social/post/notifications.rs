@@ -97,7 +97,7 @@ impl Post {
                 count: i64,
             }
             let eligible = diesel::sql_query("SELECT COUNT(*)::bigint AS count FROM users u
-                JOIN posts p ON p.id=$1
+                JOIN social_posts p ON p.id=$1
                 LEFT JOIN traces t ON t.id=p.source_trace_id
                 LEFT JOIN traces parent ON parent.id=t.parent_trace_id
                 WHERE u.id=ANY($2) AND u.id<>p.user_id AND automation_same_sandbox(p.user_id,u.id)
@@ -141,6 +141,13 @@ pub async fn get_notification_settings(
             ErrorType::ApiError,
             "Post not found".to_string(),
         ));
+    }
+    if let Some(id)=post.last_publication_id {
+        let event=super::publication::find(id,&pool)?;
+        return Ok(axum::Json(NotificationSettings {
+            notification_mode:PublicationNotificationMode::from_db(&event.notification_mode),
+            notification_user_ids:event.notification_user_ids,
+        }));
     }
     Ok(axum::Json(NotificationSettings {
         notification_mode: post.notification_mode,

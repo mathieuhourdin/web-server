@@ -1,6 +1,6 @@
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use diesel::prelude::*;
-use diesel::sql_types::{Array, Nullable, Timestamp, Uuid as SqlUuid};
+use diesel::sql_types::{Array, Nullable, Uuid as SqlUuid};
 use std::collections::HashSet;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -12,7 +12,6 @@ use crate::entities_v2::{
     landscape_analysis::LandscapeAnalysis,
     message::{Message, MessageReaction},
     post::{Post, PostStatus},
-    post_grant::PostGrant,
     relationship::Relationship,
     trace::Trace,
     user::{User, UserPrincipalType},
@@ -546,13 +545,11 @@ pub fn record_publication_push_delivery(
 ) -> Result<(), PpdcError> {
     let mut conn = pool.get()?;
     diesel::sql_query(
-        "INSERT INTO publication_push_deliveries (post_id, recipient_user_id, publishing_date)
-        VALUES ($1, $2, $3) ON CONFLICT (post_id, recipient_user_id)
-        DO UPDATE SET publishing_date = EXCLUDED.publishing_date, sent_at = NOW()",
+        "UPDATE post_publication_recipients SET push_status='SENT',push_sent_at=NOW()
+        WHERE publication_id=$1 AND user_id=$2",
     )
-    .bind::<SqlUuid, _>(post.id)
+    .bind::<Nullable<SqlUuid>, _>(post.last_publication_id)
     .bind::<SqlUuid, _>(recipient_user_id)
-    .bind::<Nullable<Timestamp>, _>(post.publishing_date)
     .execute(&mut conn)?;
     Ok(())
 }
@@ -572,9 +569,8 @@ pub fn successfully_pushed_publication_ids(
     }
     let mut conn = pool.get()?;
     Ok(diesel::sql_query(
-        "SELECT d.post_id FROM publication_push_deliveries d JOIN posts p ON p.id = d.post_id
-        WHERE d.recipient_user_id = $1 AND d.post_id = ANY($2)
-        AND d.publishing_date IS NOT DISTINCT FROM p.publishing_date",
+        "SELECT p.id AS post_id FROM social_posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
+        WHERE r.user_id=$1 AND p.id=ANY($2) AND r.push_status='SENT'",
     )
     .bind::<SqlUuid, _>(recipient_user_id)
     .bind::<Array<SqlUuid>, _>(post_ids)
@@ -611,7 +607,7 @@ pub fn spawn_post_published_push_notification(
             }
         };
 
-        let recipient_ids = match PostGrant::find_active_recipient_user_ids_for_post(&post, &pool) {
+        let recipient_ids = match crate::entities_v2::post::publication::eligible_recipients(&post, &pool) {
             Ok(recipient_ids) => recipient_ids,
             Err(err) => {
                 warn!(
@@ -643,13 +639,18 @@ pub fn spawn_post_published_push_notification(
         let mut email_exclusions = excluded_recipient_ids.clone();
         for recipient in recipients.into_iter().filter(|recipient| {
             recipient.id != post.user_id
-                && post.notification_allows(recipient.id)
                 && recipient.principal_type == UserPrincipalType::Human
                 && !excluded_recipient_ids.contains(&recipient.id)
         }) {
             let Some(notification) = notification.as_ref() else {
                 continue;
             };
+            let Some(event_id)=post.last_publication_id else {continue};
+            match crate::entities_v2::post::publication::claim_push(event_id,recipient.id,&pool) {
+                Ok(true)=>{},
+                Ok(false)=>continue,
+                Err(err)=>{warn!(target:"notification",publication_id=%event_id,error=%err.message,"publication_push_claim_failed");continue;}
+            }
             match push::send_to_mobile_user(recipient.id, notification.clone(), &pool).await {
                 Ok(result) => {
                     if result.any_sent() {
@@ -659,6 +660,8 @@ pub fn spawn_post_published_push_notification(
                         {
                             warn!(target: "notification", post_id = %post.id, recipient_user_id = %recipient.id, error = %err.message, "publication_push_delivery_record_failed");
                         }
+                    } else if let Err(err)=crate::entities_v2::post::publication::finish_push(event_id,recipient.id,false,&pool) {
+                        warn!(target:"notification",publication_id=%event_id,error=%err.message,"publication_push_state_failed");
                     }
                     info!(
                         target: "notification",
@@ -670,6 +673,7 @@ pub fn spawn_post_published_push_notification(
                     );
                 }
                 Err(err) => {
+                    let _=crate::entities_v2::post::publication::finish_push(event_id,recipient.id,false,&pool);
                     warn!(
                         target: "notification",
                         post_id = %post.id,

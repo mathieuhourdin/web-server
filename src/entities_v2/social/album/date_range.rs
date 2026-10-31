@@ -33,7 +33,7 @@ impl Album {
              FROM albums a JOIN album_items i ON i.album_id = a.id JOIN traces t ON t.id = i.trace_id
              WHERE a.id = ANY($1) AND a.ordering_mode = 'CHRONOLOGICAL' AND t.finalized_at IS NOT NULL
                AND (a.owner_user_id = $2 OR (a.visibility = 'PUBLISHED' AND EXISTS (
-                   SELECT 1 FROM posts p WHERE p.source_trace_id = t.id AND trace_publication_readable(p.id, $2)
+                   SELECT 1 FROM social_posts p WHERE p.source_trace_id = t.id AND trace_publication_readable(p.id, $2)
                )))
              GROUP BY a.id",
         ).bind::<Array<SqlUuid>, _>(ids).bind::<SqlUuid, _>(viewer)

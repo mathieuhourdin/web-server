@@ -603,7 +603,7 @@ pub async fn get_suggested_users_route(
         SELECT u.id AS user_id
         FROM users u
         LEFT JOIN mutual_follows mf ON mf.candidate_user_id = u.id
-        LEFT JOIN posts p
+        LEFT JOIN social_posts p
           ON p.user_id = u.id
           AND p.status = 'PUBLISHED'
           AND COALESCE(p.publishing_date, p.created_at) >= $2
@@ -748,7 +748,7 @@ pub async fn get_closest_followers_route(
                     WHERE ue.occurred_at >= NOW() - INTERVAL '30 days'
                 ) AS recent_post_open_count
             FROM follower_candidates fc
-            LEFT JOIN posts p
+            LEFT JOIN social_posts p
                 ON p.user_id = fc.follower_user_id
                AND p.status = 'PUBLISHED'
             LEFT JOIN usage_events ue

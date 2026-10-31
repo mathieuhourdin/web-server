@@ -46,7 +46,7 @@ pub fn with_trace_counts(
     let rows = diesel::sql_query(format!(
         "SELECT pa.audience_id,count(*)::bigint AS trace_count
          FROM post_audiences pa JOIN audiences a ON a.id=pa.audience_id
-         JOIN posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
+         JOIN social_posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
          WHERE pa.audience_id=ANY($1) AND p.user_id=a.owner_user_id AND {ELIGIBLE_TRACE_PUBLICATION}
          GROUP BY pa.audience_id"
     ))
@@ -351,7 +351,7 @@ const HISTORY_TRACE_READABLE: &str = "(t.user_id=$4 OR (
         OR (b.blocker_user_id=$4 AND b.blocked_user_id=t.user_id))
     AND (EXISTS (SELECT 1 FROM trace_mentions m WHERE m.trace_id=t.id
         AND m.mentioned_user_id=$4 AND m.removed_at IS NULL)
-        OR EXISTS (SELECT 1 FROM posts visible WHERE visible.source_trace_id=t.id
+        OR EXISTS (SELECT 1 FROM social_posts visible WHERE visible.source_trace_id=t.id
             AND trace_publication_readable(visible.id,$4)))))";
 
 #[derive(QueryableByName)]
@@ -374,7 +374,7 @@ fn history_candidates(
 ) -> Result<Vec<HistoryCandidate>, PpdcError> {
     Ok(diesel::sql_query(format!("SELECT p.id AS post_id,t.id AS trace_id,
         {HISTORY_TRACE_READABLE} AS has_access,t.sharing_sensitivity='NORMAL' AS is_normal
-        FROM post_audiences pa JOIN posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
+        FROM post_audiences pa JOIN social_posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
         WHERE pa.audience_id=$1 AND p.user_id=$2 AND t.trace_type='USER_TRACE'
           AND trace_publication_eligible(p.id,p.user_id) AND trace_publication_eligible(p.id,$4)
           AND COALESCE(p.publishing_date,p.created_at)<=$3 AND pa.created_at<=$3"))
@@ -574,7 +574,7 @@ pub fn list_posts(
         .map(|uid| member(&mut conn, aid, uid).map(|m| m.history_cutoff_at))
         .transpose()?;
     let reader = review_user.unwrap_or(owner);
-    let predicate=format!(" FROM post_audiences pa JOIN posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
+    let predicate=format!(" FROM post_audiences pa JOIN social_posts p ON p.id=pa.post_id JOIN traces t ON t.id=p.source_trace_id
         WHERE pa.audience_id=$1 AND p.user_id=$2 AND {ELIGIBLE_TRACE_PUBLICATION}
           AND ($3::timestamp IS NULL OR (COALESCE(p.publishing_date,p.created_at)<=$3 AND pa.created_at<=$3))");
     let count = diesel::sql_query(format!("SELECT count(*)::bigint AS count{predicate}"))
@@ -593,7 +593,7 @@ pub fn list_posts(
 
 fn publication(conn: &mut PgConnection, owner: Uuid, pid: Uuid) -> Result<(), PpdcError> {
     let ids = diesel::sql_query(
-        "SELECT p.id FROM posts p JOIN traces t ON t.id=p.source_trace_id
+        "SELECT p.id FROM social_posts p JOIN traces t ON t.id=p.source_trace_id
         WHERE p.id=$1 AND p.user_id=$2 AND t.trace_type='USER_TRACE' FOR UPDATE OF p",
     )
     .bind::<SqlUuid, _>(pid)

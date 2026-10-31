@@ -28,6 +28,10 @@ pub struct Post {
     pub post_type: PostType,
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
+    #[serde(default)]
+    pub last_publication_id: Option<Uuid>,
+    #[serde(default)]
+    pub last_publication_at: Option<NaiveDateTime>,
     pub status: PostStatus,
     pub notification_mode: super::notifications::PublicationNotificationMode,
     // Recipient selection is private to the publisher; use the owner-only settings route.
