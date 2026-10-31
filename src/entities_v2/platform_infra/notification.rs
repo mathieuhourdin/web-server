@@ -255,6 +255,39 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
     });
 }
 
+pub fn spawn_trace_plume_received_notification(trace: Trace, actor_user_id: Uuid, pool: DbPool) {
+    if trace.user_id == actor_user_id {
+        return;
+    }
+    tokio::spawn(async move {
+        let result = async {
+            let recipient = User::find(&trace.user_id, &pool)?;
+            if recipient.principal_type != UserPrincipalType::Human
+                || crate::entities_v2::user_block::UserBlock::exists_in_either_direction(
+                    actor_user_id, recipient.id, &pool,
+                )?
+            {
+                return Ok::<_, PpdcError>(push::PushDispatchResult::default());
+            }
+            let notification = push::trace_plume_received_notification(&trace, actor_user_id, &pool).await?;
+            push::send_to_mobile_user(recipient.id, notification, &pool).await
+        }.await;
+        match result {
+            Ok(result) => info!(
+                target: "notification", trace_id = %trace.id, actor_user_id = %actor_user_id,
+                recipient_user_id = %trace.user_id,
+                push_attempted_count = result.attempted_count, push_sent_count = result.sent_count,
+                "trace_plume_push_dispatch_completed"
+            ),
+            Err(err) => warn!(
+                target: "notification", trace_id = %trace.id, actor_user_id = %actor_user_id,
+                recipient_user_id = %trace.user_id, error = %err.message,
+                "trace_plume_push_dispatch_failed"
+            ),
+        }
+    });
+}
+
 pub fn spawn_message_reaction_notification(
     message: Message,
     reaction: MessageReaction,

@@ -28,7 +28,36 @@ false). These same two fields are included on authenticated trace reads, journal
 and search collections, feeds, album trace items and writing-thread traces.
 Hydration is batched, not a query per trace. Non-trace feed cards use zero/false.
 Plumes belong to the source trace, independently of its posts. They grant no
-access; revocation does not erase a past plume. No plume notifications yet.
+access; revocation does not erase a past plume.
+
+### Push notification
+
+A newly inserted plume sends a best-effort mobile push to the trace author.
+Repeated PUTs and removals do not notify. Removing and re-adding a plume sends
+a new notification. No email fallback. Blocked pairs and demo recipients are
+excluded using the existing notification protections.
+
+FCM data values are strings:
+
+```json
+{
+  "event_type": "trace_plume_received",
+  "event": "trace_plume_received",
+  "trace_id": "trace-uuid",
+  "actor_user_id": "reader-uuid",
+  "actor_display_name": "Mathieu",
+  "actor_avatar_url": "https://...",
+  "trace_title": "Une promenade",
+  "url": "https://app.hupo.fr/traces/trace-uuid"
+}
+```
+
+`event_type` is the standard routing key; `event` is an equivalent alias.
+`actor_avatar_url` is omitted when unavailable and supports signed avatar URLs.
+The title is `Mathieu vous a laissé une plume`; the body is the trace title or
+`Sur votre trace` when untitled. iOS uses the trace ID for `thread-id` and the
+existing `mutable-content: 1` payload. Clients should handle this event and open
+the provided trace link; Android uses the existing data-message notification path.
 
 ## Explicit audience membership only
 

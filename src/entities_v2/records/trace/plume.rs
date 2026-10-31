@@ -144,7 +144,7 @@ pub async fn put(
     }
     // The unique key makes concurrent/repeated PUTs idempotent, without a
     // long-lived source-row lock or nested pool connections.
-    diesel::sql_query(
+    let inserted = diesel::sql_query(
         "INSERT INTO trace_plumes(trace_id,user_id)
         SELECT id,$2 FROM traces WHERE id=$1 AND status='FINALIZED' AND NOT is_encrypted
         ON CONFLICT(trace_id,user_id) DO NOTHING",
@@ -152,6 +152,11 @@ pub async fn put(
     .bind::<SqlUuid, _>(id)
     .bind::<SqlUuid, _>(viewer)
     .execute(&mut pool.get()?)?;
+    if inserted > 0 {
+        crate::entities_v2::platform_infra::notification::spawn_trace_plume_received_notification(
+            trace, viewer, pool.clone(),
+        );
+    }
     summary(id, viewer, &pool).map(Json)
 }
 

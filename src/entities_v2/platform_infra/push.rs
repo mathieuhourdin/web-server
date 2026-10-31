@@ -515,6 +515,51 @@ pub(crate) async fn message_received_notification(
     })
 }
 
+pub(crate) async fn trace_plume_received_notification(
+    trace: &Trace,
+    actor_user_id: Uuid,
+    pool: &DbPool,
+) -> Result<PushNotification, PpdcError> {
+    let actor = User::find(&actor_user_id, pool)?;
+    let avatar_url = sender_avatar_url(&actor, pool).await;
+    Ok(build_trace_plume_notification(
+        trace.id, &trace.title, actor.id, &actor.display_name(), avatar_url,
+        super::mailer::trace_url(trace.id),
+    ))
+}
+
+fn build_trace_plume_notification(
+    trace_id: Uuid,
+    trace_title: &str,
+    actor_user_id: Uuid,
+    actor_display_name: &str,
+    actor_avatar_url: Option<String>,
+    url: String,
+) -> PushNotification {
+    let mut data = HashMap::from([
+        ("event_type".into(), "trace_plume_received".into()),
+        ("event".into(), "trace_plume_received".into()),
+        ("trace_id".into(), trace_id.to_string()),
+        ("actor_user_id".into(), actor_user_id.to_string()),
+        ("actor_display_name".into(), actor_display_name.to_string()),
+        ("trace_title".into(), trace_title.to_string()),
+        ("url".into(), url),
+    ]);
+    if let Some(avatar_url) = actor_avatar_url {
+        data.insert("actor_avatar_url".into(), avatar_url);
+    }
+    PushNotification {
+        title: format!("{actor_display_name} vous a laissé une plume"),
+        body: if trace_title.trim().is_empty() {
+            "Sur votre trace".into()
+        } else {
+            trace_title.to_string()
+        },
+        data,
+        thread_id: Some(trace_id.to_string()),
+    }
+}
+
 pub(crate) async fn message_reaction_notification(
     message: &Message,
     reaction: &MessageReaction,
@@ -937,6 +982,29 @@ mod tests {
         let value = serde_json::to_value(payload).unwrap();
         assert_eq!(value["thread-id"], "user-id");
         assert_eq!(value["mutable-content"], 1);
+    }
+
+    #[test]
+    fn plume_push_has_trace_link_actor_and_ios_grouping() {
+        let trace = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let url = format!("https://app.hupo.fr/traces/{trace}");
+        let payload = build_trace_plume_notification(trace, "Une promenade", actor, "Mathieu",
+            Some("https://example.invalid/avatar.jpg".into()), url.clone());
+        assert_eq!(payload.data["event_type"], "trace_plume_received");
+        assert_eq!(payload.data["event"], "trace_plume_received");
+        assert_eq!(payload.data["trace_id"], trace.to_string());
+        assert_eq!(payload.data["actor_user_id"], actor.to_string());
+        assert_eq!(payload.data["actor_display_name"], "Mathieu");
+        assert_eq!(payload.data["actor_avatar_url"], "https://example.invalid/avatar.jpg");
+        assert_eq!(payload.data["trace_title"], "Une promenade");
+        assert_eq!(payload.data["url"], url);
+        assert_eq!(payload.thread_id, Some(trace.to_string()));
+        assert_eq!(payload.title, "Mathieu vous a laissé une plume");
+        assert_eq!(payload.body, "Une promenade");
+        let untitled = build_trace_plume_notification(trace, " ", actor, "Mathieu", None, url);
+        assert_eq!(untitled.body, "Sur votre trace");
+        assert!(!untitled.data.contains_key("actor_avatar_url"));
     }
 
     #[test]
