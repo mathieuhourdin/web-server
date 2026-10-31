@@ -1,17 +1,11 @@
-use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use regex::Regex;
 use uuid::Uuid;
 
 use crate::entities_v2::trace::NewTrace;
 
 use super::model::ImportBlock;
-
-fn year_from_month(month: &str) -> i32 {
-    match month {
-        "janvier" | "fevrier" | "février" => 2026,
-        _ => 2025,
-    }
-}
 
 fn month_number(month: &str) -> Option<u32> {
     match month {
@@ -57,7 +51,14 @@ fn is_export_generated_date_line(line: &str) -> bool {
 
 fn get_block_date(line: &str) -> Option<String> {
     let normalized_line = strip_markdown_heading_prefix(line);
-    let date_time_regex = Regex::new(r"(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2})").expect("valid regex");
+    let zoned_regex =
+        Regex::new(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
+            .expect("valid regex");
+    if let Some(date) = zoned_regex.find(normalized_line) {
+        return Some(date.as_str().to_string());
+    }
+    let date_time_regex =
+        Regex::new(r"(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?)").expect("valid regex");
     let date_regex = Regex::new(r"(\d{4}-\d{2}-\d{2})").expect("valid regex");
 
     if let Some(date_time) = date_time_regex.captures(normalized_line) {
@@ -71,10 +72,7 @@ fn get_block_date(line: &str) -> Option<String> {
     let day = captures.name("day")?.as_str().parse::<u32>().ok()?;
     let month_name = captures.name("month")?.as_str().to_lowercase();
     let month = month_number(&month_name)?;
-    let year = captures
-        .name("year")
-        .and_then(|y| y.as_str().parse::<i32>().ok())
-        .unwrap_or_else(|| year_from_month(&month_name));
+    let year = captures.name("year")?.as_str().parse::<i32>().ok()?;
 
     if let (Some(hour), Some(minute)) = (captures.name("hour"), captures.name("minute")) {
         let hour = hour.as_str().parse::<u32>().ok()?;
@@ -90,6 +88,11 @@ fn get_block_date(line: &str) -> Option<String> {
 
 fn extract_date(value: Option<&str>) -> Option<NaiveDateTime> {
     let value = value?;
+    for format in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"] {
+        if let Ok(date) = NaiveDateTime::parse_from_str(value, format) {
+            return Some(date);
+        }
+    }
     if let Ok(date_time) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M") {
         return Some(date_time);
     }
@@ -99,9 +102,30 @@ fn extract_date(value: Option<&str>) -> Option<NaiveDateTime> {
     None
 }
 
+pub(super) fn is_date_heading(line: &str) -> bool {
+    get_block_date(line).is_some()
+        || french_date_regex().is_match(strip_markdown_heading_prefix(line))
+}
+
+pub(super) fn imported_date(block: &ImportBlock, timezone: Tz) -> Option<NaiveDateTime> {
+    let raw = block.date.as_deref()?;
+    if let Ok(date) = DateTime::parse_from_rfc3339(raw) {
+        return Some(date.naive_utc());
+    }
+    let local = extract_date(Some(raw))?;
+    // Older Hupo exports wrote UTC timestamps without an explicit offset.
+    if is_export_generated_date_line(&block.header) {
+        return Some(local);
+    }
+    timezone
+        .from_local_datetime(&local)
+        .single()
+        .map(|date| date.with_timezone(&Utc).naive_utc())
+}
+
 fn is_start_of_block(line: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with('#') || get_block_date(trimmed).is_some()
+    trimmed.starts_with('#') || is_date_heading(trimmed)
 }
 
 pub fn extract_blocks(text: &str) -> Vec<ImportBlock> {
@@ -141,9 +165,10 @@ pub fn blocks_to_new_traces(
     blocks: Vec<ImportBlock>,
     user_id: Uuid,
     journal_id: Uuid,
+    timezone: Tz,
 ) -> Vec<(usize, ImportBlock, NewTrace)> {
     let mut traces = Vec::new();
-    let mut previous_date: Option<NaiveDateTime> = None;
+    let import_time = Utc::now().naive_utc();
 
     for (block_index, block) in blocks.into_iter().enumerate() {
         if block.header.trim().is_empty() {
@@ -156,18 +181,7 @@ pub fn blocks_to_new_traces(
             block.content.clone()
         };
 
-        let interaction_date = if let Some(date) = extract_date(block.date.as_deref()) {
-            previous_date = Some(date);
-            date
-        } else if let Some(previous) = previous_date {
-            let next = previous + Duration::days(1);
-            previous_date = Some(next);
-            next
-        } else {
-            let fallback = Utc::now().naive_utc();
-            previous_date = Some(fallback);
-            fallback
-        };
+        let interaction_date = imported_date(&block, timezone).unwrap_or(import_time);
 
         let trace = NewTrace::new(
             "".to_string(),
@@ -194,9 +208,40 @@ mod tests {
     }
 
     #[test]
-    fn parses_french_date_without_year_with_fallback() {
+    fn does_not_invent_a_year_for_french_date() {
         let date = get_block_date("Mardi 3 décembre");
-        assert_eq!(date, Some("2025-12-03".to_string()));
+        assert_eq!(date, None);
+    }
+
+    #[test]
+    fn import_dates_respect_offsets_timezones_and_legacy_exports() {
+        let block = |header: &str, date: &str| ImportBlock {
+            header: header.into(),
+            content: "Example".into(),
+            date: Some(date.into()),
+        };
+        let paris = chrono_tz::Europe::Paris;
+        let expected = NaiveDate::from_ymd_opt(2001, 2, 4)
+            .unwrap()
+            .and_hms_opt(11, 0, 0)
+            .unwrap();
+        assert_eq!(
+            imported_date(&block("### 2001-02-04", "2001-02-04"), paris),
+            Some(expected)
+        );
+        assert_eq!(
+            imported_date(&block("### date", "2001-02-04T12:00:00+01:00"), paris),
+            Some(expected)
+        );
+        assert_eq!(
+            imported_date(
+                &block("export_generated_date: old export", "2001-02-04 11:00:00"),
+                paris
+            ),
+            Some(expected)
+        );
+        assert!(imported_date(&block("### ambiguous", "2026-10-25 02:30"), paris).is_none());
+        assert!(imported_date(&block("### invalid", "2026-02-31"), paris).is_none());
     }
 
     #[test]
@@ -211,7 +256,7 @@ mod tests {
         );
         assert_eq!(
             get_block_date("export_generated_date: 2026-02-04 17:35:42"),
-            Some("2026-02-04 17:35".to_string())
+            Some("2026-02-04 17:35:42".to_string())
         );
     }
 
@@ -241,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_date_uses_previous_plus_one_day() {
+    fn missing_date_uses_import_time_instead_of_inventing_a_day() {
         let user_id = Uuid::new_v4();
         let journal_id = Uuid::new_v4();
         let blocks = vec![
@@ -256,7 +301,7 @@ mod tests {
                 date: None,
             },
         ];
-        let traces = blocks_to_new_traces(blocks, user_id, journal_id);
+        let traces = blocks_to_new_traces(blocks, user_id, journal_id, chrono_tz::UTC);
         assert_eq!(traces.len(), 2);
         assert_eq!(
             traces[0].2.interaction_date,
@@ -264,11 +309,11 @@ mod tests {
                 .and_then(|d| d.and_hms_opt(12, 0, 0))
                 .expect("valid fixed date")
         );
-        assert_eq!(
-            traces[1].2.interaction_date,
-            NaiveDate::from_ymd_opt(2026, 2, 5)
-                .and_then(|d| d.and_hms_opt(12, 0, 0))
-                .expect("valid fixed date")
+        assert!(
+            (traces[1].2.interaction_date - Utc::now().naive_utc())
+                .num_seconds()
+                .abs()
+                < 5
         );
     }
 
@@ -283,7 +328,7 @@ mod tests {
             date: Some("2026-03-09 11:00".to_string()),
         }];
 
-        let traces = blocks_to_new_traces(blocks, user_id, journal_id);
+        let traces = blocks_to_new_traces(blocks, user_id, journal_id, chrono_tz::UTC);
         assert_eq!(traces.len(), 1);
         assert_eq!(traces[0].2.content, "Did focused work on exports.");
     }

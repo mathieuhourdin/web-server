@@ -22,4 +22,5 @@ pub struct ImportJournalResult {
     pub total_blocks: usize,
     pub created_trace_ids: Vec<Uuid>,
     pub failures: Vec<ImportTraceFailure>,
+    pub date_fallback_block_indices: Vec<usize>,
 }

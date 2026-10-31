@@ -177,7 +177,7 @@ impl PublicSharedJournalTraceResponse {
             language_code: trace.language_code,
             image_url,
             content_image_asset_id: trace.content_image_asset_id,
-            interaction_date: trace.interaction_date,
+            interaction_date: trace.finalized_at.or(trace.start_writing_at).unwrap_or(trace.created_at),
             finalized_at: trace.finalized_at,
             publishing_date,
             created_at: trace.created_at,

@@ -127,6 +127,7 @@ pub struct ConfirmTranscriptionJob {
     pub expected_version_integer: i32,
     pub content: String,
     pub title: Option<String>,
+    #[serde(default, skip_deserializing)]
     pub interaction_date: Option<NaiveDateTime>,
 }
 
@@ -300,9 +301,6 @@ pub async fn confirm_transcription_job_route(
     trace.content = body.content;
     if let Some(t) = body.title {
         trace.title = t;
-    }
-    if let Some(d) = body.interaction_date {
-        trace.interaction_date = d;
     }
     let trace = trace.update_with_expected_version(body.expected_version_integer, &pool)?;
     let mut c = pool.get()?;

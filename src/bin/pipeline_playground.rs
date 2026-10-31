@@ -247,7 +247,7 @@ fn insert_trace(t: &Trace, user_id: Uuid, pool: &db::DbPool) -> Result<()> {
         .context("trace without journal_id cannot be replayed")?;
     let mut c = pool.get()?;
     diesel::sql_query("INSERT INTO traces (id,user_id,journal_id,derived_from_trace_id,title,subtitle,content,is_encrypted,encryption_metadata,content_image_asset_id,sharing_sensitivity,timeout_start_at,timeout_at,interaction_date,trace_type,version_integer,status,is_blank,start_writing_at,finalized_at,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CAST($9 AS jsonb),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)")
-    .bind::<SqlUuid,_>(t.id).bind::<SqlUuid,_>(user_id).bind::<SqlUuid,_>(journal_id).bind::<Nullable<SqlUuid>,_>(None::<Uuid>).bind::<Text,_>(&t.title).bind::<Text,_>(&t.subtitle).bind::<Text,_>(&t.content).bind::<Bool,_>(t.is_encrypted).bind::<Nullable<Text>,_>(t.encryption_metadata.as_ref().map(Value::to_string)).bind::<Nullable<SqlUuid>,_>(None::<Uuid>).bind::<Text,_>(t.sharing_sensitivity.to_db()).bind::<Nullable<Timestamptz>,_>(t.timeout_start_at).bind::<Nullable<Timestamptz>,_>(t.timeout_at).bind::<Timestamp,_>(t.interaction_date).bind::<Text,_>(t.trace_type.to_db()).bind::<diesel::sql_types::Int4,_>(t.version_integer).bind::<Text,_>(t.status.to_db()).bind::<Bool,_>(t.is_blank).bind::<Timestamp,_>(t.start_writing_at).bind::<Nullable<Timestamp>,_>(t.finalized_at).bind::<Timestamp,_>(t.created_at).bind::<Timestamp,_>(t.updated_at).execute(&mut c)?;
+    .bind::<SqlUuid,_>(t.id).bind::<SqlUuid,_>(user_id).bind::<SqlUuid,_>(journal_id).bind::<Nullable<SqlUuid>,_>(None::<Uuid>).bind::<Text,_>(&t.title).bind::<Text,_>(&t.subtitle).bind::<Text,_>(&t.content).bind::<Bool,_>(t.is_encrypted).bind::<Nullable<Text>,_>(t.encryption_metadata.as_ref().map(Value::to_string)).bind::<Nullable<SqlUuid>,_>(None::<Uuid>).bind::<Text,_>(t.sharing_sensitivity.to_db()).bind::<Nullable<Timestamptz>,_>(t.timeout_start_at).bind::<Nullable<Timestamptz>,_>(t.timeout_at).bind::<Timestamp,_>(t.interaction_date).bind::<Text,_>(t.trace_type.to_db()).bind::<diesel::sql_types::Int4,_>(t.version_integer).bind::<Text,_>(t.status.to_db()).bind::<Bool,_>(t.is_blank).bind::<Nullable<Timestamp>,_>(t.start_writing_at).bind::<Nullable<Timestamp>,_>(t.finalized_at).bind::<Timestamp,_>(t.created_at).bind::<Timestamp,_>(t.updated_at).execute(&mut c)?;
     Ok(())
 }
 
@@ -302,7 +302,7 @@ fn import(file: &Path) -> Result<()> {
         .into_iter()
         .filter(|t| t.status == TraceStatus::Finalized)
         .collect::<Vec<_>>();
-    traces.sort_by_key(|t| (t.interaction_date, t.created_at, t.id));
+    traces.sort_by_key(|t| (t.effective_datetime(), t.created_at, t.id));
     let target = traces.last().context("no finalized trace in export")?;
     let lens = NewLens {
         processing_state: LensProcessingState::InSync,

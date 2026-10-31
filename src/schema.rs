@@ -680,7 +680,7 @@ diesel::table! {
         updated_at -> Timestamp,
         is_encrypted -> Bool,
         encryption_metadata -> Nullable<Jsonb>,
-        start_writing_at -> Timestamp,
+        start_writing_at -> Nullable<Timestamp>,
         finalized_at -> Nullable<Timestamp>,
         content_image_asset_id -> Nullable<Uuid>,
         timeout_at -> Nullable<Timestamptz>,
@@ -694,6 +694,7 @@ diesel::table! {
         last_edit_device_id -> Nullable<Uuid>,
         continues_trace_id -> Nullable<Uuid>,
         language_code -> Nullable<Text>,
+        is_historical_import -> Bool,
     }
 }
 

@@ -81,7 +81,7 @@ pub struct NewTraceDto {
     pub journal_id: Uuid,
     #[serde(default)]
     pub derived_from_trace_id: Option<Uuid>,
-    #[serde(default)]
+    #[serde(default, skip_deserializing)]
     pub interaction_date: Option<NaiveDateTime>,
     #[serde(default, alias = "is_ecrypted")]
     pub is_encrypted: Option<bool>,
@@ -107,6 +107,7 @@ pub struct UpdateTraceDto {
     pub derived_from_trace_id: Option<Option<Uuid>>,
     #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub continues_trace_id: Option<Option<Uuid>>,
+    #[serde(default, skip_deserializing)]
     pub interaction_date: Option<NaiveDateTime>,
     pub status: Option<TraceStatus>,
     #[serde(alias = "image_asset_id")]
@@ -128,6 +129,7 @@ pub struct PatchTraceDto {
     pub derived_from_trace_id: Option<Option<Uuid>>,
     #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub continues_trace_id: Option<Option<Uuid>>,
+    #[serde(default, skip_deserializing)]
     pub interaction_date: Option<NaiveDateTime>,
     #[serde(alias = "image_asset_id")]
     pub content_image_asset_id: Option<Option<Uuid>>,
@@ -158,6 +160,7 @@ pub struct Trace {
     pub complement_audience_mode: Option<TraceComplementAudienceMode>,
     pub title: String,
     pub subtitle: String,
+    /// Deprecated read-only alias; chronology uses completion or writing-start.
     pub interaction_date: NaiveDateTime,
     pub content: String,
     pub is_encrypted: bool,
@@ -172,7 +175,7 @@ pub struct Trace {
     pub status: TraceStatus,
     pub version_integer: i32,
     pub is_blank: bool,
-    pub start_writing_at: NaiveDateTime,
+    pub start_writing_at: Option<NaiveDateTime>,
     pub finalized_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -322,8 +325,8 @@ pub(crate) struct TraceRow {
     pub version_integer: i32,
     #[diesel(sql_type = Bool)]
     pub is_blank: bool,
-    #[diesel(sql_type = Timestamp)]
-    pub start_writing_at: NaiveDateTime,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    pub start_writing_at: Option<NaiveDateTime>,
     #[diesel(sql_type = Nullable<Timestamp>)]
     pub finalized_at: Option<NaiveDateTime>,
     #[diesel(sql_type = Timestamp)]
@@ -439,7 +442,9 @@ impl Trace {
     }
 
     pub fn effective_datetime(&self) -> NaiveDateTime {
-        self.interaction_date
+        self.finalized_at
+            .or(self.start_writing_at)
+            .unwrap_or(self.created_at)
     }
 
     pub fn find_visible_complements_for_parent_paginated(
@@ -536,7 +541,7 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
-             ORDER BY interaction_date ASC NULLS LAST, created_at ASC
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) ASC NULLS LAST, created_at ASC
              LIMIT 1",
         )
         .bind::<SqlUuid, _>(user_id)
@@ -557,7 +562,7 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) DESC NULLS LAST, created_at DESC
              LIMIT 1",
         )
         .bind::<SqlUuid, _>(user_id)
@@ -576,8 +581,8 @@ impl Trace {
         let start_trace = Trace::find_full_trace(start_trace_id, pool)?;
         let end_trace = Trace::find_full_trace(end_trace_id, pool)?;
 
-        let from = start_trace.interaction_date;
-        let to = end_trace.interaction_date;
+        let from = start_trace.effective_datetime();
+        let to = end_trace.effective_datetime();
 
         let mut conn = pool.get()?;
 
@@ -586,8 +591,8 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
-               AND interaction_date BETWEEN $2 AND $3
-             ORDER BY interaction_date ASC, created_at ASC",
+               AND COALESCE(finalized_at,start_writing_at,created_at) BETWEEN $2 AND $3
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) ASC, created_at ASC",
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Timestamp, _>(from)
@@ -603,7 +608,7 @@ impl Trace {
         pool: &DbPool,
     ) -> Result<Vec<Trace>, PpdcError> {
         let trace = Trace::find_full_trace(trace_id, pool)?;
-        let until = trace.interaction_date;
+        let until = trace.effective_datetime();
 
         let mut conn = pool.get()?;
 
@@ -612,11 +617,13 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
-               AND interaction_date <= $2
-             ORDER BY interaction_date ASC, created_at ASC",
+               AND (COALESCE(finalized_at,start_writing_at,created_at),created_at,id) <= ($2,$3,$4)
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) ASC, created_at ASC,id ASC",
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Timestamp, _>(until)
+        .bind::<Timestamp, _>(trace.created_at)
+        .bind::<diesel::sql_types::Uuid, _>(trace.id)
         .load::<TraceRow>(&mut conn)?;
 
         Ok(rows.into_iter().map(Trace::from).collect())
@@ -630,7 +637,7 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'HIGH_LEVEL_PROJECTS_DEFINITION'
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) DESC NULLS LAST, created_at DESC
              LIMIT 1",
         )
         .bind::<SqlUuid, _>(user_id)
@@ -646,7 +653,7 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'BIO_TRACE'
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) DESC NULLS LAST, created_at DESC
              LIMIT 1",
         )
         .bind::<SqlUuid, _>(user_id)
@@ -675,7 +682,7 @@ impl Trace {
                  FROM traces
                  WHERE user_id = $1
                    AND trace_type = 'BIO_TRACE'
-                 ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+                 ORDER BY COALESCE(finalized_at,start_writing_at,created_at) DESC NULLS LAST, created_at DESC
                  LIMIT 1",
             )
             .bind::<SqlUuid, _>(user_id)
@@ -693,7 +700,7 @@ impl Trace {
             return Trace::find_first_user_trace_for_user(user_id, pool);
         }
 
-        let reference_ts = trace.interaction_date;
+        let reference_ts = trace.effective_datetime();
         let mut conn = pool.get()?;
 
         let next = diesel::sql_query(
@@ -701,12 +708,14 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type = 'USER_TRACE'
-               AND interaction_date > $2
-             ORDER BY interaction_date ASC, created_at ASC
+               AND (COALESCE(finalized_at,start_writing_at,created_at),created_at,id) > ($2,$3,$4)
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) ASC, created_at ASC,id ASC
              LIMIT 1",
         )
         .bind::<SqlUuid, _>(user_id)
         .bind::<Timestamp, _>(reference_ts)
+        .bind::<Timestamp, _>(trace.created_at)
+        .bind::<diesel::sql_types::Uuid, _>(trace.id)
         .get_result::<TraceRow>(&mut conn)
         .optional()?;
 
@@ -741,7 +750,7 @@ impl Trace {
              FROM traces
              WHERE user_id = $1
                AND trace_type <> 'TRACE_COMPLEMENT'
-             ORDER BY interaction_date DESC NULLS LAST, created_at DESC
+             ORDER BY COALESCE(finalized_at,start_writing_at,created_at) DESC NULLS LAST, created_at DESC
              OFFSET $2
              LIMIT $3",
         )
@@ -798,7 +807,7 @@ impl Trace {
             String,
             i32,
             bool,
-            NaiveDateTime,
+            Option<NaiveDateTime>,
             Option<NaiveDateTime>,
             NaiveDateTime,
             NaiveDateTime,
@@ -1040,7 +1049,7 @@ impl Trace {
             String,
             String,
             i32,
-            NaiveDateTime,
+            Option<NaiveDateTime>,
             Option<NaiveDateTime>,
             NaiveDateTime,
             NaiveDateTime,
@@ -1152,7 +1161,7 @@ impl Trace {
                 traces::language_code,
             ))
             .order(traces::finalized_at.desc().nulls_last())
-            .then_order_by(traces::interaction_date.desc())
+            .then_order_by(traces::created_at.desc())
             .then_order_by(traces::created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -1215,7 +1224,7 @@ impl Trace {
                     user_id: Some(owner_user_id),
                     trace_type: Some(TraceType::from_db(&trace_type_raw)),
                     status: Some(TraceStatus::from_db(&status_raw)),
-                    start_writing_at: Some(start_writing_at),
+                    start_writing_at,
                     finalized_at,
                     seen: false,
                     last_seen_at: None,
@@ -1519,7 +1528,7 @@ pub struct NewTrace {
     pub trace_type: TraceType,
     pub journal_id: Uuid,
     pub is_blank: bool,
-    pub start_writing_at: NaiveDateTime,
+    pub start_writing_at: Option<NaiveDateTime>,
 }
 
 impl NewTrace {
@@ -1527,7 +1536,7 @@ impl NewTrace {
         title: String,
         subtitle: String,
         content: String,
-        interaction_date: NaiveDateTime,
+        writing_started_at: NaiveDateTime,
         user_id: Uuid,
         journal_id: Uuid,
     ) -> NewTrace {
@@ -1542,12 +1551,12 @@ impl NewTrace {
             sharing_sensitivity: TraceSharingSensitivity::Normal,
             timeout_start_at: None,
             timeout_at: None,
-            interaction_date,
+            interaction_date: writing_started_at,
             user_id,
             trace_type: TraceType::UserTrace,
             journal_id,
             is_blank: true,
-            start_writing_at: chrono::Utc::now().naive_utc(),
+            start_writing_at: Some(writing_started_at),
         }
     }
 }

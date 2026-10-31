@@ -31,7 +31,7 @@ pub fn persist_hlp_entities(
         context.analysis_id,
         context.user_id,
         None,
-        Some(trace.interaction_date),
+        Some(trace.effective_datetime()),
     )
     .create(&context.pool)?;
 

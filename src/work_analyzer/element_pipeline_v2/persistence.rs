@@ -484,7 +484,7 @@ fn find_trace_interaction_date(
     context: &AnalysisContext,
 ) -> Result<Option<NaiveDateTime>, PpdcError> {
     let trace = Trace::find_full_trace(trace_mirror.trace_id, &context.pool)?;
-    Ok(Some(trace.interaction_date))
+    Ok(Some(trace.effective_datetime()))
 }
 
 fn apply_date_offset(

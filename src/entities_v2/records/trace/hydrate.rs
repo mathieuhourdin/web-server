@@ -37,7 +37,7 @@ type TraceTuple = (
     String,
     i32,
     bool,
-    NaiveDateTime,
+    Option<NaiveDateTime>,
     Option<NaiveDateTime>,
     NaiveDateTime,
     NaiveDateTime,

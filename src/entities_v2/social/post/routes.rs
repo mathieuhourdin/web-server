@@ -177,7 +177,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
             &owner_display_name,
             &journal.title,
             &journal_url,
-            trace.interaction_date,
+            trace.effective_datetime(),
             &trace.content,
         );
         let email = NewOutboundEmail::new(
@@ -291,7 +291,7 @@ fn enqueue_trace_mention_notification_emails(
             &owner_display_name,
             &journal.title,
             &journal_url,
-            trace.interaction_date,
+            trace.effective_datetime(),
             &trace.content,
         );
         let email = NewOutboundEmail::new(

@@ -22,6 +22,67 @@ fn validates_audience_names() {
     assert!(persist::validate_name(&"a".repeat(101)).is_err());
 }
 
+#[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn trace_chronology_old_draft_uses_completion_day_and_ignores_legacy_input() {
+    use crate::entities_v2::{trace::{NewTrace,TraceStatus,NewTraceDto,PatchTraceDto},
+        lens::{NewLens,NewLensDto}, landscape_analysis::{create_for_trace_and_lens,model::LandscapeAnalysisType}};
+    let f=Fixture::new();
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE users SET ai_features_enabled=TRUE,ai_features_enabled_by_admin=TRUE WHERE id='{}'",f.owner)).unwrap();
+    let now=chrono::Utc::now().naive_utc();
+    let draft=NewTrace::new("".into(),"".into(),"".into(),now-chrono::Duration::days(3),f.owner,f.journal).create(&f.pool).unwrap();
+    assert!(draft.start_writing_at.is_none());assert!(draft.finalized_at.is_none());
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE traces SET created_at=NOW()-INTERVAL '3 days' WHERE id='{}'",draft.id)).unwrap();
+    let mut draft=Trace::find_full_trace(draft.id,&f.pool).unwrap();
+    draft.content="Writing today, not three days ago.".into();
+    let mut draft=draft.update(&f.pool).unwrap();
+    assert!(draft.start_writing_at.unwrap()>=now);
+    draft.status=TraceStatus::Finalized;draft.finalized_at=Some(chrono::Utc::now().naive_utc());
+    let mut finished=draft.update(&f.pool).unwrap();
+    let completion=finished.finalized_at.unwrap();
+    assert_eq!(finished.interaction_date,completion);
+    finished.content.push_str(" A later edit.");
+    finished.interaction_date=now-chrono::Duration::days(20);
+    let finished=finished.update(&f.pool).unwrap();
+    assert_eq!(finished.finalized_at,Some(completion));
+    assert_eq!(finished.interaction_date,completion);
+    let old="2001-01-01T12:00:00";
+    let create:NewTraceDto=serde_json::from_value(serde_json::json!({"journal_id":f.journal,"interaction_date":old})).unwrap();
+    let patch:PatchTraceDto=serde_json::from_value(serde_json::json!({"interaction_date":old})).unwrap();
+    assert!(create.interaction_date.is_none() && patch.interaction_date.is_none());
+    let lens=NewLens::new(NewLensDto { processing_state:None,fork_landscape_id:None,target_trace_id:None,autoplay:Some(false) },None,f.owner).create(&f.pool).unwrap();
+    let jobs=create_for_trace_and_lens(finished.id,lens.id,&f.pool).unwrap();
+    let daily=jobs.iter().find(|j|j.landscape_analysis_type==LandscapeAnalysisType::DailyRecap).unwrap();
+    assert!(daily.period_start<=completion && completion<daily.period_end);
+    assert!(daily.period_end>chrono::Utc::now().naive_utc(),"Today's writing must not get an already-ended recap");
+}
+
+#[test]
+#[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
+fn trace_chronology_imports_keep_dates_without_historical_recaps() {
+    use crate::entities_v2::{journal_import::service::import_journal_text,
+        lens::{NewLens,NewLensDto},landscape_analysis::{create_for_trace_and_lens,model::LandscapeAnalysisType}};
+    let f=Fixture::new();
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE users SET ai_features_enabled=TRUE,ai_features_enabled_by_admin=TRUE WHERE id='{}'",f.owner)).unwrap();
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE users SET timezone='Europe/Paris' WHERE id='{}'",f.owner)).unwrap();
+    let imported=import_journal_text(f.owner,f.journal,
+        "### 2001-02-04\nHistorical writing.\n\n### 2001-02-04\nAnother entry on the same day.\n\n### Undated entry\nAnother entry without an explicit date.\n",&f.pool).unwrap();
+    assert_eq!(imported.created_count,3);assert_eq!(imported.date_fallback_block_indices,vec![2]);
+    let historical=Trace::find_full_trace(imported.created_trace_ids[0],&f.pool).unwrap();
+    let expected=chrono::NaiveDate::from_ymd_opt(2001,2,4).unwrap().and_hms_opt(11,0,0).unwrap();
+    assert_eq!(historical.finalized_at,Some(expected));
+    assert_eq!(historical.start_writing_at,Some(expected));
+    assert!(historical.created_at>expected);
+    assert_eq!(Trace::get_next(f.owner,historical.id,&f.pool).unwrap().unwrap().id,imported.created_trace_ids[1]);
+    let fallback=Trace::find_full_trace(imported.created_trace_ids[2],&f.pool).unwrap();
+    assert!((fallback.finalized_at.unwrap()-chrono::Utc::now().naive_utc()).num_seconds().abs()<5);
+    let lens=NewLens::new(NewLensDto {processing_state:None,fork_landscape_id:None,target_trace_id:None,autoplay:Some(false)},None,f.owner).create(&f.pool).unwrap();
+    let jobs=create_for_trace_and_lens(historical.id,lens.id,&f.pool).unwrap();
+    assert_eq!(jobs.len(),1);
+    assert_eq!(jobs[0].landscape_analysis_type,LandscapeAnalysisType::TraceIncremental);
+}
+
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn social_wal_plumes_and_access_audit() {

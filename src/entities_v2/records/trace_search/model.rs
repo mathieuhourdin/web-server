@@ -269,7 +269,7 @@ impl TraceSearchDocument {
         .bind::<SqlUuid, _>(trace.id)
         .bind::<SqlUuid, _>(trace.user_id)
         .bind::<SqlUuid, _>(journal_id)
-        .bind::<Timestamp, _>(trace.interaction_date)
+        .bind::<Timestamp, _>(trace.effective_datetime())
         .bind::<Text, _>(trace.title)
         .bind::<Text, _>(trace.content)
         .execute(&mut conn)?;

@@ -64,7 +64,7 @@ pub struct WeekDayContextItem {
 #[derive(Debug, Serialize)]
 pub struct WeekDayUserTraceContextItem {
     pub id: Uuid,
-    pub interaction_date: NaiveDateTime,
+    pub finalized_at: NaiveDateTime,
     pub title: String,
     pub subtitle: String,
     pub content: String,
@@ -298,18 +298,18 @@ fn find_covered_user_traces_by_day(
             continue;
         }
         by_day
-            .entry(local_date_for_utc(trace.interaction_date, timezone))
+            .entry(local_date_for_utc(trace.effective_datetime(), timezone))
             .or_default()
             .push(WeekDayUserTraceContextItem {
                 id: trace.id,
-                interaction_date: trace.interaction_date,
+                finalized_at: trace.effective_datetime(),
                 title: trace.title,
                 subtitle: trace.subtitle,
                 content: trace.content,
             });
     }
     for traces in by_day.values_mut() {
-        traces.sort_by_key(|trace| (trace.interaction_date, trace.id));
+        traces.sort_by_key(|trace| (trace.finalized_at, trace.id));
     }
     Ok(by_day)
 }

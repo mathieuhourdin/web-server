@@ -130,7 +130,7 @@ WITH feed_candidates AS (
     SELECT t.id AS entry_id, p.id AS post_id, t.user_id AS owner_user_id,
         t.id AS source_trace_id, NULL::uuid AS source_document_id, NULL::uuid AS source_album_id,
         p.publishing_date, COALESCE(p.status, 'DRAFT') AS status, t.created_at, t.updated_at,
-        COALESCE(t.finalized_at, t.interaction_date, t.created_at) AS feed_date
+        COALESCE(t.finalized_at, t.start_writing_at, t.created_at) AS feed_date
     FROM traces t LEFT JOIN LATERAL (
         SELECT id, status, publishing_date FROM posts
         WHERE source_trace_id = t.id AND user_id = t.user_id

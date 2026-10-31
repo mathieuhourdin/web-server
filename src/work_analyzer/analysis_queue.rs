@@ -366,9 +366,7 @@ async fn run_claimed_analysis(
                 pool,
             )?;
         }
-        let trace_datetime = completed_analysis
-            .interaction_date
-            .unwrap_or(completed_analysis.period_end);
+        let trace_datetime = Trace::find_full_trace(trace_id, pool)?.effective_datetime();
         let (refreshed_analyses, refreshed_traces, refreshed_trace_mirrors) =
             refresh_pending_summary_covered_inputs_for_trace(
                 lens.id,

@@ -491,7 +491,7 @@ pub async fn post_journal_export_route(
     }
 
     let mut traces = Trace::get_all_for_journal(journal.id, &pool)?;
-    traces.sort_by_key(|trace| (trace.interaction_date, trace.created_at));
+    traces.sort_by_key(|trace| (trace.effective_datetime(), trace.created_at));
 
     let messages = if payload.include_messages {
         let mut seen = HashSet::new();
@@ -563,7 +563,7 @@ pub async fn get_all_my_traces_export_route(
                 if trace.status == TraceStatus::Draft && trace.is_blank {
                     continue;
                 }
-                let trace_date = trace.interaction_date.date();
+                let trace_date = trace.effective_datetime().date();
                 if params.from.is_some_and(|from| trace_date < from)
                     || params.to.is_some_and(|to| trace_date > to)
                 {
@@ -578,8 +578,8 @@ pub async fn get_all_my_traces_export_route(
     }
     items.sort_by(|left, right| {
         left.trace
-            .interaction_date
-            .cmp(&right.trace.interaction_date)
+            .effective_datetime()
+            .cmp(&right.trace.effective_datetime())
             .then_with(|| left.trace.created_at.cmp(&right.trace.created_at))
             .then_with(|| left.journal_title.cmp(&right.journal_title))
             .then_with(|| left.trace.id.cmp(&right.trace.id))
@@ -664,7 +664,7 @@ fn render_all_traces_markdown(
     );
     let mut current_month = None;
     for item in items {
-        let date = item.trace.interaction_date;
+        let date = item.trace.effective_datetime();
         let month = (date.year(), date.month());
         if current_month != Some(month) {
             current_month = Some(month);
@@ -713,7 +713,7 @@ fn render_all_traces_text(
         out.push_str("==================================================\n");
         out.push_str(&format!(
             "{} — {}\nJournal: {}\n",
-            item.trace.interaction_date.format("%Y-%m-%d %H:%M"),
+            item.trace.effective_datetime().format("%Y-%m-%d %H:%M"),
             title,
             single_line(&item.journal_title)
         ));
@@ -737,7 +737,7 @@ fn render_markdown_export(journal: &Journal, traces: &[Trace], messages: &[Messa
     out.push('\n');
 
     for trace in traces {
-        out.push_str(format!("export_generated_date: {}\n", trace.interaction_date).as_str());
+        out.push_str(format!("export_generated_date: {}\n", trace.effective_datetime().and_utc().to_rfc3339()).as_str());
         out.push_str(trace.content.as_str());
         out.push('\n');
         out.push('\n');
@@ -772,7 +772,7 @@ fn render_text_export(journal: &Journal, traces: &[Trace], messages: &[Message])
     out.push('\n');
 
     for trace in traces {
-        out.push_str(format!("export_generated_date: {}\n", trace.interaction_date).as_str());
+        out.push_str(format!("export_generated_date: {}\n", trace.effective_datetime().and_utc().to_rfc3339()).as_str());
         out.push_str(trace.title.as_str());
         out.push('\n');
         out.push_str(trace.content.as_str());

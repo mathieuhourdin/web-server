@@ -72,7 +72,7 @@ pub async fn put_lens_route(
             (Some(new_target_trace_id), Some(current_target_trace_id)) => {
                 let payload_trace = Trace::find_full_trace(new_target_trace_id, &pool)?;
                 let current_trace = Trace::find_full_trace(current_target_trace_id, &pool)?;
-                if payload_trace.interaction_date > current_trace.interaction_date {
+                if payload_trace.effective_datetime() > current_trace.effective_datetime() {
                     lens = lens.set_target_trace(Some(new_target_trace_id), &pool)?;
                     let _ = lens.clone().plan_pending_analyses_for_target(&pool)?;
                     lens = Lens::find_full_lens(lens.id, &pool)?;

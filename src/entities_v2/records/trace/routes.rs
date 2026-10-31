@@ -329,7 +329,7 @@ pub struct CreateJournalDraftDto {
     pub content: String,
     #[serde(default)]
     pub derived_from_trace_id: Option<Uuid>,
-    #[serde(default)]
+    #[serde(default, skip_deserializing)]
     pub interaction_date: Option<chrono::NaiveDateTime>,
     #[serde(default, alias = "is_ecrypted")]
     pub is_encrypted: Option<bool>,
@@ -363,7 +363,7 @@ pub struct CreateFinalizedJournalTraceDto {
     pub content: String,
     #[serde(default)]
     pub derived_from_trace_id: Option<Uuid>,
-    #[serde(default)]
+    #[serde(default, skip_deserializing)]
     pub interaction_date: Option<chrono::NaiveDateTime>,
     #[serde(default, alias = "is_ecrypted")]
     pub is_encrypted: Option<bool>,
@@ -834,7 +834,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
             None
         },
         start_writing_at: if include_owner_fields {
-            Some(trace.start_writing_at)
+            trace.start_writing_at
         } else {
             None
         },
@@ -995,7 +995,7 @@ fn apply_create_draft_payload(
     let CreateJournalDraftDto {
         content,
         derived_from_trace_id,
-        interaction_date,
+        interaction_date: _,
         is_encrypted,
         encryption_metadata,
         content_image_asset_id,
@@ -1013,10 +1013,6 @@ fn apply_create_draft_payload(
     }
     if derived_from_trace_id.is_some() {
         trace.derived_from_trace_id = derived_from_trace_id;
-        changed = true;
-    }
-    if let Some(interaction_date) = interaction_date {
-        trace.interaction_date = interaction_date;
         changed = true;
     }
     if let Some(is_encrypted) = is_encrypted {
@@ -1206,9 +1202,7 @@ pub async fn post_finalized_journal_trace_route(
         payload.title,
         payload.subtitle,
         payload.content,
-        payload
-            .interaction_date
-            .unwrap_or_else(|| Utc::now().naive_utc()),
+        Utc::now().naive_utc(),
         user_id,
         journal_id,
     );
@@ -1223,7 +1217,7 @@ pub async fn post_finalized_journal_trace_route(
     new_trace.sharing_sensitivity = payload
         .sharing_sensitivity
         .unwrap_or(TraceSharingSensitivity::Normal);
-    new_trace.start_writing_at = new_trace.interaction_date;
+    new_trace.start_writing_at = Some(Utc::now().naive_utc());
 
     let mention_update = resolve_mention_update(
         Some(payload.mentioned_user_ids.clone()),
@@ -1338,9 +1332,6 @@ pub async fn patch_journal_draft_route(
     if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
         trace.derived_from_trace_id = derived_from_trace_id;
     }
-    if let Some(interaction_date) = payload.interaction_date {
-        trace.interaction_date = interaction_date;
-    }
     if let Some(content_image_asset_id) = payload.content_image_asset_id {
         trace.content_image_asset_id = content_image_asset_id;
     }
@@ -1437,10 +1428,6 @@ pub async fn put_trace_route(
         .as_ref()
         .map(|content| content != &trace.content)
         .unwrap_or(false);
-    let interaction_date_changed = payload
-        .interaction_date
-        .map(|interaction_date| interaction_date != trace.interaction_date)
-        .unwrap_or(false);
     let image_asset_changed = payload
         .content_image_asset_id
         .map(|content_image_asset_id| content_image_asset_id != trace.content_image_asset_id)
@@ -1472,9 +1459,6 @@ pub async fn put_trace_route(
             }
             if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
                 trace.derived_from_trace_id = derived_from_trace_id;
-            }
-            if let Some(interaction_date) = payload.interaction_date {
-                trace.interaction_date = interaction_date;
             }
             if let Some(content_image_asset_id) = payload.content_image_asset_id {
                 trace.content_image_asset_id = content_image_asset_id;
@@ -1523,7 +1507,6 @@ pub async fn put_trace_route(
         super::enums::TraceStatus::Finalized => {
             if content_changed
                 || title_changed
-                || interaction_date_changed
                 || sharing_sensitivity_changed
                 || timeout_changed
             {
@@ -1556,7 +1539,6 @@ pub async fn put_trace_route(
         super::enums::TraceStatus::Archived => {
             if content_changed
                 || title_changed
-                || interaction_date_changed
                 || image_asset_changed
                 || sharing_sensitivity_changed
                 || timeout_changed
@@ -1682,9 +1664,6 @@ pub async fn patch_trace_route(
     }
     if let Some(derived_from_trace_id) = payload.derived_from_trace_id {
         trace.derived_from_trace_id = derived_from_trace_id;
-    }
-    if let Some(interaction_date) = payload.interaction_date {
-        trace.interaction_date = interaction_date;
     }
     if let Some(content_image_asset_id) = payload.content_image_asset_id {
         trace.content_image_asset_id = content_image_asset_id;

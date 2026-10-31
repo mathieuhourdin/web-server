@@ -218,9 +218,9 @@ fn parse_user_timezone_or_utc(user: &User) -> Tz {
     user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
 }
 
-/// Chooses the trace timestamp that should anchor analysis scheduling, preferring interaction time over persistence time.
+/// Activity chronology is completion first; writing-start/creation are fallbacks for context records.
 fn trace_effective_datetime(trace: &Trace) -> NaiveDateTime {
-    trace.interaction_date
+    trace.effective_datetime()
 }
 
 /// Computes the inclusive day window used by daily recap analyses for one user-local day.
@@ -366,8 +366,8 @@ SELECT EXISTS (
       AND t.status = 'FINALIZED'
       AND t.is_encrypted = FALSE
       AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-      AND t.interaction_date >= $2
-      AND t.interaction_date < $3
+      AND t.finalized_at >= $2
+      AND t.finalized_at < $3
       AND NOT EXISTS (
           SELECT 1
           FROM trace_mirrors tm
@@ -561,6 +561,13 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
         created.push(new_analysis.create_for_lens(lens_id, pool)?);
     }
 
+    let historical = sql_query("SELECT is_historical_import AS value FROM traces WHERE id=$1")
+        .bind::<SqlUuid, _>(trace.id)
+        .get_result::<BoolRow>(&mut pool.get()?)?.value;
+    if historical {
+        return Ok(created);
+    }
+
     if matches!(
         trace.trace_type,
         TraceType::UserTrace | TraceType::WorkspaceTrace
@@ -573,22 +580,27 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             trace_datetime,
             pool,
         )? {
-            let _ = replace_covered_inputs_for_period(
-                existing_daily.id,
-                lens_id,
-                user_id,
-                existing_daily.period_start,
-                existing_daily.period_end,
-                pool,
-            )?;
-            let _ = refresh_recap_processing_state(
-                existing_daily.id,
-                lens_id,
-                user_id,
-                existing_daily.period_start,
-                existing_daily.period_end,
-                pool,
-            )?;
+            if matches!(
+                existing_daily.processing_state,
+                LandscapeProcessingState::Pending | LandscapeProcessingState::BlockedWaitingCoverage
+            ) {
+                let _ = replace_covered_inputs_for_period(
+                    existing_daily.id,
+                    lens_id,
+                    user_id,
+                    existing_daily.period_start,
+                    existing_daily.period_end,
+                    pool,
+                )?;
+                let _ = refresh_recap_processing_state(
+                    existing_daily.id,
+                    lens_id,
+                    user_id,
+                    existing_daily.period_start,
+                    existing_daily.period_end,
+                    pool,
+                )?;
+            }
         } else {
             let previous_daily = find_latest_prior_analysis_for_lens(
                 lens_id,
@@ -629,22 +641,27 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
             trace_datetime,
             pool,
         )? {
-            let _ = replace_covered_inputs_for_period(
-                existing_weekly.id,
-                lens_id,
-                user_id,
-                existing_weekly.period_start,
-                existing_weekly.period_end,
-                pool,
-            )?;
-            let _ = refresh_recap_processing_state(
-                existing_weekly.id,
-                lens_id,
-                user_id,
-                existing_weekly.period_start,
-                existing_weekly.period_end,
-                pool,
-            )?;
+            if matches!(
+                existing_weekly.processing_state,
+                LandscapeProcessingState::Pending | LandscapeProcessingState::BlockedWaitingCoverage
+            ) {
+                let _ = replace_covered_inputs_for_period(
+                    existing_weekly.id,
+                    lens_id,
+                    user_id,
+                    existing_weekly.period_start,
+                    existing_weekly.period_end,
+                    pool,
+                )?;
+                let _ = refresh_recap_processing_state(
+                    existing_weekly.id,
+                    lens_id,
+                    user_id,
+                    existing_weekly.period_start,
+                    existing_weekly.period_end,
+                    pool,
+                )?;
+            }
         } else {
             let week_start_weekday = user.week_analysis_weekday.to_chrono_weekday();
             let previous_weekly = find_latest_prior_analysis_for_lens(
@@ -768,6 +785,12 @@ WITH candidate AS (
     WHERE las.lens_id = $1
       AND la.processing_state = 'PENDING'
       AND la.period_end <= $2
+      AND (la.landscape_analysis_type NOT IN ('DAILY_RECAP','WEEKLY_RECAP') OR EXISTS (
+          SELECT 1 FROM traces activity WHERE activity.user_id=la.user_id
+            AND activity.status='FINALIZED' AND NOT activity.is_encrypted
+            AND NOT activity.is_historical_import AND activity.trace_type IN ('USER_TRACE','WORKSPACE_TRACE')
+            AND activity.finalized_at>=la.period_start AND activity.finalized_at<la.period_end
+      ))
       AND (
         la.landscape_analysis_type NOT IN ('DAILY_RECAP', 'WEEKLY_RECAP')
         OR NOT EXISTS (
@@ -777,8 +800,8 @@ WITH candidate AS (
               AND t.status = 'FINALIZED'
               AND t.is_encrypted = FALSE
               AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-              AND t.interaction_date >= la.period_start
-              AND t.interaction_date < la.period_end
+              AND t.finalized_at >= la.period_start
+              AND t.finalized_at < la.period_end
               AND NOT EXISTS (
                   SELECT 1
                   FROM trace_mirrors tm
@@ -835,6 +858,12 @@ INNER JOIN users u
     ON u.id = l.user_id
 WHERE la.processing_state = 'PENDING'
   AND la.period_end <= NOW()
+  AND (la.landscape_analysis_type NOT IN ('DAILY_RECAP','WEEKLY_RECAP') OR EXISTS (
+      SELECT 1 FROM traces activity WHERE activity.user_id=la.user_id
+        AND activity.status='FINALIZED' AND NOT activity.is_encrypted
+        AND NOT activity.is_historical_import AND activity.trace_type IN ('USER_TRACE','WORKSPACE_TRACE')
+        AND activity.finalized_at>=la.period_start AND activity.finalized_at<la.period_end
+  ))
   AND l.processing_state != 'FAILED'
   AND u.ai_features_enabled = TRUE
   AND u.ai_features_enabled_by_admin = TRUE
@@ -985,9 +1014,9 @@ WHERE t.user_id = $1
   AND t.status = 'FINALIZED'
   AND t.is_encrypted = FALSE
   AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-  AND t.interaction_date >= $2
-  AND t.interaction_date < $3
-ORDER BY t.interaction_date ASC, t.created_at ASC
+  AND t.finalized_at >= $2
+  AND t.finalized_at < $3
+ORDER BY t.finalized_at ASC, t.created_at ASC
             "#,
         )
         .bind::<SqlUuid, _>(user_id)
@@ -1019,8 +1048,8 @@ WHERE las.lens_id = $1
   AND t.status = 'FINALIZED'
   AND t.is_encrypted = FALSE
   AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-  AND t.interaction_date >= $3
-  AND t.interaction_date < $4
+  AND t.finalized_at >= $3
+  AND t.finalized_at < $4
 ORDER BY tm.id ASC
             "#,
         )

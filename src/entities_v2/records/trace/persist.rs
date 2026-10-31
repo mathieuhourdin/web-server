@@ -68,7 +68,7 @@ pub(super) fn recalculate_journal_last_trace_at(
     diesel::sql_query(
         "UPDATE journals
          SET last_trace_at = (
-             SELECT MAX(interaction_date)
+             SELECT MAX(COALESCE(finalized_at,start_writing_at))
              FROM traces
              WHERE journal_id = $1
                AND (
@@ -497,7 +497,7 @@ impl Trace {
             let previous_is_blank = self.is_blank;
             self.is_blank = compute_is_blank_with_conn(conn, &self)?;
             if previous_is_blank && !self.is_blank {
-                self.start_writing_at = Utc::now().naive_utc();
+                self.start_writing_at = Some(self.finalized_at.unwrap_or_else(|| Utc::now().naive_utc()));
             }
             let language_code = super::language::for_update(&self, conn)?;
             let rows_affected = if let Some(expected_version_integer) = expected_version_integer {
@@ -552,7 +552,7 @@ impl Trace {
                 .bind::<Text, _>(self.status.to_db())
                 .bind::<Nullable<SqlUuid>, _>(self.journal_id)
                 .bind::<Bool, _>(self.is_blank)
-                .bind::<Timestamp, _>(self.start_writing_at)
+                .bind::<Nullable<Timestamp>, _>(self.start_writing_at)
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
                 .bind::<diesel::sql_types::Int4, _>(expected_version_integer)
                 .bind::<Nullable<SqlUuid>, _>(device_id)
@@ -611,7 +611,7 @@ impl Trace {
                 .bind::<Text, _>(self.status.to_db())
                 .bind::<Nullable<SqlUuid>, _>(self.journal_id)
                 .bind::<Bool, _>(self.is_blank)
-                .bind::<Timestamp, _>(self.start_writing_at)
+                .bind::<Nullable<Timestamp>, _>(self.start_writing_at)
                 .bind::<Nullable<Timestamp>, _>(self.finalized_at)
                 .bind::<Nullable<SqlUuid>, _>(device_id)
                 .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
@@ -681,12 +681,13 @@ impl Trace {
             TraceStatus::Draft => {
                 self.finalized_at = None;
             }
-            TraceStatus::Finalized | TraceStatus::Archived => {
+            TraceStatus::Finalized => {
                 self.timeout_at = None;
                 if self.finalized_at.is_none() {
                     self.finalized_at = Some(Utc::now().naive_utc());
                 }
             }
+            TraceStatus::Archived => { self.timeout_at = None; }
         }
         self.update(pool)
     }
@@ -707,6 +708,7 @@ impl NewTrace {
         self.is_blank = self.title.trim().is_empty()
             && self.content.trim().is_empty()
             && self.content_image_asset_id.is_none();
+        self.start_writing_at = (!self.is_blank).then(|| Utc::now().naive_utc());
         let mut conn = pool.get()?;
 
         let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
@@ -775,7 +777,7 @@ impl NewTrace {
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Bool, _>(self.is_blank)
-            .bind::<Timestamp, _>(self.start_writing_at)
+            .bind::<Nullable<Timestamp>, _>(self.start_writing_at)
             .get_result::<IdRow>(conn)?;
 
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
@@ -786,7 +788,17 @@ impl NewTrace {
         Trace::find_full_trace(inserted.id, pool)
     }
 
-    pub fn create_finalized(mut self, pool: &DbPool) -> Result<Trace, PpdcError> {
+    pub fn create_finalized(self, pool: &DbPool) -> Result<Trace, PpdcError> {
+        self.create_finalized_with_date(None, false, pool)
+    }
+
+    /// File imports preserve their parsed date but do not create unsolicited
+    /// historical mentor recaps. Normal API writes cannot set these flags.
+    pub fn create_imported(self, date: chrono::NaiveDateTime, pool: &DbPool) -> Result<Trace, PpdcError> {
+        self.create_finalized_with_date(Some(date), true, pool)
+    }
+
+    fn create_finalized_with_date(mut self, date: Option<chrono::NaiveDateTime>, historical: bool, pool: &DbPool) -> Result<Trace, PpdcError> {
         if self.is_encrypted && self.encryption_metadata.is_none() {
             return Err(PpdcError::new(
                 400,
@@ -797,7 +809,8 @@ impl NewTrace {
         self.timeout_start_at = None;
         self.timeout_at = None;
         self.is_blank = false;
-        let finalized_at = Utc::now().naive_utc();
+        let finalized_at = date.unwrap_or_else(|| Utc::now().naive_utc());
+        self.start_writing_at = Some(finalized_at);
         let mut conn = pool.get()?;
 
         let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
@@ -822,7 +835,8 @@ impl NewTrace {
                     status,
                     is_blank,
                     start_writing_at,
-                    finalized_at
+                    finalized_at,
+                    is_historical_import
                  ) VALUES (
                     uuid_generate_v4(),
                     $1,
@@ -843,7 +857,8 @@ impl NewTrace {
                     'FINALIZED',
                     FALSE,
                     $15,
-                    $16
+                    $16,
+                    $17
                  )
                  RETURNING id",
             )
@@ -865,8 +880,9 @@ impl NewTrace {
             .bind::<Nullable<Timestamptz>, _>(self.timeout_at)
             .bind::<Timestamp, _>(self.interaction_date)
             .bind::<Text, _>(self.trace_type.to_db())
-            .bind::<Timestamp, _>(self.start_writing_at)
+            .bind::<Nullable<Timestamp>, _>(self.start_writing_at)
             .bind::<Timestamp, _>(finalized_at)
+            .bind::<Bool, _>(historical)
             .get_result::<IdRow>(conn)?;
 
             if !self.is_encrypted {

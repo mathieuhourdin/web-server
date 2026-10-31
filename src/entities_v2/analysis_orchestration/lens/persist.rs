@@ -71,7 +71,7 @@ fn enqueue_pending_analyses_for_lens_target(
         .into_iter()
         .filter(is_finalized_trace)
         .collect::<Vec<_>>();
-    let trace_effective_date = |trace: &Trace| trace.interaction_date;
+    let trace_effective_date = |trace: &Trace| trace.effective_datetime();
     let mut planned_trace_count = 0usize;
     let mut created_analysis_count = 0usize;
 

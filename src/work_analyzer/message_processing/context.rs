@@ -69,7 +69,8 @@ pub struct MessageContextItem {
 #[derive(Debug, Serialize)]
 pub struct TraceContextItem {
     pub id: Uuid,
-    pub interaction_date: chrono::NaiveDateTime,
+    pub finalized_at: Option<chrono::NaiveDateTime>,
+    pub start_writing_at: Option<chrono::NaiveDateTime>,
     pub trace_type: String,
     pub status: String,
     pub title: String,
@@ -171,7 +172,8 @@ pub fn build(
         },
         target_trace: trace.map(|trace| TraceContextItem {
             id: trace.id,
-            interaction_date: trace.interaction_date,
+            finalized_at: trace.finalized_at,
+            start_writing_at: trace.start_writing_at,
             trace_type: trace.trace_type.to_db().to_string(),
             status: trace.status.to_db().to_string(),
             title: trace.title.clone(),
@@ -184,7 +186,8 @@ pub fn build(
             .into_iter()
             .map(|trace| TraceContextItem {
                 id: trace.id,
-                interaction_date: trace.interaction_date,
+                finalized_at: trace.finalized_at,
+                start_writing_at: trace.start_writing_at,
                 trace_type: trace.trace_type.to_db().to_string(),
                 status: trace.status.to_db().to_string(),
                 title: trace.title,
@@ -282,7 +285,7 @@ pub fn build_journal(
     )?;
     draft_traces.extend(finalized_traces);
     draft_traces.retain(|trace| !trace.is_blank);
-    draft_traces.sort_by_key(|trace| (trace.interaction_date, trace.created_at));
+    draft_traces.sort_by_key(|trace| (trace.effective_datetime(), trace.created_at));
 
     Ok(JournalMentorReplyPromptContext {
         mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
@@ -322,7 +325,8 @@ fn message_context_item(message: Message) -> MessageContextItem {
 fn trace_context_item(trace: &Trace) -> TraceContextItem {
     TraceContextItem {
         id: trace.id,
-        interaction_date: trace.interaction_date,
+        finalized_at: trace.finalized_at,
+        start_writing_at: trace.start_writing_at,
         trace_type: trace.trace_type.to_db().to_string(),
         status: trace.status.to_db().to_string(),
         title: trace.title.clone(),
