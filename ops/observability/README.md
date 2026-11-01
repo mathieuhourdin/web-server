@@ -77,6 +77,26 @@ When deploying this feature:
    string in `textPayload`. The backend deployment alone does not install the
    production nginx/agent configuration.
 
+### Current production log collection
+
+On the VM, nginx now also bind-mounts
+`/var/log/matieregrise:/var/log/hupo` and writes a second JSON access log:
+
+```nginx
+access_log /var/log/hupo/nginx-access.jsonl hupo_timing;
+```
+
+The existing Ops Agent receiver already reads `/var/log/matieregrise/*.jsonl`
+and parses JSON, so no agent configuration or additional service is needed.
+Events appear under `mg_json_logs` with `jsonPayload.target="nginx"`.
+Docker stdout logging remains enabled as well.
+
+`/etc/logrotate.d/hupo-nginx-access` handles this file: daily rotation, a 10 MiB
+maximum-size trigger checked when logrotate runs, three rotated files, and a
+post-rotation `nginx -s reopen`. This is not an instantaneous hard size cap.
+Existing Docker log limits remain unchanged. Keep the extra mount, access-log
+directive and rotation rule when replacing the production configuration.
+
 ## Finding a slow request
 
 A client can optionally send a fresh UUID in `X-Request-Id` and record it together
