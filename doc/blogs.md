@@ -120,15 +120,14 @@ nginx to proxy the public hostname to the Axum `/blog/` prefix. A sample is in
 Normal startup applies the new migration. No new bucket, public bucket policy,
 LLM credentials or worker is needed.
 
-## Internal compatibility boundary
+## Internal social/channel boundary
 
-`posts` remains the physical table. `social_posts` is an automatically updatable
-view selecting only `publication_channel_id IS NULL`, with a check option.
-The existing Diesel `schema::posts` module intentionally maps to `social_posts`;
-existing raw social reads use that view too. Preserve this mapping if regenerating
-the Diesel schema; refresh the view when adding future post columns. Channel code
-explicitly accesses the physical table. Database
-guards reject grants/audiences on channel posts and enforce channel ownership.
+All publications live in the physical `posts` table, mapped directly by Diesel's
+`schema::posts`. Social queries and mutations explicitly require
+`publication_channel_id IS NULL`; channel code explicitly selects its destination.
+There is no separate social-posts table, SQL view, or hidden name mapping.
+Database access functions exclude channel posts, and guards reject social
+grants/audiences on channel posts and enforce channel ownership.
 Source archival/encryption cascades still operate on all publications.
 
 No public blog data is migrated from existing social posts automatically. The down

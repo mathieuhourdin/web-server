@@ -46,6 +46,43 @@ async fn publications_are_idempotent_archival_and_do_not_change_access_or_seen_s
     post.publishing_date = Some(chrono::Utc::now().naive_utc() - chrono::Duration::days(2));
     let post = post.update(&pool).unwrap();
     let first = post.last_publication_id.unwrap();
+    let readable = crate::entities_v2::trace::Trace::find_full_trace(trace, &pool).unwrap();
+    assert!(readable.user_can_read(reader, &pool).unwrap());
+    assert_eq!(
+        Post::find_readable_for_trace(trace, reader, &pool)
+            .unwrap()
+            .unwrap()
+            .id,
+        postid
+    );
+    assert_eq!(
+        crate::entities_v2::feed::hydrate::count_recent_unread_feed_items(
+            reader,
+            chrono::Utc::now().naive_utc() - chrono::Duration::days(3),
+            &pool
+        )
+        .unwrap(),
+        1
+    );
+    let image = Uuid::new_v4();
+    pool.get().unwrap().batch_execute(&format!("INSERT INTO assets(id,owner_user_id,bucket,object_key,mime_type,original_filename,size_bytes,status)
+        VALUES('{image}','{owner}','synthetic-test-only','{image}.jpg','image/jpeg','test.jpg',1,'READY');
+        UPDATE traces SET content_image_asset_id='{image}' WHERE id='{trace}';
+        INSERT INTO trace_plumes(trace_id,user_id) VALUES('{trace}','{reader}');")).unwrap();
+    assert!(crate::entities_v2::asset::Asset::can_user_read(image, reader, &pool).unwrap());
+    let mut reader_session = Session::anonymous();
+    reader_session.user_id = Some(reader);
+    // An existing plume exercises the real PUT path without scheduling a push.
+    let plume = crate::entities_v2::trace::plume::put(
+        Extension(pool.clone()),
+        Extension(reader_session.clone()),
+        Path(trace),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(plume.plumed_by_me);
+    assert_eq!(plume.plume_count, 1);
     UserPostState::create_or_mark_seen(reader, postid, &pool).unwrap();
     let mut session = Session::anonymous();
     session.user_id = Some(owner);
@@ -77,10 +114,13 @@ async fn publications_are_idempotent_archival_and_do_not_change_access_or_seen_s
         Some(first)
     );
     let key = Uuid::new_v4();
-    let input = || serde_json::from_value::<PublicationInput>(serde_json::json!({
-        "idempotency_key":key,"trace_version_id":version.id,
-        "notification_mode":"selected","notification_user_ids":[reader]
-    })).unwrap();
+    let input = || {
+        serde_json::from_value::<PublicationInput>(serde_json::json!({
+            "idempotency_key":key,"trace_version_id":version.id,
+            "notification_mode":"selected","notification_user_ids":[reader]
+        }))
+        .unwrap()
+    };
     let (event, created) = create(postid, owner, input(), &pool).unwrap();
     assert!(created);
     let (repeated, created) = create(postid, owner, input(), &pool).unwrap();
@@ -149,6 +189,15 @@ async fn publications_are_idempotent_archival_and_do_not_change_access_or_seen_s
         ))
         .unwrap();
     assert!(eligible_recipients(&post, &pool).unwrap().is_empty());
+    assert!(!readable.user_can_read(reader, &pool).unwrap());
+    assert!(!crate::entities_v2::asset::Asset::can_user_read(image, reader, &pool).unwrap());
+    assert!(crate::entities_v2::trace::plume::put(
+        Extension(pool.clone()),
+        Extension(reader_session),
+        Path(trace)
+    )
+    .await
+    .is_err());
     let bad = PublicationInput {
         idempotency_key: Uuid::new_v4(),
         ..input()

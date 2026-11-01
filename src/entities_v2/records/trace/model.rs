@@ -461,7 +461,7 @@ impl Trace {
                 SELECT 1 FROM traces parent WHERE parent.id = traces.parent_trace_id
                   AND parent.user_id = '{viewer_user_id}'
             ) OR EXISTS (
-                SELECT 1 FROM social_posts p WHERE p.source_trace_id = traces.id
+                SELECT 1 FROM posts p WHERE p.publication_channel_id IS NULL AND p.source_trace_id = traces.id
                   AND trace_publication_readable(p.id, '{viewer_user_id}')
             ))"
         );
@@ -1068,9 +1068,9 @@ impl Trace {
 
         let mut count_query = traces::table
             .left_join(
-                posts::table.on(posts::source_trace_id
+                posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id
                     .eq(traces::id.nullable())
-                    .and(posts::user_id.eq(traces::user_id))),
+                    .and(posts::user_id.eq(traces::user_id)))),
             )
             .filter(traces::user_id.eq(owner_user_id))
             .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
@@ -1104,9 +1104,9 @@ impl Trace {
 
         let mut query = traces::table
             .left_join(
-                posts::table.on(posts::source_trace_id
+                posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id
                     .eq(traces::id.nullable())
-                    .and(posts::user_id.eq(traces::user_id))),
+                    .and(posts::user_id.eq(traces::user_id)))),
             )
             .filter(traces::user_id.eq(owner_user_id))
             .filter(traces::trace_type.eq(TraceType::UserTrace.to_db()))
@@ -1265,7 +1265,7 @@ impl Trace {
         };
 
         let mut count_query = traces::table
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(traces::journal_id.eq(journal_id))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -1284,7 +1284,7 @@ impl Trace {
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
         let mut query = traces::table
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(traces::journal_id.eq(journal_id))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -1414,7 +1414,7 @@ impl Trace {
         };
 
         let mut query = traces::table
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(traces::journal_id.eq(journal_id))
             .filter(traces::status.eq(TraceStatus::Finalized.to_db()))
             .filter(posts::status.eq(PostStatus::Published.to_db()))

@@ -79,8 +79,7 @@ const JOURNAL_ACCESS_PATHS_CTE: &str = r#"
                CASE WHEN post.user_id = trace.user_id THEN 'direct_post_grant'
                     ELSE 'reshare' END::text AS access_via
         FROM journal_traces trace
-        INNER JOIN social_posts post
-            ON post.source_trace_id = trace.id
+        INNER JOIN posts post ON post.publication_channel_id IS NULL AND post.source_trace_id = trace.id
            AND post.status = 'PUBLISHED'
         INNER JOIN post_grants grant_row
             ON grant_row.post_id = post.id
@@ -499,7 +498,7 @@ impl Journal {
 
         let total = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(posts::id.eq_any(&visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(journals::is_encrypted.eq(false))
@@ -509,7 +508,7 @@ impl Journal {
 
         let rows = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(posts::id.eq_any(visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(journals::is_encrypted.eq(false))
@@ -560,7 +559,7 @@ impl Journal {
         let mut conn = pool.get()?;
         let total = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(journals::user_id.eq(journal_owner_user_id))
             .filter(posts::id.eq_any(&visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -571,7 +570,7 @@ impl Journal {
 
         let rows = journals::table
             .inner_join(traces::table.on(traces::journal_id.eq(journals::id.nullable())))
-            .inner_join(posts::table.on(posts::source_trace_id.eq(traces::id.nullable())))
+            .inner_join(posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(traces::id.nullable()))))
             .filter(journals::user_id.eq(journal_owner_user_id))
             .filter(posts::id.eq_any(visible_post_ids))
             .filter(posts::status.eq(PostStatus::Published.to_db()))

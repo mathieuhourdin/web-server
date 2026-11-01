@@ -68,8 +68,8 @@ WITH feed_candidates AS (
         p.source_trace_id, p.source_document_id, NULL::uuid AS source_album_id,
         p.publishing_date, p.status, p.created_at, p.updated_at,
         COALESCE(p.last_publication_at, p.publishing_date, p.created_at) AS feed_date
-    FROM social_posts p LEFT JOIN traces t ON t.id = p.source_trace_id
-    WHERE p.status = 'PUBLISHED' AND p.user_id <> $1
+    FROM posts p LEFT JOIN traces t ON t.id = p.source_trace_id
+    WHERE p.publication_channel_id IS NULL AND p.status = 'PUBLISHED' AND p.user_id <> $1
       AND p.id = ANY($2) AND p.source_album_id IS NULL
       AND (p.source_trace_id IS NOT NULL OR p.source_document_id IS NOT NULL)
       AND t.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'
@@ -86,7 +86,7 @@ WITH feed_candidates AS (
     WHERE $3::boolean IS NULL AND a.owner_user_id <> $1
       AND a.visibility = 'PUBLISHED' AND a.completion_status <> 'ARCHIVED'
       AND EXISTS (
-          SELECT 1 FROM album_items i JOIN social_posts child ON child.source_trace_id = i.trace_id
+          SELECT 1 FROM album_items i JOIN posts child ON child.publication_channel_id IS NULL AND child.source_trace_id = i.trace_id
           WHERE i.album_id = a.id AND trace_publication_readable(child.id, $1)
       )
 )";
@@ -132,8 +132,8 @@ WITH feed_candidates AS (
         p.publishing_date, COALESCE(p.status, 'DRAFT') AS status, t.created_at, t.updated_at,
         COALESCE(p.last_publication_at, t.finalized_at, t.start_writing_at, t.created_at) AS feed_date
     FROM traces t LEFT JOIN LATERAL (
-        SELECT id, status, publishing_date, last_publication_at FROM social_posts
-        WHERE source_trace_id = t.id AND user_id = t.user_id
+        SELECT id, status, publishing_date, last_publication_at FROM posts
+        WHERE posts.publication_channel_id IS NULL AND source_trace_id = t.id AND user_id = t.user_id
         ORDER BY (status = 'PUBLISHED') DESC, created_at DESC, id DESC LIMIT 1
     ) p ON TRUE
     WHERE t.user_id = $1 AND t.trace_type = 'USER_TRACE' AND t.status = 'FINALIZED'
@@ -379,6 +379,7 @@ pub fn count_recent_unread_feed_items(
         .load::<Uuid>(&mut conn)?;
 
     let mut query = posts::table
+        .filter(posts::publication_channel_id.is_null())
         .left_join(traces::table.on(traces::id.nullable().eq(posts::source_trace_id)))
         .filter(posts::status.eq(PostStatus::Published.to_db()))
         .filter(posts::user_id.ne(viewer_user_id))

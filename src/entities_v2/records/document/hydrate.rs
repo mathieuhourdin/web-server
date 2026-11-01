@@ -37,7 +37,7 @@ type DocumentTuple = (
 pub(crate) fn readable_document_predicate(viewer: Uuid) -> String {
     format!(
         "(documents.owner_user_id = '{viewer}' OR EXISTS (
-            SELECT 1 FROM social_posts p WHERE p.source_document_id = documents.id
+            SELECT 1 FROM posts p WHERE p.publication_channel_id IS NULL AND p.source_document_id = documents.id
                 AND trace_publication_readable(p.id, '{viewer}')
         ) OR EXISTS (
             SELECT 1 FROM trace_attachments a JOIN traces t ON t.id = a.trace_id
@@ -53,7 +53,7 @@ pub(crate) fn readable_document_predicate(viewer: Uuid) -> String {
                         (t.trace_type <> 'TRACE_COMPLEMENT' AND (
                             EXISTS (SELECT 1 FROM trace_mentions m WHERE m.trace_id = t.id
                                 AND m.mentioned_user_id = '{viewer}' AND m.removed_at IS NULL)
-                            OR EXISTS (SELECT 1 FROM social_posts p WHERE p.source_trace_id = t.id
+                            OR EXISTS (SELECT 1 FROM posts p WHERE p.publication_channel_id IS NULL AND p.source_trace_id = t.id
                                 AND trace_publication_readable(p.id, '{viewer}'))
                         )) OR (
                             t.trace_type = 'TRACE_COMPLEMENT'
@@ -64,7 +64,7 @@ pub(crate) fn readable_document_predicate(viewer: Uuid) -> String {
                                     (b.blocked_user_id = parent.user_id AND b.blocker_user_id = '{viewer}')
                             ) AND (
                                 parent.user_id = '{viewer}' OR EXISTS (
-                                    SELECT 1 FROM social_posts p WHERE p.source_trace_id = t.id
+                                    SELECT 1 FROM posts p WHERE p.publication_channel_id IS NULL AND p.source_trace_id = t.id
                                         AND trace_publication_readable(p.id, '{viewer}')
                                 )
                             )

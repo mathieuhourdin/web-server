@@ -97,7 +97,7 @@ impl Post {
                 count: i64,
             }
             let eligible = diesel::sql_query("SELECT COUNT(*)::bigint AS count FROM users u
-                JOIN social_posts p ON p.id=$1
+                JOIN posts p ON p.publication_channel_id IS NULL AND p.id=$1
                 LEFT JOIN traces t ON t.id=p.source_trace_id
                 LEFT JOIN traces parent ON parent.id=t.parent_trace_id
                 WHERE u.id=ANY($2) AND u.id<>p.user_id AND automation_same_sandbox(p.user_id,u.id)

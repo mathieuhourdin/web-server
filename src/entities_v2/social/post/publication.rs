@@ -178,8 +178,8 @@ pub fn targeted_posts(
     posts: &[Uuid],
     pool: &DbPool,
 ) -> Result<std::collections::HashSet<Uuid>, PpdcError> {
-    Ok(diesel::sql_query("SELECT p.id FROM social_posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
-        WHERE p.id=ANY($1) AND r.user_id=$2")
+    Ok(diesel::sql_query("SELECT p.id FROM posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
+        WHERE p.publication_channel_id IS NULL AND p.id=ANY($1) AND r.user_id=$2")
         .bind::<Array<SqlUuid>,_>(posts).bind::<SqlUuid,_>(user).load::<Id>(&mut pool.get()?)?.into_iter().map(|r|r.id).collect())
 }
 pub fn claim_push(publication: Uuid, user: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {

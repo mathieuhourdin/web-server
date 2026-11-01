@@ -569,8 +569,8 @@ pub fn successfully_pushed_publication_ids(
     }
     let mut conn = pool.get()?;
     Ok(diesel::sql_query(
-        "SELECT p.id AS post_id FROM social_posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
-        WHERE r.user_id=$1 AND p.id=ANY($2) AND r.push_status='SENT'",
+        "SELECT p.id AS post_id FROM posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
+        WHERE p.publication_channel_id IS NULL AND r.user_id=$1 AND p.id=ANY($2) AND r.push_status='SENT'",
     )
     .bind::<SqlUuid, _>(recipient_user_id)
     .bind::<Array<SqlUuid>, _>(post_ids)

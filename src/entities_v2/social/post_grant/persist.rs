@@ -25,7 +25,7 @@ impl PostGrant {
             #[diesel(sql_type = diesel::sql_types::Bool)]
             eligible: bool,
         }
-        let row = diesel::sql_query("SELECT trace_publication_eligible($1, $2) AND EXISTS (SELECT 1 FROM social_posts p WHERE p.id=$1 AND automation_same_sandbox(p.user_id,$2)) AS eligible")
+        let row = diesel::sql_query("SELECT trace_publication_eligible($1, $2) AND EXISTS (SELECT 1 FROM posts p WHERE p.publication_channel_id IS NULL AND p.id=$1 AND automation_same_sandbox(p.user_id,$2)) AS eligible")
             .bind::<diesel::sql_types::Uuid, _>(post_id)
             .bind::<diesel::sql_types::Uuid, _>(viewer_id)
             .get_result::<Eligible>(&mut pool.get()?)?;
@@ -43,7 +43,7 @@ impl PostGrant {
             id: Uuid,
         }
         let rows = diesel::sql_query(
-            "SELECT id FROM social_posts WHERE id = ANY($1) AND trace_publication_eligible(id, $2) AND automation_same_sandbox(user_id,$2)",
+            "SELECT id FROM posts WHERE posts.publication_channel_id IS NULL AND id = ANY($1) AND trace_publication_eligible(id, $2) AND automation_same_sandbox(user_id,$2)",
         )
         .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(ids)
         .bind::<diesel::sql_types::Uuid, _>(viewer_id)
@@ -77,6 +77,7 @@ impl PostGrant {
 
         candidate_ids.extend(
             posts::table
+                .filter(posts::publication_channel_id.is_null())
                 .inner_join(
                     crate::schema::traces::table
                         .on(posts::source_trace_id.eq(crate::schema::traces::id.nullable())),
@@ -91,6 +92,7 @@ impl PostGrant {
             candidate_ids
         } else {
             posts::table
+                .filter(posts::publication_channel_id.is_null())
                 .filter(posts::id.eq_any(candidate_ids))
                 .filter(posts::user_id.ne_all(blocked_user_ids))
                 .select(posts::id)
@@ -301,6 +303,7 @@ impl PostGrant {
         let mut conn = pool.get()?;
         conn.transaction::<_, PpdcError, _>(|conn| {
             posts::table
+                .filter(posts::publication_channel_id.is_null())
                 .filter(posts::id.eq(post.id))
                 .select(posts::id)
                 .for_update()
@@ -373,7 +376,7 @@ impl PostGrant {
         let mut conn = pool.get()?;
         conn.transaction::<_, PpdcError, _>(|conn| {
             // Serialize source changes and last-source cleanup for this post.
-            posts::table.filter(posts::id.eq(post_id)).select(posts::id)
+            posts::table.filter(posts::publication_channel_id.is_null()).filter(posts::id.eq(post_id)).select(posts::id)
                 .for_update().first::<Uuid>(conn)?;
             let (status, reader, source): (String, Option<Uuid>, Option<Uuid>) = post_grants::table
                 .filter(post_grants::id.eq(grant_id))
@@ -488,6 +491,7 @@ impl PostGrant {
         }
 
         let candidate_rows = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::id.eq_any(candidate_ids.iter().copied().collect::<Vec<_>>()))
             .select((
                 posts::id,

@@ -36,6 +36,7 @@ impl Journal {
         )?;
         let mut conn = pool.get()?;
         Ok(posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::id.eq_any(visible))
             .filter(posts::status.eq("PUBLISHED"))

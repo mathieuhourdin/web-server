@@ -1,4 +1,4 @@
-//! Public publication channels. Social CRUD is isolated through `social_posts`.
+//! Public publication channels. Social queries explicitly exclude channel posts.
 mod model;
 mod render;
 mod routes;

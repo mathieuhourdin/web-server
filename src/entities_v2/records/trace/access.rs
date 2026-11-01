@@ -42,7 +42,7 @@ pub async fn for_reader(
             OR (b.blocked_user_id=t.user_id AND b.blocker_user_id=$2))
           AND (EXISTS (SELECT 1 FROM trace_mentions m WHERE m.trace_id=t.id
             AND m.mentioned_user_id=$2 AND m.removed_at IS NULL)
-            OR EXISTS (SELECT 1 FROM social_posts post WHERE post.source_trace_id=t.id
+            OR EXISTS (SELECT 1 FROM posts post WHERE post.publication_channel_id IS NULL AND post.source_trace_id=t.id
                 AND trace_publication_readable(post.id,$2)))))
         ) SELECT page.id,total.total FROM (SELECT COUNT(*)::bigint AS total FROM readable) total
         LEFT JOIN LATERAL (SELECT id,finalized_at FROM readable ORDER BY finalized_at DESC NULLS LAST,id DESC

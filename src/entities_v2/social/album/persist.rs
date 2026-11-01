@@ -161,6 +161,7 @@ fn preferred_post_for_trace(
 
     let mut conn = pool.get()?;
     let mut query = posts::table
+        .filter(posts::publication_channel_id.is_null())
         .filter(posts::source_trace_id.eq(Some(trace_id)))
         .filter(posts::status.eq(PostStatus::Published.to_db()))
         .into_boxed();
@@ -318,7 +319,7 @@ impl Album {
         let mut conn = pool.get()?;
         let count = album_items::table
             .inner_join(
-                posts::table.on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
+                posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(album_items::trace_id.nullable()))),
             )
             .filter(album_items::album_id.eq(self.id))
             .filter(posts::id.eq_any(visible_post_ids))
@@ -359,7 +360,7 @@ impl Album {
         let album_ids = albums::table
             .inner_join(album_items::table.on(album_items::album_id.eq(albums::id)))
             .inner_join(
-                posts::table.on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
+                posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(album_items::trace_id.nullable()))),
             )
             .filter(albums::owner_user_id.eq(owner_user_id))
             .filter(albums::visibility.eq(AlbumVisibility::Published.to_db()))
@@ -402,7 +403,7 @@ impl Album {
             let visible_post_ids = PostGrant::find_visible_post_ids_for_user(viewer_user_id, pool)?;
             album_items::table
                 .inner_join(
-                    posts::table.on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
+                    posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(album_items::trace_id.nullable()))),
                 )
                 .filter(posts::id.eq_any(visible_post_ids))
                 .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -463,7 +464,7 @@ impl Album {
             }
             album_items::table
                 .inner_join(
-                    posts::table.on(posts::source_trace_id.eq(album_items::trace_id.nullable())),
+                    posts::table.on(posts::publication_channel_id.is_null().and(posts::source_trace_id.eq(album_items::trace_id.nullable()))),
                 )
                 .filter(album_items::album_id.eq(self.id))
                 .filter(posts::id.eq_any(visible_post_ids.clone()))

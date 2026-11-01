@@ -178,6 +178,7 @@ impl UserPostState {
 
         let mut conn = pool.get()?;
         let rows = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(user_post_states::table.on(user_post_states::post_id.eq(posts::id)))
             .filter(user_post_states::user_id.eq(user_id))
             .filter(posts::source_trace_id.eq_any(trace_ids))
@@ -205,6 +206,7 @@ impl UserPostState {
     ) -> Result<Vec<Uuid>, PpdcError> {
         let mut conn = pool.get()?;
         let rows = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(user_post_states::table.on(user_post_states::post_id.eq(posts::id)))
             .filter(user_post_states::user_id.eq(user_id))
             .select(posts::source_trace_id)
@@ -242,10 +244,10 @@ impl UserPostState {
                         PARTITION BY ups.post_id
                         ORDER BY ups.last_seen_at DESC
                     ) AS seen_rank
-                FROM social_posts p
+                FROM posts p
                 INNER JOIN user_post_states ups ON ups.post_id = p.id
                 INNER JOIN users u ON u.id = ups.user_id
-                WHERE p.user_id = $1
+                WHERE p.publication_channel_id IS NULL AND p.user_id = $1
                   AND p.status = 'PUBLISHED'
                   AND p.source_trace_id = ANY($2)
                   AND ups.user_id <> $1

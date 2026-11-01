@@ -626,8 +626,7 @@ fn load_platform_metric_points(
                     )
                     SELECT d.day, COUNT(p.id)::bigint AS count
                     FROM days d
-                    LEFT JOIN social_posts p
-                      ON p.status = 'PUBLISHED'
+                    LEFT JOIN posts p ON p.publication_channel_id IS NULL AND p.status = 'PUBLISHED'
                      AND COALESCE(p.publishing_date, p.created_at) >= d.day::timestamp
                      AND COALESCE(p.publishing_date, p.created_at) < (d.day + interval '1 day')
                     GROUP BY d.day
@@ -1373,8 +1372,8 @@ pub async fn get_admin_analytics_users_route(
         ),
         draft_posts AS (
             SELECT p.user_id, COUNT(*)::bigint AS count
-            FROM social_posts p
-            WHERE p.status = 'DRAFT'
+            FROM posts p
+            WHERE p.publication_channel_id IS NULL AND p.status = 'DRAFT'
               AND p.source_trace_id IS NOT NULL
             GROUP BY p.user_id
         ),
@@ -1556,8 +1555,8 @@ pub async fn get_admin_recent_user_activity_route(
         let draft_posts_count = sql_query(
             r#"
             SELECT COUNT(*)::bigint AS value
-            FROM social_posts
-            WHERE user_id = $1
+            FROM posts
+            WHERE posts.publication_channel_id IS NULL AND user_id = $1
               AND status = 'DRAFT'
               AND source_trace_id IS NOT NULL
             "#,
@@ -1797,8 +1796,8 @@ pub async fn get_admin_platform_overview_route(
             ), 0)::bigint AS written_traces_count,
             COALESCE((
                 SELECT COUNT(*)::bigint
-                FROM social_posts p
-                WHERE p.status = 'PUBLISHED'
+                FROM posts p
+                WHERE p.publication_channel_id IS NULL AND p.status = 'PUBLISHED'
                   AND COALESCE(p.publishing_date, p.created_at)::date = d.day
             ), 0)::bigint AS published_posts_count,
             COALESCE((

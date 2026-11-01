@@ -332,6 +332,7 @@ impl Post {
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .left_join(journals::table.on(traces::journal_id.eq(journals::id.nullable())))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -387,6 +388,7 @@ impl Post {
     pub fn find(id: Uuid, pool: &DbPool) -> Result<Post, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::id.eq(id))
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
@@ -412,6 +414,7 @@ impl Post {
         let visible_post_ids = PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?;
 
         let mut count_query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -430,6 +433,7 @@ impl Post {
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
         let mut query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(traces::journal_id.eq(journal_id))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -467,6 +471,7 @@ impl Post {
         let mut conn = pool.get()?;
 
         let total = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
@@ -479,6 +484,7 @@ impl Post {
             .get_result::<i64>(&mut conn)?;
 
         let rows = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
@@ -507,6 +513,7 @@ impl Post {
         let mut conn = pool.get()?;
 
         let matching_post_id = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::user_id.eq(traces::user_id))
             .filter(traces::journal_id.eq(journal_id))
@@ -533,6 +540,7 @@ impl Post {
         let mut conn = pool.get()?;
 
         let rows = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .inner_join(journals::table.on(traces::journal_id.eq(journals::id.nullable())))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -587,6 +595,7 @@ impl Post {
     ) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::source_trace_id.eq(Some(trace_id)))
             .filter(posts::user_id.eq(publisher_id))
             .select(select_post_columns())
@@ -608,6 +617,7 @@ impl Post {
     ) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .inner_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::source_trace_id.eq(Some(trace_id)))
             .filter(posts::status.eq(PostStatus::Published.to_db()))
@@ -638,6 +648,7 @@ impl Post {
     pub fn find_for_document(document_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::source_document_id.eq(Some(document_id)))
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
@@ -652,6 +663,7 @@ impl Post {
     pub fn find_for_album(album_id: Uuid, pool: &DbPool) -> Result<Option<Post>, PpdcError> {
         let mut conn = pool.get()?;
         let row = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::source_album_id.eq(Some(album_id)))
             .select(select_post_columns())
             .first::<PostTuple>(&mut conn)
@@ -719,6 +731,7 @@ impl Post {
             PostGrant::find_shared_post_ids_for_user(viewer_user_id, pool)?
         };
         let mut count_query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::user_id.eq(user_id))
             .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
@@ -752,6 +765,7 @@ impl Post {
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
         let mut query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(posts::user_id.eq(user_id))
             .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
@@ -847,6 +861,7 @@ impl Post {
         };
 
         let mut count_query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
                 "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
@@ -912,6 +927,7 @@ impl Post {
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
         let mut query = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .left_join(traces::table.on(posts::source_trace_id.eq(traces::id.nullable())))
             .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
                 "traces.trace_type IS DISTINCT FROM 'TRACE_COMPLEMENT'",
@@ -982,12 +998,14 @@ impl Post {
         let mut conn = pool.get()?;
 
         let total = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::user_id.eq(user_id))
             .filter(posts::status.eq(PostStatus::Draft.to_db()))
             .count()
             .get_result::<i64>(&mut conn)?;
 
         let rows = posts::table
+            .filter(posts::publication_channel_id.is_null())
             .filter(posts::user_id.eq(user_id))
             .filter(posts::status.eq(PostStatus::Draft.to_db()))
             .select(select_post_columns())

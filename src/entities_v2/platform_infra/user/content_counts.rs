@@ -60,7 +60,7 @@ pub async fn get_user_content_counts_route(
                 ) AND (
                     EXISTS (SELECT 1 FROM trace_mentions m WHERE m.trace_id = t.id
                         AND m.mentioned_user_id = $2 AND m.removed_at IS NULL)
-                    OR EXISTS (SELECT 1 FROM social_posts p WHERE p.source_trace_id = t.id
+                    OR EXISTS (SELECT 1 FROM posts p WHERE p.publication_channel_id IS NULL AND p.source_trace_id = t.id
                         AND trace_publication_readable(p.id, $2))
                 )
               ))
@@ -70,7 +70,7 @@ pub async fn get_user_content_counts_route(
           (SELECT MIN(finalized_at) FROM readable_traces) AS oldest_trace_finalized_at,
           (SELECT COUNT(*) FROM albums a WHERE a.owner_user_id = $1 AND (
               a.owner_user_id = $2 OR (a.visibility = 'PUBLISHED' AND EXISTS (
-                  SELECT 1 FROM album_items i JOIN social_posts p ON p.source_trace_id = i.trace_id
+                  SELECT 1 FROM album_items i JOIN posts p ON p.publication_channel_id IS NULL AND p.source_trace_id = i.trace_id
                   WHERE i.album_id = a.id AND trace_publication_readable(p.id, $2)
               ))
           ))::bigint AS albums_count,

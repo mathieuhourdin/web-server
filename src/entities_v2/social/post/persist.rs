@@ -11,7 +11,7 @@ use super::model::{NewPost, Post, PostSourceRef, PostStatus};
 impl Post {
     pub fn update(self, pool: &DbPool) -> Result<Post, PpdcError> {
         let mut conn = pool.get()?;
-        diesel::update(posts::table.filter(posts::id.eq(self.id)))
+        diesel::update(posts::table.filter(posts::publication_channel_id.is_null()).filter(posts::id.eq(self.id)))
             .set((
                 posts::source_trace_id.eq(self.source_trace_id),
                 posts::source_document_id.eq(self.source_document_id),
@@ -59,7 +59,7 @@ impl Post {
         }
 
         let deleted =
-            diesel::delete(posts::table.filter(posts::id.eq(self.id))).execute(&mut conn)?;
+            diesel::delete(posts::table.filter(posts::publication_channel_id.is_null()).filter(posts::id.eq(self.id))).execute(&mut conn)?;
         if deleted == 0 {
             return Err(PpdcError::new(
                 404,
