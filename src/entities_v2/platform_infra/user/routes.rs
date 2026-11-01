@@ -597,7 +597,9 @@ pub async fn get_suggested_users_route(
              AND candidate_follow.status = 'ACCEPTED'
             WHERE my_follow.requester_user_id = $1
               AND my_follow.relationship_type = 'FOLLOW'
-              AND my_follow.status = 'ACCEPTED'
+              -- Only the caller's own pending requests are used as starting points.
+              -- Other users' pending relationships are never traversed.
+              AND my_follow.status IN ('PENDING', 'ACCEPTED')
             GROUP BY candidate_follow.target_user_id
         )
         SELECT u.id AS user_id
