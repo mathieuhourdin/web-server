@@ -93,6 +93,11 @@ pub fn create_router() -> Router {
         )
         .api_route(
             "/users",
+            "/:id/publications",
+            get(blog::get_user_publications_route),
+        )
+        .api_route(
+            "/users",
             "/:id/journals/shared",
             get(journal::get_user_recent_shared_journals_route),
         )
@@ -225,8 +230,8 @@ pub fn create_router() -> Router {
             get(writing_thread::routes::for_trace),
         )
         .api_route("/traces", "/drafts", get(trace::get_trace_drafts_route))
-        .api_route("/traces", "/:id/versions", get(post::publication::get_trace_versions).post(post::publication::archive_trace))
-        .api_route("/traces", "/:id/versions/:version_id", get(post::publication::get_trace_version))
+        .api_route("/traces", "/:id/versions", get(post::distribution_event::get_trace_versions).post(post::distribution_event::archive_trace))
+        .api_route("/traces", "/:id/versions/:version_id", get(post::distribution_event::get_trace_version))
         .api_route(
             "/traces",
             "/search",
@@ -347,8 +352,8 @@ pub fn create_router() -> Router {
             put(audience::routes::put_post_audience).delete(audience::routes::delete_post_audience),
         )
         .api_route("/posts", "/drafts", get(post::get_post_drafts_route))
-        .api_route("/posts", "/:id/publications", get(post::publication::get_publications).post(post::publication::post_publication))
-        .api_route("/posts", "/:id/publications/:publication_id/recipients", get(post::publication::get_recipients))
+        .api_route("/posts", "/:id/distribution_events", get(post::distribution_event::get_distribution_events).post(post::distribution_event::post_distribution_event))
+        .api_route("/posts", "/:id/distribution_events/:event_id/recipients", get(post::distribution_event::get_recipients))
         .api_route("/posts", "/feed", get(feed::get_feed_route))
         .api_route(
             "/posts",

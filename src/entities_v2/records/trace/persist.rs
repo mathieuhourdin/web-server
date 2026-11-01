@@ -280,6 +280,7 @@ impl Trace {
 
             let now = Utc::now().naive_utc();
             let trace_id = uuid::Uuid::new_v4();
+            let language_code = super::language::detect_language(&title, &content);
             diesel::sql_query(
                 "INSERT INTO traces (
                     id, user_id, journal_id, parent_trace_id, complement_audience_mode,
@@ -288,7 +289,7 @@ impl Trace {
                     start_writing_at, finalized_at, content_image_asset_id,
                     timeout_at, timeout_start_at, sharing_sensitivity,
                     derived_from_trace_id, is_blank, version_integer,
-                    created_at, updated_at
+                    created_at, updated_at, language_code
                  ) VALUES (
                     $1, $2, NULL, $3, $4,
                     $5, $6, $7, $8,
@@ -296,7 +297,7 @@ impl Trace {
                     $8, $8, NULL,
                     NULL, NULL, 'NORMAL',
                     NULL, FALSE, 0,
-                    $8, $8
+                    $8, $8, $9
                  )",
             )
             .bind::<SqlUuid, _>(trace_id)
@@ -307,10 +308,8 @@ impl Trace {
             .bind::<Text, _>(&subtitle)
             .bind::<Text, _>(&content)
             .bind::<Timestamp, _>(now)
+            .bind::<Nullable<Text>, _>(&language_code)
             .execute(conn)?;
-
-            let language_code = super::language::detect_language(&title, &content);
-            super::language::store(conn, trace_id, language_code.as_deref())?;
 
             let post_id = uuid::Uuid::new_v4();
             diesel::insert_into(posts::table)
@@ -811,6 +810,13 @@ impl NewTrace {
         self.is_blank = false;
         let finalized_at = date.unwrap_or_else(|| Utc::now().naive_utc());
         self.start_writing_at = Some(finalized_at);
+        // Store language together with the content so the finalization snapshot
+        // sees the complete final record, including on direct inserts/imports.
+        let language_code = if self.is_encrypted {
+            None
+        } else {
+            super::language::detect_language(&self.title, &self.content)
+        };
         let mut conn = pool.get()?;
 
         let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
@@ -836,7 +842,8 @@ impl NewTrace {
                     is_blank,
                     start_writing_at,
                     finalized_at,
-                    is_historical_import
+                    is_historical_import,
+                    language_code
                  ) VALUES (
                     uuid_generate_v4(),
                     $1,
@@ -858,7 +865,8 @@ impl NewTrace {
                     FALSE,
                     $15,
                     $16,
-                    $17
+                    $17,
+                    $18
                  )
                  RETURNING id",
             )
@@ -883,12 +891,8 @@ impl NewTrace {
             .bind::<Nullable<Timestamp>, _>(self.start_writing_at)
             .bind::<Timestamp, _>(finalized_at)
             .bind::<Bool, _>(historical)
+            .bind::<Nullable<Text>, _>(&language_code)
             .get_result::<IdRow>(conn)?;
-
-            if !self.is_encrypted {
-                let language_code = super::language::detect_language(&self.title, &self.content);
-                super::language::store(conn, inserted.id, language_code.as_deref())?;
-            }
 
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
 

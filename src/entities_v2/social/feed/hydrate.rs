@@ -67,7 +67,7 @@ WITH feed_candidates AS (
     SELECT p.id AS entry_id, p.id AS post_id, p.user_id AS owner_user_id,
         p.source_trace_id, p.source_document_id, NULL::uuid AS source_album_id,
         p.publishing_date, p.status, p.created_at, p.updated_at,
-        COALESCE(p.last_publication_at, p.publishing_date, p.created_at) AS feed_date
+        COALESCE(p.last_distribution_at, p.publishing_date, p.created_at) AS feed_date
     FROM posts p LEFT JOIN traces t ON t.id = p.source_trace_id
     WHERE p.publication_channel_id IS NULL AND p.status = 'PUBLISHED' AND p.user_id <> $1
       AND p.id = ANY($2) AND p.source_album_id IS NULL
@@ -130,9 +130,9 @@ WITH feed_candidates AS (
     SELECT t.id AS entry_id, p.id AS post_id, t.user_id AS owner_user_id,
         t.id AS source_trace_id, NULL::uuid AS source_document_id, NULL::uuid AS source_album_id,
         p.publishing_date, COALESCE(p.status, 'DRAFT') AS status, t.created_at, t.updated_at,
-        COALESCE(p.last_publication_at, t.finalized_at, t.start_writing_at, t.created_at) AS feed_date
+        COALESCE(p.last_distribution_at, t.finalized_at, t.start_writing_at, t.created_at) AS feed_date
     FROM traces t LEFT JOIN LATERAL (
-        SELECT id, status, publishing_date, last_publication_at FROM posts
+        SELECT id, status, publishing_date, last_distribution_at FROM posts
         WHERE posts.publication_channel_id IS NULL AND source_trace_id = t.id AND user_id = t.user_id
         ORDER BY (status = 'PUBLISHED') DESC, created_at DESC, id DESC LIMIT 1
     ) p ON TRUE
@@ -205,7 +205,7 @@ fn hydrate_feed_candidates(
         .filter_map(FeedCandidate::source_ref)
         .collect::<Vec<_>>();
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
-    let publication_meta=crate::entities_v2::post::publication::metadata(&rows.iter().filter_map(|r|r.post_id).collect::<Vec<_>>(), &mut conn)?;
+    let distribution_meta=crate::entities_v2::post::distribution_event::metadata(&rows.iter().filter_map(|r|r.post_id).collect::<Vec<_>>(), &mut conn)?;
     drop(conn);
 
     let image_ids = projections
@@ -300,8 +300,8 @@ fn hydrate_feed_candidates(
             }
             Some(FeedItem {
                 post_id: row.post_id,
-                last_publication_id: row.post_id.and_then(|id|publication_meta.get(&id)).and_then(|m|m.last_publication_id),
-                last_publication_at: row.post_id.and_then(|id|publication_meta.get(&id)).and_then(|m|m.last_publication_at),
+                last_distribution_event_id: row.post_id.and_then(|id|distribution_meta.get(&id)).and_then(|m|m.last_distribution_event_id),
+                last_distribution_at: row.post_id.and_then(|id|distribution_meta.get(&id)).and_then(|m|m.last_distribution_at),
                 source_kind: match projection.source_kind {
                     SourceProjectionKind::Trace => FeedSourceKind::Trace,
                     SourceProjectionKind::Document => FeedSourceKind::Document,

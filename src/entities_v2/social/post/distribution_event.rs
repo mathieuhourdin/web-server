@@ -1,6 +1,6 @@
-//! Publication events are distinct from live content and social access grants.
+//! Post distribution events are distinct from durable publications and access grants.
 use super::{
-    notifications::{NotificationOptions, PublicationNotificationMode},
+    notifications::{NotificationOptions, PostNotificationMode},
     Post,
 };
 use crate::{
@@ -27,13 +27,13 @@ fn error(code: u32, text: &str) -> PpdcError {
     PpdcError::new(code, ErrorType::ApiError, text.into())
 }
 #[derive(Clone, Serialize, QueryableByName)]
-pub struct Publication {
+pub struct PostDistributionEvent {
     #[diesel(sql_type=SqlUuid)]
     pub id: Uuid,
     #[diesel(sql_type=SqlUuid)]
     pub post_id: Uuid,
     #[diesel(sql_type=Timestamp)]
-    pub published_at: NaiveDateTime,
+    pub distributed_at: NaiveDateTime,
     #[diesel(sql_type=Nullable<SqlUuid>)]
     pub trace_version_id: Option<Uuid>,
     #[diesel(sql_type=Text)]
@@ -49,7 +49,7 @@ pub struct Publication {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PublicationInput {
+pub struct PostDistributionEventInput {
     pub idempotency_key: Uuid,
     pub trace_version_id: Option<Uuid>,
     #[serde(flatten)]
@@ -109,9 +109,9 @@ struct Destination {
     channel: bool,
 }
 
-pub fn find(id: Uuid, pool: &DbPool) -> Result<Publication, PpdcError> {
+pub fn find(id: Uuid, pool: &DbPool) -> Result<PostDistributionEvent, PpdcError> {
     Ok(
-        diesel::sql_query("SELECT * FROM post_publications WHERE id=$1")
+        diesel::sql_query("SELECT * FROM post_distribution_events WHERE id=$1")
             .bind::<SqlUuid, _>(id)
             .get_result(&mut pool.get()?)?,
     )
@@ -126,27 +126,27 @@ fn require_owner(post: Uuid, owner: Uuid, pool: &DbPool) -> Result<(), PpdcError
 pub fn create(
     post: Uuid,
     owner: Uuid,
-    input: PublicationInput,
+    input: PostDistributionEventInput,
     pool: &DbPool,
-) -> Result<(Publication, bool), PpdcError> {
+) -> Result<(PostDistributionEvent, bool), PpdcError> {
     pool.get()?.transaction::<_,PpdcError,_>(|conn|{
         let destination=diesel::sql_query("SELECT publication_channel_id IS NOT NULL AS channel FROM posts WHERE id=$1 AND user_id=$2 FOR UPDATE")
             .bind::<SqlUuid,_>(post).bind::<SqlUuid,_>(owner).get_result::<Destination>(conn)?;
-        let mode=input.notifications.notification_mode.unwrap_or(if destination.channel{PublicationNotificationMode::None}else{PublicationNotificationMode::All});
+        let mode=input.notifications.notification_mode.unwrap_or(if destination.channel{PostNotificationMode::None}else{PostNotificationMode::All});
         let mut ids=input.notifications.notification_user_ids.clone().unwrap_or_default();ids.sort_unstable();ids.dedup();
-        if (mode==PublicationNotificationMode::Selected && (ids.is_empty() || ids.len()>500))
-            || (mode!=PublicationNotificationMode::Selected && !ids.is_empty()) || (destination.channel && mode!=PublicationNotificationMode::None){
-            return Err(error(400,"Invalid publication notification selection; blog/channel publications must use none"));
+        if (mode==PostNotificationMode::Selected && (ids.is_empty() || ids.len()>500))
+            || (mode!=PostNotificationMode::Selected && !ids.is_empty()) || (destination.channel && mode!=PostNotificationMode::None){
+            return Err(error(400,"Invalid event notification selection; blog/channel publications must use none"));
         }
-        let existing=diesel::sql_query("SELECT * FROM post_publications WHERE post_id=$1 AND idempotency_key=$2")
-            .bind::<SqlUuid,_>(post).bind::<SqlUuid,_>(input.idempotency_key).get_result::<Publication>(conn).optional()?;
+        let existing=diesel::sql_query("SELECT * FROM post_distribution_events WHERE post_id=$1 AND idempotency_key=$2")
+            .bind::<SqlUuid,_>(post).bind::<SqlUuid,_>(input.idempotency_key).get_result::<PostDistributionEvent>(conn).optional()?;
         if let Some(existing)=existing {
             if existing.trace_version_id!=input.trace_version_id || existing.notification_mode!=mode.to_db() || existing.notification_user_ids!=ids {
-                return Err(error(409,"This idempotency key already identifies a different publication request"));
+                return Err(error(409,"This idempotency key already identifies a different event request"));
             }
             return Ok((existing,false));
         }
-        let row=diesel::sql_query("INSERT INTO post_publications(post_id,idempotency_key,trace_version_id,notification_mode,notification_user_ids)
+        let row=diesel::sql_query("INSERT INTO post_distribution_events(post_id,idempotency_key,trace_version_id,notification_mode,notification_user_ids)
             VALUES($1,$2,$3,$4,$5) RETURNING *")
             .bind::<SqlUuid,_>(post).bind::<SqlUuid,_>(input.idempotency_key).bind::<Nullable<SqlUuid>,_>(input.trace_version_id)
             .bind::<Text,_>(mode.to_db()).bind::<Array<SqlUuid>,_>(&ids).get_result(conn)?;
@@ -157,7 +157,7 @@ pub fn create(
 /// Once-only dispatch claim, independent for each event (never keyed by post).
 pub fn claim(id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
     Ok(diesel::sql_query(
-        "UPDATE post_publications e SET dispatch_started_at=NOW() FROM posts p
+        "UPDATE post_distribution_events e SET dispatch_started_at=NOW() FROM posts p
         WHERE e.id=$1 AND e.dispatch_started_at IS NULL AND p.id=e.post_id AND p.status='PUBLISHED'
             AND p.publication_channel_id IS NULL",
     )
@@ -166,68 +166,63 @@ pub fn claim(id: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
         == 1)
 }
 pub fn eligible_recipients(post: &Post, pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
-    let Some(publication) = post.last_publication_id else {
+    let Some(event) = post.last_distribution_event_id else {
         return Ok(vec![]);
     };
-    Ok(diesel::sql_query("SELECT r.user_id AS id FROM post_publication_recipients r JOIN post_publications e ON e.id=r.publication_id
-        WHERE r.publication_id=$1 AND e.post_id=$2 AND trace_publication_readable(e.post_id,r.user_id)")
-        .bind::<SqlUuid,_>(publication).bind::<SqlUuid,_>(post.id).load::<Id>(&mut pool.get()?)?.into_iter().map(|r|r.id).collect())
+    Ok(diesel::sql_query("SELECT r.user_id AS id FROM post_distribution_recipients r JOIN post_distribution_events e ON e.id=r.distribution_event_id
+        WHERE r.distribution_event_id=$1 AND e.post_id=$2 AND trace_publication_readable(e.post_id,r.user_id)")
+        .bind::<SqlUuid,_>(event).bind::<SqlUuid,_>(post.id).load::<Id>(&mut pool.get()?)?.into_iter().map(|r|r.id).collect())
 }
 pub fn targeted_posts(
     user: Uuid,
     posts: &[Uuid],
     pool: &DbPool,
 ) -> Result<std::collections::HashSet<Uuid>, PpdcError> {
-    Ok(diesel::sql_query("SELECT p.id FROM posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
+    Ok(diesel::sql_query("SELECT p.id FROM posts p JOIN post_distribution_recipients r ON r.distribution_event_id=p.last_distribution_event_id
         WHERE p.publication_channel_id IS NULL AND p.id=ANY($1) AND r.user_id=$2")
         .bind::<Array<SqlUuid>,_>(posts).bind::<SqlUuid,_>(user).load::<Id>(&mut pool.get()?)?.into_iter().map(|r|r.id).collect())
 }
-pub fn claim_push(publication: Uuid, user: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
+pub fn claim_push(event: Uuid, user: Uuid, pool: &DbPool) -> Result<bool, PpdcError> {
     Ok(diesel::sql_query(
-        "UPDATE post_publication_recipients r SET push_status='SENDING' FROM post_publications e
-        WHERE r.publication_id=$1 AND r.user_id=$2 AND r.push_status='NOT_ATTEMPTED'
-        AND e.id=r.publication_id AND trace_publication_readable(e.post_id,r.user_id)",
+        "UPDATE post_distribution_recipients r SET push_status='SENDING' FROM post_distribution_events e
+        WHERE r.distribution_event_id=$1 AND r.user_id=$2 AND r.push_status='NOT_ATTEMPTED'
+        AND e.id=r.distribution_event_id AND trace_publication_readable(e.post_id,r.user_id)",
     )
-    .bind::<SqlUuid, _>(publication)
+    .bind::<SqlUuid, _>(event)
     .bind::<SqlUuid, _>(user)
     .execute(&mut pool.get()?)?
         == 1)
 }
-pub fn finish_push(
-    publication: Uuid,
-    user: Uuid,
-    sent: bool,
-    pool: &DbPool,
-) -> Result<(), PpdcError> {
-    diesel::sql_query("UPDATE post_publication_recipients SET push_status=$3,push_sent_at=CASE WHEN $4 THEN NOW() ELSE NULL END
-        WHERE publication_id=$1 AND user_id=$2 AND push_status='SENDING'")
-        .bind::<SqlUuid,_>(publication).bind::<SqlUuid,_>(user).bind::<Text,_>(if sent{"SENT"}else{"FAILED"}).bind::<Bool,_>(sent).execute(&mut pool.get()?)?;
+pub fn finish_push(event: Uuid, user: Uuid, sent: bool, pool: &DbPool) -> Result<(), PpdcError> {
+    diesel::sql_query("UPDATE post_distribution_recipients SET push_status=$3,push_sent_at=CASE WHEN $4 THEN NOW() ELSE NULL END
+        WHERE distribution_event_id=$1 AND user_id=$2 AND push_status='SENDING'")
+        .bind::<SqlUuid,_>(event).bind::<SqlUuid,_>(user).bind::<Text,_>(if sent{"SENT"}else{"FAILED"}).bind::<Bool,_>(sent).execute(&mut pool.get()?)?;
     Ok(())
 }
 pub fn record_email(post: &Post, user: Uuid, email: Uuid, pool: &DbPool) -> Result<(), PpdcError> {
-    diesel::sql_query("UPDATE post_publication_recipients SET email_id=$3 WHERE publication_id=$1 AND user_id=$2 AND email_id IS NULL")
-        .bind::<Nullable<SqlUuid>,_>(post.last_publication_id).bind::<SqlUuid,_>(user).bind::<SqlUuid,_>(email).execute(&mut pool.get()?)?;
+    diesel::sql_query("UPDATE post_distribution_recipients SET email_id=$3 WHERE distribution_event_id=$1 AND user_id=$2 AND email_id IS NULL")
+        .bind::<Nullable<SqlUuid>,_>(post.last_distribution_event_id).bind::<SqlUuid,_>(user).bind::<SqlUuid,_>(email).execute(&mut pool.get()?)?;
     Ok(())
 }
-pub fn dispatch(event: &Publication, pool: &DbPool) -> Result<(), PpdcError> {
+pub fn dispatch(event: &PostDistributionEvent, pool: &DbPool) -> Result<(), PpdcError> {
     if !claim(event.id, pool)? {
         return Ok(());
     }
     let mut post = Post::find_full(event.post_id, pool)?;
-    post.last_publication_id = Some(event.id);
-    post.last_publication_at = Some(event.published_at);
-    post.notification_mode = PublicationNotificationMode::from_db(&event.notification_mode);
+    post.last_distribution_event_id = Some(event.id);
+    post.last_distribution_at = Some(event.distributed_at);
+    post.notification_mode = PostNotificationMode::from_db(&event.notification_mode);
     post.notification_user_ids = event.notification_user_ids.clone();
-    super::routes::dispatch_claimed_publication_notifications(&post, pool);
+    super::routes::dispatch_claimed_distribution_notifications(&post, pool);
     Ok(())
 }
 
-pub async fn post_publication(
+pub async fn post_distribution_event(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(post): Path<Uuid>,
-    Json(input): Json<PublicationInput>,
-) -> Result<Json<Publication>, PpdcError> {
+    Json(input): Json<PostDistributionEventInput>,
+) -> Result<Json<PostDistributionEvent>, PpdcError> {
     let owner = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let (event, created) = create(post, owner, input, &pool)?;
     if created {
@@ -235,12 +230,12 @@ pub async fn post_publication(
     }
     Ok(Json(event))
 }
-pub async fn get_publications(
+pub async fn get_distribution_events(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(post): Path<Uuid>,
     Query(page): Query<PaginationParams>,
-) -> Result<Json<PaginatedResponse<Publication>>, PpdcError> {
+) -> Result<Json<PaginatedResponse<PostDistributionEvent>>, PpdcError> {
     require_owner(
         post,
         session.user_id.ok_or_else(PpdcError::unauthorized)?,
@@ -248,11 +243,11 @@ pub async fn get_publications(
     )?;
     let page = page.validate()?;
     let mut conn = pool.get()?;
-    let total = diesel::sql_query("SELECT COUNT(*) FROM post_publications WHERE post_id=$1")
+    let total = diesel::sql_query("SELECT COUNT(*) FROM post_distribution_events WHERE post_id=$1")
         .bind::<SqlUuid, _>(post)
         .get_result::<Count>(&mut conn)?
         .count;
-    let items=diesel::sql_query("SELECT * FROM post_publications WHERE post_id=$1 ORDER BY published_at DESC,id DESC LIMIT $2 OFFSET $3")
+    let items=diesel::sql_query("SELECT * FROM post_distribution_events WHERE post_id=$1 ORDER BY distributed_at DESC,id DESC LIMIT $2 OFFSET $3")
         .bind::<SqlUuid,_>(post).bind::<BigInt,_>(page.limit).bind::<BigInt,_>(page.offset).load(&mut conn)?;
     Ok(Json(PaginatedResponse::new(items, page, total)))
 }
@@ -268,19 +263,19 @@ pub async fn get_recipients(
         &pool,
     )?;
     if find(event, &pool)?.post_id != post {
-        return Err(error(404, "Publication not found"));
+        return Err(error(404, "PostDistributionEvent not found"));
     }
     let page = page.validate()?;
     let mut conn = pool.get()?;
     let total = diesel::sql_query(
-        "SELECT COUNT(*) FROM post_publication_recipients WHERE publication_id=$1",
+        "SELECT COUNT(*) FROM post_distribution_recipients WHERE distribution_event_id=$1",
     )
     .bind::<SqlUuid, _>(event)
     .get_result::<Count>(&mut conn)?
     .count;
     let items=diesel::sql_query("SELECT r.user_id,r.push_status,r.push_sent_at,r.email_id,o.status AS email_status,o.sent_at AS email_sent_at
-        FROM post_publication_recipients r LEFT JOIN outbound_emails o ON o.id=r.email_id
-        WHERE r.publication_id=$1 ORDER BY r.user_id LIMIT $2 OFFSET $3")
+        FROM post_distribution_recipients r LEFT JOIN outbound_emails o ON o.id=r.email_id
+        WHERE r.distribution_event_id=$1 ORDER BY r.user_id LIMIT $2 OFFSET $3")
         .bind::<SqlUuid,_>(event).bind::<BigInt,_>(page.limit).bind::<BigInt,_>(page.offset).load(&mut conn)?;
     Ok(Json(PaginatedResponse::new(items, page, total)))
 }
@@ -344,24 +339,24 @@ pub async fn get_trace_version(
 }
 
 #[derive(QueryableByName)]
-pub struct PublicationMeta {
+pub struct PostDistributionMeta {
     #[diesel(sql_type=SqlUuid)]
     pub id: Uuid,
     #[diesel(sql_type=Nullable<SqlUuid>)]
-    pub last_publication_id: Option<Uuid>,
+    pub last_distribution_event_id: Option<Uuid>,
     #[diesel(sql_type=Nullable<Timestamp>)]
-    pub last_publication_at: Option<NaiveDateTime>,
+    pub last_distribution_at: Option<NaiveDateTime>,
     #[diesel(sql_type=Text)]
     pub notification_mode: String,
     #[diesel(sql_type=Array<SqlUuid>)]
     pub notification_user_ids: Vec<Uuid>,
 }
-impl PublicationMeta {
+impl PostDistributionMeta {
     pub fn apply(&self, post: &mut Post) {
-        post.last_publication_id = self.last_publication_id;
-        post.last_publication_at = self.last_publication_at;
+        post.last_distribution_event_id = self.last_distribution_event_id;
+        post.last_distribution_at = self.last_distribution_at;
         if post.status == super::PostStatus::Published {
-            post.notification_mode = PublicationNotificationMode::from_db(&self.notification_mode);
+            post.notification_mode = PostNotificationMode::from_db(&self.notification_mode);
             post.notification_user_ids = self.notification_user_ids.clone();
         }
     }
@@ -369,14 +364,14 @@ impl PublicationMeta {
 pub fn metadata(
     ids: &[Uuid],
     conn: &mut PgConnection,
-) -> Result<std::collections::HashMap<Uuid, PublicationMeta>, PpdcError> {
+) -> Result<std::collections::HashMap<Uuid, PostDistributionMeta>, PpdcError> {
     Ok(diesel::sql_query(
-        "SELECT p.id,p.last_publication_id,p.last_publication_at,COALESCE(e.notification_mode,p.notification_mode) AS notification_mode,
+        "SELECT p.id,p.last_distribution_event_id,p.last_distribution_at,COALESCE(e.notification_mode,p.notification_mode) AS notification_mode,
         COALESCE(e.notification_user_ids,p.notification_user_ids) AS notification_user_ids
-        FROM posts p LEFT JOIN post_publications e ON e.id=p.last_publication_id WHERE p.id=ANY($1)",
+        FROM posts p LEFT JOIN post_distribution_events e ON e.id=p.last_distribution_event_id WHERE p.id=ANY($1)",
     )
     .bind::<Array<SqlUuid>, _>(ids)
-    .load::<PublicationMeta>(conn)?
+    .load::<PostDistributionMeta>(conn)?
     .into_iter()
     .map(|r| (r.id, r))
     .collect())

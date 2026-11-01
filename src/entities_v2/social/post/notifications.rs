@@ -13,13 +13,13 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PublicationNotificationMode {
+pub enum PostNotificationMode {
     #[default]
     All,
     None,
     Selected,
 }
-impl PublicationNotificationMode {
+impl PostNotificationMode {
     pub fn to_db(self) -> &'static str {
         match self {
             Self::All => "ALL",
@@ -38,16 +38,16 @@ impl PublicationNotificationMode {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct NotificationOptions {
-    pub notification_mode: Option<PublicationNotificationMode>,
+    pub notification_mode: Option<PostNotificationMode>,
     pub notification_user_ids: Option<Vec<Uuid>>,
 }
 
 impl Post {
     pub fn notification_allows(&self, user: Uuid) -> bool {
         match self.notification_mode {
-            PublicationNotificationMode::All => true,
-            PublicationNotificationMode::None => false,
-            PublicationNotificationMode::Selected => self.notification_user_ids.contains(&user),
+            PostNotificationMode::All => true,
+            PostNotificationMode::None => false,
+            PostNotificationMode::Selected => self.notification_user_ids.contains(&user),
         }
     }
 
@@ -60,7 +60,7 @@ impl Post {
             return Ok(());
         }
         let mode = options.notification_mode.unwrap_or(self.notification_mode);
-        if mode != PublicationNotificationMode::Selected
+        if mode != PostNotificationMode::Selected
             && options
                 .notification_user_ids
                 .as_ref()
@@ -75,12 +75,12 @@ impl Post {
         let mut ids = options
             .notification_user_ids
             .unwrap_or_else(|| self.notification_user_ids.clone());
-        if mode != PublicationNotificationMode::Selected {
+        if mode != PostNotificationMode::Selected {
             ids.clear();
         }
         ids.sort_unstable();
         ids.dedup();
-        if mode == PublicationNotificationMode::Selected {
+        if mode == PostNotificationMode::Selected {
             if ids.is_empty() || ids.len() > 500 {
                 return Err(PpdcError::new(
                     400,
@@ -122,7 +122,7 @@ impl Post {
 
 #[derive(Serialize)]
 pub struct NotificationSettings {
-    pub notification_mode: PublicationNotificationMode,
+    pub notification_mode: PostNotificationMode,
     pub notification_user_ids: Vec<Uuid>,
 }
 
@@ -142,10 +142,10 @@ pub async fn get_notification_settings(
             "Post not found".to_string(),
         ));
     }
-    if let Some(id)=post.last_publication_id {
-        let event=super::publication::find(id,&pool)?;
+    if let Some(id)=post.last_distribution_event_id {
+        let event=super::distribution_event::find(id,&pool)?;
         return Ok(axum::Json(NotificationSettings {
-            notification_mode:PublicationNotificationMode::from_db(&event.notification_mode),
+            notification_mode:PostNotificationMode::from_db(&event.notification_mode),
             notification_user_ids:event.notification_user_ids,
         }));
     }

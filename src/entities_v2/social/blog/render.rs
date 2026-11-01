@@ -1,4 +1,4 @@
-use super::model::{Blog, BlogPost};
+use super::model::{Blog, Publication};
 use crate::pagination::PaginatedResponse;
 use axum::{
     http::header,
@@ -22,10 +22,10 @@ fn base() -> String {
 fn blog_url(blog: &Blog) -> String {
     format!("{}/{}", base(), blog.slug)
 }
-fn post_url(blog: &Blog, post: &BlogPost) -> String {
+fn post_url(blog: &Blog, post: &Publication) -> String {
     format!("{}/posts/{}", blog_url(blog), post.id)
 }
-fn image_url(blog: &Blog, post: Option<&BlogPost>, asset: uuid::Uuid) -> String {
+fn image_url(blog: &Blog, post: Option<&Publication>, asset: uuid::Uuid) -> String {
     match post {
         Some(p) => format!("{}/assets/{asset}", post_url(blog, p)),
         None => format!("{}/assets/{asset}", blog_url(blog)),
@@ -95,10 +95,10 @@ fn excerpt(content: &str) -> String {
     };
     format!("{end}…")
 }
-fn entries(blog: &Blog, posts: &PaginatedResponse<BlogPost>, subjects: Option<bool>) -> String {
+fn entries(blog: &Blog, posts: &PaginatedResponse<Publication>, subjects: Option<bool>) -> String {
     posts.items.iter().filter(|p| subjects.map(|s|s==p.source_album_id.is_some()).unwrap_or(true)).map(|p|{
         let subject=if p.source_album_id.is_some(){"Sujet · "}else{""};
-        let date=p.last_publication_at.or(p.publishing_date).map(|d|d.format("%Y-%m-%d").to_string()).unwrap_or_default();
+        let date=p.last_distribution_at.or(p.publishing_date).map(|d|d.format("%Y-%m-%d").to_string()).unwrap_or_default();
         let title=if p.title.trim().is_empty(){"Sans titre"}else{&p.title};
         let subtitle=if p.subtitle.trim().is_empty(){String::new()}else{format!("<p>{}</p>",escape(&p.subtitle))};
         let preview=if p.source_trace_id.is_some(){excerpt(&p.content)}else{String::new()};
@@ -107,7 +107,7 @@ fn entries(blog: &Blog, posts: &PaginatedResponse<BlogPost>, subjects: Option<bo
             escape(&post_url(blog,p)),escape(title))
     }).collect()
 }
-fn pagination(url: &str, posts: &PaginatedResponse<BlogPost>) -> String {
+fn pagination(url: &str, posts: &PaginatedResponse<Publication>) -> String {
     let mut html = String::from("<nav aria-label=\"Pagination\">");
     if posts.offset > 0 {
         html += &format!(
@@ -127,7 +127,7 @@ fn pagination(url: &str, posts: &PaginatedResponse<BlogPost>) -> String {
     }
     html + "</nav>"
 }
-pub fn home(blog: &Blog, posts: &PaginatedResponse<BlogPost>) -> Response {
+pub fn home(blog: &Blog, posts: &PaginatedResponse<Publication>) -> Response {
     let image = blog.image_asset_id.map(|id| image_url(blog, None, id));
     let cover = image
         .as_ref()
@@ -157,8 +157,8 @@ pub fn home(blog: &Blog, posts: &PaginatedResponse<BlogPost>) -> Response {
 }
 pub fn article(
     blog: &Blog,
-    post: &BlogPost,
-    items: Option<&PaginatedResponse<BlogPost>>,
+    post: &Publication,
+    items: Option<&PaginatedResponse<Publication>>,
 ) -> Response {
     let image = post
         .image_asset_id
@@ -168,7 +168,7 @@ pub fn article(
         .map(|u| format!("<img src=\"{}\" alt=\"\">", escape(u)))
         .unwrap_or_default();
     let date = post
-        .last_publication_at
+        .last_distribution_at
         .or(post.publishing_date)
         .map(|d| d.format("%Y-%m-%d").to_string())
         .unwrap_or_default();

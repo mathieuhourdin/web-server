@@ -61,7 +61,7 @@ const BLOG_SELECT: &str = "SELECT c.id,c.user_id,c.enabled,c.created_at,c.update
     FROM blogs b JOIN publication_channels c ON c.id=b.channel_id";
 
 #[derive(Serialize, QueryableByName)]
-pub struct BlogPost {
+pub struct Publication {
     #[diesel(sql_type=SqlUuid)]
     pub id: Uuid,
     #[diesel(sql_type=SqlUuid)]
@@ -75,9 +75,9 @@ pub struct BlogPost {
     #[diesel(sql_type=Nullable<Timestamp>)]
     pub publishing_date: Option<NaiveDateTime>,
     #[diesel(sql_type=Nullable<SqlUuid>)]
-    pub last_publication_id: Option<Uuid>,
+    pub last_distribution_event_id: Option<Uuid>,
     #[diesel(sql_type=Nullable<Timestamp>)]
-    pub last_publication_at: Option<NaiveDateTime>,
+    pub last_distribution_at: Option<NaiveDateTime>,
     #[diesel(sql_type=Text)]
     pub title: String,
     #[diesel(sql_type=Text)]
@@ -90,6 +90,29 @@ pub struct BlogPost {
     pub finalized_at: Option<NaiveDateTime>,
 }
 
+#[derive(Serialize, QueryableByName)]
+pub struct BlogIdentity {
+    #[diesel(column_name=blog_id, sql_type=SqlUuid)]
+    pub id: Uuid,
+    #[diesel(column_name=blog_slug, sql_type=Text)]
+    pub slug: String,
+    #[diesel(column_name=blog_name, sql_type=Text)]
+    pub name: String,
+    #[diesel(column_name=blog_username, sql_type=Text)]
+    pub username: String,
+    #[diesel(column_name=blog_enabled, sql_type=Bool)]
+    pub enabled: bool,
+}
+
+#[derive(Serialize, QueryableByName)]
+pub struct UserPublication {
+    #[serde(flatten)]
+    #[diesel(embed)]
+    pub publication: Publication,
+    #[diesel(embed)]
+    pub blog: BlogIdentity,
+}
+
 // A deliberately narrow public projection. No journal/mention/translation/source
 // asset metadata is hydrated, and public publication never grants source access.
 const POST_FROM: &str = " FROM posts p
@@ -97,7 +120,7 @@ const POST_FROM: &str = " FROM posts p
     LEFT JOIN albums a ON a.id=p.source_album_id";
 const POST_COLUMNS: &str =
     "SELECT p.id,p.publication_channel_id,p.source_trace_id,p.source_album_id,
-    p.status,p.publishing_date,p.last_publication_id,p.last_publication_at,COALESCE(t.title,a.title,'') AS title,
+    p.status,p.publishing_date,p.last_distribution_event_id,p.last_distribution_at,COALESCE(t.title,a.title,'') AS title,
     COALESCE(t.subtitle,a.subtitle,'') AS subtitle,COALESCE(t.content,a.content,'') AS content,
     COALESCE(t.content_image_asset_id,a.cover_image_asset_id) AS image_asset_id,t.finalized_at";
 // Check the current source on every anonymous read, not just at publication.
@@ -227,7 +250,7 @@ pub fn posts(
     anonymous: bool,
     page: ValidatedPagination,
     pool: &DbPool,
-) -> Result<PaginatedResponse<BlogPost>, PpdcError> {
+) -> Result<PaginatedResponse<Publication>, PpdcError> {
     let predicate = if anonymous { PUBLIC_SOURCE } else { "" };
     let mut conn = pool.get()?;
     let total = diesel::sql_query(format!(
@@ -238,7 +261,7 @@ pub fn posts(
     .count;
     let items = diesel::sql_query(format!(
         "{POST_COLUMNS}{POST_FROM} WHERE p.publication_channel_id=$1{predicate}
-        ORDER BY p.last_publication_at DESC NULLS LAST,p.id DESC LIMIT $2 OFFSET $3"
+        ORDER BY p.last_distribution_at DESC NULLS LAST,p.id DESC LIMIT $2 OFFSET $3"
     ))
     .bind::<SqlUuid, _>(blog.id)
     .bind::<BigInt, _>(page.limit)
@@ -246,7 +269,42 @@ pub fn posts(
     .load(&mut conn)?;
     Ok(PaginatedResponse::new(items, page, total))
 }
-pub fn post(blog: &Blog, id: Uuid, anonymous: bool, pool: &DbPool) -> Result<BlogPost, PpdcError> {
+
+/// Owner management collection, not publication-event history or public discovery.
+pub fn owner_publications(
+    owner: Uuid,
+    page: ValidatedPagination,
+    pool: &DbPool,
+) -> Result<PaginatedResponse<UserPublication>, PpdcError> {
+    let from = format!(
+        "{POST_FROM}
+         JOIN publication_channels c ON c.id=p.publication_channel_id AND c.kind='BLOG'
+         JOIN blogs b ON b.channel_id=c.id
+         WHERE c.user_id=$1 AND p.user_id=$1 AND p.status='PUBLISHED'"
+    );
+    let mut conn = pool.get()?;
+    let total = diesel::sql_query(format!("SELECT COUNT(*) {from}"))
+        .bind::<SqlUuid, _>(owner)
+        .get_result::<Count>(&mut conn)?
+        .count;
+    let items = diesel::sql_query(format!(
+        "{POST_COLUMNS},c.id AS blog_id,b.slug AS blog_slug,b.name AS blog_name,
+            b.username AS blog_username,c.enabled AS blog_enabled {from}
+         ORDER BY p.last_distribution_at DESC NULLS LAST,p.id DESC LIMIT $2 OFFSET $3"
+    ))
+    .bind::<SqlUuid, _>(owner)
+    .bind::<BigInt, _>(page.limit)
+    .bind::<BigInt, _>(page.offset)
+    .load(&mut conn)?;
+    Ok(PaginatedResponse::new(items, page, total))
+}
+
+pub fn post(
+    blog: &Blog,
+    id: Uuid,
+    anonymous: bool,
+    pool: &DbPool,
+) -> Result<Publication, PpdcError> {
     let predicate = if anonymous { PUBLIC_SOURCE } else { "" };
     Ok(diesel::sql_query(format!(
         "{POST_COLUMNS}{POST_FROM} WHERE p.publication_channel_id=$1 AND p.id=$2{predicate}"
@@ -261,7 +319,7 @@ pub fn publish(
     source: Uuid,
     album: bool,
     pool: &DbPool,
-) -> Result<BlogPost, PpdcError> {
+) -> Result<Publication, PpdcError> {
     // Source locks serialize publication with archive/encryption and ownership changes.
     let id=pool.get()?.transaction::<_,PpdcError,_>(|conn|{
         #[derive(QueryableByName)] struct Id { #[diesel(sql_type=SqlUuid)] id:Uuid }
@@ -307,7 +365,7 @@ pub fn subject_items(
     subject: Uuid,
     page: ValidatedPagination,
     pool: &DbPool,
-) -> Result<PaginatedResponse<BlogPost>, PpdcError> {
+) -> Result<PaginatedResponse<Publication>, PpdcError> {
     let parent = post(blog, subject, true, pool)?;
     let album = parent
         .source_album_id

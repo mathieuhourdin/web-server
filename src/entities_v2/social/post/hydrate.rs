@@ -91,8 +91,8 @@ fn tuple_to_post(row: PostTuple) -> Post {
     Post {
         id,
         resource_id: id,
-        last_publication_id: None,
-        last_publication_at: None,
+        last_distribution_event_id: None,
+        last_distribution_at: None,
             language_code: None,
         source_trace_id,
         source_document_id,
@@ -104,7 +104,7 @@ fn tuple_to_post(row: PostTuple) -> Post {
         status: PostStatus::from_db(&status_raw),
         created_at,
         updated_at,
-        notification_mode: super::notifications::PublicationNotificationMode::from_db(
+        notification_mode: super::notifications::PostNotificationMode::from_db(
             &notification_mode_raw,
         ),
         notification_user_ids,
@@ -165,8 +165,8 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
         post: Post {
             id,
             resource_id: id,
-        last_publication_id: None,
-        last_publication_at: None,
+        last_distribution_event_id: None,
+        last_distribution_at: None,
             language_code: None,
             source_trace_id,
             source_document_id,
@@ -178,7 +178,7 @@ fn tuple_to_digest_visible_post(row: DigestVisiblePostTuple) -> DigestVisiblePos
             status: PostStatus::from_db(&status_raw),
             created_at,
             updated_at,
-            notification_mode: super::notifications::PublicationNotificationMode::from_db(
+            notification_mode: super::notifications::PostNotificationMode::from_db(
                 &notification_mode_raw,
             ),
             notification_user_ids,
@@ -211,8 +211,8 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
         post: Post {
             id,
             resource_id: id,
-        last_publication_id: None,
-        last_publication_at: None,
+        last_distribution_event_id: None,
+        last_distribution_at: None,
             language_code: None,
             source_trace_id,
             source_document_id,
@@ -224,7 +224,7 @@ fn tuple_to_feed_post_response(row: FeedPostTuple) -> FeedPostResponse {
             status: PostStatus::from_db(&status_raw),
             created_at,
             updated_at,
-            notification_mode: super::notifications::PublicationNotificationMode::from_db(
+            notification_mode: super::notifications::PostNotificationMode::from_db(
                 &notification_mode_raw,
             ),
             notification_user_ids,
@@ -245,13 +245,13 @@ fn hydrate_source_projection_for_posts(
     let mut conn = pool.get()?;
     let source_refs = collect_post_source_refs(&posts);
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
-    let publication_meta = super::publication::metadata(&posts.iter().map(|p|p.id).collect::<Vec<_>>(), &mut conn)?;
+    let distribution_meta = super::distribution_event::metadata(&posts.iter().map(|p|p.id).collect::<Vec<_>>(), &mut conn)?;
 
     Ok(posts
         .into_iter()
         .map(|mut post| {
             apply_source_projection_to_post(&mut post, &projections);
-            if let Some(meta)=publication_meta.get(&post.id) { meta.apply(&mut post); }
+            if let Some(meta)=distribution_meta.get(&post.id) { meta.apply(&mut post); }
             post
         })
         .collect())
@@ -277,13 +277,13 @@ fn hydrate_source_projection_for_feed_posts(
         .collect::<Vec<_>>();
     let source_refs = collect_post_source_refs(&posts);
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
-    let publication_meta = super::publication::metadata(&posts.iter().map(|p|p.id).collect::<Vec<_>>(), &mut conn)?;
+    let distribution_meta = super::distribution_event::metadata(&posts.iter().map(|p|p.id).collect::<Vec<_>>(), &mut conn)?;
 
     Ok(items
         .into_iter()
         .map(|mut item| {
             apply_source_projection_to_post(&mut item.post, &projections);
-            if let Some(meta)=publication_meta.get(&item.post.id) { meta.apply(&mut item.post); }
+            if let Some(meta)=distribution_meta.get(&item.post.id) { meta.apply(&mut item.post); }
             item
         })
         .collect())
@@ -304,7 +304,7 @@ fn hydrate_source_projection_for_digest_visible_posts(
         .collect::<Vec<_>>();
     let source_refs = collect_post_source_refs(&posts);
     let projections = load_source_projection_map(&source_refs, &mut conn)?;
-    let publication_meta = super::publication::metadata(&posts.iter().map(|p|p.id).collect::<Vec<_>>(), &mut conn)?;
+    let distribution_meta = super::distribution_event::metadata(&posts.iter().map(|p|p.id).collect::<Vec<_>>(), &mut conn)?;
 
     Ok(items
         .into_iter()
@@ -315,7 +315,7 @@ fn hydrate_source_projection_for_digest_visible_posts(
                 }
             }
             apply_source_projection_to_post(&mut item.post, &projections);
-            if let Some(meta)=publication_meta.get(&item.post.id) { meta.apply(&mut item.post); }
+            if let Some(meta)=distribution_meta.get(&item.post.id) { meta.apply(&mut item.post); }
             item
         })
         .collect())
@@ -365,7 +365,7 @@ impl Post {
                 traces::journal_id.nullable(),
                 journals::title.nullable(),
             ))
-            .order(posts::last_publication_at.desc().nulls_last())
+            .order(posts::last_distribution_at.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .load::<FeedPostTuple>(&mut conn)?;
 
@@ -451,7 +451,7 @@ impl Post {
 
         let rows = query
             .select(select_post_columns())
-            .order(posts::last_publication_at.desc().nulls_last())
+            .order(posts::last_distribution_at.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -494,7 +494,7 @@ impl Post {
             .filter(traces::sharing_sensitivity.eq("NORMAL"))
             .filter(traces::status.eq(crate::entities_v2::trace::TraceStatus::Finalized.to_db()))
             .select(select_post_columns())
-            .order(posts::last_publication_at.desc().nulls_last())
+            .order(posts::last_distribution_at.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -546,8 +546,8 @@ impl Post {
             .filter(posts::status.eq(PostStatus::Published.to_db()))
             .filter(posts::id.eq_any(visible_post_ids))
             .filter(posts::publishing_date.is_not_null())
-            .filter(posts::last_publication_at.ge(Some(period_start)))
-            .filter(posts::last_publication_at.lt(Some(period_end)))
+            .filter(posts::last_distribution_at.ge(Some(period_start)))
+            .filter(posts::last_distribution_at.lt(Some(period_end)))
             .filter(posts::user_id.ne(viewer_user_id))
             .filter(journals::is_encrypted.eq(false))
             .select((
@@ -566,7 +566,7 @@ impl Post {
                 posts::notification_user_ids,
                 journals::id,
             ))
-            .order(posts::last_publication_at.desc().nulls_last())
+            .order(posts::last_distribution_at.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .load::<DigestVisiblePostTuple>(&mut conn)?;
 
@@ -786,7 +786,7 @@ impl Post {
 
         let rows = query
             .select(select_post_columns())
-            .order(posts::last_publication_at.desc().nulls_last())
+            .order(posts::last_distribution_at.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -978,7 +978,7 @@ impl Post {
 
         let rows = query
             .select(select_post_columns())
-            .order(posts::last_publication_at.desc().nulls_last())
+            .order(posts::last_distribution_at.desc().nulls_last())
             .then_order_by(posts::created_at.desc())
             .offset(offset)
             .limit(limit)

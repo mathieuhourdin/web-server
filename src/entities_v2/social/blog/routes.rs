@@ -1,5 +1,5 @@
 use super::{
-    model::{self, Blog, BlogInput, BlogPost},
+    model::{self, Blog, BlogInput, Publication, UserPublication},
     render,
 };
 use crate::{
@@ -23,13 +23,13 @@ pub fn management_router() -> Router {
     Router::new()
         .api_route("/blogs", "/", get(list).post(create))
         .api_route("/blogs", "/:id", get(read).put(update).delete(delete))
-        .api_route("/blogs", "/:id/posts", get(list_posts))
+        .api_route("/blogs", "/:id/publications", get(list_publications))
         .api_route("/blogs", "/:id/traces/:source_id", put(publish_trace))
         .api_route("/blogs", "/:id/albums/:source_id", put(publish_album))
         .api_route(
             "/blogs",
-            "/:id/posts/:post_id",
-            get(read_post).delete(unpublish),
+            "/:id/publications/:publication_id",
+            get(read_publication).delete(unpublish),
         )
 }
 pub fn public_router() -> Router {
@@ -106,20 +106,40 @@ async fn update(
 ) -> Result<Json<Blog>, Error> {
     Ok(Json(model::save(Some(id), user(&session)?, input, &pool)?))
 }
-async fn list_posts(
+async fn list_publications(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Query(page): Query<PaginationParams>,
-) -> Result<Json<PaginatedResponse<BlogPost>>, Error> {
+) -> Result<Json<PaginatedResponse<Publication>>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
     Ok(Json(model::posts(&blog, false, page.validate()?, &pool)?))
 }
-async fn read_post(
+
+pub async fn get_user_publications_route(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path(user_id): Path<Uuid>,
+    Query(page): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<UserPublication>>, Error> {
+    // Public blogs can use unrelated pseudonyms. Do not reveal their account
+    // association through a user-level listing without an explicit product choice.
+    let owner = user(&session)?;
+    if owner != user_id {
+        return Err(Error::unauthorized());
+    }
+    Ok(Json(model::owner_publications(
+        owner,
+        page.validate()?,
+        &pool,
+    )?))
+}
+
+async fn read_publication(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path((id, post)): Path<(Uuid, Uuid)>,
-) -> Result<Json<BlogPost>, Error> {
+) -> Result<Json<Publication>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
     Ok(Json(model::post(&blog, post, false, &pool)?))
 }
@@ -127,7 +147,7 @@ async fn publish_trace(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path((id, source)): Path<(Uuid, Uuid)>,
-) -> Result<Json<BlogPost>, Error> {
+) -> Result<Json<Publication>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
     Ok(Json(model::publish(&blog, source, false, &pool)?))
 }
@@ -135,7 +155,7 @@ async fn publish_album(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path((id, source)): Path<(Uuid, Uuid)>,
-) -> Result<Json<BlogPost>, Error> {
+) -> Result<Json<Publication>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
     Ok(Json(model::publish(&blog, source, true, &pool)?))
 }

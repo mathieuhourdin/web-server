@@ -534,8 +534,8 @@ diesel::table! {
         audience_source_post_id -> Nullable<Uuid>,
         notification_mode -> Text,
         notification_user_ids -> Array<Uuid>,
-        last_publication_id -> Nullable<Uuid>,
-        last_publication_at -> Nullable<Timestamp>,
+        last_distribution_event_id -> Nullable<Uuid>,
+        last_distribution_at -> Nullable<Timestamp>,
         publication_channel_id -> Nullable<Uuid>,
     }
 }

@@ -24,6 +24,35 @@ fn validates_blog_identity() {
     }
 }
 
+#[tokio::test]
+async fn user_publications_does_not_disclose_other_users_blog_identities() {
+    use crate::{entities_v2::session::Session, pagination::PaginationParams};
+    use axum::extract::{Extension, Path, Query};
+    let pool = DbPool::builder()
+        .max_size(1)
+        .min_idle(Some(0))
+        .build(ConnectionManager::<diesel::PgConnection>::new(
+            "postgres://unused/unused",
+        ))
+        .unwrap();
+    let owner = Uuid::new_v4();
+    for caller in [None, Some(Uuid::new_v4())] {
+        let mut session = Session::anonymous();
+        session.user_id = caller;
+        let page: PaginationParams = serde_json::from_value(serde_json::json!({})).unwrap();
+        let error = super::routes::get_user_publications_route(
+            Extension(pool.clone()),
+            Extension(session),
+            Path(owner),
+            Query(page),
+        )
+        .await
+        .err()
+        .expect("Only the account owner may list its blog identities");
+        assert_eq!(error.status_code, 401);
+    }
+}
+
 #[test]
 #[ignore = "Requires an explicitly configured disposable blog_test PostgreSQL database"]
 fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
@@ -98,6 +127,56 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
         offset: 0,
         limit: 20,
     };
+    let all = owner_publications(owner, page, &pool).unwrap();
+    assert_eq!(
+        all.total, 3,
+        "Two trace posts and one album post, never the social post"
+    );
+    let mut ids = all
+        .items
+        .iter()
+        .map(|item| item.publication.id)
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    let mut expected = vec![published.id, elsewhere.id, subject.id];
+    expected.sort_unstable();
+    assert_eq!(ids, expected);
+    for item in &all.items {
+        assert_eq!(item.blog.id, item.publication.publication_channel_id);
+        assert_eq!(item.blog.username, "Pseudonym");
+        assert!(item.blog.enabled);
+    }
+    let second = owner_publications(
+        owner,
+        ValidatedPagination {
+            offset: 1,
+            limit: 1,
+        },
+        &pool,
+    )
+    .unwrap();
+    assert_eq!(second.total, 3);
+    assert_eq!(second.items[0].publication.id, all.items[1].publication.id);
+    let beyond = owner_publications(
+        owner,
+        ValidatedPagination {
+            offset: 99,
+            limit: 1,
+        },
+        &pool,
+    )
+    .unwrap();
+    assert_eq!(beyond.total, 3);
+    assert!(beyond.items.is_empty());
+    assert_eq!(
+        owner_publications(Uuid::new_v4(), page, &pool)
+            .unwrap()
+            .total,
+        0
+    );
+    let json = serde_json::to_value(&all).unwrap();
+    assert!(json["items"][0]["id"].is_string());
+    assert!(json["items"][0]["blog"]["slug"].is_string());
     let items = subject_items(&blog, subject.id, page, &pool).unwrap();
     assert_eq!(items.total, 1);
     assert_eq!(items.items[0].source_trace_id, Some(trace));
@@ -121,6 +200,7 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
         ))
         .is_err());
     unpublish(&blog, published.id, &pool).unwrap();
+    assert_eq!(owner_publications(owner, page, &pool).unwrap().total, 2);
     assert!(post(&blog, published.id, true, &pool).is_err());
     assert_eq!(
         subject_items(&blog, subject.id, page, &pool).unwrap().total,
@@ -138,6 +218,11 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
     )
     .unwrap();
     assert!(public(&blog.slug, &pool).is_err());
+    let disabled = owner_publications(owner, page, &pool).unwrap();
+    assert!(disabled
+        .items
+        .iter()
+        .any(|item| item.blog.id == blog.id && !item.blog.enabled));
     pool.get()
         .unwrap()
         .batch_execute(&format!(

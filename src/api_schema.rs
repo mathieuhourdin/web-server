@@ -198,6 +198,9 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/me/capabilities")=>"Inspect the automation credential's effective scopes, sandbox rules and limits.",
         ("GET","/me/audience/:user_id/traces")=>"Audit which of your finalized traces this reader can currently access across journals. Owner only; limit/offset pagination with an accurate total.",
         ("GET","/journals/:id/images")=>"List images from readable finalized journal traces, newest finalized_at first. Lightweight trace/asset IDs and dimensions only; supports limit/offset pagination with a viewer-scoped total.",
+        ("GET","/users/:id/publications")=>"List the caller's PUBLISHED channel publications across all owned blogs, including disabled blogs, with blog identity and limit/offset pagination. Owner only; excludes social posts, archived publications and distribution-event history. Sorted by latest distribution date.",
+        ("GET","/posts/:id/distribution_events")=>"List the post publisher's immutable distribution-event history, newest first, with limit/offset pagination.",
+        ("POST","/posts/:id/distribution_events")=>"Record an idempotent post distribution event, update feed position and dispatch to selected eligible recipients. Does not create another durable publication or access grants.",
         ("PUT","/traces/:id/plume")=>"Give one plume to accessible finalized writing by someone else. Idempotent; no request body. Returns plume_count and plumed_by_me.",
         ("DELETE","/traces/:id/plume")=>"Retract your own plume, including after access revocation; inaccessible trace totals are not disclosed.",
         ("GET","/traces/:id/plumes")=>"List people who gave a plume, newest first, with pagination. Trace author only.",
@@ -248,9 +251,9 @@ pub async fn schema() -> Json<Value> {
             let topic =
                 if path.starts_with("/automation/") || path.starts_with("/admin/automation/") {
                     "automation"
-                } else if path.contains("/publications") || path.contains("/versions") {
-                    "post_publications"
-                } else if path.starts_with("/blogs") || path.starts_with("/blog/") {
+                } else if path.contains("/distribution_events") || path.contains("/versions") {
+                    "post_distribution_events"
+                } else if path.starts_with("/blogs") || path.starts_with("/blog/") || path == "/users/:id/publications" {
                     "blogs"
                 } else if path.contains("writing_threads") {
                     "writing_threads"
@@ -263,7 +266,7 @@ pub async fn schema() -> Json<Value> {
                 } else if path == "/traces/:id/messages" {
                     "draft_mentor"
                 } else if path == "/traces/:id/post" || path.ends_with("/notification_settings") {
-                    "publication_notifications"
+                    "post_notifications"
                 } else {
                     "platform"
                 };
@@ -286,7 +289,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications","journal_stats","journal_images","album_stats"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -304,7 +307,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications","journal_stats","journal_images","album_stats"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -320,12 +323,12 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "automation" => include_str!("../doc/automation_api.md"),
         "writing_threads" => include_str!("../doc/writing_threads.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
-        "publication_notifications" => include_str!("../doc/publication_notifications.md"),
+        "post_notifications" => include_str!("../doc/post_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
         "trace_languages" => include_str!("../doc/trace_languages.md"),
         "trace_chronology" => include_str!("../doc/trace_chronology.md"),
         "blogs" => include_str!("../doc/blogs.md"),
-        "post_publications" => include_str!("../doc/post_publications.md"),
+        "post_distribution_events" => include_str!("../doc/post_distribution_events.md"),
         "journal_stats" => include_str!("../doc/journal_stats.md"),
         "journal_images" => include_str!("../doc/journal_images.md"),
         "album_stats" => include_str!("../doc/album_stats.md"),
@@ -357,6 +360,24 @@ mod tests {
         assert!(paths["/users"].get("get").is_some());
         assert!(paths["/users"].get("post").is_some());
         assert!(paths["/admin/analytics/users"].get("get").is_some());
+        assert_eq!(
+            paths["/users/{id}/publications"]["get"]["externalDocs"]["url"],
+            "/api/docs?topic=blogs"
+        );
+        assert!(paths["/posts/{id}/distribution_events"].get("get").is_some());
+        assert!(paths["/posts/{id}/distribution_events"].get("post").is_some());
+        assert!(paths["/blogs/{id}/publications"].get("get").is_some());
+        assert!(!paths.contains_key("/users/{id}/blog_posts"));
+        assert!(!paths.contains_key("/posts/{id}/publications"));
+        assert!(!paths.contains_key("/blogs/{id}/posts"));
+        assert_eq!(
+            docs(Query(DocsQuery { topic: Some("post_distribution_events".into()) })).await.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            docs(Query(DocsQuery { topic: Some("post_publications".into()) })).await.status(),
+            StatusCode::NOT_FOUND
+        );
         assert_eq!(
             paths["/journals/{id}/images"]["get"]["externalDocs"]["url"],
             "/api/docs?topic=journal_images"

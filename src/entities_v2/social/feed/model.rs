@@ -15,8 +15,8 @@ pub enum FeedSourceKind {
 #[derive(Serialize, Debug, Clone)]
 pub struct FeedItem {
     pub post_id: Option<Uuid>,
-    pub last_publication_id: Option<Uuid>,
-    pub last_publication_at: Option<NaiveDateTime>,
+    pub last_distribution_event_id: Option<Uuid>,
+    pub last_distribution_at: Option<NaiveDateTime>,
     pub source_kind: FeedSourceKind,
     pub source_id: Uuid,
     pub continues_trace_id: Option<Uuid>,

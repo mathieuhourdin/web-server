@@ -125,7 +125,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
     pool: &DbPool,
 ) -> Result<Vec<Uuid>, PpdcError> {
     if post.status != PostStatus::Published
-        || post.notification_mode == super::notifications::PublicationNotificationMode::None
+        || post.notification_mode == super::notifications::PostNotificationMode::None
     {
         return Ok(vec![]);
     }
@@ -147,7 +147,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
     }
 
     let owner = User::find(&post.user_id, pool)?;
-    let recipient_ids = super::publication::eligible_recipients(post, pool)?;
+    let recipient_ids = super::distribution_event::eligible_recipients(post, pool)?;
     let recipients = User::find_many(&recipient_ids, pool)?;
     let journal_url = mailer::trace_url(trace.id);
     let owner_display_name = owner.display_name();
@@ -182,8 +182,8 @@ pub(crate) fn enqueue_post_published_notification_emails(
         let email = NewOutboundEmail::new(
             Some(recipient.id),
             POST_PUBLISHED_EMAIL_REASON.to_string(),
-            Some("POST_PUBLICATION".to_string()),
-            post.last_publication_id,
+            Some("POST_DISTRIBUTION_EVENT".to_string()),
+            post.last_distribution_event_id,
             recipient.email.clone(),
             environment::get_resend_from_email(),
             template.subject,
@@ -193,7 +193,7 @@ pub(crate) fn enqueue_post_published_notification_emails(
             scheduled_at,
         )
         .create(pool)?;
-        super::publication::record_email(post,recipient.id,email.id,pool)?;
+        super::distribution_event::record_email(post,recipient.id,email.id,pool)?;
         email_ids.push(email.id);
     }
 
@@ -225,13 +225,13 @@ pub(crate) fn dispatch_post_published_notification_emails(
 }
 
 pub(crate) fn dispatch_post_published_notifications(post: &Post, pool: &DbPool) {
-    let Some(id)=post.last_publication_id else {return};
-    let result=super::publication::find(id,pool).and_then(|event|super::publication::dispatch(&event,pool));
-    if let Err(err)=result {tracing::warn!(target:"notification",post_id=%post.id,error=%err.message,"publication_event_dispatch_failed");}
+    let Some(id)=post.last_distribution_event_id else {return};
+    let result=super::distribution_event::find(id,pool).and_then(|event|super::distribution_event::dispatch(&event,pool));
+    if let Err(err)=result {tracing::warn!(target:"notification",post_id=%post.id,error=%err.message,"distribution_event_dispatch_failed");}
 }
 
-pub(crate) fn dispatch_claimed_publication_notifications(post: &Post, pool: &DbPool) {
-    if post.notification_mode == super::notifications::PublicationNotificationMode::None {
+pub(crate) fn dispatch_claimed_distribution_notifications(post: &Post, pool: &DbPool) {
+    if post.notification_mode == super::notifications::PostNotificationMode::None {
         return;
     }
     let trace = post
@@ -329,7 +329,7 @@ pub(crate) fn dispatch_trace_mention_notifications(
     };
     if post.status != PostStatus::Published
         || candidate_recipient_ids.is_empty()
-        || post.notification_mode == super::notifications::PublicationNotificationMode::None
+        || post.notification_mode == super::notifications::PostNotificationMode::None
     {
         return;
     }
@@ -750,7 +750,7 @@ pub async fn post_post_route(
     }
     let options = payload.notifications.clone();
     // A new custom post has no grants yet. Prepare it first, then add grants and publish.
-    if options.notification_mode == Some(super::notifications::PublicationNotificationMode::Selected)
+    if options.notification_mode == Some(super::notifications::PostNotificationMode::Selected)
         || options
             .notification_user_ids
             .as_ref()

@@ -538,23 +538,23 @@ pub fn spawn_follow_request_accepted_push_notification(relationship: Relationshi
     });
 }
 
-pub fn record_publication_push_delivery(
+pub fn record_post_distribution_push_delivery(
     post: &Post,
     recipient_user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
     let mut conn = pool.get()?;
     diesel::sql_query(
-        "UPDATE post_publication_recipients SET push_status='SENT',push_sent_at=NOW()
-        WHERE publication_id=$1 AND user_id=$2",
+        "UPDATE post_distribution_recipients SET push_status='SENT',push_sent_at=NOW()
+        WHERE distribution_event_id=$1 AND user_id=$2",
     )
-    .bind::<Nullable<SqlUuid>, _>(post.last_publication_id)
+    .bind::<Nullable<SqlUuid>, _>(post.last_distribution_event_id)
     .bind::<SqlUuid, _>(recipient_user_id)
     .execute(&mut conn)?;
     Ok(())
 }
 
-pub fn successfully_pushed_publication_ids(
+pub fn successfully_pushed_post_ids(
     recipient_user_id: Uuid,
     post_ids: &[Uuid],
     pool: &DbPool,
@@ -569,7 +569,7 @@ pub fn successfully_pushed_publication_ids(
     }
     let mut conn = pool.get()?;
     Ok(diesel::sql_query(
-        "SELECT p.id AS post_id FROM posts p JOIN post_publication_recipients r ON r.publication_id=p.last_publication_id
+        "SELECT p.id AS post_id FROM posts p JOIN post_distribution_recipients r ON r.distribution_event_id=p.last_distribution_event_id
         WHERE p.publication_channel_id IS NULL AND r.user_id=$1 AND p.id=ANY($2) AND r.push_status='SENT'",
     )
     .bind::<SqlUuid, _>(recipient_user_id)
@@ -588,7 +588,7 @@ pub fn spawn_post_published_push_notification(
     if post.status != PostStatus::Published
         || post.source_ref().is_none()
         || post.notification_mode
-            == crate::entities_v2::post::notifications::PublicationNotificationMode::None
+            == crate::entities_v2::post::notifications::PostNotificationMode::None
     {
         return;
     }
@@ -607,7 +607,7 @@ pub fn spawn_post_published_push_notification(
             }
         };
 
-        let recipient_ids = match crate::entities_v2::post::publication::eligible_recipients(&post, &pool) {
+        let recipient_ids = match crate::entities_v2::post::distribution_event::eligible_recipients(&post, &pool) {
             Ok(recipient_ids) => recipient_ids,
             Err(err) => {
                 warn!(
@@ -645,23 +645,23 @@ pub fn spawn_post_published_push_notification(
             let Some(notification) = notification.as_ref() else {
                 continue;
             };
-            let Some(event_id)=post.last_publication_id else {continue};
-            match crate::entities_v2::post::publication::claim_push(event_id,recipient.id,&pool) {
+            let Some(event_id)=post.last_distribution_event_id else {continue};
+            match crate::entities_v2::post::distribution_event::claim_push(event_id,recipient.id,&pool) {
                 Ok(true)=>{},
                 Ok(false)=>continue,
-                Err(err)=>{warn!(target:"notification",publication_id=%event_id,error=%err.message,"publication_push_claim_failed");continue;}
+                Err(err)=>{warn!(target:"notification",distribution_event_id=%event_id,error=%err.message,"distribution_push_claim_failed");continue;}
             }
             match push::send_to_mobile_user(recipient.id, notification.clone(), &pool).await {
                 Ok(result) => {
                     if result.any_sent() {
                         email_exclusions.push(recipient.id);
                         if let Err(err) =
-                            record_publication_push_delivery(&post, recipient.id, &pool)
+                            record_post_distribution_push_delivery(&post, recipient.id, &pool)
                         {
                             warn!(target: "notification", post_id = %post.id, recipient_user_id = %recipient.id, error = %err.message, "publication_push_delivery_record_failed");
                         }
-                    } else if let Err(err)=crate::entities_v2::post::publication::finish_push(event_id,recipient.id,false,&pool) {
-                        warn!(target:"notification",publication_id=%event_id,error=%err.message,"publication_push_state_failed");
+                    } else if let Err(err)=crate::entities_v2::post::distribution_event::finish_push(event_id,recipient.id,false,&pool) {
+                        warn!(target:"notification",distribution_event_id=%event_id,error=%err.message,"distribution_push_state_failed");
                     }
                     info!(
                         target: "notification",
@@ -673,7 +673,7 @@ pub fn spawn_post_published_push_notification(
                     );
                 }
                 Err(err) => {
-                    let _=crate::entities_v2::post::publication::finish_push(event_id,recipient.id,false,&pool);
+                    let _=crate::entities_v2::post::distribution_event::finish_push(event_id,recipient.id,false,&pool);
                     warn!(
                         target: "notification",
                         post_id = %post.id,

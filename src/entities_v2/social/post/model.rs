@@ -29,11 +29,11 @@ pub struct Post {
     pub user_id: Uuid,
     pub publishing_date: Option<NaiveDateTime>,
     #[serde(default)]
-    pub last_publication_id: Option<Uuid>,
+    pub last_distribution_event_id: Option<Uuid>,
     #[serde(default)]
-    pub last_publication_at: Option<NaiveDateTime>,
+    pub last_distribution_at: Option<NaiveDateTime>,
     pub status: PostStatus,
-    pub notification_mode: super::notifications::PublicationNotificationMode,
+    pub notification_mode: super::notifications::PostNotificationMode,
     // Recipient selection is private to the publisher; use the owner-only settings route.
     #[serde(skip)]
     pub notification_user_ids: Vec<Uuid>,

@@ -381,7 +381,7 @@ async fn translation_messages_are_batched_personal_and_completed_only() {
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn publication_notification_selection_preserves_access_and_filters_delivery() {
     use axum::extract::{Extension,Json,Path};
-    use crate::entities_v2::{session::Session,post::{notifications::{NotificationOptions,PublicationNotificationMode as Mode,get_notification_settings},
+    use crate::entities_v2::{session::Session,post::{notifications::{NotificationOptions,PostNotificationMode as Mode,get_notification_settings},
         routes::{put_trace_post_route,PutTracePostDto,enqueue_post_published_notification_emails}}};
     let f=Fixture::new();
     let (trace,id)=f.publication();

@@ -57,15 +57,62 @@ The account owner ID and real account name are not exposed in the public pages.
   never the original traces, albums, assets or social posts.
 - `PUT /blogs/:id/traces/:trace_id`: publish/republish a trace, no request body.
 - `PUT /blogs/:id/albums/:album_id`: publish/republish an album subject, no body.
-- `GET /blogs/:id/posts?limit=20&offset=0`: all its publications, including archived
+- `GET /blogs/:id/publications?limit=20&offset=0`: all its publications, including archived
   ones, with pagination. Descending publication date, then ID.
-- `GET /blogs/:id/posts/:post_id`: one publication.
-- `DELETE /blogs/:id/posts/:post_id`: unpublish (archive), 204.
+- `GET /blogs/:id/publications/:post_id`: one publication.
+- `DELETE /blogs/:id/publications/:post_id`: unpublish (archive), 204.
 
-Repeated publishing reuses the post ID and original publication date. Explicit
-republishing events use `POST /posts/:id/publications` with notification mode
+### Publications across all of my blogs
+
+```http
+GET /users/:id/publications?limit=20&offset=0
+```
+
+Authenticated owner only: `:id` must be the caller's user ID. This does not expose
+the links between an account and its blogs/pseudonyms to other users.
+
+Uses the standard `{items, total, limit, offset}` envelope (default limit 20,
+maximum 100). Each item contains the existing blog-post fields shown below, plus:
+
+```json
+{
+  "id": "post-uuid",
+  "publication_channel_id": "blog-uuid",
+  "source_trace_id": "trace-uuid-or-null",
+  "source_album_id": null,
+  "status": "PUBLISHED",
+  "blog": {
+    "id": "blog-uuid",
+    "slug": "notes-sur-le-travail",
+    "name": "Notes sur le travail",
+    "username": "Le Promeneur",
+    "enabled": true
+  }
+}
+```
+
+- Includes `PUBLISHED` trace posts and album-subject posts across every owned blog.
+- Includes posts on disabled blogs for owner management; `PUBLISHED` alone does
+  not imply that a page is currently anonymously available.
+- Excludes internal/social posts, archived/unpublished posts and other users'
+  posts. The existing per-blog management collection still includes archived posts.
+- One row per blog post, not per publication event. The same trace published on
+  two blogs appears twice, with different post/channel IDs.
+- Sorted by `last_distribution_at DESC NULLS LAST, id DESC`, not trace creation or
+  finalization date. Explicit republication updates the existing row's position.
+- `total` counts matching posts even for an empty/out-of-range page. Empty
+  collections return 200 with `items: []` and `total: 0`.
+- Reuses the narrow live post projection; does not hydrate journals, mentions,
+  translations, source photos or private album items. Blog metadata is joined
+  in the paginated query, not fetched separately for each post.
+
+This is a durable publication collection, not the `post_distribution_events` event ledger. No new
+table, migration or client parameter is needed beyond normal pagination.
+
+Repeated publishing reuses the publication's post ID and original publication date. Explicit
+redistribution events use `POST /posts/:id/distribution_events` with notification mode
 `none`; their last timestamp determines article ordering. See
-`GET /api/docs?topic=post_publications` for archival snapshots and event history.
+`GET /api/docs?topic=post_distribution_events` for archival snapshots and event history.
 Publishing
 to a disabled blog is allowed for preparation but nothing becomes anonymously
 visible until the blog is enabled.
@@ -80,8 +127,8 @@ Publication responses use this narrow live projection:
   "source_album_id": null,
   "status": "PUBLISHED",
   "publishing_date": "2026-10-31T12:00:00",
-  "last_publication_id": "uuid",
-  "last_publication_at": "2026-10-31T12:00:00",
+  "last_distribution_event_id": "uuid",
+  "last_distribution_at": "2026-10-31T12:00:00",
   "title": "Article",
   "subtitle": "",
   "content": "Current source content",

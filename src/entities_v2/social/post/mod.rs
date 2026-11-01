@@ -1,9 +1,9 @@
+pub mod distribution_event;
 pub mod enums;
 pub mod hydrate;
 pub mod model;
 pub mod notifications;
 pub mod persist;
-pub mod publication;
 pub mod routes;
 
 pub use hydrate::DigestVisiblePost;

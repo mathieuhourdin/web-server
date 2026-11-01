@@ -12,7 +12,7 @@ use crate::db::DbPool;
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     journal::Journal,
-    notification::successfully_pushed_publication_ids,
+    notification::successfully_pushed_post_ids,
     post::{DigestVisiblePost, Post},
     trace_mention::TraceMention,
     user::{EmailNotificationMode, User, UserPrincipalType},
@@ -413,7 +413,7 @@ fn create_shared_journal_digest_for_user(
     let pushed_ids = if weekly {
         HashSet::new()
     } else {
-        successfully_pushed_publication_ids(
+        successfully_pushed_post_ids(
             recipient.id,
             &visible_posts
                 .iter()
@@ -422,7 +422,7 @@ fn create_shared_journal_digest_for_user(
             pool,
         )?
     };
-    let targeted_ids=if weekly{HashSet::new()}else{crate::entities_v2::post::publication::targeted_posts(recipient.id,
+    let targeted_ids=if weekly{HashSet::new()}else{crate::entities_v2::post::distribution_event::targeted_posts(recipient.id,
         &visible_posts.iter().map(|p|p.post.id).collect::<Vec<_>>(),pool)?};
     let seen_trace_ids = if weekly {
         UserPostState::find_last_seen_at_by_user_and_trace_ids(recipient.id, &trace_ids, pool)?

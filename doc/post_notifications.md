@@ -1,11 +1,11 @@
-# Publication notification targeting
+# Post notification targeting
 
-Publication access and notifications are independent. Preparing/publishing a post
+Post access and distribution notifications are independent. Preparing/publishing a post
 does not change its existing grants. Notification selection never creates access.
 
 ## Publish silently or notify selected grantees
 
-Use `PUT /traces/:trace_id/post` with the existing publication fields:
+Use `PUT /traces/:trace_id/post` with the existing post fields:
 
 ```json
 {
@@ -25,17 +25,17 @@ Or:
 ```
 
 - `all` (default): existing notification behavior for eligible grantees.
-- `none`: no publication push, instant email, daily fallback or weekly recap.
+- `none`: no distribution push, instant email, daily fallback or weekly recap.
 - `selected`: those channels are restricted to the supplied existing grantees.
 
-Publication-time mention alerts, and subsequent mention alerts for this publication,
-also honor this policy, rather than bypassing silent/selected publication. Explicit
+Distribution-time mention alerts, and subsequent mention alerts for this post,
+also honor this policy, rather than bypassing silent/selected distribution. Explicit
 chat messages, history-sharing review/confirmation alerts and other independent
-events are not publication notifications and are unchanged.
+events are not post-distribution notifications and are unchanged.
 
 Recipients' own preferences, blocking, actual current access and platform eligibility
 still apply. Selecting someone is not a promise of delivery. Existing deduplication
-between mention/publication alerts and push/instant email remains in effect.
+between mention/post alerts and push/instant email remains in effect.
 
 The two new fields are optional. Omission preserves the post's current settings;
 new and migrated posts default to `all`. Switching to `all` or `none` clears any
@@ -53,10 +53,11 @@ The same options are available on `PUT /documents/:id/post`,
 `POST /posts` supports `all`/`none`; selected recipients require an existing prepared
 post with grants. The post response includes `notification_mode`.
 
-Changing settings on an already-published post does **not** send another notification.
-It affects future notification/recap processing, not notifications or emails already
-sent/enqueued. Repeated `PUT` with `status: published` does not resend. A later real
-republication (archived → published) uses the persisted settings unless overridden.
+Changing preparation preferences on an already-published post does **not** send
+another notification or alter an existing distribution event's fixed recipients.
+Repeated `PUT` with `status: published` does not resend. A later distribution
+(archived → published) uses the persisted preferences; explicit
+`POST /posts/:id/distribution_events` accepts its own notification selection.
 
 ## Read the publisher's selection
 
@@ -69,9 +70,10 @@ republication (archived → published) uses the persisted settings unless overri
 }
 ```
 
+This GET returns the latest distribution event's selection when one exists.
 The recipient list is intentionally absent from ordinary post/feed responses:
 readers should not discover who else was privately notified. Settings belong to
-each publication, not the trace author globally; another publisher's settings are
+each post, not the trace author globally; another publisher's settings are
 independent.
 
 No feed/journal visibility, unread counts, access grants or seen-state behavior changes.
