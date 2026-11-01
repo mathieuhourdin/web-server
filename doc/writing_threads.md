@@ -1,6 +1,7 @@
 # Writing threads — owner-only MVP
 
-Threads are explicit single chains. Traces store a `continues_trace_id`.
+Threads are explicit single chains and may cross journals belonging to the same
+author. Traces store a `continues_trace_id`.
 A thread stores its start, latest finalized trace and an internal pending-draft
 pointer. A branch starts another thread at the selected source trace; its analysis
 uses that trace and its descendants, not the earlier prefix of another thread.
@@ -57,8 +58,10 @@ saved together, and PUT may link and finalize in the same request.
 
 The frontend chooses whether to reuse a draft, finish it or create another.
 Existing nonempty drafts may be linked: the server never replaces or clears them.
-The source must be an owned, finalized, unencrypted ordinary trace in the same
-active, unencrypted user journal. Linking never copies content or sharing rights.
+The source must be an owned, finalized, unencrypted ordinary trace. The source
+and destination journals may differ, but both must be active, unencrypted user
+journals belonging to the author when the link is created. Linking never copies
+content or sharing rights, including when journals have different audiences.
 
 Thread bookkeeping is automatic: continuing a thread's latest trace extends it;
 continuing an earlier trace starts a separate branch. If a continuation is already
@@ -92,6 +95,13 @@ end sets `can_continue` false; branch from an earlier eligible trace instead.
 Collections use the existing paginated response shape. Thread traces are ordered
 from start to end; archived traces are traversed but not returned. The active draft
 is separate, available through `pending_trace_id` and the existing draft route.
+
+Both journal-filtered collection routes match any member trace in that journal,
+including archived members and the pending draft, not just the latest trace.
+Each matching thread appears once, and pagination totals count threads, not traces.
+Filtering uses persisted memberships, without recursively walking chains on reads.
+The response's `journal_id` still identifies the latest trace's journal (falling
+back to the start trace), so it can differ from the requested filter.
 
 Thread collections sort by latest finalization descending, with stable ties. This is
 a recency baseline, not an AI relevance score. Search is accent-insensitive, against

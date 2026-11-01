@@ -66,7 +66,10 @@ pub fn list(
     } else {
         Some(q.trim())
     };
-    let predicate=" WHERE w.user_id=$1 AND ($2::uuid IS NULL OR COALESCE(latest.journal_id,start.journal_id)=$2)
+    let predicate=" WHERE w.user_id=$1 AND ($2::uuid IS NULL OR EXISTS(
+            SELECT 1 FROM writing_thread_traces jm JOIN traces jt ON jt.id=jm.trace_id
+            WHERE jm.thread_id=w.id AND jt.journal_id=$2)
+            OR EXISTS(SELECT 1 FROM traces pending WHERE pending.id=w.pending_trace_id AND pending.journal_id=$2))
         AND ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM writing_thread_traces m WHERE m.thread_id=w.id AND m.trace_id=$3)
             OR w.pending_trace_id=$3)
         AND ($4::text IS NULL OR w.search_vector @@ plainto_tsquery('simple',unaccent($4))

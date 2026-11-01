@@ -3,3 +3,6 @@ pub mod persist;
 pub mod routes;
 pub mod service;
 pub use service::start_generation_worker;
+
+#[cfg(test)]
+mod tests;
