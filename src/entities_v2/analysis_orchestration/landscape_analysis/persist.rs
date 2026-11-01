@@ -490,6 +490,11 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
         )
     })?;
     let user = User::find(&user_id, pool)?;
+    // This is a background planner, not an explicit AI request. Disabled AI
+    // should produce no jobs, including recaps, rather than a recorded failure.
+    if !user.allows_ai_features() {
+        return Ok(vec![]);
+    }
     let trace = Trace::find_full_trace(trace_id, pool)?;
     if trace.is_encrypted {
         return Ok(vec![]);

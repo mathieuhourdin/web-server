@@ -11,6 +11,7 @@ use crate::entities_v2::{
         create_for_trace_and_lens_with_options_and_anchor, LandscapeAnalysis, NewLandscapeAnalysis,
     },
     trace::{Trace, TraceStatus, TraceType},
+    user::User,
 };
 use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 
@@ -290,6 +291,13 @@ impl Lens {
                 "Lens user_id is missing".to_string(),
             )
         })?;
+        // Automatic planning must respect consent before inspecting trace contents
+        // or checking quotas. Opting out is not a lens failure.
+        if !User::find(&user_id, pool)?.allows_ai_features() {
+            tracing::info!(target: "analysis", lens_id=%self.id, user_id=%user_id,
+                "lens_pending_analysis_planning_skipped_ai_disabled");
+            return Ok(());
+        }
         let Some(target_trace_id) = self.target_trace_id else {
             tracing::info!(
                 target: "analysis",
@@ -415,6 +423,10 @@ pub fn activate_due_automatic_retries(pool: &DbPool) -> Result<Vec<Uuid>, PpdcEr
             WHERE l.processing_state = 'FAILED'
               AND l.automatic_retry_count = 0
               AND l.automatic_retry_at <= NOW()
+              AND (l.user_id IS NULL OR EXISTS (
+                  SELECT 1 FROM users u WHERE u.id=l.user_id
+                    AND u.ai_features_enabled AND u.ai_features_enabled_by_admin
+              ))
             ORDER BY l.automatic_retry_at ASC
             LIMIT 100
             FOR UPDATE SKIP LOCKED

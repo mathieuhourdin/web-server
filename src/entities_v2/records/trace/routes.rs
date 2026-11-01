@@ -465,6 +465,10 @@ fn spawn_autoplay_lens_runs_for_trace(
     trace_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
+    // Finalization is valid without AI: do not create/advance lenses or enqueue work.
+    if !User::find(&user_id, pool)?.allows_ai_features() {
+        return Ok(());
+    }
     ensure_user_has_any_lens(user_id, pool)?;
     let user_lenses = Lens::get_user_lenses(user_id, pool)?;
     for lens in user_lenses.into_iter().filter(|lens| lens.autoplay) {

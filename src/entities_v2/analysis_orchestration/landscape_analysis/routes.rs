@@ -258,6 +258,16 @@ pub async fn post_replan_autoplay_lenses_route(
     for lens in autoplay_lenses {
         let lens_id = lens.id;
 
+        if let Some(user_id) = lens.user_id {
+            if !User::find(&user_id, &pool)?.allows_ai_features() {
+                skipped.push(ReplanAutoplayLensesSkipped {
+                    lens_id,
+                    reason: "ai_disabled".to_string(),
+                });
+                continue;
+            }
+        }
+
         if lens.target_trace_id.is_none() {
             skipped.push(ReplanAutoplayLensesSkipped {
                 lens_id,
