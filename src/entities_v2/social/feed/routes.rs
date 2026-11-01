@@ -10,7 +10,7 @@ use crate::pagination::{PaginatedResponse, PaginationParams};
 
 use super::{
     hydrate::{find_feed_items_paginated, find_my_feed_items_paginated},
-    model::FeedItem,
+    model::{FeedItem, FeedSharing},
 };
 
 #[derive(serde::Deserialize)]
@@ -18,6 +18,13 @@ pub struct FeedQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
     pub seen: Option<bool>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct MyFeedQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub sharing: Option<FeedSharing>,
 }
 
 #[debug_handler]
@@ -42,10 +49,10 @@ pub async fn get_feed_route(
 pub async fn get_my_feed_route(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<MyFeedQuery>,
 ) -> Result<Json<PaginatedResponse<FeedItem>>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
-    let pagination = params.validate()?;
+    let pagination = params.pagination.validate()?;
     // Preserve the timeout-on-read behavior of the existing /me/traces feed.
     crate::entities_v2::records::trace::routes::finalize_expired_drafts_for_user(
         user_id,
@@ -53,7 +60,8 @@ pub async fn get_my_feed_route(
         Some(session.id),
     )
     .await?;
-    let (items, total) =
-        find_my_feed_items_paginated(user_id, pagination.offset, pagination.limit, &pool)?;
+    let (items, total) = find_my_feed_items_paginated(
+        user_id, params.sharing, pagination.offset, pagination.limit, &pool,
+    )?;
     Ok(Json(PaginatedResponse::new(items, pagination, total)))
 }

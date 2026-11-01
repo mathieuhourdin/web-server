@@ -208,12 +208,14 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/posts/:id/notification_settings")=>"Read notification mode and selected recipient IDs; only the publisher can read the selection.",
         ("POST","/traces/:id/messages")=>"Send a trace-linked message. For a mentor question about an owned draft, save first and provide expected_version_integer; the server snapshots draft/thread context. Human messages require an accepted relationship.",
         ("POST","/messages")=>"Send a direct message or mentor request using the selected message type; relationship, AI-consent and context-access checks apply.",
-        ("GET","/writing_threads")=>"List the caller's writing threads, newest activity first; supports journal_id, q and limit/offset pagination. Counts and character totals are persisted.",
+        ("GET","/writing_threads")=>"List the caller's writing threads, newest activity first; journal_id matches any member trace or pending draft in that journal. Supports q and limit/offset pagination. Counts and character totals are persisted.",
+        ("GET","/journals/:id/writing_threads")=>"List owned writing threads containing a member trace or pending draft in this journal, including threads spanning multiple journals. Supports q and limit/offset pagination.",
         ("GET","/writing_threads/:id")=>"Read an owned writing thread, generated title/question/journey summary and cached metrics.",
         ("GET","/writing_threads/:id/traces")=>"List finalized, unarchived member traces in continuation order, with limit/offset pagination. Owner only.",
         ("POST","/writing_threads/:id/generation")=>"Queue generation of a writing thread's display information, subject to AI consent and quota.",
         ("GET","/feed")=>"Read accessible feed items; publication notification suppression does not remove items from this feed.",
-        ("GET","/me/feed")=>"Read the caller's own feed, including batched seen-by previews for trace cards.",
+        ("GET","/me/feed")=>"Read the caller's own feed with batched seen-by previews. Optional sharing=shared|private filters finalized traces by current exposure and excludes album cards; omission preserves the combined feed.",
+        ("GET","/me/traces/export")=>"Download owned traces as md, txt or json. Optional journal_ids is a comma-separated list of up to 100 owned journal UUIDs; optional from/to dates are inclusive. Omission exports all journals.",
         ("POST","/me/wal")=>"Append raw input to today's Flux/WAL and reschedule automatic compilation for five minutes after this append. Returns automation.scheduled_for.",
         ("GET","/me/wal")=>"Read today's Flux/WAL, including its persisted compilation schedule, without replacing previous days.",
         ("GET","/me/wals")=>"List the caller's persisted daily Flux/WAL records with pagination.",
@@ -251,6 +253,8 @@ pub async fn schema() -> Json<Value> {
             let topic =
                 if path.starts_with("/automation/") || path.starts_with("/admin/automation/") {
                     "automation"
+                } else if matches!(path.as_str(), "/me/feed" | "/me/traces/export") {
+                    "feed_and_exports"
                 } else if path.contains("/distribution_events") || path.contains("/versions") {
                     "post_distribution_events"
                 } else if path.starts_with("/blogs") || path.starts_with("/blog/") || path == "/users/:id/publications" {
@@ -289,7 +293,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -307,7 +311,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -332,6 +336,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "journal_stats" => include_str!("../doc/journal_stats.md"),
         "journal_images" => include_str!("../doc/journal_images.md"),
         "album_stats" => include_str!("../doc/album_stats.md"),
+        "feed_and_exports" => include_str!("../doc/feed_and_export_filters.md"),
         "social_updates" => include_str!("../doc/social_and_wal_updates.md"),
         _ => return (StatusCode::NOT_FOUND, "Unknown documentation topic").into_response(),
     };

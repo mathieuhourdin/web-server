@@ -114,7 +114,7 @@ async fn social_wal_plumes_and_access_audit() {
     assert_eq!(audit.items.iter().find(|t|t.id==trace).unwrap().plume.plume_count,1);
     let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
     assert!(feed.iter().find(|i|i.source_id==trace).unwrap().plume.plumed_by_me);
-    let (feed,_)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    let (feed,_)=find_my_feed_items_paginated(f.owner,None,0,20,&f.pool).unwrap();
     assert_eq!(feed.iter().find(|i|i.source_id==trace).unwrap().plume.plume_count,1);
     f.pool.get().unwrap().batch_execute(&format!("UPDATE post_grants SET status='REVOKED' WHERE post_id='{post}'")).unwrap();
     let audit=access::for_reader(Extension(f.pool.clone()),Extension(session(f.owner)),Path(f.reader),Query(normal())).await.unwrap().0;
@@ -218,7 +218,7 @@ async fn trace_languages_persist_without_ai_and_reach_readers() {
     assert_eq!(journal.iter().find(|t| t.id == id).unwrap().language_code.as_deref(), Some("fr"));
     let (feed, _) = find_feed_items_paginated(f.reader, None, 0, 20, &f.pool).unwrap();
     assert_eq!(feed.iter().find(|t| t.source_id == id).unwrap().language_code.as_deref(), Some("fr"));
-    let (feed, _) = find_my_feed_items_paginated(f.owner, 0, 20, &f.pool).unwrap();
+    let (feed, _) = find_my_feed_items_paginated(f.owner,None,0,20, &f.pool).unwrap();
     assert_eq!(feed.iter().find(|t| t.source_id == id).unwrap().language_code.as_deref(), Some("fr"));
 }
 
@@ -257,7 +257,7 @@ async fn continuation_previews_are_batched_and_follow_reader_permissions() {
     assert_eq!(visible.continues_from.unwrap().title,"Test");
     let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
     assert_eq!(feed.iter().find(|i|i.source_id==child).unwrap().continues_from.as_ref().unwrap().id,parent);
-    let (own_feed,_)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    let (own_feed,_)=find_my_feed_items_paginated(f.owner,None,0,20,&f.pool).unwrap();
     assert_eq!(own_feed.iter().find(|i|i.source_id==child).unwrap().continues_trace_id,Some(parent));
     let mut session=Session::anonymous();session.user_id=Some(f.reader);
     let query=serde_json::from_value(serde_json::json!({})).unwrap();
@@ -359,7 +359,7 @@ async fn translation_messages_are_batched_personal_and_completed_only() {
     assert_eq!(journal.items.iter().find(|t|t.id==trace).unwrap().translation_message.as_ref().unwrap().id,latest.id);
     let (feed,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
     assert_eq!(feed.iter().find(|t|t.source_id==trace).unwrap().translation_message.as_ref().unwrap().id,latest.id);
-    let (own_feed,_)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    let (own_feed,_)=find_my_feed_items_paginated(f.owner,None,0,20,&f.pool).unwrap();
     assert!(own_feed.iter().all(|item|item.translation_message.is_none()));
     let query=serde_json::from_value(serde_json::json!({})).unwrap();
     let inspection=get_journal_audience_user_traces_route(Extension(f.pool.clone()),Extension(session(f.owner)),Path((f.journal,f.reader)),Query(query)).await.unwrap().0;
@@ -749,7 +749,7 @@ async fn my_feed_batches_seen_previews_and_private_trace_seen_by_is_empty() {
     }
     UserPostState::create_or_mark_seen(f.owner,post,&f.pool).unwrap();
     f.pool.get().unwrap().batch_execute(&format!("DELETE FROM posts WHERE id='{private_post}'; UPDATE posts SET status='DRAFT' WHERE id='{staged_post}';")).unwrap();
-    let (items,total)=find_my_feed_items_paginated(f.owner,0,20,&f.pool).unwrap();
+    let (items,total)=find_my_feed_items_paginated(f.owner,None,0,20,&f.pool).unwrap();
     assert_eq!(total,3);
     let preview=items.iter().find(|i|i.source_id==published).unwrap().seen_by_preview.as_ref().unwrap();
     assert_eq!(preview.seen_count,1);
@@ -866,6 +866,96 @@ struct Fixture {
     reader: Uuid,
     stranger: Uuid,
     journal: Uuid,
+}
+
+#[tokio::test]
+#[ignore = "Requires an explicitly configured disposable audience_test PostgreSQL database"]
+async fn own_feed_sharing_filters_and_selected_journal_exports() {
+    use crate::entities_v2::{
+        feed::{hydrate::find_my_feed_items_paginated, model::FeedSharing, routes::MyFeedQuery},
+        journal::routes::{get_all_my_traces_export_route, AllTracesExportQuery},
+        session::Session, trace_mention::TraceMention,
+    };
+    use axum::extract::{Extension, Query};
+    use diesel_migrations::MigrationHarness;
+    const MIGRATIONS: diesel_migrations::EmbeddedMigrations = diesel_migrations::embed_migrations!();
+    let url=std::env::var("AUDIENCE_TEST_DATABASE_URL").unwrap();
+    assert_eq!(url::Url::parse(&url).unwrap().path(), "/audience_test");
+    diesel::PgConnection::establish(&url).unwrap().run_pending_migrations(MIGRATIONS).unwrap();
+    let f=Fixture::new();
+    let (private, _)=f.publication(); // Published, but nobody has access.
+    let (granted, granted_post)=f.publication();
+    PostGrant::create_or_update(&Post::find_full(granted_post,&f.pool).unwrap(),f.owner,
+        NewPostGrantDto {grantee_user_id:Some(f.reader),grantee_scope:None,access_level:None},&f.pool).unwrap();
+    let (mentioned, _)=f.publication();
+    TraceMention::replace_active(mentioned,&[f.reader],&f.pool).unwrap();
+    let (blogged, _)=f.publication();
+    let blog=Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!("INSERT INTO publication_channels(id,user_id,kind,enabled)
+        VALUES('{blog}','{}','BLOG',TRUE);
+        INSERT INTO blogs(channel_id,slug,name,username) VALUES('{blog}','test-{blog}','Test','Test');
+        INSERT INTO posts(user_id,source_trace_id,publication_channel_id,title,subtitle,content,
+            interaction_type,post_type,status,notification_mode,publishing_date)
+        VALUES('{}','{blogged}','{blog}','','','','OUTPUT','IDEA','PUBLISHED','NONE',NOW());",f.owner,f.owner)).unwrap();
+    let (linked,linked_post)=f.publication();
+    let link=Uuid::new_v4();
+    let album=Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE traces SET sharing_sensitivity='SENSITIVE' WHERE id='{linked}';
+        INSERT INTO journal_share_links(id,journal_id,owner_user_id,token_hash,scoped_post_id,expires_at)
+        VALUES('{link}','{}','{}','synthetic-unused','{linked_post}',NOW()+INTERVAL '1 day');
+        INSERT INTO albums(id,owner_user_id,title) VALUES('{album}','{}','Test');",f.journal,f.owner,f.owner)).unwrap();
+    let list=|sharing,offset,limit| find_my_feed_items_paginated(f.owner,sharing,offset,limit,&f.pool).unwrap();
+    assert_eq!(list(None,0,20).1,6);
+    let (shared,total)=list(Some(FeedSharing::Shared),0,20);
+    assert_eq!(total,4);
+    let ids=shared.iter().map(|i|i.source_id).collect::<std::collections::HashSet<_>>();
+    assert_eq!(ids,std::collections::HashSet::from([granted,mentioned,blogged,linked]));
+    let (items,total)=list(Some(FeedSharing::Private),0,20);
+    assert_eq!(total,1);assert_eq!(items[0].source_id,private);
+    assert_eq!(list(Some(FeedSharing::Shared),0,1).0.len(),1);
+    let (items,total)=list(Some(FeedSharing::Shared),100,1);assert!(items.is_empty());assert_eq!(total,4);
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE post_grants SET status='REVOKED' WHERE post_id='{granted_post}';
+        UPDATE trace_mentions SET removed_at=NOW() WHERE trace_id='{mentioned}';
+        UPDATE publication_channels SET enabled=FALSE WHERE id='{}';
+        UPDATE journal_share_links SET expires_at=NOW()-INTERVAL '1 minute' WHERE id='{link}';",blog)).unwrap();
+    assert_eq!(list(Some(FeedSharing::Shared),0,20).1,0);
+    assert_eq!(list(Some(FeedSharing::Private),0,20).1,5);
+    // A journal-wide link exposes normal published traces but not sensitive ones.
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE journal_share_links SET scoped_post_id=NULL,
+        expires_at=NOW()+INTERVAL '1 day' WHERE id='{link}';")).unwrap();
+    assert_eq!(list(Some(FeedSharing::Shared),0,20).1,4);
+    assert_eq!(list(Some(FeedSharing::Private),0,20).0[0].source_id,linked);
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE journal_share_links SET revoked_at=NOW() WHERE id='{link}'")).unwrap();
+    assert_eq!(list(Some(FeedSharing::Shared),0,20).1,0);
+
+    let second=Uuid::new_v4();let third=Uuid::new_v4();let foreign=Uuid::new_v4();
+    f.pool.get().unwrap().batch_execute(&format!("INSERT INTO journals(id,user_id,title,subtitle,content,journal_type,status)
+        VALUES('{second}','{}','Second','','','USER_JOURNAL','ACTIVE'),
+              ('{third}','{}','Empty','','','USER_JOURNAL','ACTIVE'),
+              ('{foreign}','{}','Foreign','','','USER_JOURNAL','ACTIVE');",f.owner,f.owner,f.reader)).unwrap();
+    let second_trace=crate::entities_v2::trace::NewTrace::new("Test".into(),"".into(),"Synthetic export content".into(),
+        chrono::Utc::now().naive_utc(),f.owner,second).create_finalized(&f.pool).unwrap();
+    let mut session=Session::anonymous();session.user_id=Some(f.owner);
+    let query=|suffix:&str| Query::<AllTracesExportQuery>::try_from_uri(&format!("/me/traces/export?format=json{suffix}").parse().unwrap()).unwrap();
+    let response=get_all_my_traces_export_route(Extension(f.pool.clone()),Extension(session.clone()),
+        query(&format!("&journal_ids={second},{third},{second}"))).await.unwrap();
+    let bytes=axum::body::to_bytes(response.into_body(),usize::MAX).await.unwrap();
+    let data:serde_json::Value=serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(data["journals"].as_array().unwrap().len(),2);
+    assert_eq!(data["traces"].as_array().unwrap().len(),1);
+    assert_eq!(data["traces"][0]["trace"]["id"],second_trace.id.to_string());
+    let response=get_all_my_traces_export_route(Extension(f.pool.clone()),Extension(session.clone()),query("")).await.unwrap();
+    let data:serde_json::Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(data["traces"].as_array().unwrap().len(),6);
+    for (suffix,status) in [(format!("&journal_ids={second},{foreign}"),404),
+        (format!("&journal_ids={}",Uuid::new_v4()),404),("&journal_ids=".into(),400),
+        ("&journal_ids=invalid".into(),400),(format!("&journal_ids={}",vec![second.to_string();101].join(",")),400)] {
+        assert_eq!(get_all_my_traces_export_route(Extension(f.pool.clone()),Extension(session.clone()),query(&suffix))
+            .await.err().unwrap().status_code,status);
+    }
+    assert!(Query::<MyFeedQuery>::try_from_uri(&"/me/feed?sharing=invalid".parse().unwrap()).is_err());
+    assert!(Query::<MyFeedQuery>::try_from_uri(&"/me/feed?sharing=private&limit=1&offset=2".parse().unwrap()).is_ok());
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE posts SET status='ARCHIVED' WHERE user_id='{}'",f.owner)).unwrap();
 }
 
 impl Fixture {
@@ -1521,7 +1611,10 @@ async fn own_feed_includes_private_traces_and_albums_without_changing_trace_coll
         get_my_feed_route(
             Extension(f.pool.clone()),
             Extension(session),
-            Query(PaginationParams::from_parts(Some(offset), Some(limit))),
+            Query(crate::entities_v2::feed::routes::MyFeedQuery {
+                pagination: PaginationParams::from_parts(Some(offset), Some(limit)),
+                sharing: None,
+            }),
         )
         .await
         .unwrap()

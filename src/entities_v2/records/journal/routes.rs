@@ -43,6 +43,29 @@ pub struct AllTracesExportQuery {
     pub format: JournalExportFormat,
     pub from: Option<NaiveDate>,
     pub to: Option<NaiveDate>,
+    pub journal_ids: Option<String>,
+}
+
+impl AllTracesExportQuery {
+    fn selected_journal_ids(&self) -> Result<Option<HashSet<Uuid>>, PpdcError> {
+        self.journal_ids
+            .as_deref()
+            .map(|raw| {
+                let values = raw.split(',').collect::<Vec<_>>();
+                if values.len() > 100 {
+                    return Err(PpdcError::new(
+                        400, ErrorType::ApiError, "Select at most 100 journals".into(),
+                    ));
+                }
+                values.into_iter().map(|value| {
+                    Uuid::parse_str(value.trim()).map_err(|_| PpdcError::new(
+                        400, ErrorType::ApiError,
+                        "journal_ids must be a nonempty comma-separated list of UUIDs".into(),
+                    ))
+                }).collect()
+            })
+            .transpose()
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -544,7 +567,15 @@ pub async fn get_all_my_traces_export_route(
             "from must be earlier than or equal to to".to_string(),
         ));
     }
-    let journals = Journal::find_all_owned_by(user_id, &pool)?;
+    let selection = params.selected_journal_ids()?;
+    let mut journals = Journal::find_all_owned_by(user_id, &pool)?;
+    if let Some(ids) = selection {
+        let owned = journals.iter().map(|journal| journal.id).collect::<HashSet<_>>();
+        if !ids.is_subset(&owned) {
+            return Err(PpdcError::new(404, ErrorType::ApiError, "Journal not found".into()));
+        }
+        journals.retain(|journal| ids.contains(&journal.id));
+    }
     let exported_journals = journals.clone();
     let mut items = Vec::new();
     for journal in journals {

@@ -1,8 +1,21 @@
 use chrono::NaiveDateTime;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entities_v2::post::PostStatus;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedSharing {
+    Shared,
+    Private,
+}
+
+impl FeedSharing {
+    pub fn is_shared(self) -> bool {
+        matches!(self, Self::Shared)
+    }
+}
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
