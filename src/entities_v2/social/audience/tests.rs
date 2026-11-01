@@ -1587,14 +1587,19 @@ async fn chronological_album_ranges_use_visible_finalization_dates() {
     let (early, early_post) = f.publication();
     let album = Uuid::new_v4();
     let empty = Uuid::new_v4();
+    let hidden_journal = Uuid::new_v4();
+    let other_journal = Uuid::new_v4();
     f.pool.get().unwrap().batch_execute(&format!(
-        "UPDATE traces SET finalized_at='2026-01-01' WHERE id='{hidden}';
-         UPDATE traces SET finalized_at='2026-05-01',interaction_date='2025-01-01' WHERE id='{late}';
+        "INSERT INTO journals(id,user_id,title,subtitle,content,journal_type,status) VALUES
+             ('{hidden_journal}','{}','Hidden journal','','','USER_JOURNAL','ACTIVE'),
+             ('{other_journal}','{}','Other journal','','','USER_JOURNAL','ACTIVE');
+         UPDATE traces SET finalized_at='2026-01-01',journal_id='{hidden_journal}' WHERE id='{hidden}';
+         UPDATE traces SET finalized_at='2026-05-01',interaction_date='2025-01-01',journal_id='{other_journal}' WHERE id='{late}';
          UPDATE traces SET finalized_at='2026-03-01',interaction_date='2027-01-01' WHERE id='{early}';
          INSERT INTO albums(id,owner_user_id,title,visibility) VALUES
              ('{album}','{}','Chronological','PUBLISHED'),('{empty}','{}','Empty','PRIVATE');
          INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES
-             ('{album}','{hidden}',0),('{album}','{late}',1),('{album}','{early}',2);", f.owner, f.owner
+             ('{album}','{hidden}',0),('{album}','{late}',1),('{album}','{early}',2);", f.owner, f.owner, f.owner, f.owner
     )).unwrap();
     for post in [late_post, early_post] {
         PostGrant::create_or_update(
@@ -1623,6 +1628,13 @@ async fn chronological_album_ranges_use_visible_finalization_dates() {
             .collect::<Vec<_>>(),
         vec![early, late]
     );
+    let mut reader_journals = vec![f.journal, other_journal];
+    reader_journals.sort_unstable();
+    let stats = response.album.stats.as_ref().unwrap();
+    assert_eq!(stats.traces_count, 2);
+    assert_eq!(stats.journal_ids, reader_journals);
+    assert!(!stats.journal_ids.contains(&hidden_journal));
+    assert_eq!(serde_json::to_value(&response).unwrap()["stats"]["traces_count"], 2);
     let reader_range = response.album.visible_trace_date_range.unwrap();
     assert_eq!(reader_range.from.to_rfc3339(), "2026-03-01T00:00:00+00:00");
     assert_eq!(reader_range.to.to_rfc3339(), "2026-05-01T00:00:00+00:00");
@@ -1630,6 +1642,13 @@ async fn chronological_album_ranges_use_visible_finalization_dates() {
         .unwrap()
         .with_visible_date_range(f.owner, &f.pool)
         .unwrap();
+    let mut owner_journals = vec![f.journal, other_journal, hidden_journal];
+    owner_journals.sort_unstable();
+    assert_eq!(owner_album.stats.as_ref().unwrap().traces_count, 3);
+    assert_eq!(owner_album.stats.as_ref().unwrap().journal_ids, owner_journals);
+    let empty_album = Album::find(empty, &f.pool).unwrap()
+        .with_visible_date_range(f.owner, &f.pool).unwrap();
+    assert_eq!(empty_album.stats.unwrap(), crate::entities_v2::album::AlbumStats::default());
     assert_eq!(
         owner_album
             .visible_trace_date_range
@@ -1670,6 +1689,17 @@ async fn chronological_album_ranges_use_visible_finalization_dates() {
         .unwrap()
         .visible_trace_date_range
         .is_none());
+    let manual = Album::find(album, &f.pool).unwrap()
+        .with_visible_date_range(f.reader, &f.pool).unwrap();
+    assert_eq!(manual.stats.as_ref().unwrap().traces_count, 2);
+    assert_eq!(manual.stats.unwrap().journal_ids, reader_journals);
+    f.pool.get().unwrap().batch_execute(&format!(
+        "UPDATE post_grants SET status='REVOKED' WHERE post_id='{early_post}';"
+    )).unwrap();
+    let revoked = Album::find(album, &f.pool).unwrap()
+        .with_visible_date_range(f.reader, &f.pool).unwrap();
+    assert_eq!(revoked.stats.as_ref().unwrap().traces_count, 1);
+    assert_eq!(revoked.stats.unwrap().journal_ids, vec![other_journal]);
 }
 
 #[tokio::test]

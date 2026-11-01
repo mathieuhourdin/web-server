@@ -197,6 +197,7 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/automation/contract")=>"Read the agent-specific contract, limits and delegated-route allowlist. Documentation never expands permissions.",
         ("GET","/me/capabilities")=>"Inspect the automation credential's effective scopes, sandbox rules and limits.",
         ("GET","/me/audience/:user_id/traces")=>"Audit which of your finalized traces this reader can currently access across journals. Owner only; limit/offset pagination with an accurate total.",
+        ("GET","/journals/:id/images")=>"List images from readable finalized journal traces, newest finalized_at first. Lightweight trace/asset IDs and dimensions only; supports limit/offset pagination with a viewer-scoped total.",
         ("PUT","/traces/:id/plume")=>"Give one plume to accessible finalized writing by someone else. Idempotent; no request body. Returns plume_count and plumed_by_me.",
         ("DELETE","/traces/:id/plume")=>"Retract your own plume, including after access revocation; inaccessible trace totals are not disclosed.",
         ("GET","/traces/:id/plumes")=>"List people who gave a plume, newest first, with pagination. Trace author only.",
@@ -253,6 +254,10 @@ pub async fn schema() -> Json<Value> {
                     "blogs"
                 } else if path.contains("writing_threads") {
                     "writing_threads"
+                } else if path == "/journals/:id/images" {
+                    "journal_images"
+                } else if matches!(path.as_str(), "/albums" | "/albums/:id" | "/albums/:id/assets" | "/users/:id/albums" | "/traces/:id/albums") {
+                    "album_stats"
                 } else if path.contains("/plume") || path.starts_with("/me/audience/") || path.starts_with("/me/wal") {
                     "social_updates"
                 } else if path == "/traces/:id/messages" {
@@ -275,10 +280,13 @@ pub async fn schema() -> Json<Value> {
             if path.contains("traces") || path.ends_with("/feed") || path == "/feed" {
                 operation["x-related-contracts"] = json!(["/api/docs?topic=trace_translations"]);
             }
+            if matches!(path.as_str(),"/journals/{id}"|"/users/{id}/journals"|"/journals/shared"|"/journals/shared/recent"|"/users/{id}/journals/shared"|"/journals") {
+                operation["x-related-contracts"]=json!(["/api/docs?topic=journal_stats"]);
+            }
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications","journal_stats","journal_images","album_stats"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -296,7 +304,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","publication_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_publications","journal_stats","journal_images","album_stats"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -318,6 +326,9 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "trace_chronology" => include_str!("../doc/trace_chronology.md"),
         "blogs" => include_str!("../doc/blogs.md"),
         "post_publications" => include_str!("../doc/post_publications.md"),
+        "journal_stats" => include_str!("../doc/journal_stats.md"),
+        "journal_images" => include_str!("../doc/journal_images.md"),
+        "album_stats" => include_str!("../doc/album_stats.md"),
         "social_updates" => include_str!("../doc/social_and_wal_updates.md"),
         _ => return (StatusCode::NOT_FOUND, "Unknown documentation topic").into_response(),
     };
@@ -346,6 +357,10 @@ mod tests {
         assert!(paths["/users"].get("get").is_some());
         assert!(paths["/users"].get("post").is_some());
         assert!(paths["/admin/analytics/users"].get("get").is_some());
+        assert_eq!(
+            paths["/journals/{id}/images"]["get"]["externalDocs"]["url"],
+            "/api/docs?topic=journal_images"
+        );
         assert!(paths["/internal/generate_shared_journal_daily_digests"]
             .get("post")
             .is_some());

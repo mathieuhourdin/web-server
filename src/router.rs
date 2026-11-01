@@ -532,6 +532,11 @@ pub fn create_router() -> Router {
         )
         .api_route(
             "/journals",
+            "/:id/images",
+            get(journal::images::list),
+        )
+        .api_route(
+            "/journals",
             "/:id/imports",
             post(journal::post_journal_import_route),
         )
@@ -1065,9 +1070,10 @@ pub fn create_router() -> Router {
         .nest("/shared", shared_router)
         .fallback(fallback_handler)
         .api_route("", "/", get(root_handler))
-        .layer(from_fn(logging::request_context_middleware))
         .layer(from_fn(automation::gate))
         .layer(from_fn(sessions_service::add_session_to_request))
+        // Layers run outside-in: establish correlation/timing before authentication.
+        .layer(from_fn(logging::request_context_middleware))
         .nest_service("/public", ServeDir::new("public"))
         .layer(cors)
 }

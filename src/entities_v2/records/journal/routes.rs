@@ -294,6 +294,7 @@ pub async fn get_user_journals_route(
         journal_type,
         &pool,
     )?;
+    let journals=Journal::hydrate_stats(journals,session_user_id,&pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
@@ -308,6 +309,7 @@ pub async fn get_shared_journals_route(
     let shared_ids = Journal::find_shared_ids_for_user(user_id, &pool)?;
     let (journals, total) =
         Journal::find_many_paginated(shared_ids, pagination.offset, pagination.limit, true, &pool)?;
+    let journals=Journal::hydrate_stats(journals,user_id,&pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
@@ -325,6 +327,7 @@ pub async fn get_recent_shared_journals_route(
         pagination.limit,
         &pool,
     )?;
+    let journals=Journal::hydrate_stats(journals,user_id,&pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
@@ -344,6 +347,7 @@ pub async fn get_user_recent_shared_journals_route(
         pagination.limit,
         &pool,
     )?;
+    let journals=Journal::hydrate_stats(journals,viewer_user_id,&pool)?;
     Ok(Json(PaginatedResponse::new(journals, pagination, total)))
 }
 
@@ -358,7 +362,7 @@ pub async fn get_journal_route(
     if !journal.user_can_read(user_id, &pool)? {
         return Err(PpdcError::unauthorized());
     }
-    Ok(Json(journal))
+    Ok(Json(journal.with_stats(user_id,&pool)?))
 }
 
 #[debug_handler]
@@ -369,7 +373,7 @@ pub async fn post_journal_route(
 ) -> Result<Json<Journal>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::create(payload, user_id, &pool)?;
-    Ok(Json(journal))
+    Ok(Json(journal.with_stats(user_id,&pool)?))
 }
 
 #[debug_handler]
@@ -417,7 +421,7 @@ pub async fn put_journal_route(
     }
 
     let journal = journal.update(&pool)?;
-    Ok(Json(journal))
+    Ok(Json(journal.with_stats(user_id,&pool)?))
 }
 
 #[debug_handler]

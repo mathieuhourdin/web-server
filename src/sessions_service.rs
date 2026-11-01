@@ -12,7 +12,7 @@ use crate::environment;
 use axum::{
     body::Body,
     debug_handler,
-    extract::{Extension, Json},
+    extract::{Extension, FromRequestParts, Json},
     http::{
         header::{HeaderValue, SET_COOKIE},
         HeaderMap, Request, Response, StatusCode as AxumStatusCode,
@@ -59,13 +59,27 @@ pub struct ExternalProviderUnlinkDto {
     pub password_confirmation: Option<String>,
 }
 
-pub async fn add_session_to_request(
-    session: Session,
-    mut req: Request<Body>,
-    next: Next,
-) -> impl IntoResponse {
-    req.extensions_mut().insert(session.clone());
-    next.run(req).await
+pub async fn add_session_to_request(req: Request<Body>, next: Next) -> impl IntoResponse {
+    // Resolve the same extractor explicitly so authentication is timed too.
+    let started_at = std::time::Instant::now();
+    let (mut parts, body) = req.into_parts();
+    let session = match Session::from_request_parts(&mut parts, &()).await {
+        Ok(session) => session,
+        Err(rejection) => return rejection.into_response(),
+    };
+    let auth = crate::logging::AuthenticationLogContext {
+        user_id: session.user_id.map(|id| id.to_string()).unwrap_or_default(),
+        session_id: session.id.to_string(),
+        auth_ms: started_at.elapsed().as_millis() as u64,
+    };
+    let span = tracing::Span::current();
+    span.record("user_id", auth.user_id.as_str());
+    span.record("session_id", auth.session_id.as_str());
+    span.record("auth_ms", auth.auth_ms);
+    parts.extensions.insert(session);
+    let mut response = next.run(Request::from_parts(parts, body)).await;
+    response.extensions_mut().insert(auth);
+    response
 }
 
 pub async fn auth_middleware_custom(

@@ -1,8 +1,10 @@
 pub mod enums;
 pub mod hydrate;
+pub mod images;
 pub mod model;
 pub mod persist;
 pub mod routes;
+pub mod stats;
 
 pub use model::{
     Journal, JournalAudienceAccessVia, JournalAudienceDefaultSharingPolicy, JournalAudienceMember,

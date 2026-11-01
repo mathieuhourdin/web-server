@@ -47,6 +47,7 @@ fn tuple_to_album(row: AlbumTuple) -> Album {
         created_at: row.9,
         updated_at: row.10,
         visible_trace_date_range: None,
+        stats: None,
     }
 }
 

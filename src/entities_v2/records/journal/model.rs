@@ -21,6 +21,9 @@ pub struct Journal {
     pub sharing_mode: JournalSharingMode,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    /// Viewer-scoped projection; never persisted or initialized with fake zeros.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<super::stats::JournalStats>,
 }
 
 /// A named account that either has a future-sharing default for the journal or

@@ -212,6 +212,7 @@ impl From<JournalTuple> for Journal {
             updated_at,
         ) = row;
         Journal {
+            stats: None,
             id,
             user_id,
             title,

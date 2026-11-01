@@ -19,6 +19,14 @@ pub struct Album {
     pub updated_at: NaiveDateTime,
     #[serde(default)]
     pub visible_trace_date_range: Option<AlbumTraceDateRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<AlbumStats>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct AlbumStats {
+    pub traces_count: i64,
+    pub journal_ids: Vec<Uuid>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

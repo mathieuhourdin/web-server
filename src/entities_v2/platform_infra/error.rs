@@ -65,7 +65,7 @@ impl PpdcErrorLogContext {
         let session_id = request.map(|request| request.session_id).unwrap_or("");
         let latency_ms = request
             .map(|request| request.latency_ms)
-            .unwrap_or_default();
+            .unwrap_or_default() as u64;
         if self.response_status_code >= 500 {
             tracing::error!(
                 target: "api",
