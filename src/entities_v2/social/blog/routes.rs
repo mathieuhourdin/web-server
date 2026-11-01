@@ -34,6 +34,7 @@ pub fn management_router() -> Router {
 }
 pub fn public_router() -> Router {
     Router::new()
+        .api_route("/blog", "/_assets/hupo.svg", get(logo))
         .api_route("/blog", "/:slug", get(home))
         .api_route("/blog", "/:slug/posts/:post_id", get(article))
         .api_route("/blog", "/:slug/assets/:asset_id", get(blog_image))
@@ -42,6 +43,20 @@ pub fn public_router() -> Router {
             "/:slug/posts/:post_id/assets/:asset_id",
             get(post_image),
         )
+}
+async fn logo() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; sandbox",
+            ),
+        ],
+        include_str!("../../../../public/assets/icon.svg"),
+    )
 }
 fn user(session: &Session) -> Result<Uuid, crate::entities_v2::error::PpdcError> {
     session
