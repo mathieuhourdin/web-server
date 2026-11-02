@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>{{email_subject}}</title>
+  <style>
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; }
+    table { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    @media screen and (max-width: 600px) {
+      .mail-edge { padding: 24px 12px !important; }
+      .mail-padding { padding: 26px 20px !important; }
+      .email-title { font-size: 24px !important; }
+      .email-excerpt { padding: 14px 16px !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      body, .mail-background { background-color: #0D0D0F !important; }
+      .mail-paper { background-color: #161618 !important; border-color: #2C2C2F !important; }
+      .mail-padding, .email-title, .email-copy, .email-section, .email-item-title { color: #ECECE4 !important; }
+      .mail-brand, .email-link, .mail-footer a { color: #C7BCA6 !important; }
+      .mail-footer, .email-greeting, .email-meta, .email-small, .email-kicker { color: #B1AEA6 !important; }
+      .email-excerpt { background-color: #212124 !important; border-color: #49453E !important; color: #ECECE4 !important; }
+      .email-digest-item { border-color: #2C2C2F !important; }
+      .email-button-cell, .email-button { background-color: #08134F !important; border-color: #444458 !important; color: #FBF9F3 !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#F1ECE2;">
+  <table role="presentation" class="mail-background" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F1ECE2" style="width:100%;background-color:#F1ECE2;">
+    <tr><td class="mail-edge" align="center" style="padding:36px 16px;">
+      <!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;">
+        <tr><td style="padding:0 6px 22px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="44" style="width:44px;vertical-align:middle;">
+                <img src="{{app_icon_url}}" alt="" width="32" height="32" style="display:block;width:32px;height:32px;border:0;border-radius:50%;">
+              </td>
+              <td class="mail-brand" style="vertical-align:middle;font-family:Georgia,'Times New Roman',serif;font-size:30px;line-height:1;color:#08134F;letter-spacing:-1px;">hupo</td>
+            </tr>
+          </table>
+        </td></tr>
+        <tr><td class="mail-paper" bgcolor="#FBF9F3" style="background-color:#FBF9F3;border:1px solid #DDD8CE;border-radius:14px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;">
+            <tr><td class="mail-padding" style="padding:34px 32px;color:#211F1A;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.7;word-wrap:break-word;">
+              {{body_html}}
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td class="mail-footer" style="padding:22px 6px 0;color:#5B5648;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.7;">
+          <a href="{{preferences_url}}" style="color:#5B5648;text-decoration:underline;">Gérer mes préférences email</a>
+          <br>hupo · Un espace pour écrire, et se retrouver.
+        </td></tr>
+      </table>
+      <!--[if mso]></td></tr></table><![endif]-->
+    </td></tr>
+  </table>
+</body>
+</html>

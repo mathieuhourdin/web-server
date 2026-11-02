@@ -1,32 +1,7 @@
-<div style="margin:0;padding:32px 16px;background:#22201f;color:#f4efe7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:640px;margin:0 auto;">
-    <div style="margin-bottom:18px;color:#f4efe7;font-size:28px;font-weight:600;letter-spacing:-0.02em;">
-      <img src="{{app_icon_url}}" alt="hupo" width="32" height="32" style="display:inline-block;vertical-align:middle;border-radius:16px;margin-right:10px;" />
-      <span style="vertical-align:middle;">hupo</span>
-    </div>
-
-    <div style="background:#1f1f1f;border:1px solid #2f2f2f;border-radius:24px;padding:28px;box-shadow:0 12px 32px rgba(0,0,0,0.28);">
-      <div style="margin-bottom:10px;font-size:15px;color:#d7d0c4;">
-        Bonjour {{recipient_display_name}},
-      </div>
-
-      <div style="margin-bottom:18px;font-size:30px;line-height:1.15;font-weight:700;color:#fff3e1;">
-        Accès à un journal partagé
-      </div>
-
-      <div style="margin-bottom:22px;font-size:16px;line-height:1.7;color:#d9d3c8;">
-        <strong style="color:#ffffff;">{{owner_display_name}}</strong> vous a donné accès au journal
-        <strong style="color:#ffffff;">{{journal_title}}</strong>.
-      </div>
-
-      <div style="padding-top:6px;">
-        <a
-          href="{{journal_url}}"
-          style="display:inline-block;padding:12px 18px;background:#f2eee7;color:#1e1b1a;text-decoration:none;border-radius:14px;font-weight:600;"
-        >
-          Ouvrir le journal
-        </a>
-      </div>
-    </div>
-  </div>
-</div>
+<p class="email-greeting">Bonjour {{recipient_display_name}},</p>
+<h1 class="email-title">Un journal à découvrir</h1>
+<p class="email-copy"><strong>{{owner_display_name}}</strong> vous a donné accès au journal <strong>{{journal_title}}</strong>.</p>
+<p class="email-copy">Ses traces sont maintenant à votre disposition, à lire à votre rythme.</p>
+<table role="presentation" class="email-action" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="email-button-cell"><a class="email-button" href="{{journal_url}}">Ouvrir le journal</a></td></tr>
+</table>
