@@ -1,4 +1,5 @@
 mod admin;
+mod analytics_engagement;
 mod content_counts;
 mod enums;
 mod model;
@@ -20,6 +21,7 @@ pub use admin::{
     AdminUserLlmCostsResponse, AdminUserRecentActivity,
 };
 pub use content_counts::{get_user_content_counts_route, UserContentCounts};
+pub use analytics_engagement::get_admin_user_segments_route;
 pub use enums::{
     EmailNotificationMode, HomeFocusView, JournalTheme, UserPrincipalType, UserRole,
     WeekAnalysisWeekday,

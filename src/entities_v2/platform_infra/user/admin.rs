@@ -1,4 +1,5 @@
 use crate::db::DbPool;
+use crate::entities_v2::platform_infra::timezone::{postgres_timezone_name, postgres_timezone_sql};
 use crate::entities_v2::{
     error::{ErrorType, PpdcError},
     session::Session,
@@ -253,6 +254,17 @@ pub enum AdminPlatformAnalyticsMetric {
     #[serde(rename = "feed_engaged_30s")]
     FeedEngaged30s,
     PostOpened,
+    DocumentOpened,
+    AlbumOpened,
+    DailyPublishers,
+    DailyPrivateWriters,
+    PublishersShare,
+    PrivateWritersShare,
+    ReadersShare,
+    #[serde(rename = "inactive_writers_30d")]
+    InactiveWriters30d,
+    #[serde(rename = "inactive_writers_60d")]
+    InactiveWriters60d,
     #[serde(rename = "active_writers_30d")]
     ActiveWriters30d,
     #[serde(rename = "active_writers_14d")]
@@ -275,6 +287,8 @@ pub enum AdminUserAnalyticsMetric {
     JournalOpened,
     FollowedJournalOpened,
     PostOpened,
+    DocumentOpened,
+    AlbumOpened,
     FeedbackOpened,
     SummaryOpened,
 }
@@ -317,13 +331,17 @@ pub struct AdminAnalyticsSummary {
     pub current_health: AdminPlatformCurrentHealth,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct AdminAnalyticsPoint {
     pub date: NaiveDate,
     pub count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_users: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percentage: Option<f64>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct AdminAnalyticsSeries<T> {
     pub metric: T,
     pub points: Vec<AdminAnalyticsPoint>,
@@ -461,7 +479,7 @@ fn aggregate_user_llm_cost_rows(
     (total, by_model)
 }
 
-fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
+pub(super) fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let session_user = User::find(&session_user_id, pool)?;
     if !session_user.has_role(UserRole::Admin, pool)? {
@@ -476,13 +494,6 @@ fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, P
 
 fn parse_user_timezone_or_utc(user: &User) -> Tz {
     user.timezone.parse::<Tz>().unwrap_or(chrono_tz::UTC)
-}
-
-fn postgres_timezone_name(tz: Tz) -> &'static str {
-    match tz {
-        chrono_tz::Asia::Saigon => "Asia/Ho_Chi_Minh",
-        _ => tz.name(),
-    }
 }
 
 const ADMIN_ANALYTICS_DEFAULT_DAYS: i64 = 30;
@@ -536,23 +547,39 @@ fn deduplicate_metrics<T: Copy + PartialEq>(metrics: Vec<T>) -> Vec<T> {
     })
 }
 
-fn load_platform_metric_points(
+pub(super) fn load_platform_metric_points(
     metric: AdminPlatformAnalyticsMetric,
     from: NaiveDate,
     to: NaiveDate,
     conn: &mut diesel::PgConnection,
 ) -> Result<Vec<AdminAnalyticsPoint>, PpdcError> {
+    if matches!(
+        metric,
+        AdminPlatformAnalyticsMetric::DailyPublishers
+            | AdminPlatformAnalyticsMetric::DailyPrivateWriters
+            | AdminPlatformAnalyticsMetric::InactiveWriters30d
+            | AdminPlatformAnalyticsMetric::InactiveWriters60d
+            | AdminPlatformAnalyticsMetric::PublishersShare
+            | AdminPlatformAnalyticsMetric::PrivateWritersShare
+            | AdminPlatformAnalyticsMetric::ReadersShare
+    ) {
+        return super::analytics_engagement::load_series(metric, from, to, conn);
+    }
     let rows = match metric {
         AdminPlatformAnalyticsMetric::FeedVisited
         | AdminPlatformAnalyticsMetric::FeedEngaged30s
-        | AdminPlatformAnalyticsMetric::PostOpened => {
+        | AdminPlatformAnalyticsMetric::PostOpened
+        | AdminPlatformAnalyticsMetric::DocumentOpened
+        | AdminPlatformAnalyticsMetric::AlbumOpened => {
             let event_type = match metric {
                 AdminPlatformAnalyticsMetric::FeedVisited => "FEED_VISITED",
                 AdminPlatformAnalyticsMetric::FeedEngaged30s => "FEED_ENGAGED_30S",
                 AdminPlatformAnalyticsMetric::PostOpened => "POST_OPENED",
+                AdminPlatformAnalyticsMetric::DocumentOpened => "DOCUMENT_OPENED",
+                AdminPlatformAnalyticsMetric::AlbumOpened => "ALBUM_OPENED",
                 _ => unreachable!(),
             };
-            sql_query(
+            sql_query(format!(
                 r#"
                 WITH days AS (
                     SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
@@ -560,10 +587,7 @@ fn load_platform_metric_points(
                 activity AS (
                     SELECT
                         timezone(
-                            COALESCE(NULLIF(CASE
-                                WHEN u.timezone = 'Asia/Saigon' THEN 'Asia/Ho_Chi_Minh'
-                                ELSE u.timezone
-                            END, ''), 'UTC'),
+                            {timezone},
                             ue.occurred_at AT TIME ZONE 'UTC'
                         )::date AS day,
                         COUNT(*)::bigint AS count
@@ -581,7 +605,8 @@ fn load_platform_metric_points(
                 LEFT JOIN activity a ON a.day = d.day
                 ORDER BY d.day
                 "#,
-            )
+                timezone = postgres_timezone_sql("u.timezone"),
+            ))
             .bind::<Date, _>(from)
             .bind::<Date, _>(to)
             .bind::<Text, _>(event_type)
@@ -697,7 +722,7 @@ fn load_platform_metric_points(
                            COUNT(DISTINCT CASE WHEN u.id IS NOT NULL THEN ue.user_id END)::bigint AS count
                     FROM days d
                     LEFT JOIN usage_events ue
-                      ON ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED')
+                      ON ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                      AND ue.occurred_at >= (d.day::timestamp - interval '29 days')
                      AND ue.occurred_at < (d.day + interval '1 day')
                     LEFT JOIN users u
@@ -717,7 +742,7 @@ fn load_platform_metric_points(
                            COUNT(DISTINCT CASE WHEN u.id IS NOT NULL THEN ue.user_id END)::bigint AS count
                     FROM days d
                     LEFT JOIN usage_events ue
-                      ON ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED')
+                      ON ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                      AND ue.occurred_at >= (d.day::timestamp - interval '6 days')
                      AND ue.occurred_at < (d.day + interval '1 day')
                     LEFT JOIN users u
@@ -730,7 +755,16 @@ fn load_platform_metric_points(
                 }
                 AdminPlatformAnalyticsMetric::FeedVisited
                 | AdminPlatformAnalyticsMetric::FeedEngaged30s
-                | AdminPlatformAnalyticsMetric::PostOpened => unreachable!(),
+                | AdminPlatformAnalyticsMetric::PostOpened
+                | AdminPlatformAnalyticsMetric::DocumentOpened
+                | AdminPlatformAnalyticsMetric::AlbumOpened
+                | AdminPlatformAnalyticsMetric::DailyPublishers
+                | AdminPlatformAnalyticsMetric::DailyPrivateWriters
+                | AdminPlatformAnalyticsMetric::InactiveWriters30d
+                | AdminPlatformAnalyticsMetric::InactiveWriters60d
+                | AdminPlatformAnalyticsMetric::PublishersShare
+                | AdminPlatformAnalyticsMetric::PrivateWritersShare
+                | AdminPlatformAnalyticsMetric::ReadersShare => unreachable!(),
             };
             sql_query(query)
                 .bind::<Date, _>(from)
@@ -744,6 +778,8 @@ fn load_platform_metric_points(
         .map(|row| AdminAnalyticsPoint {
             date: row.day,
             count: row.count,
+            total_users: None,
+            percentage: None,
         })
         .collect())
 }
@@ -762,6 +798,8 @@ fn load_user_metric_points(
         | AdminUserAnalyticsMetric::JournalOpened
         | AdminUserAnalyticsMetric::FollowedJournalOpened
         | AdminUserAnalyticsMetric::PostOpened
+        | AdminUserAnalyticsMetric::DocumentOpened
+        | AdminUserAnalyticsMetric::AlbumOpened
         | AdminUserAnalyticsMetric::FeedbackOpened
         | AdminUserAnalyticsMetric::SummaryOpened => {
             let event_type = match metric {
@@ -770,6 +808,8 @@ fn load_user_metric_points(
                 AdminUserAnalyticsMetric::JournalOpened => "JOURNAL_OPENED",
                 AdminUserAnalyticsMetric::FollowedJournalOpened => "FOLLOWED_JOURNAL_OPENED",
                 AdminUserAnalyticsMetric::PostOpened => "POST_OPENED",
+                AdminUserAnalyticsMetric::DocumentOpened => "DOCUMENT_OPENED",
+                AdminUserAnalyticsMetric::AlbumOpened => "ALBUM_OPENED",
                 AdminUserAnalyticsMetric::FeedbackOpened => "FEEDBACK_OPENED",
                 AdminUserAnalyticsMetric::SummaryOpened => "SUMMARY_OPENED",
                 _ => unreachable!(),
@@ -891,6 +931,8 @@ fn load_user_metric_points(
                 | AdminUserAnalyticsMetric::JournalOpened
                 | AdminUserAnalyticsMetric::FollowedJournalOpened
                 | AdminUserAnalyticsMetric::PostOpened
+                | AdminUserAnalyticsMetric::DocumentOpened
+                | AdminUserAnalyticsMetric::AlbumOpened
                 | AdminUserAnalyticsMetric::FeedbackOpened
                 | AdminUserAnalyticsMetric::SummaryOpened => unreachable!(),
             };
@@ -908,6 +950,8 @@ fn load_user_metric_points(
         .map(|row| AdminAnalyticsPoint {
             date: row.day,
             count: row.count,
+            total_users: None,
+            percentage: None,
         })
         .collect())
 }
@@ -1269,7 +1313,7 @@ pub async fn get_admin_analytics_summary_route(
              INNER JOIN users u ON u.id = ue.user_id
              WHERE u.principal_type = 'HUMAN'
                AND u.is_platform_user = TRUE
-               AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED')
+               AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                AND ue.occurred_at >= (CURRENT_DATE - interval '29 days')
                AND ue.occurred_at < (CURRENT_DATE + interval '1 day')) AS active_readers_30d,
             (SELECT COUNT(*)::bigint
@@ -1398,10 +1442,7 @@ pub async fn get_admin_analytics_users_route(
               AND t.finalized_at >= ($1::date - interval '1 day')
               AND t.finalized_at < ($2::date + interval '2 days')
               AND timezone(
-                    COALESCE(NULLIF(CASE
-                        WHEN trace_user.timezone = 'Asia/Saigon' THEN 'Asia/Ho_Chi_Minh'
-                        ELSE trace_user.timezone
-                    END, ''), 'UTC'),
+                    {trace_timezone},
                     t.finalized_at AT TIME ZONE 'UTC'
                   )::date BETWEEN $1::date AND $2::date
             GROUP BY t.user_id
@@ -1431,7 +1472,8 @@ pub async fn get_admin_analytics_users_route(
         OFFSET $3
         LIMIT $4
         "#,
-        order_by
+        order_by,
+        trace_timezone = postgres_timezone_sql("trace_user.timezone"),
     ))
     .bind::<Date, _>(from)
     .bind::<Date, _>(to)
@@ -1759,7 +1801,7 @@ pub async fn get_admin_platform_overview_route(
     let to = Utc::now().date_naive();
     let from = to - Duration::days(29);
 
-    let daily_rows = sql_query(
+    let daily_rows = sql_query(format!(
         r#"
         WITH days AS (
             SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
@@ -1767,10 +1809,7 @@ pub async fn get_admin_platform_overview_route(
         platform_users AS (
             SELECT
                 u.id,
-                CASE
-                    WHEN u.timezone = 'Asia/Saigon' THEN 'Asia/Ho_Chi_Minh'
-                    ELSE u.timezone
-                END AS timezone_name
+                {timezone} AS timezone_name
             FROM users u
             WHERE u.principal_type = 'HUMAN'
               AND u.is_platform_user = TRUE
@@ -1859,7 +1898,7 @@ pub async fn get_admin_platform_overview_route(
                 INNER JOIN users u ON u.id = ue.user_id
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
-                  AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED')
+                  AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                   AND ue.occurred_at >= (d.day::timestamp - interval '29 days')
                   AND ue.occurred_at < (d.day::timestamp + interval '1 day')
             ), 0)::bigint AS users_with_read_activity_last_30_days_count,
@@ -1869,14 +1908,15 @@ pub async fn get_admin_platform_overview_route(
                 INNER JOIN users u ON u.id = ue.user_id
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
-                  AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED')
+                  AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                   AND ue.occurred_at >= (d.day::timestamp - interval '6 days')
                   AND ue.occurred_at < (d.day::timestamp + interval '1 day')
             ), 0)::bigint AS users_with_read_activity_last_7_days_count
         FROM days d
         ORDER BY d.day
         "#,
-    )
+        timezone = postgres_timezone_sql("u.timezone"),
+    ))
     .bind::<Date, _>(from)
     .bind::<Date, _>(to)
     .load::<PlatformDailyOverviewRow>(&mut conn)?;

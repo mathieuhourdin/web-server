@@ -195,7 +195,7 @@ impl WalDay {
 
     pub fn find_due_for_carryover(limit: i64, pool: &DbPool) -> Result<Vec<Self>, PpdcError> {
         let mut conn = pool.get()?;
-        let ids = sql_query(
+        let ids = sql_query(format!(
             r#"
             SELECT wd.id
             FROM wal_days wd
@@ -205,11 +205,7 @@ impl WalDay {
               AND u.ai_features_enabled_by_admin = TRUE
               AND wd.local_date = (
                     timezone(
-                        COALESCE(NULLIF(CASE
-                            WHEN u.timezone = 'Asia/Saigon' THEN 'Asia/Ho_Chi_Minh'
-                            WHEN u.timezone IN (SELECT name FROM pg_timezone_names) THEN u.timezone
-                            ELSE 'UTC'
-                        END, ''), 'UTC'),
+                        {timezone},
                         NOW()
                     )::date - 1
                   )
@@ -223,7 +219,8 @@ impl WalDay {
             ORDER BY wd.local_date, wd.created_at
             LIMIT $1
             "#,
-        )
+            timezone = crate::entities_v2::platform_infra::timezone::postgres_timezone_sql("u.timezone"),
+        ))
         .bind::<BigInt, _>(limit)
         .load::<DueWalDayRow>(&mut conn)?;
         if ids.is_empty() {

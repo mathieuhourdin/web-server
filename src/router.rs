@@ -131,6 +131,11 @@ pub fn create_router() -> Router {
     let admin_analytics_router = Router::new()
         .api_route(
             "/admin/analytics",
+            "/user_segments",
+            get(user::get_admin_user_segments_route),
+        )
+        .api_route(
+            "/admin/analytics",
             "/summary",
             get(user::get_admin_analytics_summary_route),
         )
@@ -999,6 +1004,11 @@ pub fn create_router() -> Router {
         )
         .layer(from_fn(sessions_service::auth_middleware_custom));
     Router::new()
+        .api_route(
+            "",
+            "/healthz",
+            get(crate::entities_v2::platform_infra::health::get_healthz),
+        )
         .api_route("", "/api/schema", get(api_schema::schema))
         .api_route("", "/api/docs", get(api_schema::docs))
         .nest("/writing_threads", writing_threads_router)

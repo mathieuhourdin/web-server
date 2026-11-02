@@ -12,7 +12,9 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    album::Album,
     analysis_summary::AnalysisSummary,
+    document::Document,
     error::{ErrorType, PpdcError},
     journal::Journal,
     message::{Message, MessageType},
@@ -40,6 +42,8 @@ pub enum UsageEventType {
     JournalOpened,
     FollowedJournalOpened,
     PostOpened,
+    DocumentOpened,
+    AlbumOpened,
     FeedbackOpened,
     SummaryOpened,
     TraceTimeoutSet,
@@ -66,6 +70,8 @@ impl UsageEventType {
             UsageEventType::JournalOpened => "JOURNAL_OPENED",
             UsageEventType::FollowedJournalOpened => "FOLLOWED_JOURNAL_OPENED",
             UsageEventType::PostOpened => "POST_OPENED",
+            UsageEventType::DocumentOpened => "DOCUMENT_OPENED",
+            UsageEventType::AlbumOpened => "ALBUM_OPENED",
             UsageEventType::FeedbackOpened => "FEEDBACK_OPENED",
             UsageEventType::SummaryOpened => "SUMMARY_OPENED",
             UsageEventType::TraceTimeoutSet => "TRACE_TIMEOUT_SET",
@@ -102,6 +108,8 @@ impl UsageEventType {
                 Ok(UsageEventType::FollowedJournalOpened)
             }
             "POST_OPENED" | "post_opened" => Ok(UsageEventType::PostOpened),
+            "DOCUMENT_OPENED" | "document_opened" => Ok(UsageEventType::DocumentOpened),
+            "ALBUM_OPENED" | "album_opened" => Ok(UsageEventType::AlbumOpened),
             "FEEDBACK_OPENED" | "feedback_opened" => Ok(UsageEventType::FeedbackOpened),
             "SUMMARY_OPENED" | "summary_opened" => Ok(UsageEventType::SummaryOpened),
             "TRACE_TIMEOUT_SET" | "trace_timeout_set" => Ok(UsageEventType::TraceTimeoutSet),
@@ -401,6 +409,25 @@ fn validate_usage_event_access(
                 return Err(PpdcError::unauthorized());
             }
             if !PostGrant::user_can_read_post(&post, user_id, pool)? {
+                return Err(PpdcError::unauthorized());
+            }
+        }
+        UsageEventType::DocumentOpened | UsageEventType::AlbumOpened => {
+            let id = resource_id.ok_or_else(|| {
+                PpdcError::new(
+                    400,
+                    ErrorType::ApiError,
+                    "resource_id is required for this event type".into(),
+                )
+            })?;
+            let readable = match event_type {
+                UsageEventType::DocumentOpened => {
+                    Document::find(id, pool)?.user_can_read(user_id, pool)?
+                }
+                UsageEventType::AlbumOpened => Album::find(id, pool)?.user_can_read(user_id, pool)?,
+                _ => unreachable!(),
+            };
+            if !readable {
                 return Err(PpdcError::unauthorized());
             }
         }

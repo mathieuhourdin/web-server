@@ -162,7 +162,14 @@ pub async fn get_user_emoji_heatmap_route(
     // microsecond avoids shifting summaries to tomorrow or using generation day.
     // The selected lens scope excludes other experiments/branches.
     let mut conn = pool.get()?;
-    let rows = find_daily_emojis(&mut conn, user_id, lens_id, timezone.name(), from, to)?;
+    let rows = find_daily_emojis(
+        &mut conn,
+        user_id,
+        lens_id,
+        crate::entities_v2::platform_infra::timezone::postgres_timezone_name(timezone),
+        from,
+        to,
+    )?;
     let mut by_day = rows
         .into_iter()
         .map(|row| (row.day, row))

@@ -1,7 +1,15 @@
 # Hupo API discovery
 
 - `GET /api/schema`: OpenAPI 3.1 route catalog, generated from the actual router.
+- `GET /healthz`: public PostgreSQL readiness probe (`SELECT 1`), with no authentication.
+  Returns HTTP 200 and `{"status":"ok","database":"ok"}`, or HTTP 503 and
+  `{"status":"unavailable","database":"unavailable"}`. Responses use
+  `Cache-Control: no-store`; no database credentials, error details or user records
+  are returned. Pool acquisition, query execution and the response wait are bounded.
+  This checks connectivity, not migrations, backups, GCS or LLM availability.
 - `GET /api/docs`: this guide (Markdown).
+- `GET /api/docs?topic=analytics_engagement`: publisher/private-writer series,
+  30/60-day writing inactivity, current user segments and document/album open events.
 - `GET /api/docs?topic=platform`: general API conventions and route contracts.
 - Other topics: `automation`, `writing_threads`, `draft_mentor`, `post_notifications`, `trace_translations`, `trace_languages`, `social_updates`, `trace_chronology`, `feed_and_exports`.
 
