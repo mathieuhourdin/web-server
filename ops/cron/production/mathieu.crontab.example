@@ -1,0 +1,11 @@
+# Sanitized snapshot of the existing production `mathieu` user crontab.
+# Observed 2026-11-02, matieregrise-server, Etc/UTC.
+# These three jobs are ALREADY installed in production. Do not install a second
+# copy under /etc/cron.d. This file omits the actual authentication token.
+# ${INTERNAL_CRON_TOKEN} is a placeholder: cron does not load Compose variables.
+# For another VM, configure the token securely before rendering/installing this
+# user crontab. Do not commit a rendered version containing the real token.
+
+*/20 * * * * curl -s -X POST "http://localhost:3000/internal/run_pending_analyses" -H "X-Internal-Cron-Token: ${INTERNAL_CRON_TOKEN}" >> /var/log/matieregrise/run_pending_analyses_cron.log 2>&1
+*/20 * * * * curl -s -X POST "http://localhost:3000/internal/process_pending_emails" -H "X-Internal-Cron-Token: ${INTERNAL_CRON_TOKEN}" >> /var/log/matieregrise/run_pending_emails.log 2>&1
+*/20 * * * * curl -s -X POST "http://localhost:3000/internal/generate_shared_journal_daily_digests" -H "X-Internal-Cron-Token: ${INTERNAL_CRON_TOKEN}" >> /var/log/matieregrise/run_email_digest.log 2>&1

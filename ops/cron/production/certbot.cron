@@ -1,0 +1,8 @@
+# Snapshot of the package-managed /etc/cron.d/certbot, observed 2026-11-02.
+# Reference only: installing the certbot package normally creates this file.
+# On production systemd is in use, so this cron entry is skipped. Check
+# certbot.timer rather than duplicating renewal scheduling.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+0 */12 * * * root test -x /usr/bin/certbot -a \! -d /run/systemd/system && perl -e 'sleep int(rand(43200))' && certbot -q renew
