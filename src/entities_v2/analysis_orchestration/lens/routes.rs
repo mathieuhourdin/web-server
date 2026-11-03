@@ -19,7 +19,7 @@ use crate::entities_v2::{
 };
 use crate::work_analyzer;
 
-use super::model::{Lens, NewLens, NewLensDto};
+use super::model::{Lens, LensProcessingState, NewLens, NewLensDto};
 use super::persist::delete_lens_and_landscapes;
 
 #[derive(Serialize)]
@@ -260,6 +260,7 @@ pub async fn post_lens_retry_route(
         .expect("failed analyses not empty");
 
     let _ = analysis_to_retry.set_processing_state(LandscapeProcessingState::Pending, &pool)?;
+    let lens = lens.set_processing_state(LensProcessingState::OutOfSync, &pool)?;
 
     tokio::spawn(async move { work_analyzer::run_lens(lens.id).await });
 

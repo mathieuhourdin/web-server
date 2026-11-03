@@ -568,7 +568,8 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
 
     let historical = sql_query("SELECT is_historical_import AS value FROM traces WHERE id=$1")
         .bind::<SqlUuid, _>(trace.id)
-        .get_result::<BoolRow>(&mut pool.get()?)?.value;
+        .get_result::<BoolRow>(&mut pool.get()?)?
+        .value;
     if historical {
         return Ok(created);
     }
@@ -587,7 +588,8 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
         )? {
             if matches!(
                 existing_daily.processing_state,
-                LandscapeProcessingState::Pending | LandscapeProcessingState::BlockedWaitingCoverage
+                LandscapeProcessingState::Pending
+                    | LandscapeProcessingState::BlockedWaitingCoverage
             ) {
                 let _ = replace_covered_inputs_for_period(
                     existing_daily.id,
@@ -648,7 +650,8 @@ pub fn create_for_trace_and_lens_with_options_and_anchor(
         )? {
             if matches!(
                 existing_weekly.processing_state,
-                LandscapeProcessingState::Pending | LandscapeProcessingState::BlockedWaitingCoverage
+                LandscapeProcessingState::Pending
+                    | LandscapeProcessingState::BlockedWaitingCoverage
             ) {
                 let _ = replace_covered_inputs_for_period(
                     existing_weekly.id,
@@ -847,29 +850,33 @@ RETURNING la.id
     }
 }
 
-/// Lists the lens ids that still have pending analysis work, ordered so the oldest due work is handled first.
+/// Includes incomplete planning even when no jobs have been created yet.
+/// Runnable jobs retain priority by their oldest due date.
 pub fn find_lens_ids_with_pending_analyses(pool: &DbPool) -> Result<Vec<Uuid>, PpdcError> {
     let mut conn = pool.get()?;
 
     let rows = sql_query(
         r#"
-SELECT las.lens_id AS id
-FROM lens_analysis_scopes las
-INNER JOIN landscape_analyses la
-    ON la.id = las.landscape_analysis_id
-INNER JOIN lenses l
-    ON l.id = las.lens_id
-INNER JOIN users u
-    ON u.id = l.user_id
-WHERE la.processing_state = 'PENDING'
-  AND la.period_end <= NOW()
-  AND (la.landscape_analysis_type NOT IN ('DAILY_RECAP','WEEKLY_RECAP') OR EXISTS (
-      SELECT 1 FROM traces activity WHERE activity.user_id=la.user_id
-        AND activity.status='FINALIZED' AND NOT activity.is_encrypted
-        AND NOT activity.is_historical_import AND activity.trace_type IN ('USER_TRACE','WORKSPACE_TRACE')
-        AND activity.finalized_at>=la.period_start AND activity.finalized_at<la.period_end
-  ))
-  AND l.processing_state != 'FAILED'
+WITH pending AS (
+    SELECT las.lens_id, MIN(la.period_end) AS oldest_due_at, MIN(la.created_at) AS oldest_created_at
+    FROM lens_analysis_scopes las
+    INNER JOIN landscape_analyses la ON la.id = las.landscape_analysis_id
+    WHERE la.processing_state = 'PENDING'
+      AND la.period_end <= NOW()
+      AND (la.landscape_analysis_type NOT IN ('DAILY_RECAP','WEEKLY_RECAP') OR EXISTS (
+          SELECT 1 FROM traces activity WHERE activity.user_id=la.user_id
+            AND activity.status='FINALIZED' AND NOT activity.is_encrypted
+            AND NOT activity.is_historical_import AND activity.trace_type IN ('USER_TRACE','WORKSPACE_TRACE')
+            AND activity.finalized_at>=la.period_start AND activity.finalized_at<la.period_end
+      ))
+    GROUP BY las.lens_id
+)
+SELECT l.id
+FROM lenses l
+INNER JOIN users u ON u.id=l.user_id
+LEFT JOIN pending p ON p.lens_id=l.id
+WHERE l.processing_state != 'FAILED'
+  AND (p.lens_id IS NOT NULL OR (l.processing_state='OUT_OF_SYNC' AND l.target_trace_id IS NOT NULL))
   AND u.ai_features_enabled = TRUE
   AND u.ai_features_enabled_by_admin = TRUE
   AND NOT (
@@ -877,8 +884,7 @@ WHERE la.processing_state = 'PENDING'
     AND u.is_platform_user = TRUE
     AND u.mentor_id IS NULL
   )
-GROUP BY las.lens_id
-ORDER BY MIN(la.period_end) ASC, MIN(la.created_at) ASC
+ORDER BY p.oldest_due_at ASC NULLS LAST, p.oldest_created_at ASC NULLS LAST, l.id
         "#,
     )
     .get_results::<IdRow>(&mut conn)?;

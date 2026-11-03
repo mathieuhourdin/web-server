@@ -39,7 +39,7 @@ impl AiUsageKind {
             AiUsageKind::MentorQuestion => 20,
             AiUsageKind::TarotReading => 10,
             AiUsageKind::Transcription => 20,
-            AiUsageKind::LandscapeAnalysis => 5,
+            AiUsageKind::LandscapeAnalysis => 30,
             AiUsageKind::WalCompilation => 20,
             AiUsageKind::WritingThreadCompilation => 20,
         }

@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use diesel::prelude::*;
-use diesel::sql_types::{Text, Uuid as SqlUuid};
+use diesel::sql_types::{Nullable, Text, Uuid as SqlUuid};
 use uuid::Uuid;
 
 use crate::db::DbPool;
@@ -16,6 +16,14 @@ use crate::entities_v2::{
 use crate::schema::{lens_analysis_scopes, lens_heads, lens_targets, lenses};
 
 use super::model::{Lens, LensProcessingState, NewLens};
+
+pub(crate) const LENS_RUN_LOCK_TTL_SECONDS: i64 = 1800;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LensPlanningOutcome {
+    Complete,
+    Deferred,
+}
 
 struct PendingAnalysisPlanningSummary {
     planned_trace_count: usize,
@@ -283,7 +291,26 @@ impl Lens {
         Lens::find_full_lens(self.id, pool)
     }
 
-    pub fn plan_pending_analyses_for_target(self, pool: &DbPool) -> Result<(), PpdcError> {
+    pub fn plan_pending_analyses_for_target(
+        self,
+        pool: &DbPool,
+    ) -> Result<LensPlanningOutcome, PpdcError> {
+        let worker_id = Uuid::new_v4();
+        if !self.try_acquire_run_lock(worker_id, LENS_RUN_LOCK_TTL_SECONDS, pool)? {
+            return Ok(LensPlanningOutcome::Deferred);
+        }
+        // The target may have changed while the caller was acquiring the lock.
+        let result = Lens::find_full_lens(self.id, pool)
+            .and_then(|lens| lens.plan_pending_analyses_under_run_lock(pool));
+        let release = self.release_run_lock(worker_id, pool);
+        result.and_then(|outcome| release.map(|_| outcome))
+    }
+
+    /// Caller holds the shared planning/execution lock for this lens.
+    pub(crate) fn plan_pending_analyses_under_run_lock(
+        self,
+        pool: &DbPool,
+    ) -> Result<LensPlanningOutcome, PpdcError> {
         let user_id = self.user_id.ok_or_else(|| {
             PpdcError::new(
                 400,
@@ -296,7 +323,7 @@ impl Lens {
         if !User::find(&user_id, pool)?.allows_ai_features() {
             tracing::info!(target: "analysis", lens_id=%self.id, user_id=%user_id,
                 "lens_pending_analysis_planning_skipped_ai_disabled");
-            return Ok(());
+            return Ok(LensPlanningOutcome::Complete);
         }
         let Some(target_trace_id) = self.target_trace_id else {
             tracing::info!(
@@ -305,7 +332,7 @@ impl Lens {
                 self.id,
                 user_id
             );
-            return Ok(());
+            return Ok(LensPlanningOutcome::Complete);
         };
 
         match enqueue_pending_analyses_for_lens_target(self.id, user_id, target_trace_id, pool) {
@@ -319,7 +346,16 @@ impl Lens {
                     summary.planned_trace_count,
                     summary.created_analysis_count
                 );
-                Ok(())
+                Ok(LensPlanningOutcome::Complete)
+            }
+            // Planning makes no provider calls: a 429 here is an AI quota pause,
+            // including the additional delegated/demo-account quota.
+            Err(err) if err.status_code == 429 => {
+                self.clone()
+                    .set_processing_state(LensProcessingState::OutOfSync, pool)?;
+                tracing::info!(target: "analysis", lens_id=%self.id, user_id=%user_id,
+                    target_trace_id=%target_trace_id, "lens_pending_analysis_planning_deferred_quota");
+                Ok(LensPlanningOutcome::Deferred)
             }
             Err(err) => {
                 if let Err(state_err) = self.clone().set_failed(err.message.clone(), pool) {
@@ -344,6 +380,24 @@ impl Lens {
                 Err(err)
             }
         }
+    }
+
+    /// Do not let an old worker acknowledge a newer target or erase a real failure.
+    pub(crate) fn finish_run_for_target(
+        self,
+        target_trace_id: Option<Uuid>,
+        state: LensProcessingState,
+        pool: &DbPool,
+    ) -> Result<Lens, PpdcError> {
+        diesel::sql_query(
+            "UPDATE lenses SET processing_state=$3, failure_reason=NULL, automatic_retry_at=NULL
+             WHERE id=$1 AND target_trace_id IS NOT DISTINCT FROM $2 AND processing_state<>'FAILED'",
+        )
+        .bind::<SqlUuid, _>(self.id)
+        .bind::<Nullable<SqlUuid>, _>(target_trace_id)
+        .bind::<Text, _>(state.to_db())
+        .execute(&mut pool.get()?)?;
+        Lens::find_full_lens(self.id, pool)
     }
 
     pub fn set_processing_state(

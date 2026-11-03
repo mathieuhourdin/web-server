@@ -11,18 +11,17 @@ use crate::entities_v2::{
         copy_landmark_links_from_analysis, refresh_pending_summary_covered_inputs_for_trace,
         LandscapeAnalysis, LandscapeProcessingState,
     },
-    lens::{Lens, LensProcessingState},
+    lens::{persist::LENS_RUN_LOCK_TTL_SECONDS, Lens, LensPlanningOutcome, LensProcessingState},
     trace::Trace,
     user::{User, UserPrincipalType},
 };
 use crate::work_analyzer::analysis_processor;
 use crate::work_analyzer::period_analysis_processor;
 
-const LENS_RUN_LOCK_TTL_SECONDS: i64 = 1800;
 const MAX_ANALYSES_PER_RUN: usize = 100;
 
 pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
-    run_lens_with_limit(lens_id, MAX_ANALYSES_PER_RUN).await
+    run_lens_with_limit(lens_id, MAX_ANALYSES_PER_RUN, true).await
 }
 
 /// Runs at most one pending analysis for a lens.
@@ -32,10 +31,14 @@ pub async fn run_lens(lens_id: Uuid) -> Result<Lens, PpdcError> {
 /// database at an exact completed analysis boundary without changing normal
 /// worker behaviour.
 pub async fn run_lens_one(lens_id: Uuid) -> Result<Lens, PpdcError> {
-    run_lens_with_limit(lens_id, 1).await
+    run_lens_with_limit(lens_id, 1, false).await
 }
 
-async fn run_lens_with_limit(lens_id: Uuid, max_analyses: usize) -> Result<Lens, PpdcError> {
+async fn run_lens_with_limit(
+    lens_id: Uuid,
+    max_analyses: usize,
+    resume_planning: bool,
+) -> Result<Lens, PpdcError> {
     let pool = get_global_pool();
     let mut lens = Lens::find_full_lens(lens_id, pool)?;
     if let Some(user_id) = lens.user_id {
@@ -91,8 +94,28 @@ async fn run_lens_with_limit(lens_id: Uuid, max_analyses: usize) -> Result<Lens,
         worker_id
     );
 
-    let run_result =
-        run_claim_loop(&mut lens, worker_id, claim_cutoff_at, max_analyses, pool).await;
+    let run_result = async {
+        lens = Lens::find_full_lens(lens_id, pool)?;
+        let planning = if resume_planning && lens.processing_state == LensProcessingState::OutOfSync
+        {
+            lens.clone().plan_pending_analyses_under_run_lock(pool)?
+        } else if !resume_planning && lens.processing_state == LensProcessingState::OutOfSync {
+            // The one-job playground primitive cannot certify planning completion.
+            LensPlanningOutcome::Deferred
+        } else {
+            LensPlanningOutcome::Complete
+        };
+        run_claim_loop(
+            &mut lens,
+            worker_id,
+            claim_cutoff_at,
+            max_analyses,
+            planning == LensPlanningOutcome::Complete,
+            pool,
+        )
+        .await
+    }
+    .await;
 
     let release_result = lens.release_run_lock(worker_id, pool);
     match (run_result, release_result) {
@@ -167,8 +190,10 @@ async fn run_claim_loop(
     worker_id: Uuid,
     claim_cutoff_at: chrono::NaiveDateTime,
     max_analyses: usize,
+    planning_complete: bool,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
+    let planned_target_trace_id = lens.target_trace_id;
     for iteration in 0..max_analyses {
         ensure_lock_is_alive(lens, worker_id, pool)?;
 
@@ -182,9 +207,14 @@ async fn run_claim_loop(
                 worker_id,
                 iteration
             );
+            let state = if planning_complete {
+                LensProcessingState::InSync
+            } else {
+                LensProcessingState::OutOfSync
+            };
             *lens = lens
                 .clone()
-                .set_processing_state(LensProcessingState::InSync, pool)?;
+                .finish_run_for_target(planned_target_trace_id, state, pool)?;
             return Ok(());
         };
         tracing::info!(
@@ -266,20 +296,19 @@ async fn run_claim_loop(
         return Ok(());
     }
 
-    tracing::warn!(
+    tracing::info!(
         target: "work_analyzer",
-        "run_lens_max_iterations lens_id={} max_iterations={}",
+        "run_lens_batch_limit_reached lens_id={} max_iterations={}",
         lens.id,
         MAX_ANALYSES_PER_RUN
     );
-    Err(PpdcError::new(
-        500,
-        ErrorType::InternalError,
-        format!(
-            "Reached MAX_ANALYSES_PER_RUN ({MAX_ANALYSES_PER_RUN}) while processing lens {}",
-            lens.id
-        ),
-    ))
+    // A bounded batch is not a processing failure; cron can continue it later.
+    *lens = lens.clone().finish_run_for_target(
+        planned_target_trace_id,
+        LensProcessingState::OutOfSync,
+        pool,
+    )?;
+    Ok(())
 }
 
 fn ensure_lock_is_alive(lens: &Lens, worker_id: Uuid, pool: &DbPool) -> Result<(), PpdcError> {

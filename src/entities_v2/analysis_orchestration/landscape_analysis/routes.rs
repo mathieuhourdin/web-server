@@ -14,7 +14,7 @@ use crate::entities_v2::{
     element::Element,
     error::{ErrorType, PpdcError},
     landmark::Landmark,
-    lens::{activate_due_automatic_retries, Lens, LensProcessingState},
+    lens::{activate_due_automatic_retries, Lens, LensPlanningOutcome, LensProcessingState},
     platform_infra::ai_usage_guard::{ensure_ai_usage_allowed, AiUsageKind},
     session::Session,
     trace::Trace,
@@ -285,7 +285,11 @@ pub async fn post_replan_autoplay_lenses_route(
         }
 
         match lens.plan_pending_analyses_for_target(&pool) {
-            Ok(_) => planned_lens_ids.push(lens_id),
+            Ok(LensPlanningOutcome::Complete) => planned_lens_ids.push(lens_id),
+            Ok(LensPlanningOutcome::Deferred) => skipped.push(ReplanAutoplayLensesSkipped {
+                lens_id,
+                reason: "planning_deferred".to_string(),
+            }),
             Err(err) => failed.push(ReplanAutoplayLensesError {
                 lens_id,
                 message: err.message,
