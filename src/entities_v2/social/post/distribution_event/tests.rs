@@ -5,6 +5,27 @@ use crate::entities_v2::{
 };
 use diesel::{connection::SimpleConnection, r2d2::ConnectionManager};
 
+#[test]
+fn version_description_inputs_are_nullable_and_metadata_only() {
+    let input = |body: &str| serde_json::from_str::<PatchTraceVersionInput>(body);
+    assert_eq!(input("{}").unwrap().description, None);
+    assert_eq!(input(r#"{"description":null}"#).unwrap().description, Some(None));
+    assert_eq!(input(r#"{"description":"Draft"}"#).unwrap().description, Some(Some("Draft".into())));
+    assert!(input(r#"{"description":"Draft","content":"Changed"}"#).is_err());
+    assert!(serde_json::from_str::<ArchiveTraceInput>(r#"{"content":"Changed"}"#).is_err());
+    assert!(serde_json::from_str::<ArchiveTraceInput>("{").is_err());
+    assert!(serde_json::from_str::<ArchiveTraceInput>("{}").unwrap().description.is_none());
+}
+
+#[test]
+fn version_descriptions_trim_clear_and_limit_unicode_characters() {
+    assert_eq!(normalize_version_description(Some("  First draft  ".into())).unwrap(), Some("First draft".into()));
+    assert_eq!(normalize_version_description(Some(" \n ".into())).unwrap(), None);
+    assert_eq!(normalize_version_description(None).unwrap(), None);
+    assert!(normalize_version_description(Some("é".repeat(2000))).is_ok());
+    assert!(normalize_version_description(Some("é".repeat(2001))).is_err());
+}
+
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable blog_test database"]
 async fn finalization_archives_content_once_including_direct_imports() {
@@ -12,6 +33,9 @@ async fn finalization_archives_content_once_including_direct_imports() {
     let url = std::env::var("BLOG_TEST_DATABASE_URL").unwrap();
     assert_eq!(url::Url::parse(&url).unwrap().path(), "/blog_test");
     let pool = DbPool::builder().max_size(5).build(ConnectionManager::new(url)).unwrap();
+    use diesel_migrations::MigrationHarness;
+    const MIGRATIONS: diesel_migrations::EmbeddedMigrations = diesel_migrations::embed_migrations!();
+    pool.get().unwrap().run_pending_migrations(MIGRATIONS).unwrap();
     let owner = Uuid::new_v4();
     let journal = Uuid::new_v4();
     pool.get().unwrap().batch_execute(&format!("INSERT INTO users(id,email,first_name,last_name,handle,password,updated_at)
@@ -31,6 +55,27 @@ async fn finalization_archives_content_once_including_direct_imports() {
     assert_eq!(snapshot.source_version, trace.version_integer);
     assert_eq!(snapshot.finalized_at, trace.finalized_at);
     assert_eq!(snapshot.language_code, trace.language_code);
+    assert!(snapshot.description.is_none());
+    let mut owner_session = Session::anonymous();
+    owner_session.user_id = Some(owner);
+    let describe = |description| Json(PatchTraceVersionInput { description: Some(description) });
+    let annotated = patch_trace_version(Extension(pool.clone()), Extension(owner_session.clone()),
+        Path((trace.id, snapshot.id)), describe(Some("  First draft  ".into()))).await.unwrap().0;
+    assert_eq!(annotated.description.as_deref(), Some("First draft"));
+    assert_eq!(annotated.content, snapshot.content);
+    assert_eq!(annotated.created_at, snapshot.created_at);
+    assert_eq!(annotated.source_version, snapshot.source_version);
+    let mut stranger_session = Session::anonymous();
+    stranger_session.user_id = Some(Uuid::new_v4());
+    assert!(patch_trace_version(Extension(pool.clone()), Extension(stranger_session),
+        Path((trace.id, snapshot.id)), describe(None)).await.is_err());
+    assert!(patch_trace_version(Extension(pool.clone()), Extension(owner_session.clone()),
+        Path((Uuid::new_v4(), snapshot.id)), describe(None)).await.is_err());
+    assert!(pool.get().unwrap().batch_execute(&format!(
+        "UPDATE trace_versions SET content='Tampered',description='Changed' WHERE id='{}'", snapshot.id)).is_err());
+    let cleared = patch_trace_version(Extension(pool.clone()), Extension(owner_session),
+        Path((trace.id, snapshot.id)), describe(None)).await.unwrap().0;
+    assert!(cleared.description.is_none());
     trace.content = "A later edit".into();
     let edited = trace.update(&pool).unwrap().set_status(TraceStatus::Finalized, &pool).unwrap();
     assert_eq!(versions(edited.id).len(), 1);
@@ -39,6 +84,12 @@ async fn finalization_archives_content_once_including_direct_imports() {
     assert_eq!(versions(direct.id).len(), 1);
     assert_eq!(versions(direct.id)[0].language_code, direct.language_code);
     assert!(direct.language_code.is_some());
+    let mut session = Session::anonymous();
+    session.user_id = Some(owner);
+    let manual = archive_trace(Extension(pool.clone()), Extension(session), Path(direct.id),
+        Bytes::from_static(br#"{"description":"Before revision"}"#)).await.unwrap().0;
+    assert_eq!(manual.description.as_deref(), Some("Before revision"));
+    assert_eq!(manual.content, direct.content);
     let historical_date = chrono::NaiveDate::from_ymd_opt(2020,1,2).unwrap().and_hms_opt(12,0,0).unwrap();
     let imported = make().create_imported(historical_date, &pool).unwrap();
     assert_eq!(versions(imported.id)[0].finalized_at, Some(historical_date));
@@ -136,6 +187,7 @@ async fn distribution_events_are_idempotent_archival_and_do_not_change_access_or
         Extension(pool.clone()),
         Extension(session.clone()),
         Path(trace),
+        Bytes::new(),
     )
     .await
     .unwrap()

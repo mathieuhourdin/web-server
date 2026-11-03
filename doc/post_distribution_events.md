@@ -112,17 +112,30 @@ finalized traces are not backfilled. Encrypted traces remain excluded under the
 existing archival rules; their ciphertext is not stored as a plaintext version.
 Automatic capture does not publish, notify, grant access, freeze the live trace or
 automatically attach the version to a distribution event. No extra client request
-is required. Snapshots remain immutable and readable only by the trace author.
+is required. Snapshot content remains immutable and readable only by the trace author.
+An optional `description` is an editable, private annotation of the saved version
+(for example, "First complete draft"); it is not part of the frozen trace content.
 
-- `POST /traces/:id/versions`: no body, archive the current finalized, non-encrypted
+- `POST /traces/:id/versions`: optional JSON body `{"description":"First complete draft"}`,
+  archive the current finalized, non-encrypted
   trace; returns the snapshot. Does not publish or send notifications.
 - `GET /traces/:id/versions?limit=20&offset=0`: paginated snapshots, newest first.
 - `GET /traces/:id/versions/:version_id`: one snapshot.
+- `PATCH /traces/:id/versions/:version_id`: JSON `{"description":"Ready for review"}`;
+  changes only the annotation and returns the complete version. `null` or blank text
+  clears it; a missing `description` is a 400. Other fields are rejected. Only the
+  trace author can annotate a version, including automatically created snapshots.
 
-Fields: `id`, `trace_id`, `source_version`, `title`, `subtitle`, `content`,
+Descriptions are plain text, trimmed, and limited to 2,000 Unicode characters.
+Existing versions and automatic finalization snapshots have `description: null`
+until annotated. Creation without a body remains supported. Annotation changes do
+not alter the source trace, archived content, source version, timestamps, feed
+ordering or access; they do not publish, notify, or create another snapshot.
+
+Fields: `id`, `trace_id`, `source_version`, `description`, `title`, `subtitle`, `content`,
 `content_image_asset_id`, `language_code`, `finalized_at`, `created_at`.
 `source_version` is the original trace's optimistic-concurrency version, not a
-new editable draft. No update/restore endpoint is introduced. Permanent source
+new editable draft. No content-update/restore endpoint is introduced. Permanent source
 deletion removes snapshots; deleting an asset may clear its archived reference.
 
 ## Rename and migration

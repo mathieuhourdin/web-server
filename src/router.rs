@@ -236,7 +236,12 @@ pub fn create_router() -> Router {
         )
         .api_route("/traces", "/drafts", get(trace::get_trace_drafts_route))
         .api_route("/traces", "/:id/versions", get(post::distribution_event::get_trace_versions).post(post::distribution_event::archive_trace))
-        .api_route("/traces", "/:id/versions/:version_id", get(post::distribution_event::get_trace_version))
+        .api_route(
+            "/traces",
+            "/:id/versions/:version_id",
+            get(post::distribution_event::get_trace_version)
+                .patch(post::distribution_event::patch_trace_version),
+        )
         .api_route(
             "/traces",
             "/search",

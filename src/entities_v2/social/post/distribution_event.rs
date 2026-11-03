@@ -12,6 +12,7 @@ use crate::{
     pagination::{PaginatedResponse, PaginationParams},
 };
 use axum::{
+    body::Bytes,
     extract::{Extension, Path, Query},
     Json,
 };
@@ -78,6 +79,8 @@ pub struct TraceVersion {
     pub trace_id: Uuid,
     #[diesel(sql_type=Integer)]
     pub source_version: i32,
+    #[diesel(sql_type=Nullable<Text>)]
+    pub description: Option<String>,
     #[diesel(sql_type=Text)]
     pub title: String,
     #[diesel(sql_type=Text)]
@@ -92,6 +95,31 @@ pub struct TraceVersion {
     pub finalized_at: Option<NaiveDateTime>,
     #[diesel(sql_type=Timestamp)]
     pub created_at: NaiveDateTime,
+}
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveTraceInput {
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PatchTraceVersionInput {
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
+    pub description: Option<Option<String>>,
+}
+
+fn normalize_version_description(description: Option<String>) -> Result<Option<String>, PpdcError> {
+    match description {
+        Some(value) => {
+            let value = value.trim();
+            if value.chars().count() > 2_000 {
+                return Err(error(400, "Version description must not exceed 2000 characters"));
+            }
+            Ok((!value.is_empty()).then(|| value.to_owned()))
+        }
+        None => Ok(None),
+    }
 }
 #[derive(QueryableByName)]
 struct Count {
@@ -290,13 +318,45 @@ pub async fn archive_trace(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path(trace): Path<Uuid>,
+    body: Bytes,
 ) -> Result<Json<TraceVersion>, PpdcError> {
     let owner = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     require_trace_owner(trace, owner, &pool)?;
-    let row=diesel::sql_query("INSERT INTO trace_versions(trace_id,source_version,title,subtitle,content,content_image_asset_id,language_code,finalized_at)
-        SELECT id,version_integer,title,subtitle,content,content_image_asset_id,language_code,finalized_at FROM traces
+    // Keep the existing empty-body contract, but never silently ignore invalid JSON.
+    let input: ArchiveTraceInput = if body.is_empty() {
+        ArchiveTraceInput::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|_| error(400, "Invalid trace version request body"))?
+    };
+    let description = normalize_version_description(input.description)?;
+    let row=diesel::sql_query("INSERT INTO trace_versions(trace_id,source_version,title,subtitle,content,content_image_asset_id,language_code,finalized_at,description)
+        SELECT id,version_integer,title,subtitle,content,content_image_asset_id,language_code,finalized_at,$3 FROM traces
         WHERE id=$1 AND user_id=$2 AND status='FINALIZED' AND NOT is_encrypted RETURNING *")
-        .bind::<SqlUuid,_>(trace).bind::<SqlUuid,_>(owner).get_result(&mut pool.get()?)?;
+        .bind::<SqlUuid,_>(trace).bind::<SqlUuid,_>(owner).bind::<Nullable<Text>,_>(description).get_result(&mut pool.get()?)?;
+    Ok(Json(row))
+}
+
+pub async fn patch_trace_version(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path((trace, version)): Path<(Uuid, Uuid)>,
+    Json(input): Json<PatchTraceVersionInput>,
+) -> Result<Json<TraceVersion>, PpdcError> {
+    let owner = session.user_id.ok_or_else(PpdcError::unauthorized)?;
+    require_trace_owner(trace, owner, &pool)?;
+    let description = normalize_version_description(
+        input.description.ok_or_else(|| error(400, "description is required"))?,
+    )?;
+    // Check ownership in the mutation as well; a version ID alone is never authority.
+    let row = diesel::sql_query(
+        "UPDATE trace_versions v SET description=$4 FROM traces t
+         WHERE v.trace_id=$1 AND v.id=$2 AND t.id=v.trace_id AND t.user_id=$3 RETURNING v.*",
+    )
+    .bind::<SqlUuid, _>(trace)
+    .bind::<SqlUuid, _>(version)
+    .bind::<SqlUuid, _>(owner)
+    .bind::<Nullable<Text>, _>(description)
+    .get_result(&mut pool.get()?)?;
     Ok(Json(row))
 }
 pub async fn get_trace_versions(
