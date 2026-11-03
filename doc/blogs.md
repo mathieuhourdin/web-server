@@ -146,10 +146,19 @@ Publication responses use this narrow live projection:
 - `GET /blog/:slug/assets/:asset_id`: selected blog image only.
 - `GET /blog/:slug/posts/:post_id/assets/:asset_id`: selected article/subject image only.
 
-Disabled blogs, unpublished articles and unavailable sources return 404. HTML
-escapes all source text and includes canonical/Open Graph metadata, a restrictive
-CSP and `Cache-Control: no-store`. Text is displayed as escaped text preserving
-paragraph breaks, not interpreted as arbitrary HTML. No client-side JavaScript.
+Disabled blogs, unpublished articles and unavailable sources return 404. Public
+article/subject bodies render CommonMark Markdown server-side, with tables and
+strikethrough supported. Paragraphs, headings, lists, quotes, links, images and
+code blocks are styled for reading. Ordinary single line breaks wrap naturally;
+blank lines create paragraphs, and Markdown hard breaks remain supported.
+
+Raw HTML is escaped, and generated HTML is sanitized; unsafe URL schemes such as
+`javascript:` and `data:` are removed. HTTP(S), email and relative links are
+supported. Titles, subtitles, blog descriptions and metadata remain plain escaped
+text. List excerpts are plain text extracted from Markdown, without formatting
+syntax or link destinations. Source content and API JSON remain unchanged.
+Canonical/Open Graph metadata, the restrictive CSP and `Cache-Control: no-store`
+remain in place. No client-side JavaScript, migration or new environment variable.
 
 Storage stays private. Media routes check the current public publication and exact
 asset association before redirecting to a 60-second signed URL. Previously issued
