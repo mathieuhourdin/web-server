@@ -1,0 +1,20 @@
+CREATE TABLE user_writing_nudge_states (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    nudge_type TEXT NOT NULL CHECK (nudge_type IN ('RESUME_DRAFT','WRITING_MEMORY','FIRST_TRACE')),
+    suggestion_id UUID UNIQUE,
+    trace_id UUID REFERENCES traces(id) ON DELETE SET NULL,
+    issued_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    first_shown_at TIMESTAMPTZ,
+    terminal_event TEXT CHECK (terminal_event IN ('DISMISSED','OPENED')),
+    last_shown_at TIMESTAMPTZ,
+    last_opened_at TIMESTAMPTZ,
+    last_dismissed_at TIMESTAMPTZ,
+    dismissed_until TIMESTAMPTZ,
+    dismissal_count INTEGER NOT NULL DEFAULT 0 CHECK (dismissal_count >= 0),
+    last_suggested_trace_id UUID REFERENCES traces(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id,nudge_type),
+    CHECK (suggestion_id IS NULL OR (issued_at IS NOT NULL AND expires_at IS NOT NULL))
+);

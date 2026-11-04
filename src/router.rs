@@ -14,6 +14,7 @@ use tower_http::{
 use crate::api_schema::{self, delete, get, patch, post, put, DocumentedRoutes};
 use crate::entities_v2::platform_infra::automation;
 use crate::entities_v2::platform_infra::platform_settings;
+use crate::entities_v2::platform_infra::writing_nudge;
 use crate::entities_v2::social::blog;
 use crate::entities_v2::{
     album, analysis_summary, asset, audience, content_report, device, document, element,
@@ -931,6 +932,16 @@ pub fn create_router() -> Router {
         .api_route("/feed", "/", get(feed::get_feed_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
+        .api_route(
+            "/me",
+            "/writing_nudges/current",
+            get(writing_nudge::get_current),
+        )
+        .api_route(
+            "/me",
+            "/writing_nudges/:nudge_id/events",
+            post(writing_nudge::post_event),
+        )
         .api_route("/me", "/audience/:user_id/traces", get(trace::access::for_reader))
         .api_route("/me", "/account", delete(user::delete_my_account_route))
         .api_route(

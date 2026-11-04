@@ -183,6 +183,8 @@ fn summary(operation: &Operation, path: &str) -> String {
 
 fn purpose(method: &str, path: &str, fallback: &str) -> String {
     let precise=match (method,path) {
+        ("GET","/me/writing_nudges/current")=>"Select or retrieve one stable, private writing nudge for the caller; returns {nudge:object|null}. Fetching does not record exposure. Independent of feed pagination and AI consent.",
+        ("POST","/me/writing_nudges/:nudge_id/events")=>"Record shown, dismissed or opened for an owned writing suggestion. Idempotent 204; stale/unknown IDs are harmless no-ops. Does not change trace content or seen state.",
         ("GET","/admin/analytics/user_segments")=>"Current mutually exclusive user breakdown: churners, private writers, publishers, readers, other; lifetime writing counts and 30-day reading/writing inactivity. Admin only.",
         ("GET","/healthz")=>"Public database readiness check: runs SELECT 1 and returns 200 when PostgreSQL responds, otherwise 503. No user data or connection details; responses are not cacheable.",
         ("GET","/api/schema")=>"Discover the live API route catalog in OpenAPI 3.1 format; payload schemas are not fully typed yet.",
@@ -261,6 +263,8 @@ pub async fn schema() -> Json<Value> {
                     "post_distribution_events"
                 } else if path.starts_with("/blogs") || path.starts_with("/blog/") || path == "/users/:id/publications" {
                     "blogs"
+                } else if path.starts_with("/me/writing_nudges/") {
+                    "writing_nudges"
                 } else if path.contains("writing_threads") {
                     "writing_threads"
                 } else if path.starts_with("/admin/analytics/") || path == "/usage_events" {
@@ -297,7 +301,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -315,7 +319,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -330,6 +334,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "platform" => include_str!("../doc/api_quick.md"),
         "automation" => include_str!("../doc/automation_api.md"),
         "writing_threads" => include_str!("../doc/writing_threads.md"),
+        "writing_nudges" => include_str!("../doc/writing_nudges.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
         "post_notifications" => include_str!("../doc/post_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
@@ -370,6 +375,12 @@ mod tests {
         assert!(paths.len() > 100);
         assert!(paths["/users"].get("get").is_some());
         assert!(paths["/users"].get("post").is_some());
+        assert!(paths["/me/writing_nudges/current"].get("get").is_some());
+        assert!(paths["/me/writing_nudges/{nudge_id}/events"].get("post").is_some());
+        assert_eq!(
+            paths["/me/writing_nudges/current"]["get"]["externalDocs"]["url"],
+            "/api/docs?topic=writing_nudges"
+        );
         assert!(paths["/admin/analytics/users"].get("get").is_some());
         assert!(paths["/admin/analytics/user_segments"].get("get").is_some());
         assert_eq!(
