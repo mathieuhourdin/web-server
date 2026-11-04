@@ -42,6 +42,7 @@ type TraceTuple = (
     NaiveDateTime,
     NaiveDateTime,
     Option<String>,
+    Option<Uuid>,
 );
 
 fn tuple_to_trace(row: TraceTuple) -> Trace {
@@ -72,6 +73,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         created_at,
         updated_at,
         language_code,
+        writing_template_id,
     ) = row;
 
     Trace {
@@ -106,6 +108,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
         created_at,
         updated_at,
         language_code,
+        writing_template_id,
         plume: Default::default(),
         mentions: vec![],
         source_assets: vec![],
@@ -147,6 +150,7 @@ impl Trace {
                 traces::created_at,
                 traces::updated_at,
                 traces::language_code,
+                traces::writing_template_id,
             ))
             .load::<TraceTuple>(&mut conn)?;
         drop(conn);
@@ -201,6 +205,7 @@ impl Trace {
                 traces::created_at,
                 traces::updated_at,
                 traces::language_code,
+                traces::writing_template_id,
             ))
             .first::<TraceTuple>(&mut conn)?;
 

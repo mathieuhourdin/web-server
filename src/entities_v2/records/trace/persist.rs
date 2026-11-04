@@ -478,7 +478,7 @@ impl Trace {
         }
         let mut conn = pool.get()?;
 
-        let updated = conn.transaction::<bool, diesel::result::Error, _>(|conn| {
+        let updated = conn.transaction::<bool, PpdcError, _>(|conn| {
             // Check ownership again inside the write transaction. A revoked or
             // reassigned device is an unknown origin, not another user's device.
             let device_id = if let Some(id) = device_id {
@@ -499,6 +499,9 @@ impl Trace {
                 self.start_writing_at = Some(self.finalized_at.unwrap_or_else(|| Utc::now().naive_utc()));
             }
             let language_code = super::language::for_update(&self, conn)?;
+            crate::entities_v2::platform_infra::writing_template::validate_trace_template(
+                Some(self.id), self.writing_template_id, self.trace_type.to_db(), conn,
+            )?;
             let rows_affected = if let Some(expected_version_integer) = expected_version_integer {
                 diesel::sql_query(
                     "WITH updated AS (
@@ -524,6 +527,7 @@ impl Trace {
                             last_edit_device_id = $20,
                             continues_trace_id = $21,
                             language_code = $22,
+                            writing_template_id = $23,
                             updated_at = NOW()
                         WHERE id = $1
                           AND version_integer = $19
@@ -557,6 +561,7 @@ impl Trace {
                 .bind::<Nullable<SqlUuid>, _>(device_id)
                 .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
                 .bind::<Nullable<Text>, _>(&language_code)
+                .bind::<Nullable<SqlUuid>, _>(self.writing_template_id)
                 .get_result::<AffectedRows>(conn)?
                 .count
             } else {
@@ -584,6 +589,7 @@ impl Trace {
                             last_edit_device_id = $19,
                             continues_trace_id = $20,
                             language_code = $21,
+                            writing_template_id = $22,
                             updated_at = NOW()
                         WHERE id = $1
                         RETURNING 1
@@ -615,6 +621,7 @@ impl Trace {
                 .bind::<Nullable<SqlUuid>, _>(device_id)
                 .bind::<Nullable<SqlUuid>, _>(self.continues_trace_id)
                 .bind::<Nullable<Text>, _>(&language_code)
+                .bind::<Nullable<SqlUuid>, _>(self.writing_template_id)
                 .get_result::<AffectedRows>(conn)?
                 .count
             };
@@ -710,7 +717,10 @@ impl NewTrace {
         self.start_writing_at = (!self.is_blank).then(|| Utc::now().naive_utc());
         let mut conn = pool.get()?;
 
-        let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
+        let inserted = conn.transaction::<IdRow, PpdcError, _>(|conn| {
+            crate::entities_v2::platform_infra::writing_template::validate_trace_template(
+                None, self.writing_template_id, self.trace_type.to_db(), conn,
+            )?;
             let inserted = diesel::sql_query(
                 "INSERT INTO traces (
                     id,
@@ -732,7 +742,8 @@ impl NewTrace {
                     status,
                     is_blank,
                     start_writing_at,
-                    finalized_at
+                    finalized_at,
+                    writing_template_id
                  ) VALUES (
                     uuid_generate_v4(),
                     $1,
@@ -753,7 +764,8 @@ impl NewTrace {
                     'DRAFT',
                     $15,
                     $16,
-                    NULL
+                    NULL,
+                    $17
                  )
                  RETURNING id",
             )
@@ -777,6 +789,7 @@ impl NewTrace {
             .bind::<Text, _>(self.trace_type.to_db())
             .bind::<Bool, _>(self.is_blank)
             .bind::<Nullable<Timestamp>, _>(self.start_writing_at)
+            .bind::<Nullable<SqlUuid>, _>(self.writing_template_id)
             .get_result::<IdRow>(conn)?;
 
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
@@ -819,7 +832,10 @@ impl NewTrace {
         };
         let mut conn = pool.get()?;
 
-        let inserted = conn.transaction::<IdRow, diesel::result::Error, _>(|conn| {
+        let inserted = conn.transaction::<IdRow, PpdcError, _>(|conn| {
+            crate::entities_v2::platform_infra::writing_template::validate_trace_template(
+                None, self.writing_template_id, self.trace_type.to_db(), conn,
+            )?;
             let inserted = diesel::sql_query(
                 "INSERT INTO traces (
                     id,
@@ -843,7 +859,8 @@ impl NewTrace {
                     start_writing_at,
                     finalized_at,
                     is_historical_import,
-                    language_code
+                    language_code,
+                    writing_template_id
                  ) VALUES (
                     uuid_generate_v4(),
                     $1,
@@ -866,7 +883,8 @@ impl NewTrace {
                     $15,
                     $16,
                     $17,
-                    $18
+                    $18,
+                    $19
                  )
                  RETURNING id",
             )
@@ -892,6 +910,7 @@ impl NewTrace {
             .bind::<Timestamp, _>(finalized_at)
             .bind::<Bool, _>(historical)
             .bind::<Nullable<Text>, _>(&language_code)
+            .bind::<Nullable<SqlUuid>, _>(self.writing_template_id)
             .get_result::<IdRow>(conn)?;
 
             recalculate_journal_last_trace_at(conn, self.journal_id)?;

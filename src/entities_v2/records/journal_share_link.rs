@@ -114,6 +114,7 @@ pub struct PublicSharedJournalResponse {
 #[derive(Serialize)]
 pub struct PublicSharedJournalTraceResponse {
     pub language_code: Option<String>,
+    pub writing_template_id: Option<Uuid>,
     pub id: Uuid,
     pub journal_id: Uuid,
     pub title: String,
@@ -175,6 +176,7 @@ impl PublicSharedJournalTraceResponse {
             subtitle: trace.subtitle,
             content: trace.content,
             language_code: trace.language_code,
+            writing_template_id: trace.writing_template_id,
             image_url,
             content_image_asset_id: trace.content_image_asset_id,
             interaction_date: trace.finalized_at.or(trace.start_writing_at).unwrap_or(trace.created_at),

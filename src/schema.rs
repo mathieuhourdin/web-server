@@ -698,6 +698,7 @@ diesel::table! {
         continues_trace_id -> Nullable<Uuid>,
         language_code -> Nullable<Text>,
         is_historical_import -> Bool,
+        writing_template_id -> Nullable<Uuid>,
     }
 }
 

@@ -326,6 +326,8 @@ pub async fn get_trace_complements_route(
 #[derive(Deserialize)]
 pub struct CreateJournalDraftDto {
     #[serde(default)]
+    pub writing_template_id: Option<Uuid>,
+    #[serde(default)]
     pub content: String,
     #[serde(default)]
     pub derived_from_trace_id: Option<Uuid>,
@@ -355,6 +357,8 @@ pub struct CreateFinalizedTraceDocumentAttachmentDto {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CreateFinalizedJournalTraceDto {
+    #[serde(default)]
+    pub writing_template_id: Option<Uuid>,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
@@ -794,6 +798,7 @@ fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceRead
         continues_from: None,
         translation_message: None,
         language_code: trace.language_code,
+        writing_template_id: trace.writing_template_id,
         plume: Default::default(),
         complement_audience_mode: trace.complement_audience_mode,
         is_encrypted: if include_owner_fields {
@@ -997,6 +1002,7 @@ fn apply_create_draft_payload(
     pool: &DbPool,
 ) -> Result<Trace, PpdcError> {
     let CreateJournalDraftDto {
+        writing_template_id,
         content,
         derived_from_trace_id,
         interaction_date: _,
@@ -1010,6 +1016,11 @@ fn apply_create_draft_payload(
     } = payload;
     let mention_update = resolve_mention_update(mentioned_user_ids, mentions)?;
     let mut changed = false;
+
+    if let Some(template_id) = writing_template_id {
+        trace.writing_template_id = Some(template_id);
+        changed = true;
+    }
 
     if !content.is_empty() {
         trace.content = content;
@@ -1211,6 +1222,7 @@ pub async fn post_finalized_journal_trace_route(
         journal_id,
     );
     new_trace.derived_from_trace_id = payload.derived_from_trace_id;
+    new_trace.writing_template_id = payload.writing_template_id;
     new_trace.is_encrypted = payload.is_encrypted.unwrap_or(false);
     new_trace.encryption_metadata = if new_trace.is_encrypted {
         payload.encryption_metadata
@@ -1313,6 +1325,10 @@ pub async fn patch_journal_draft_route(
     let journal = Journal::find_full(journal_id, &pool)?;
     let mut trace = get_current_journal_draft(&journal, user_id, &pool)?;
 
+    if let Some(template_id) = payload.writing_template_id {
+        trace.writing_template_id = template_id;
+    }
+
     if let Some(title) = payload.title {
         trace.title = title;
     }
@@ -1406,6 +1422,10 @@ pub async fn put_trace_route(
         ));
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+
+    if let Some(template_id) = payload.writing_template_id {
+        trace.writing_template_id = template_id;
+    }
 
     if let Some(source) = payload.continues_trace_id {
         if source != trace.continues_trace_id
@@ -1638,6 +1658,9 @@ pub async fn patch_trace_route(
         ));
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    if let Some(template_id) = payload.writing_template_id {
+        trace.writing_template_id = template_id;
+    }
     if trace.status == super::enums::TraceStatus::Archived {
         return Err(PpdcError::new(
             400,

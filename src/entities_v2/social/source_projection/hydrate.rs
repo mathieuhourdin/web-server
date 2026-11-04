@@ -58,6 +58,7 @@ pub fn load_source_projection_map(
                 traces::content_image_asset_id,
                 traces::status,
                 traces::language_code,
+                traces::writing_template_id,
             ))
             .load::<(
                 Uuid,
@@ -69,6 +70,7 @@ pub fn load_source_projection_map(
                 Option<Uuid>,
                 String,
                 Option<String>,
+                Option<Uuid>,
             )>(conn)?;
 
         projections.extend(rows.into_iter().filter_map(
@@ -82,12 +84,14 @@ pub fn load_source_projection_map(
                 cover_image_asset_id,
                 status_raw,
                 language_code,
+                writing_template_id,
             )| {
                 Some((
                     PostSourceRef::Trace(id),
                     SourceProjection {
                         source_kind: SourceProjectionKind::Trace,
                         language_code,
+                        writing_template_id,
                         source_id: id,
                         original_source_id: None,
                         original_author_user_id: Some(user_id),
@@ -144,6 +148,7 @@ pub fn load_source_projection_map(
                     SourceProjection {
                         source_kind: SourceProjectionKind::Document,
                         language_code: None,
+                        writing_template_id: None,
                         source_id: id,
                         original_source_id: None,
                         original_author_user_id: None,
@@ -185,6 +190,7 @@ pub fn load_source_projection_map(
                     SourceProjection {
                         source_kind: SourceProjectionKind::Album,
                         language_code: None,
+                        writing_template_id: None,
                         source_id: id,
                         original_source_id: None,
                         original_author_user_id: None,

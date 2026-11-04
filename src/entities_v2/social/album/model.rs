@@ -51,6 +51,7 @@ pub struct AlbumItemTraceView {
     pub continues_from: Option<crate::entities_v2::trace::continuation::TraceContinuationPreview>,
     pub translation_message: Option<crate::entities_v2::message::Message>,
     pub language_code: Option<String>,
+    pub writing_template_id: Option<Uuid>,
     #[serde(flatten, default)]
     pub plume: crate::entities_v2::trace::plume::PlumeSummary,
     pub journal_id: Option<Uuid>,

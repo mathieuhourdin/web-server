@@ -18,3 +18,4 @@ pub mod usage_event;
 pub mod user;
 pub mod user_secure_action;
 pub mod writing_nudge;
+pub mod writing_template;

@@ -319,6 +319,7 @@ fn hydrate_feed_candidates(
                 continues_from: None,
                 translation_message: None,
                 language_code: projection.language_code.clone(),
+                writing_template_id: projection.writing_template_id,
                 plume: Default::default(),
                 original_source_id: projection.original_source_id,
                 original_author_user_id: projection.original_author_user_id,

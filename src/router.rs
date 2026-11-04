@@ -15,6 +15,7 @@ use crate::api_schema::{self, delete, get, patch, post, put, DocumentedRoutes};
 use crate::entities_v2::platform_infra::automation;
 use crate::entities_v2::platform_infra::platform_settings;
 use crate::entities_v2::platform_infra::writing_nudge;
+use crate::entities_v2::platform_infra::writing_template;
 use crate::entities_v2::social::blog;
 use crate::entities_v2::{
     album, analysis_summary, asset, audience, content_report, device, document, element,
@@ -49,6 +50,11 @@ pub fn create_router() -> Router {
         .allow_headers(AllowHeaders::mirror_request())
         .expose_headers([HeaderName::from_static(logging::REQUEST_ID_HEADER)])
         .allow_credentials(true);
+
+    let writing_templates_router = Router::new()
+        .api_route("/writing_templates", "/", get(writing_template::routes::list))
+        .api_route("/writing_templates", "/:id", get(writing_template::routes::get))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let users_router = Router::new()
         .api_route("/users", "/", get(user::get_users))
@@ -230,6 +236,8 @@ pub fn create_router() -> Router {
             "/service_users/:id",
             get(user::get_admin_service_user_route).put(user::put_admin_service_user_route),
         )
+        .api_route("/admin", "/writing_templates", get(writing_template::routes::admin_list).post(writing_template::routes::create))
+        .api_route("/admin", "/writing_templates/:id", patch(writing_template::routes::patch))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let traces_router = Router::new()
@@ -1069,6 +1077,7 @@ pub fn create_router() -> Router {
             post(sessions_service::post_apple_user_route),
         )
         .nest("/users", users_router)
+        .nest("/writing_templates", writing_templates_router)
         .nest("/mentors", mentors_router)
         .nest("/admin", admin_router)
         .nest("/traces", traces_router)
