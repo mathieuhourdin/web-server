@@ -44,6 +44,9 @@ pub enum UsageEventType {
     PostOpened,
     DocumentOpened,
     AlbumOpened,
+    WritingNudgeShown,
+    WritingNudgeOpened,
+    WritingNudgeDismissed,
     FeedbackOpened,
     SummaryOpened,
     TraceTimeoutSet,
@@ -72,6 +75,9 @@ impl UsageEventType {
             UsageEventType::PostOpened => "POST_OPENED",
             UsageEventType::DocumentOpened => "DOCUMENT_OPENED",
             UsageEventType::AlbumOpened => "ALBUM_OPENED",
+            UsageEventType::WritingNudgeShown => "WRITING_NUDGE_SHOWN",
+            UsageEventType::WritingNudgeOpened => "WRITING_NUDGE_OPENED",
+            UsageEventType::WritingNudgeDismissed => "WRITING_NUDGE_DISMISSED",
             UsageEventType::FeedbackOpened => "FEEDBACK_OPENED",
             UsageEventType::SummaryOpened => "SUMMARY_OPENED",
             UsageEventType::TraceTimeoutSet => "TRACE_TIMEOUT_SET",
@@ -79,7 +85,9 @@ impl UsageEventType {
             UsageEventType::TraceTimeoutAutoFinalized => "TRACE_TIMEOUT_AUTO_FINALIZED",
             UsageEventType::AiTranscriptionRequested => "AI_TRANSCRIPTION_REQUESTED",
             UsageEventType::AiWalCompilationRequested => "AI_WAL_COMPILATION_REQUESTED",
-            UsageEventType::AiWritingThreadCompilationRequested => "AI_WRITING_THREAD_COMPILATION_REQUESTED",
+            UsageEventType::AiWritingThreadCompilationRequested => {
+                "AI_WRITING_THREAD_COMPILATION_REQUESTED"
+            }
         }
     }
 
@@ -110,6 +118,13 @@ impl UsageEventType {
             "POST_OPENED" | "post_opened" => Ok(UsageEventType::PostOpened),
             "DOCUMENT_OPENED" | "document_opened" => Ok(UsageEventType::DocumentOpened),
             "ALBUM_OPENED" | "album_opened" => Ok(UsageEventType::AlbumOpened),
+            "WRITING_NUDGE_SHOWN" | "writing_nudge_shown" => Ok(UsageEventType::WritingNudgeShown),
+            "WRITING_NUDGE_OPENED" | "writing_nudge_opened" => {
+                Ok(UsageEventType::WritingNudgeOpened)
+            }
+            "WRITING_NUDGE_DISMISSED" | "writing_nudge_dismissed" => {
+                Ok(UsageEventType::WritingNudgeDismissed)
+            }
             "FEEDBACK_OPENED" | "feedback_opened" => Ok(UsageEventType::FeedbackOpened),
             "SUMMARY_OPENED" | "summary_opened" => Ok(UsageEventType::SummaryOpened),
             "TRACE_TIMEOUT_SET" | "trace_timeout_set" => Ok(UsageEventType::TraceTimeoutSet),
@@ -122,7 +137,10 @@ impl UsageEventType {
             "AI_TRANSCRIPTION_REQUESTED" | "ai_transcription_requested" => {
                 Ok(UsageEventType::AiTranscriptionRequested)
             }
-            "AI_WRITING_THREAD_COMPILATION_REQUESTED" | "ai_writing_thread_compilation_requested" => Ok(UsageEventType::AiWritingThreadCompilationRequested),
+            "AI_WRITING_THREAD_COMPILATION_REQUESTED"
+            | "ai_writing_thread_compilation_requested" => {
+                Ok(UsageEventType::AiWritingThreadCompilationRequested)
+            }
             "AI_WAL_COMPILATION_REQUESTED" | "ai_wal_compilation_requested" => {
                 Ok(UsageEventType::AiWalCompilationRequested)
             }
@@ -218,7 +236,11 @@ impl NewUsageEvent {
 
     fn create(self, pool: &DbPool) -> Result<UsageEvent, PpdcError> {
         let mut conn = pool.get()?;
+        self.insert(&mut conn)?;
+        UsageEvent::find(self.id, pool)
+    }
 
+    fn insert(&self, conn: &mut PgConnection) -> Result<(), PpdcError> {
         sql_query(
             r#"
             INSERT INTO usage_events (
@@ -242,9 +264,8 @@ impl NewUsageEvent {
         .bind::<Nullable<Text>, _>(self.context_json.as_ref().map(|value| value.to_string()))
         .bind::<Timestamp, _>(self.occurred_at)
         .bind::<Timestamp, _>(self.occurred_at)
-        .execute(&mut conn)?;
-
-        UsageEvent::find(self.id, pool)
+        .execute(conn)?;
+        Ok(())
     }
 }
 
@@ -352,6 +373,27 @@ pub fn create_internal_usage_event(
     NewUsageEvent::new(payload, Some(user_id), session_id).create(pool)
 }
 
+/// Insert as part of the caller's transaction, using its server-assigned time.
+pub(crate) fn create_internal_usage_event_on_connection(
+    user_id: Uuid,
+    event_type: UsageEventType,
+    resource_id: Uuid,
+    context_json: Value,
+    occurred_at: NaiveDateTime,
+    conn: &mut PgConnection,
+) -> Result<(), PpdcError> {
+    NewUsageEvent {
+        id: Uuid::new_v4(),
+        user_id: Some(user_id),
+        session_id: None,
+        event_type,
+        resource_id: Some(resource_id),
+        context_json: Some(context_json),
+        occurred_at,
+    }
+    .insert(conn)
+}
+
 fn validate_usage_event_access(
     event_type: UsageEventType,
     resource_id: Option<Uuid>,
@@ -360,6 +402,9 @@ fn validate_usage_event_access(
 ) -> Result<(), PpdcError> {
     match event_type {
         UsageEventType::AccountCreated
+        | UsageEventType::WritingNudgeShown
+        | UsageEventType::WritingNudgeOpened
+        | UsageEventType::WritingNudgeDismissed
         | UsageEventType::AccountDeleted
         | UsageEventType::AccountSelfDeleted
         | UsageEventType::AccountAdminDeleted => {
@@ -424,7 +469,9 @@ fn validate_usage_event_access(
                 UsageEventType::DocumentOpened => {
                     Document::find(id, pool)?.user_can_read(user_id, pool)?
                 }
-                UsageEventType::AlbumOpened => Album::find(id, pool)?.user_can_read(user_id, pool)?,
+                UsageEventType::AlbumOpened => {
+                    Album::find(id, pool)?.user_can_read(user_id, pool)?
+                }
                 _ => unreachable!(),
             };
             if !readable {
@@ -474,7 +521,9 @@ fn validate_usage_event_access(
                 return Err(PpdcError::unauthorized());
             }
         }
-        UsageEventType::AiTranscriptionRequested | UsageEventType::AiWalCompilationRequested | UsageEventType::AiWritingThreadCompilationRequested => {
+        UsageEventType::AiTranscriptionRequested
+        | UsageEventType::AiWalCompilationRequested
+        | UsageEventType::AiWritingThreadCompilationRequested => {
             return Err(PpdcError::new(
                 400,
                 ErrorType::ApiError,

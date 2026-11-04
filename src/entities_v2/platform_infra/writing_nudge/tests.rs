@@ -62,6 +62,16 @@ struct Fixture {
 }
 
 impl Fixture {
+    fn nudge_event_count(&self, user: Uuid, id: Uuid) -> i64 {
+        use crate::schema::usage_events::dsl::{resource_id, usage_events, user_id};
+        usage_events
+            .filter(user_id.eq(user))
+            .filter(resource_id.eq(id))
+            .count()
+            .get_result(&mut self.pool.get().unwrap())
+            .unwrap()
+    }
+
     fn new() -> Self {
         let url = std::env::var("BLOG_TEST_DATABASE_URL").expect("Use disposable blog_test only");
         assert_eq!(url::Url::parse(&url).unwrap().path(), "/blog_test");
@@ -156,11 +166,49 @@ fn lifecycle_eligibility_privacy_and_concurrent_tracking() {
         first.id
     );
     assert!(f.state(user, NudgeType::FirstTrace).last_shown_at.is_none());
+    assert_eq!(f.nudge_event_count(user, first.id), 0);
+    // Analytics and cooldown state must either both persist or both roll back.
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "ALTER TABLE usage_events ADD CONSTRAINT synthetic_nudge_insert_failure
+         CHECK (user_id IS DISTINCT FROM '{user}'::uuid OR event_type<>'WRITING_NUDGE_SHOWN')"
+        ))
+        .unwrap();
+    let failed = record_event(user, first.id, NudgeEvent::Shown, f.now, &f.pool);
+    f.pool
+        .get()
+        .unwrap()
+        .batch_execute("ALTER TABLE usage_events DROP CONSTRAINT synthetic_nudge_insert_failure")
+        .unwrap();
+    assert!(failed.is_err());
+    assert!(f
+        .state(user, NudgeType::FirstTrace)
+        .first_shown_at
+        .is_none());
+    assert_eq!(f.nudge_event_count(user, first.id), 0);
+    for event in [
+        UsageEventType::WritingNudgeShown,
+        UsageEventType::WritingNudgeOpened,
+        UsageEventType::WritingNudgeDismissed,
+    ] {
+        assert!(crate::entities_v2::usage_event::create_usage_event(
+            user,
+            None,
+            event,
+            Some(first.id),
+            None,
+            &f.pool
+        )
+        .is_err());
+    }
     // Fetching yesterday but never exposing the card does not consume a cooldown.
     let now = f.now + Duration::days(1);
     let first = current(user, now, &f.pool).unwrap().nudge.unwrap();
     record_event(foreign, first.id, NudgeEvent::Dismissed, now, &f.pool).unwrap();
     assert_eq!(f.state(user, NudgeType::FirstTrace).dismissal_count, 0);
+    assert_eq!(f.nudge_event_count(foreign, first.id), 0);
     record_event(user, first.id, NudgeEvent::Shown, now, &f.pool).unwrap();
     record_event(
         user,
@@ -174,6 +222,7 @@ fn lifecycle_eligibility_privacy_and_concurrent_tracking() {
         f.state(user, NudgeType::FirstTrace).first_shown_at,
         Some(now)
     );
+    assert_eq!(f.nudge_event_count(user, first.id), 1);
     assert_eq!(
         current(user, now + Duration::minutes(5), &f.pool)
             .unwrap()
@@ -199,6 +248,7 @@ fn lifecycle_eligibility_privacy_and_concurrent_tracking() {
     )
     .unwrap();
     assert_eq!(f.state(user, NudgeType::FirstTrace).dismissal_count, 0);
+    assert_eq!(f.nudge_event_count(user, first.id), 2);
     assert!(current(user, now + Duration::days(3), &f.pool)
         .unwrap()
         .nudge
@@ -222,6 +272,7 @@ fn lifecycle_eligibility_privacy_and_concurrent_tracking() {
         }
     });
     assert_eq!(f.state(user, NudgeType::FirstTrace).dismissal_count, 1);
+    assert_eq!(f.nudge_event_count(user, id), 2); // implicit exposure + one dismissal, even concurrently.
     assert_eq!(
         f.state(user, NudgeType::FirstTrace).dismissed_until,
         Some(now + Duration::days(7))

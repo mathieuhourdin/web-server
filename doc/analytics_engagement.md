@@ -5,6 +5,11 @@ not stored aggregates. Existing metric names/default selections are unchanged.
 
 ## Daily series
 
+Writing-nudge daily counts, distinct-user series, and per-type exposure cohorts
+are documented in [writing_nudges.md](writing_nudges.md#usage-events-and-analytics).
+The admin web row loads independently when approaching the viewport and is
+included in the analytics JSON export.
+
 `GET /admin/analytics/platform_series?from=2026-10-01&to=2026-11-02&metric=daily_publishers&metric=daily_private_writers&metric=inactive_writers_30d&metric=inactive_writers_60d`
 
 The existing response envelope is unchanged:

@@ -186,6 +186,7 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/me/writing_nudges/current")=>"Select or retrieve one stable, private writing nudge for the caller; returns {nudge:object|null}. Fetching does not record exposure. Independent of feed pagination and AI consent.",
         ("POST","/me/writing_nudges/:nudge_id/events")=>"Record shown, dismissed or opened for an owned writing suggestion. Idempotent 204; stale/unknown IDs are harmless no-ops. Does not change trace content or seen state.",
         ("GET","/admin/analytics/user_segments")=>"Current mutually exclusive user breakdown: churners, private writers, publishers, readers, other; lifetime writing counts and 30-day reading/writing inactivity. Admin only.",
+        ("GET","/admin/analytics/writing_nudges")=>"Writing-nudge exposure cohorts by type: shown/opened/dismissed counts, distinct users, no recorded action and opening/dismissal percentages. Date range selects first exposures; outcomes included through as_of. Admin only.",
         ("GET","/healthz")=>"Public database readiness check: runs SELECT 1 and returns 200 when PostgreSQL responds, otherwise 503. No user data or connection details; responses are not cacheable.",
         ("GET","/api/schema")=>"Discover the live API route catalog in OpenAPI 3.1 format; payload schemas are not fully typed yet.",
         ("GET","/api/docs")=>"Read API conventions or a feature-specific Markdown contract using the topic query parameter.",
@@ -263,7 +264,7 @@ pub async fn schema() -> Json<Value> {
                     "post_distribution_events"
                 } else if path.starts_with("/blogs") || path.starts_with("/blog/") || path == "/users/:id/publications" {
                     "blogs"
-                } else if path.starts_with("/me/writing_nudges/") {
+                } else if path.starts_with("/me/writing_nudges/") || path == "/admin/analytics/writing_nudges" {
                     "writing_nudges"
                 } else if path.contains("writing_threads") {
                     "writing_threads"
@@ -383,6 +384,7 @@ mod tests {
         );
         assert!(paths["/admin/analytics/users"].get("get").is_some());
         assert!(paths["/admin/analytics/user_segments"].get("get").is_some());
+        assert!(paths["/admin/analytics/writing_nudges"].get("get").is_some());
         assert_eq!(
             paths["/users/{id}/publications"]["get"]["externalDocs"]["url"],
             "/api/docs?topic=blogs"

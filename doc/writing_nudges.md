@@ -102,6 +102,80 @@ must not block navigation, writing or ordinary feed rendering.
 `user_writing_nudge_states` stores at most three rows per user, one per type.
 User-row locking serializes selection/tracking across all types and devices.
 Current suggestion timestamps/terminal state are separate from aggregate last
-exposure, cooldowns and repetition/escalation state. No append-only event table
-or content copies are kept; source/user deletion clears references/state through
-foreign keys. No unrelated trace mutations or usage-event types are added.
+exposure, cooldowns and repetition/escalation state. Source/user deletion clears
+state references through foreign keys. Accepted transitions additionally record
+metadata-only history in the existing `usage_events` table; no content copies or
+separate nudge-history table are introduced.
+
+## Usage events and analytics
+
+The existing event endpoint also records `WRITING_NUDGE_SHOWN`,
+`WRITING_NUDGE_OPENED` and `WRITING_NUDGE_DISMISSED` usage events internally.
+Clients must not submit these to `POST /usage_events` (400); keep using the nudge
+endpoint only. Fetches and duplicate/stale/foreign events create no usage events.
+An accepted opening/dismissal before exposure creates both SHOWN and the terminal
+event. Tracking and cooldown updates commit atomically, including under concurrent
+requests. The first terminal action still wins.
+
+`resource_id` is the suggestion UUID. `context_json` contains only
+`{"nudge_type":"resume_draft","trace_id":"uuid-or-null"}` (a JSON null for
+first-trace invitations), never titles, excerpts or trace content. Event times
+are server-assigned UTC. No session is required for the historical association:
+the authenticated user ID is recorded.
+
+Admin-only daily series:
+
+`GET /admin/analytics/platform_series?from=2026-11-01&to=2026-11-30&metric=writing_nudge_shown&metric=writing_nudge_opened&metric=writing_nudge_dismissed&metric=writing_nudge_shown_users&metric=writing_nudge_opened_users&metric=writing_nudge_dismissed_users`
+
+Each metric uses the existing `{metric,points:[{date,count}]}` envelope. The first
+three count accepted suggestion events; the `_users` variants count distinct
+users per event and day. Days follow each user's current timezone, with the
+existing timezone-alias/UTC fallback. Zero days are included. Existing default
+metric selections are unchanged; nudges do not count as reading or writing.
+
+Admin-only exposure-cohort breakdown:
+
+`GET /admin/analytics/writing_nudges?from=2026-11-01&to=2026-11-30`
+
+```json
+{
+  "from": "2026-11-01",
+  "to": "2026-11-30",
+  "as_of": "2026-11-30T12:00:00Z",
+  "types": [
+    {
+      "nudge_type": "first_trace",
+      "shown": 10,
+      "opened": 3,
+      "dismissed": 2,
+      "no_recorded_action": 5,
+      "shown_users": 8,
+      "opened_users": 3,
+      "dismissed_users": 2,
+      "opening_rate": 30.0,
+      "dismissal_rate": 20.0
+    }
+  ]
+}
+```
+
+All three types are always returned, including zero rows. The date range selects
+suggestions first **shown** in that range (same local-day convention as daily
+series); terminal actions for those suggestion IDs are followed through `as_of`,
+even outside the range. Rates are percentages (0–100), divided by shown
+suggestions of that type, or 0.0 when no exposures exist. Distinct-user counts are
+per type and must not be added across types to obtain platform distinct users.
+`no_recorded_action` is not proof that a suggestion was ignored; the card can
+still be active. Opening is not evidence of completed writing.
+
+Both analytics use human platform accounts and retained usage events; no stored
+aggregates, background processing or backfill. History before instrumentation
+cannot be reconstructed from the current nudge state. A card exposed before
+deployment can therefore have a later terminal event but no historical SHOWN
+event; it contributes to daily actions, not the exposure-cohort breakdown.
+Date range defaults to the last 30 inclusive days, maximum 366 days, matching
+existing admin analytics. Non-admin sessions are rejected with 403.
+
+Deployment applies migration `2026-11-04-110000_writing_nudge_usage_events` at normal
+startup. Rollback refuses to discard existing nudge events. No client event or
+environment-variable changes are needed.

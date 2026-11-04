@@ -132,6 +132,11 @@ pub fn create_router() -> Router {
     let admin_analytics_router = Router::new()
         .api_route(
             "/admin/analytics",
+            "/writing_nudges",
+            get(user::get_admin_writing_nudges_route),
+        )
+        .api_route(
+            "/admin/analytics",
             "/user_segments",
             get(user::get_admin_user_segments_route),
         )

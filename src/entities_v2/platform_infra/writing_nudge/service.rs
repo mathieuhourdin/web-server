@@ -11,6 +11,7 @@ use super::model::{CurrentNudge, NudgeEvent, NudgeType, TracePreview, WritingNud
 use crate::{
     db::DbPool,
     entities_v2::error::{ErrorType, PpdcError},
+    entities_v2::usage_event::{create_internal_usage_event_on_connection, UsageEventType},
 };
 
 #[derive(QueryableByName)]
@@ -372,6 +373,21 @@ pub(super) fn record_event(
             .bind::<SqlUuid,_>(user).bind::<SqlUuid,_>(id).bind::<Timestamptz,_>(now)
             .bind::<Text,_>(event.to_db()).bind::<Timestamptz,_>(now+Duration::days(dismissal_days(count)))
             .bind::<Integer,_>(count).execute(conn)?;
+        let context = serde_json::json!({"nudge_type":state.kind()?, "trace_id":state.trace_id});
+        // A terminal action arriving first implicitly records exposure, too.
+        if state.first_shown_at.is_none() {
+            create_internal_usage_event_on_connection(user, UsageEventType::WritingNudgeShown,
+                id, context.clone(), now.naive_utc(), conn)?;
+        }
+        let terminal_type = match event {
+            NudgeEvent::Shown => None,
+            NudgeEvent::Opened => Some(UsageEventType::WritingNudgeOpened),
+            NudgeEvent::Dismissed => Some(UsageEventType::WritingNudgeDismissed),
+        };
+        if let Some(event_type) = terminal_type {
+            create_internal_usage_event_on_connection(user, event_type,
+                id, context, now.naive_utc(), conn)?;
+        }
         Ok(())
     })
 }

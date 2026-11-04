@@ -256,6 +256,12 @@ pub enum AdminPlatformAnalyticsMetric {
     PostOpened,
     DocumentOpened,
     AlbumOpened,
+    WritingNudgeShown,
+    WritingNudgeOpened,
+    WritingNudgeDismissed,
+    WritingNudgeShownUsers,
+    WritingNudgeOpenedUsers,
+    WritingNudgeDismissedUsers,
     DailyPublishers,
     DailyPrivateWriters,
     PublishersShare,
@@ -499,7 +505,7 @@ fn parse_user_timezone_or_utc(user: &User) -> Tz {
 const ADMIN_ANALYTICS_DEFAULT_DAYS: i64 = 30;
 const ADMIN_ANALYTICS_MAX_DAYS: i64 = 366;
 
-fn resolve_admin_analytics_date_range(
+pub(super) fn resolve_admin_analytics_date_range(
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
     today: NaiveDate,
@@ -553,6 +559,9 @@ pub(super) fn load_platform_metric_points(
     to: NaiveDate,
     conn: &mut diesel::PgConnection,
 ) -> Result<Vec<AdminAnalyticsPoint>, PpdcError> {
+    if let Some((event_type, distinct_users)) = super::analytics_nudges::metric_event(metric) {
+        return super::analytics_nudges::load_series(event_type, distinct_users, from, to, conn);
+    }
     if matches!(
         metric,
         AdminPlatformAnalyticsMetric::DailyPublishers
@@ -755,6 +764,12 @@ pub(super) fn load_platform_metric_points(
                 }
                 AdminPlatformAnalyticsMetric::FeedVisited
                 | AdminPlatformAnalyticsMetric::FeedEngaged30s
+                | AdminPlatformAnalyticsMetric::WritingNudgeShown
+                | AdminPlatformAnalyticsMetric::WritingNudgeOpened
+                | AdminPlatformAnalyticsMetric::WritingNudgeDismissed
+                | AdminPlatformAnalyticsMetric::WritingNudgeShownUsers
+                | AdminPlatformAnalyticsMetric::WritingNudgeOpenedUsers
+                | AdminPlatformAnalyticsMetric::WritingNudgeDismissedUsers
                 | AdminPlatformAnalyticsMetric::PostOpened
                 | AdminPlatformAnalyticsMetric::DocumentOpened
                 | AdminPlatformAnalyticsMetric::AlbumOpened
