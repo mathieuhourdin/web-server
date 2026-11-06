@@ -480,6 +480,51 @@ pub(crate) async fn sender_avatar_url(sender: &User, pool: &DbPool) -> Option<St
         .filter(|url| !url.is_empty())
 }
 
+pub(crate) async fn conversation_member_added_notification(
+    conversation_id: Uuid,
+    actor: &User,
+    conversation_title: Option<&str>,
+    joined_at: chrono::NaiveDateTime,
+    pool: &DbPool,
+) -> PushNotification {
+    let avatar_url = sender_avatar_url(actor, pool).await;
+    build_conversation_member_added_notification(
+        conversation_id, actor.id, &actor.display_name(), conversation_title, avatar_url, joined_at,
+    )
+}
+
+fn build_conversation_member_added_notification(
+    conversation_id: Uuid,
+    actor_user_id: Uuid,
+    actor_display_name: &str,
+    conversation_title: Option<&str>,
+    avatar_url: Option<String>,
+    joined_at: chrono::NaiveDateTime,
+) -> PushNotification {
+    let mut data = HashMap::from([
+        ("event_type".into(), "conversation_member_added".into()),
+        ("conversation_id".into(), conversation_id.to_string()),
+        ("conversation_kind".into(), "group".into()),
+        ("actor_user_id".into(), actor_user_id.to_string()),
+        ("actor_display_name".into(), actor_display_name.to_owned()),
+        ("event_timestamp".into(), joined_at.and_utc().timestamp_millis().to_string()),
+    ]);
+    let title = conversation_title.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(title) = title {
+        data.insert("conversation_title".into(), title.to_owned());
+    }
+    if let Some(url) = avatar_url {
+        data.insert("actor_avatar_url".into(), url);
+    }
+    PushNotification {
+        title: actor_display_name.to_owned(),
+        body: title.map(|title| format!("vous a ajouté·e à « {title} »"))
+            .unwrap_or_else(|| "vous a ajouté·e à une conversation".into()),
+        data,
+        thread_id: Some(conversation_id.to_string()),
+    }
+}
+
 pub(crate) async fn message_received_notification(
     message: &Message,
     pool: &DbPool,
@@ -971,6 +1016,33 @@ pub(crate) async fn journal_history_shared_notification(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_admission_push_has_actor_routing_and_no_fake_message() {
+        let conversation = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let now = chrono::Utc::now().naive_utc();
+        let notification = build_conversation_member_added_notification(
+            conversation, actor, "Mathieu", Some("Weekend"),
+            Some("https://example.invalid/avatar.jpg".into()), now,
+        );
+        assert_eq!(notification.data["event_type"], "conversation_member_added");
+        assert_eq!(notification.data["conversation_id"], conversation.to_string());
+        assert_eq!(notification.data["conversation_kind"], "group");
+        assert_eq!(notification.data["actor_user_id"], actor.to_string());
+        assert_eq!(notification.data["actor_display_name"], "Mathieu");
+        assert_eq!(notification.data["actor_avatar_url"], "https://example.invalid/avatar.jpg");
+        assert_eq!(notification.data["conversation_title"], "Weekend");
+        assert_eq!(notification.data["event_timestamp"], now.and_utc().timestamp_millis().to_string());
+        assert_eq!(notification.title, "Mathieu");
+        assert_eq!(notification.body, "vous a ajouté·e à « Weekend »");
+        assert_eq!(notification.thread_id, Some(conversation.to_string()));
+        assert!(!notification.data.contains_key("message_id"));
+        let unnamed = build_conversation_member_added_notification(conversation, actor, "Mathieu", Some(" "), None, now);
+        assert_eq!(unnamed.body, "vous a ajouté·e à une conversation");
+        assert!(!unnamed.data.contains_key("actor_avatar_url"));
+        assert!(!unnamed.data.contains_key("conversation_title"));
+    }
 
     #[test]
     fn serializes_apns_thread_id_when_present() {

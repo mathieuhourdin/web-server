@@ -889,6 +889,7 @@ diesel::table! {
         mentor_specific_prompt -> Nullable<Text>,
         wal_content -> Text,
         wal_compiled -> Jsonb,
+        mentor_feedback_style -> Text,
     }
 }
 

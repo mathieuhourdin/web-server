@@ -10,6 +10,7 @@ pub mod high_level_analysis;
 pub mod hlp_pipeline;
 pub mod matching;
 pub mod mentor_feedback;
+pub mod mentor_style;
 pub mod message_processing;
 pub mod mirror_pipeline;
 pub mod observability;

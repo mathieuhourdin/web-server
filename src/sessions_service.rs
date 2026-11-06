@@ -248,6 +248,7 @@ fn new_external_user(
         received_message_email_mode: None,
         shared_journal_weekly_digest_enabled: None,
         mentor_feedback_email_enabled: None,
+        mentor_feedback_style: None,
         ai_features_enabled: None,
         ai_features_enabled_by_admin: None,
         onboarding_version: None,

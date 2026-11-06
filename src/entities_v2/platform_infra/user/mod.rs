@@ -5,6 +5,7 @@ mod analytics_devices;
 mod content_counts;
 mod enums;
 mod model;
+mod mentor_feedback_style;
 mod purge;
 mod routes;
 
@@ -26,6 +27,7 @@ pub use content_counts::{get_user_content_counts_route, UserContentCounts};
 pub use analytics_engagement::get_admin_user_segments_route;
 pub use analytics_nudges::get_admin_writing_nudges_route;
 pub use analytics_devices::{get_admin_device_analytics_route, get_admin_user_devices_route};
+pub use mentor_feedback_style::MentorFeedbackStyle;
 pub use enums::{
     EmailNotificationMode, HomeFocusView, JournalTheme, UserPrincipalType, UserRole,
     WeekAnalysisWeekday,

@@ -189,9 +189,12 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/admin/analytics/writing_nudges")=>"Writing-nudge exposure cohorts by type: shown/opened/dismissed counts, distinct users, no recorded action and opening/dismissal percentages. Date range selects first exposures; outcomes included through as_of. Admin only.",
         ("GET","/admin/analytics/devices")=>"Current recently-active device snapshot: distinct users/devices by platform, app version, OS and browser; multi-platform users and registration coverage. active_within_days defaults to 30 (1–366). Excludes service/demo accounts and revoked devices. Admin only.",
         ("GET","/admin/users/:id/devices")=>"Paginated device metadata for one user, including revoked devices, ordered by last activity. Exposes push-token presence/provider/update time but never token values or installation identifiers. Admin only.",
+        ("GET","/users/:id")=>"Read a public user profile, or the caller's private self profile. The self response includes mentor_feedback_style (balanced, challenging, companionable); public profiles do not expose it.",
+        ("PATCH","/users/:id")=>"Update the caller's own account fields, including optional mentor_feedback_style (balanced, challenging, companionable). Missing values preserve existing preferences. Does not trigger AI generation.",
+        ("PUT","/users/:id")=>"Update the caller's own profile with the existing user payload; optional mentor_feedback_style preserves its current value when omitted.",
         ("GET","/writing_templates")=>"List active platform-managed writing starters; paginated, ordered by sort_order/slug/id, optional exact locale filter. Authenticated.",
         ("POST","/conversations")=>"Create a group or get/create the unique direct conversation with a partner. Groups require accepted relationships with the inviter and compatible membership; history starts at joining.",
-        ("GET","/conversations")=>"Paginated active conversations with unread counts, last readable message, participant previews and the caller's membership settings.",
+        ("GET","/conversations")=>"Paginated active conversations with optional q search over titles and other active members' public display names/handles (case/accent-insensitive, max 200 characters). Ordered by sort_at: newest readable processed message date, or the caller's joined_at when none exists. Includes unread counts, participant previews and membership settings.",
         ("GET","/conversations/:id")=>"Read an active conversation and its caller-specific summary. Membership and history boundaries are enforced.",
         ("PATCH","/conversations/:id")=>"Update a group title as an admin and/or mute/unmute notifications for the caller.",
         ("GET","/conversations/:id/members")=>"Paginated current conversation members with public profiles, roles and join dates.",
@@ -320,13 +323,16 @@ pub async fn schema() -> Json<Value> {
             if path.contains("traces") || path.ends_with("/feed") || path == "/feed" {
                 operation["x-related-contracts"] = json!(["/api/docs?topic=trace_translations"]);
             }
+            if path == "/users/:id" {
+                operation["x-related-contracts"] = json!(["/api/docs?topic=mentor_feedback_style"]);
+            }
             if matches!(path.as_str(),"/journals/{id}"|"/users/{id}/journals"|"/journals/shared"|"/journals/shared/recent"|"/users/{id}/journals/shared"|"/journals") {
                 operation["x-related-contracts"]=json!(["/api/docs?topic=journal_stats"]);
             }
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -344,7 +350,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -363,6 +369,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "writing_templates" => include_str!("../doc/writing_templates.md"),
         "conversations" => include_str!("../doc/conversations.md"),
         "devices_analytics" => include_str!("../doc/devices_analytics.md"),
+        "mentor_feedback_style" => include_str!("../doc/mentor_feedback_style.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
         "post_notifications" => include_str!("../doc/post_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),

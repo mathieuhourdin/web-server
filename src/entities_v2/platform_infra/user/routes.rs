@@ -29,8 +29,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::enums::UserPrincipalType;
 use super::enums::{EmailNotificationMode, HomeFocusView, JournalTheme, WeekAnalysisWeekday};
+use super::{enums::UserPrincipalType, MentorFeedbackStyle};
 use super::model::{
     create_bio_trace_for_user, create_high_level_projects_definition_trace_for_user,
     ensure_user_has_any_lens, ensure_user_has_default_journals, ensure_user_has_meta_journal,
@@ -81,6 +81,7 @@ pub struct PatchUserDto {
     pub received_message_email_mode: Option<EmailNotificationMode>,
     pub shared_journal_weekly_digest_enabled: Option<bool>,
     pub mentor_feedback_email_enabled: Option<bool>,
+    pub mentor_feedback_style: Option<MentorFeedbackStyle>,
     pub ai_features_enabled: Option<bool>,
     pub onboarding_version: Option<i32>,
     pub external_captures_default_journal_id: Option<Option<Uuid>>,
@@ -856,6 +857,7 @@ pub async fn post_user(
         received_message_email_mode: None,
         shared_journal_weekly_digest_enabled: None,
         mentor_feedback_email_enabled: None,
+        mentor_feedback_style: None,
         ai_features_enabled: None,
         ai_features_enabled_by_admin: None,
         onboarding_version: None,
@@ -1014,6 +1016,7 @@ pub async fn patch_user_route(
              onboarding_version = COALESCE($29, onboarding_version),
              external_captures_default_journal_id = CASE WHEN $30 THEN $31 ELSE external_captures_default_journal_id END,
              shared_journal_weekly_digest_enabled = COALESCE($32, shared_journal_weekly_digest_enabled),
+             mentor_feedback_style = COALESCE($33, mentor_feedback_style),
              updated_at = NOW()
          WHERE id = $1
          ",
@@ -1062,6 +1065,7 @@ pub async fn patch_user_route(
     .bind::<Bool, _>(payload.external_captures_default_journal_id.is_some())
     .bind::<Nullable<SqlUuid>, _>(payload.external_captures_default_journal_id.flatten())
     .bind::<Nullable<Bool>, _>(payload.shared_journal_weekly_digest_enabled)
+    .bind::<Nullable<Text>, _>(payload.mentor_feedback_style.map(|style| style.to_db().to_string()))
     .execute(&mut conn)?;
     let updated_user = User::find(&id, &pool)?;
 

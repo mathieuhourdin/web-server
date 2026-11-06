@@ -9,10 +9,11 @@ use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::lens::Lens;
 use crate::entities_v2::message::Message;
 use crate::entities_v2::trace::{Trace, TraceStatus};
-use crate::entities_v2::user::User;
+use crate::entities_v2::user::{MentorFeedbackStyle, User};
 
 #[derive(Debug, Serialize)]
 pub struct TraceMessageReplyPromptContext {
+    pub mentor_feedback_style: MentorFeedbackStyle,
     pub mentor_name: String,
     pub mentor_biography: Option<String>,
     pub mentor_specific_prompt: Option<String>,
@@ -25,6 +26,7 @@ pub struct TraceMessageReplyPromptContext {
 
 #[derive(Debug, Serialize)]
 pub struct SharedTraceMentorReplyPromptContext {
+    pub mentor_feedback_style: MentorFeedbackStyle,
     pub mentor_name: String,
     pub mentor_biography: Option<String>,
     pub mentor_specific_prompt: Option<String>,
@@ -38,6 +40,7 @@ pub struct SharedTraceMentorReplyPromptContext {
 
 #[derive(Debug, Serialize)]
 pub struct JournalMentorReplyPromptContext {
+    pub mentor_feedback_style: MentorFeedbackStyle,
     pub mentor_name: String,
     pub mentor_biography: Option<String>,
     pub mentor_specific_prompt: Option<String>,
@@ -154,6 +157,7 @@ pub fn build(
         find_current_lens_high_level_projects(recipient_user, pool)?;
 
     Ok(TraceMessageReplyPromptContext {
+        mentor_feedback_style: recipient_user.mentor_feedback_style,
         mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
         mentor_biography: mentor_user.biography.clone(),
         mentor_specific_prompt: mentor_user.mentor_specific_prompt.clone(),
@@ -221,6 +225,7 @@ pub fn build_shared_trace(
     recent_reader_traces.reverse();
 
     Ok(SharedTraceMentorReplyPromptContext {
+        mentor_feedback_style: reader_user.mentor_feedback_style,
         mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
         mentor_biography: mentor_user.biography.clone(),
         mentor_specific_prompt: mentor_user.mentor_specific_prompt.clone(),
@@ -288,6 +293,7 @@ pub fn build_journal(
     draft_traces.sort_by_key(|trace| (trace.effective_datetime(), trace.created_at));
 
     Ok(JournalMentorReplyPromptContext {
+        mentor_feedback_style: recipient_user.mentor_feedback_style,
         mentor_name: format!("{} {}", mentor_user.first_name, mentor_user.last_name),
         mentor_biography: mentor_user.biography.clone(),
         mentor_specific_prompt: mentor_user.mentor_specific_prompt.clone(),

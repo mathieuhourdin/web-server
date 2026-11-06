@@ -6,6 +6,7 @@ use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::analysis_context::AnalysisContext;
 use crate::work_analyzer::MENTOR_OPENAI_MODEL;
+use crate::work_analyzer::mentor_style::with_mentor_feedback_style;
 use serde::{Deserialize, Serialize};
 
 use super::context::{build_day, build_week, MentorFeedbackPromptContext};
@@ -74,6 +75,7 @@ async fn send(
     );
     let mentor_biography = prompt_context.mentor.biography.clone();
     let mentor_specific_prompt = prompt_context.mentor.mentor_specific_prompt.clone();
+    let feedback_style = prompt_context.mentor_feedback_style;
     let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&MentorFeedbackPromptInput {
         mentor_name,
@@ -84,7 +86,7 @@ async fn send(
 
     let feedback = GptRequestConfig::new(
         MENTOR_OPENAI_MODEL.to_string(),
-        system_prompt.to_string(),
+        with_mentor_feedback_style(system_prompt, feedback_style),
         user_prompt,
         Some(schema),
         Some(context.analysis_id),

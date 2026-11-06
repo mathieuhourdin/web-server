@@ -13,6 +13,7 @@ use crate::entities_v2::trace::Trace;
 use crate::entities_v2::user::User;
 use crate::openai_handler::{GptReasoningEffort, GptRequestConfig, GptVerbosity};
 use crate::work_analyzer::MENTOR_OPENAI_MODEL;
+use crate::work_analyzer::mentor_style::with_mentor_feedback_style;
 
 use super::context::{build as build_context, build_journal, build_shared_trace};
 
@@ -279,7 +280,7 @@ async fn run_journal_reply_pipeline(
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
         MENTOR_OPENAI_MODEL.to_string(),
-        include_str!("journal_feedback_system.md"),
+        with_mentor_feedback_style(include_str!("journal_feedback_system.md"), recipient_user.mentor_feedback_style),
         user_prompt,
         Some(schema),
         None,
@@ -337,7 +338,7 @@ async fn run_shared_trace_reply_pipeline(
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
         MENTOR_OPENAI_MODEL.to_string(),
-        system_prompt.to_string(),
+        with_mentor_feedback_style(system_prompt, reader_user.mentor_feedback_style),
         user_prompt,
         Some(schema),
         None,
@@ -376,7 +377,7 @@ async fn run_standard_reply_pipeline(
         pool,
     )?;
 
-    let system_prompt = include_str!("system.md").to_string();
+    let system_prompt = with_mentor_feedback_style(include_str!("system.md"), recipient_user.mentor_feedback_style);
     let schema: serde_json::Value = serde_json::from_str(include_str!("schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
@@ -441,7 +442,7 @@ async fn run_tarot_reply_pipeline(
         pool,
     )?;
 
-    let system_prompt = include_str!("tarot_system.md").to_string();
+    let system_prompt = with_mentor_feedback_style(include_str!("tarot_system.md"), recipient_user.mentor_feedback_style);
     let schema: serde_json::Value = serde_json::from_str(include_str!("tarot_schema.json"))?;
     let user_prompt = serde_json::to_string_pretty(&prompt_context)?;
     let reply = GptRequestConfig::new(
@@ -481,9 +482,10 @@ async fn run_draft_reply_pipeline(
         serde_json::json!(format!("{} {}", mentor.first_name, mentor.last_name));
     context["mentor_biography"] = serde_json::json!(mentor.biography);
     context["mentor_specific_prompt"] = serde_json::json!(mentor.mentor_specific_prompt);
+    context["mentor_feedback_style"] = serde_json::json!(recipient.mentor_feedback_style);
     let reply = GptRequestConfig::new(
         MENTOR_OPENAI_MODEL.to_string(),
-        include_str!("draft_trace_system.md"),
+        with_mentor_feedback_style(include_str!("draft_trace_system.md"), recipient.mentor_feedback_style),
         serde_json::to_string(&context)?,
         Some(serde_json::from_str(include_str!("schema.json"))?),
         None,

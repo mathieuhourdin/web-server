@@ -36,6 +36,7 @@ fn group(actor: Uuid, others: Vec<Uuid>, pool: &DbPool) -> ConversationView {
         pool,
     )
     .unwrap()
+    .conversation
 }
 fn send(actor: Uuid, id: Uuid, content: &str, pool: &DbPool) -> Message {
     service::send(
@@ -73,6 +74,149 @@ fn conversation_contract_and_source_update_semantics() {
     assert_eq!(absent.source_message_ids, None);
 }
 
+#[test]
+#[ignore = "Requires explicitly configured disposable blog_test; synthetic metadata only; no notifications or LLM calls"]
+fn conversation_search_and_viewer_specific_sort_dates() {
+    let url = std::env::var("BLOG_TEST_DATABASE_URL").unwrap();
+    assert_eq!(url::Url::parse(&url).unwrap().path(), "/blog_test");
+    let pool = DbPool::builder()
+        .max_size(8)
+        .build(ConnectionManager::<PgConnection>::new(url))
+        .unwrap();
+    const MIGRATIONS: diesel_migrations::EmbeddedMigrations = embed_migrations!();
+    pool.get()
+        .unwrap()
+        .run_pending_migrations(MIGRATIONS)
+        .unwrap();
+    let (a, b, c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    pool.get().unwrap().batch_execute(&format!("INSERT INTO users(id,email,first_name,last_name,handle,password)
+        SELECT id,id::text||'@test.invalid','Synthetic','Conversation search',id::text,'unused'
+        FROM unnest(ARRAY['{a}'::uuid,'{b}','{c}']) id;
+        UPDATE users SET first_name='Élodie',last_name='Précise',handle='@elo-demo' WHERE id='{a}';
+        UPDATE users SET first_name='OwnUniqueName' WHERE id='{b}';
+        INSERT INTO relationships(requester_user_id,target_user_id,relationship_type,status,accepted_at)
+        VALUES('{a}','{b}','FOLLOW','ACCEPTED',NOW()),('{a}','{c}','FOLLOW','ACCEPTED',NOW());")).unwrap();
+    let old_join = group(a, vec![b], &pool);
+    let active = group(a, vec![b], &pool);
+    let hidden = group(a, vec![c], &pool);
+    let historical = send(a, old_join.id, "OnlyInMessageContent", &pool);
+    let pending = send(a, old_join.id, "Synthetic pending", &pool);
+    let visible = send(a, active.id, "OnlyInMessageContent", &pool);
+    pool.get().unwrap().batch_execute(&format!("UPDATE conversations SET created_at='2000-01-01',title='Échanges Atelier_100%' WHERE id='{}';
+        UPDATE conversations SET created_at='2001-01-01',title='Échanges AtelierX100Y' WHERE id='{}';
+        UPDATE conversations SET title='Échanges private' WHERE id='{}';
+        UPDATE conversation_members SET joined_at='2026-01-03',history_start_position=2
+            WHERE conversation_id='{}' AND user_id='{b}';
+        UPDATE messages SET created_at='2026-01-09' WHERE id='{}';
+        UPDATE messages SET created_at='2026-01-10',processing_state='PENDING' WHERE id='{}';
+        UPDATE messages SET created_at='2026-01-02' WHERE id='{}';",
+        old_join.id,active.id,hidden.id,old_join.id,historical.id,pending.id,visible.id)).unwrap();
+    let old_view = service::get(b, old_join.id, &pool).unwrap();
+    assert!(old_view.last_message.is_none());
+    assert_eq!(old_view.sort_at, old_view.membership.joined_at);
+    assert_ne!(
+        service::get(a, old_join.id, &pool).unwrap().sort_at,
+        old_view.sort_at
+    );
+    let active_view = service::get(b, active.id, &pool).unwrap();
+    assert_eq!(
+        active_view.sort_at.and_utc().to_rfc3339(),
+        "2026-01-02T00:00:00+00:00"
+    );
+    let matches = service::list(b, page(), Some("  ECHANGES  "), &pool).unwrap();
+    assert_eq!(matches.total, 2);
+    assert_eq!(
+        matches.items.iter().map(|c| c.id).collect::<Vec<_>>(),
+        vec![old_join.id, active.id]
+    );
+    assert_eq!(matches.items[0].sort_at, old_view.sort_at);
+    let second = service::list(
+        b,
+        ValidatedPagination {
+            limit: 1,
+            offset: 1,
+        },
+        Some("echanges"),
+        &pool,
+    )
+    .unwrap();
+    assert_eq!(second.total, 2);
+    assert_eq!(second.items[0].id, active.id);
+    assert_eq!(
+        service::list(b, page(), Some("elodie"), &pool)
+            .unwrap()
+            .total,
+        2
+    );
+    assert_eq!(
+        service::list(b, page(), Some("elo-demo"), &pool)
+            .unwrap()
+            .total,
+        2
+    );
+    assert_eq!(
+        service::list(b, page(), Some("OwnUniqueName"), &pool)
+            .unwrap()
+            .total,
+        0
+    );
+    assert_eq!(
+        service::list(b, page(), Some("OnlyInMessageContent"), &pool)
+            .unwrap()
+            .total,
+        0
+    );
+    assert_eq!(service::list(b, page(), Some("%"), &pool).unwrap().total, 1);
+    assert_eq!(service::list(b, page(), Some("_"), &pool).unwrap().total, 1);
+    assert_eq!(service::list(b, page(), Some(" "), &pool).unwrap().total, 2);
+    assert_eq!(
+        service::list(b, page(), Some(&"é".repeat(201)), &pool)
+            .err()
+            .unwrap()
+            .status_code,
+        400
+    );
+    pool.get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE users SET pseudonymized=TRUE,pseudonym='Plûme' WHERE id='{a}';
+        UPDATE conversations SET updated_at='2026-01-20' WHERE id='{}';",
+            active.id
+        ))
+        .unwrap();
+    assert_eq!(
+        service::list(b, page(), Some("elodie"), &pool)
+            .unwrap()
+            .total,
+        0
+    );
+    assert_eq!(
+        service::list(b, page(), Some("plume"), &pool)
+            .unwrap()
+            .total,
+        2
+    );
+    assert_eq!(
+        service::list(b, page(), Some("echanges"), &pool)
+            .unwrap()
+            .items[0]
+            .id,
+        old_join.id
+    );
+    service::change_member(a, old_join.id, b, None, &pool).unwrap();
+    let remaining = service::list(b, page(), Some("echanges"), &pool).unwrap();
+    assert_eq!(remaining.total, 1);
+    assert_eq!(remaining.items[0].id, active.id);
+    pool.get()
+        .unwrap()
+        .batch_execute(&format!(
+            "DELETE FROM conversations WHERE id IN('{}','{}','{}');
+        DELETE FROM users WHERE id IN('{a}','{b}','{c}');",
+            old_join.id, active.id, hidden.id
+        ))
+        .unwrap();
+}
+
 #[tokio::test]
 #[ignore = "Requires explicitly configured disposable blog_test; synthetic data only; no notifications or LLM calls"]
 async fn conversations_migration_privacy_membership_concurrency_and_trace_sources() {
@@ -88,10 +232,18 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
         .run_pending_migrations(MIGRATIONS)
         .unwrap();
     // Exercise an actual upgrade from legacy direct messages, not just empty tables.
-    pool.get()
+    // Newer additive migrations may follow conversations; rewind this disposable
+    // database through the conversation migration, rather than assuming it is last.
+    let mut conn = pool.get().unwrap();
+    while conn
+        .applied_migrations()
         .unwrap()
-        .revert_last_migration(MIGRATIONS)
-        .unwrap();
+        .iter()
+        .any(|version| version.to_string().as_str() >= "20261105100000")
+    {
+        conn.revert_last_migration(MIGRATIONS).unwrap();
+    }
+    drop(conn);
     let (a, b, c, stranger, mentor, journal) = (
         Uuid::new_v4(),
         Uuid::new_v4(),
@@ -117,7 +269,7 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
         .unwrap()
         .run_pending_migrations(MIGRATIONS)
         .unwrap();
-    let direct_conv = service::create(
+    let direct_created = service::create(
         a,
         CreateConversation {
             kind: ConversationKind::Direct,
@@ -127,6 +279,8 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
         &pool,
     )
     .unwrap();
+    assert!(direct_created.added_members.is_empty());
+    let direct_conv = direct_created.conversation;
     assert_eq!(
         service::get(b, direct_conv.id, &pool).unwrap().unread_count,
         1
@@ -149,6 +303,7 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
             &pool
         )
         .unwrap()
+        .conversation
         .id,
         direct_conv.id
     );
@@ -197,13 +352,48 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
     )
     .is_err());
 
-    let g = group(a, vec![b], &pool);
+    let created = service::create(
+        a,
+        CreateConversation {
+            kind: ConversationKind::Group,
+            title: Some("Synthetic group".into()),
+            member_user_ids: vec![b],
+        },
+        &pool,
+    )
+    .unwrap();
+    assert_eq!(created.added_members.len(), 1);
+    let original_admission = created.added_members[0].clone();
+    assert_eq!(original_admission.recipient_user_id, b);
+    assert_eq!(original_admission.actor_user_id, a);
+    assert!(
+        super::notifications::load_context(&original_admission, &pool)
+            .unwrap()
+            .is_some()
+    );
+    let g = created.conversation;
+    assert!(service::add_members(a, g.id, vec![b], &pool)
+        .unwrap()
+        .is_empty());
+    // Stale epochs, fake creator events and direct-conversation events never send.
+    let mut stale = original_admission.clone();
+    stale.joined_at -= chrono::Duration::seconds(1);
+    assert!(super::notifications::load_context(&stale, &pool)
+        .unwrap()
+        .is_none());
+    let mut fake = original_admission.clone();
+    fake.recipient_user_id = a;
+    assert!(super::notifications::load_context(&fake, &pool)
+        .unwrap()
+        .is_none());
     let first = send(a, g.id, "Synthetic before joining", &pool);
     assert_eq!(first.recipient_user_id, None);
     assert_eq!(first.position, 1);
     assert!(service::get(stranger, g.id, &pool).is_err());
     assert!(service::add_members(b, g.id, vec![c], &pool).is_err());
-    service::add_members(a, g.id, vec![c], &pool).unwrap();
+    let new_admission = service::add_members(a, g.id, vec![c], &pool).unwrap();
+    assert_eq!(new_admission.len(), 1);
+    assert_eq!(new_admission[0].recipient_user_id, c);
     assert_eq!(
         service::messages(c, g.id, page(), None, &pool)
             .unwrap()
@@ -242,6 +432,9 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
     assert!(!service::notification_recipients(&second, &pool)
         .unwrap()
         .contains(&c));
+    assert!(super::notifications::load_context(&new_admission[0], &pool)
+        .unwrap()
+        .is_none());
     service::patch(
         c,
         g.id,
@@ -278,6 +471,11 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
         .unwrap()
         .contains(&b));
     assert!(!service::reaction_notification_allowed(&first, b, a, &pool).unwrap());
+    assert!(
+        super::notifications::load_context(&original_admission, &pool)
+            .unwrap()
+            .is_none()
+    );
     let cross = group(a, vec![c], &pool);
     service::change_member(a, cross.id, c, Some(MemberRole::Admin), &pool).unwrap();
     assert!(service::add_members(c, cross.id, vec![b], &pool).is_err());
@@ -314,6 +512,11 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
     forbidden_source.source_message_ids = vec![first.id];
     assert!(forbidden_source.create(&pool).is_err());
     service::change_member(a, g.id, b, None, &pool).unwrap();
+    assert!(
+        super::notifications::load_context(&original_admission, &pool)
+            .unwrap()
+            .is_none()
+    );
     assert!(service::get(b, g.id, &pool).is_err());
     assert!(service::ensure_message_readable(second.id, b, &pool).is_err()); // even own messages.
     assert!(MessageReaction::upsert(second.id, b, "👍", &pool).is_err());
@@ -374,7 +577,16 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
         .as_object()
         .unwrap()
         .contains_key("source_message_ids"));
-    service::add_members(a, g.id, vec![b], &pool).unwrap();
+    let rejoined = service::add_members(a, g.id, vec![b], &pool).unwrap();
+    assert_eq!(rejoined.len(), 1);
+    assert!(super::notifications::load_context(&rejoined[0], &pool)
+        .unwrap()
+        .is_some());
+    assert!(
+        super::notifications::load_context(&original_admission, &pool)
+            .unwrap()
+            .is_none()
+    );
     assert!(service::ensure_message_readable(second.id, b, &pool).is_err());
     let after = send(c, g.id, "Synthetic after rejoining", &pool);
     assert!(service::ensure_message_readable(after.id, b, &pool).is_ok());
@@ -431,7 +643,7 @@ async fn conversations_migration_privacy_membership_concurrency_and_trace_source
     service::change_member(a, g.id, b, Some(MemberRole::Admin), &pool).unwrap();
     service::change_member(a, g.id, a, None, &pool).unwrap();
     assert!(service::get(a, g.id, &pool).is_err());
-    assert!(service::list(b, page(), &pool).unwrap().items.len() >= 3); // repeated participant previews across groups.
+    assert!(service::list(b, page(), None, &pool).unwrap().items.len() >= 3); // repeated participant previews across groups.
     pool.get()
         .unwrap()
         .batch_execute(&format!("DELETE FROM messages WHERE id='{}'", first.id))

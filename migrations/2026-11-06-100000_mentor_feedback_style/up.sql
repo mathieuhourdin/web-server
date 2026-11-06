@@ -1,0 +1,2 @@
+ALTER TABLE users ADD COLUMN mentor_feedback_style TEXT NOT NULL DEFAULT 'BALANCED'
+    CHECK (mentor_feedback_style IN ('BALANCED', 'CHALLENGING', 'COMPANIONABLE'));

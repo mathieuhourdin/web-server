@@ -9,6 +9,7 @@ message copies, WebSockets, group AI, delivery-receipt table or stored unread co
 ```
 POST  /conversations
 GET   /conversations?limit=20&offset=0
+GET   /conversations?q=weekend&limit=20&offset=0
 GET   /conversations/:id
 PATCH /conversations/:id
 ```
@@ -33,9 +34,22 @@ direction with the inviter; participants do not all need to follow each other.
 Mentors remain available as direct partners but mentors/service users cannot
 join groups. Demo accounts cannot mix agent sandboxes or join real-user groups.
 
-Collection envelope: `{items,total,limit,offset}` (default 20, max 100). Ordered
-by newest readable processed message's creation date, then creation date and ID;
-membership/title changes do not bump a group above active conversations.
+Collection envelope: `{items,total,limit,offset}` (default 20, max 100). Ordered by
+`sort_at DESC`, then conversation creation date descending and ID ascending.
+`sort_at` is the newest readable processed-message creation date, falling back to
+the **caller's own `membership.joined_at`** if there are no such messages. An old
+group newly joined therefore does not sink to its original creation date when
+none of its messages are readable yet. Rejoining resets that fallback to the new
+admission. Title, mute and other members' membership changes do not bump a chat.
+
+Optional `q` searches conversation titles and **other active members'** current
+public display names and handles, case- and accent-insensitively. It does not
+search message content, former members, hidden real names of pseudonymized users,
+or the caller's own name. Matching is a literal substring (not typo matching;
+`%` and `_` are not wildcards). Leading/trailing whitespace is trimmed; empty or
+omitted `q` is the unfiltered listing. Maximum 200 characters, otherwise 400.
+Access checks, date ordering, response shape and pagination remain identical;
+`total` is the number of matching accessible conversations before pagination.
 
 Each item/detail returns:
 
@@ -47,6 +61,7 @@ Each item/detail returns:
   "created_by_user_id":"creator-uuid",
   "created_at":"2026-11-05T10:00:00",
   "updated_at":"2026-11-05T10:02:00",
+  "sort_at":"2026-11-05T10:00:00",
   "members_count":3,
   "members_preview":[{"user":{"id":"user-uuid","display_name":"Example","profile_picture_display_url":null},"role":"admin","joined_at":"2026-11-05T10:00:00"}],
   "membership":{"role":"member","joined_at":"2026-11-05T10:00:00","history_start_position":1,"last_read_position":4,"muted_at":null},
@@ -59,6 +74,23 @@ Each item/detail returns:
 null. `members_preview` has up to four active participants, each using the usual
 public-user response (example above abbreviated). Other participants' mute/read
 cursors are not exposed. No per-conversation user/message/profile N+1 hydration.
+
+### Date fields
+
+- `created_at`: conversation creation time. For migrated direct chats, the first
+  legacy message's creation time was used.
+- `updated_at`: conversation-row update time, changed by new messages or a title
+  edit. It is not a per-viewer activity/sort date and does not track every member
+  setting or membership change.
+- `sort_at`: derived, caller-specific date described above, returned on both list
+  and detail responses. This adds no persisted column or migration.
+- `membership.joined_at`: caller's current admission time; reset on rejoining.
+  Migrated direct memberships use the conversation's initial creation time.
+- `membership.muted_at`: nullable timestamp when the caller muted the chat.
+
+These timestamps follow the existing UTC-without-offset response convention.
+Messages additionally retain their own `created_at`, `updated_at` and direct
+`seen_at`; membership `left_at` is an internal access-revocation timestamp.
 
 PATCH accepts `{"title":"New title"}` (group admins only), `{"title":null}`
 to clear, and/or `{"muted":true|false}` for the caller's own notification setting.
@@ -163,6 +195,27 @@ membership/history checks. `PUT /messages/:id` cannot change participants and
 remains a direct-message operation; group message editing is not included yet.
 
 ## Notifications and old clients
+
+Newly added group members also receive a dedicated `conversation_member_added`
+push, including initial participants when a group is created. The creator is
+excluded. Rejoining produces a new event; adding an already-active member does
+not. The transaction returns the actual admissions, and the route schedules
+pushes only after it commits. No synthetic chat message or unread item is created.
+
+FCM data (all values are strings):
+
+```json
+{"event_type":"conversation_member_added","conversation_id":"uuid","conversation_kind":"group","conversation_title":"Weekend plans","actor_user_id":"uuid","actor_display_name":"Mathieu","actor_avatar_url":"https://...","event_timestamp":"1793952000000"}
+```
+
+`conversation_title` and `actor_avatar_url` are omitted when unavailable.
+`event_timestamp` is the admission time in UTC epoch milliseconds. Display uses
+the actor's name with “vous a ajouté·e à « Weekend plans »”, or “vous a ajouté·e
+à une conversation” for an unnamed group. On tap, open `conversation_id`.
+APNs `thread-id` is the conversation UUID. Current membership, the exact admission,
+mute and actor/recipient blocks are rechecked before dispatch; old queued events
+are discarded if someone leaves and rejoins. Delivery is best-effort, push-only,
+with no new outbox, retry worker or email fallback.
 
 New group messages fan out one `message_received` push per eligible active member,
 excluding sender, muted members and blocked actor/recipient pairs. Eligibility is

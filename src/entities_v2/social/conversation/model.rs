@@ -139,6 +139,8 @@ pub struct ConversationView {
     pub created_by_user_id: Option<Uuid>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    /// Viewer-specific ordering date; not a persisted conversation timestamp.
+    pub sort_at: NaiveDateTime,
     pub membership: MembershipView,
     pub members_count: i64,
     pub members_preview: Vec<MemberView>,
@@ -151,6 +153,12 @@ pub struct CreateConversation {
     pub kind: ConversationKind,
     pub member_user_ids: Vec<Uuid>,
     pub title: Option<String>,
+}
+#[derive(Deserialize)]
+pub struct ConversationsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub q: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

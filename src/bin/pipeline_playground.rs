@@ -203,6 +203,7 @@ fn synthetic_user(pool: &db::DbPool) -> Result<User> {
         shared_journal_activity_email_mode: Some(EmailNotificationMode::Off),
         received_message_email_mode: Some(EmailNotificationMode::Off),
         mentor_feedback_email_enabled: Some(false),
+        mentor_feedback_style: None,
         shared_journal_weekly_digest_enabled: Some(false),
         ai_features_enabled: Some(true),
         ai_features_enabled_by_admin: Some(true),

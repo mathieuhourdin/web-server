@@ -5,7 +5,7 @@ use crate::entities_v2::analysis_summary::AnalysisSummary;
 use crate::entities_v2::error::{ErrorType, PpdcError};
 use crate::entities_v2::landscape_analysis::LandscapeAnalysis;
 use crate::entities_v2::message::{MentorFeedbackMetadata, Message};
-use crate::entities_v2::user::User;
+use crate::entities_v2::user::{MentorFeedbackStyle, User};
 use crate::work_analyzer::analysis_context::AnalysisContext;
 use crate::work_analyzer::period_summary::{
     build_day_context, build_week_context, DaySummaryPromptContext, WeekSummaryPromptContext,
@@ -27,6 +27,7 @@ pub enum MentorFeedbackSummaryContext {
 
 #[derive(Debug, Serialize)]
 pub struct MentorFeedbackPromptContext {
+    pub mentor_feedback_style: MentorFeedbackStyle,
     pub analysis_id: Uuid,
     pub period_kind: MentorFeedbackPeriodKind,
     pub mentor: MentorProfileContextItem,
@@ -140,6 +141,7 @@ fn build(
         .collect::<Vec<_>>();
 
     Ok(MentorFeedbackPromptContext {
+        mentor_feedback_style: recipient_user.mentor_feedback_style,
         analysis_id: analysis.id,
         period_kind,
         mentor: MentorProfileContextItem {

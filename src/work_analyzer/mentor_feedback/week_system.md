@@ -30,9 +30,11 @@ observational, and anecdotal traces should be met on their own terms. Writing ab
 or character is not evidence that the user is avoiding themselves. Never invent a lesson or
 psychological tension merely to make the feedback feel important.
 
-Use recent feedback history to vary the response over time. In particular, do not repeatedly fall
-back to `scope = user`, `feedback_mode = reflection`, and `tone = direct` when another grounded
-approach fits better.
+Give precise, candid feedback on the relevant object: literary craft, an argument, a practical
+choice or a reflection. Do not default to praise or turn the week into a self-improvement session.
+Use recent feedback history to avoid repetitive framing, not to suppress a direct or critical
+point that remains useful. Choose recognition, support, humor or challenge because the evidence
+and the recipient's engagement style warrant it, not to fill a rotation or a positivity quota.
 
 Metadata decision rules:
 

@@ -25,6 +25,8 @@ use super::enums::{
     WeekAnalysisWeekday,
 };
 
+use super::MentorFeedbackStyle;
+
 pub const CURRENT_ONBOARDING_VERSION: i32 = 1;
 
 #[derive(Serialize, Deserialize, Clone, Queryable, Selectable, Insertable, Identifiable, Debug)]
@@ -74,6 +76,8 @@ pub struct User {
     pub onboarding_version: i32,
     pub external_captures_default_journal_id: Option<Uuid>,
     pub mentor_specific_prompt: Option<String>,
+    #[serde(default)]
+    pub mentor_feedback_style: MentorFeedbackStyle,
     #[serde(skip_serializing)]
     pub wal_content: String,
     #[serde(skip_serializing)]
@@ -135,6 +139,8 @@ pub struct UserPseudonymizedAuthentifiedResponse {
     pub received_message_email_mode: EmailNotificationMode,
     pub shared_journal_weekly_digest_enabled: bool,
     pub mentor_feedback_email_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mentor_feedback_style: Option<MentorFeedbackStyle>,
     pub ai_features_enabled: bool,
     pub ai_features_enabled_by_admin: bool,
     pub onboarding_version: i32,
@@ -180,6 +186,8 @@ impl UserPseudonymizedAuthentifiedResponse {
             received_message_email_mode: user.received_message_email_mode,
             shared_journal_weekly_digest_enabled: user.shared_journal_weekly_digest_enabled,
             mentor_feedback_email_enabled: user.mentor_feedback_email_enabled,
+            mentor_feedback_style: (viewer_user_id == Some(user.id))
+                .then_some(user.mentor_feedback_style),
             ai_features_enabled: user.ai_features_enabled,
             ai_features_enabled_by_admin: user.ai_features_enabled_by_admin,
             onboarding_version: user.onboarding_version,
@@ -463,6 +471,7 @@ pub struct NewUser {
     pub received_message_email_mode: Option<EmailNotificationMode>,
     pub shared_journal_weekly_digest_enabled: Option<bool>,
     pub mentor_feedback_email_enabled: Option<bool>,
+    pub mentor_feedback_style: Option<MentorFeedbackStyle>,
     pub ai_features_enabled: Option<bool>,
     #[serde(default, skip_deserializing)]
     pub ai_features_enabled_by_admin: Option<bool>,
@@ -534,6 +543,7 @@ impl NewServiceUserDto {
             onboarding_version: None,
             external_captures_default_journal_id: None,
             mentor_specific_prompt: Some(self.mentor_specific_prompt.unwrap_or_default()),
+            mentor_feedback_style: None,
         }
     }
 
@@ -581,6 +591,7 @@ impl NewServiceUserDto {
             mentor_specific_prompt: self
                 .mentor_specific_prompt
                 .or(existing_user.mentor_specific_prompt.clone()),
+            mentor_feedback_style: None,
         }
     }
 }
@@ -1399,6 +1410,7 @@ mod tests {
             external_captures_default_journal_id: None,
             mentor_specific_prompt: None,
             wal_content: String::new(),
+            mentor_feedback_style: MentorFeedbackStyle::Balanced,
             wal_compiled: serde_json::json!({}),
         }
     }
@@ -1436,6 +1448,7 @@ mod tests {
             onboarding_version: None,
             external_captures_default_journal_id: None,
             mentor_specific_prompt: None,
+            mentor_feedback_style: None,
         };
         user.hash_password().unwrap();
         assert_ne!(user.password, Some(String::from("password")));

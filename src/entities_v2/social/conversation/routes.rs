@@ -1,4 +1,4 @@
-use super::{model::*, service};
+use super::{model::*, notifications, service};
 use crate::{
     db::DbPool,
     entities_v2::{
@@ -40,15 +40,26 @@ pub async fn create(
     } else {
         StatusCode::CREATED
     };
-    blocking(move || Ok((status, Json(service::create(user, input, &pool)?)))).await
+    let notification_pool = pool.clone();
+    let created = blocking(move || service::create(user, input, &pool)).await?;
+    notifications::spawn_members_added(created.added_members, notification_pool);
+    Ok((status, Json(created.conversation)))
 }
 pub async fn list(
     Extension(pool): Extension<DbPool>,
     Extension(s): Extension<Session>,
-    Query(q): Query<PaginationParams>,
+    Query(q): Query<ConversationsQuery>,
 ) -> Result<Json<PaginatedResponse<ConversationView>>, PpdcError> {
     let user = actor(&s)?;
-    blocking(move || Ok(Json(service::list(user, q.validate()?, &pool)?))).await
+    blocking(move || {
+        Ok(Json(service::list(
+            user,
+            q.pagination.validate()?,
+            q.q.as_deref(),
+            &pool,
+        )?))
+    })
+    .await
 }
 pub async fn get(
     Extension(pool): Extension<DbPool>,
@@ -83,11 +94,10 @@ pub async fn add_members(
     Json(input): Json<AddMembers>,
 ) -> Result<StatusCode, PpdcError> {
     let user = actor(&s)?;
-    blocking(move || {
-        service::add_members(user, id, input.user_ids, &pool)?;
-        Ok(StatusCode::NO_CONTENT)
-    })
-    .await
+    let notification_pool = pool.clone();
+    let added = blocking(move || service::add_members(user, id, input.user_ids, &pool)).await?;
+    notifications::spawn_members_added(added, notification_pool);
+    Ok(StatusCode::NO_CONTENT)
 }
 pub async fn remove_member(
     Extension(pool): Extension<DbPool>,

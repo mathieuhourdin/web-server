@@ -1,4 +1,4 @@
-use super::model::*;
+use super::{model::*, notifications::MemberAdded};
 use crate::{
     db::DbPool,
     entities_v2::{
@@ -15,7 +15,7 @@ use crate::{
 };
 use diesel::{
     prelude::*,
-    sql_types::{Array, BigInt, Bool, Nullable, Text, Uuid as SqlUuid},
+    sql_types::{Array, BigInt, Bool, Nullable, Text, Timestamp, Uuid as SqlUuid},
 };
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -127,7 +127,7 @@ fn add_locked(
     ids: &[Uuid],
     pool: &DbPool,
     conn: &mut PgConnection,
-) -> Result<(), PpdcError> {
+) -> Result<Vec<MemberAdded>, PpdcError> {
     let existing=diesel::sql_query("SELECT user_id AS id FROM conversation_members WHERE conversation_id=$1 AND left_at IS NULL")
         .bind::<SqlUuid,_>(c.id).load::<Id>(conn)?.into_iter().map(|r|r.id).collect::<HashSet<_>>();
     if existing.union(&ids.iter().copied().collect()).count() > 50 {
@@ -159,43 +159,66 @@ fn add_locked(
             "These members cannot be added to the same conversation".into(),
         ));
     }
+    let mut added = Vec::new();
     for id in ids {
-        diesel::sql_query("INSERT INTO conversation_members(conversation_id,user_id,role,history_start_position,last_read_position)
+        let member = diesel::sql_query("INSERT INTO conversation_members(conversation_id,user_id,role,history_start_position,last_read_position)
             VALUES($1,$2,'MEMBER',$3,$4) ON CONFLICT(conversation_id,user_id) DO UPDATE
             SET role='MEMBER',joined_at=NOW(),left_at=NULL,history_start_position=$3,last_read_position=$4,muted_at=NULL
-            WHERE conversation_members.left_at IS NOT NULL")
+            WHERE conversation_members.left_at IS NOT NULL RETURNING *")
             .bind::<SqlUuid,_>(c.id).bind::<SqlUuid,_>(id).bind::<BigInt,_>(c.last_message_position+1)
-            .bind::<BigInt,_>(c.last_message_position).execute(conn)?;
+            .bind::<BigInt,_>(c.last_message_position).get_result::<MembershipRow>(conn).optional()?;
+        if let Some(member) = member {
+            added.push(MemberAdded {
+                conversation_id: c.id,
+                recipient_user_id: member.user_id,
+                actor_user_id: actor,
+                joined_at: member.joined_at,
+            });
+        }
     }
-    Ok(())
+    Ok(added)
 }
 
-pub fn create(
+pub(super) struct CreatedConversation {
+    pub conversation: ConversationView,
+    pub added_members: Vec<MemberAdded>,
+}
+
+pub(super) fn create(
     actor: Uuid,
     input: CreateConversation,
     pool: &DbPool,
-) -> Result<ConversationView, PpdcError> {
+) -> Result<CreatedConversation, PpdcError> {
     validate_targets(actor, &input.member_user_ids, pool)?;
     let name = title(input.title)?;
     let mut conn = pool.get()?;
-    let id=conn.transaction::<_,PpdcError,_>(|conn| {
+    let (id, added_members)=conn.transaction::<_,PpdcError,_>(|conn| {
         if input.kind==ConversationKind::Direct {
             if input.member_user_ids.len()!=1 || name.is_some() {return Err(invalid("Direct conversations require exactly one other user and no title"));}
-            return Ok(diesel::sql_query("SELECT ensure_direct_conversation($1,$2) AS id").bind::<SqlUuid,_>(actor)
-                .bind::<SqlUuid,_>(input.member_user_ids[0]).get_result::<Id>(conn)?.id);
+            let id = diesel::sql_query("SELECT ensure_direct_conversation($1,$2) AS id").bind::<SqlUuid,_>(actor)
+                .bind::<SqlUuid,_>(input.member_user_ids[0]).get_result::<Id>(conn)?.id;
+            return Ok((id, Vec::new()));
         }
         let row=diesel::sql_query("INSERT INTO conversations(kind,title,created_by_user_id) VALUES('GROUP',$1,$2) RETURNING *")
             .bind::<Nullable<Text>,_>(name).bind::<SqlUuid,_>(actor).get_result::<ConversationRow>(conn)?;
         diesel::sql_query("INSERT INTO conversation_members(conversation_id,user_id,role) VALUES($1,$2,'ADMIN')")
             .bind::<SqlUuid,_>(row.id).bind::<SqlUuid,_>(actor).execute(conn)?;
-        add_locked(&row,actor,&input.member_user_ids,pool,conn)?;
-        Ok(row.id)
+        let added = add_locked(&row,actor,&input.member_user_ids,pool,conn)?;
+        Ok((row.id, added))
     })?;
     drop(conn);
-    get(actor, id, pool)
+    Ok(CreatedConversation {
+        conversation: get(actor, id, pool)?,
+        added_members,
+    })
 }
 
-pub fn add_members(actor: Uuid, id: Uuid, ids: Vec<Uuid>, pool: &DbPool) -> Result<(), PpdcError> {
+pub(super) fn add_members(
+    actor: Uuid,
+    id: Uuid,
+    ids: Vec<Uuid>,
+    pool: &DbPool,
+) -> Result<Vec<MemberAdded>, PpdcError> {
     validate_targets(actor, &ids, pool)?;
     pool.get()?.transaction(|conn| {
         let (c, m) = lock(actor, id, conn)?;
@@ -298,6 +321,8 @@ struct SummaryRow {
     id: Uuid,
     #[diesel(sql_type=Nullable<SqlUuid>)]
     last_message_id: Option<Uuid>,
+    #[diesel(sql_type=Nullable<Timestamp>)]
+    last_message_at: Option<chrono::NaiveDateTime>,
     #[diesel(sql_type=BigInt)]
     unread_count: i64,
     #[diesel(sql_type=BigInt)]
@@ -316,6 +341,8 @@ fn views(
     let summaries=diesel::sql_query("SELECT c.id,
         (SELECT m.id FROM messages m WHERE m.conversation_id=c.id AND m.processing_state='PROCESSED'
             AND conversation_message_readable(m.id,$2) ORDER BY m.position DESC LIMIT 1) AS last_message_id,
+        (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id=c.id AND m.processing_state='PROCESSED'
+            AND conversation_message_readable(m.id,$2)) AS last_message_at,
         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id AND conversation_message_unread(m.id,$2))::bigint AS unread_count,
         (SELECT COUNT(*) FROM conversation_members cm WHERE cm.conversation_id=c.id AND cm.left_at IS NULL)::bigint AS members_count
         FROM conversations c WHERE c.id=ANY($1) AND conversation_readable(c.id,$2)")
@@ -353,7 +380,8 @@ fn views(
         let Some(s) = summaries.remove(&c.id) else {
             continue;
         };
-        let membership = own.remove(&c.id).ok_or_else(forbidden)?.try_into()?;
+        let membership: MembershipView = own.remove(&c.id).ok_or_else(forbidden)?.try_into()?;
+        let sort_at = s.last_message_at.unwrap_or(membership.joined_at);
         result.push(ConversationView {
             id: c.id,
             kind: ConversationKind::from_db(&c.kind)?,
@@ -361,6 +389,7 @@ fn views(
             created_by_user_id: c.created_by_user_id,
             created_at: c.created_at,
             updated_at: c.updated_at,
+            sort_at,
             membership,
             members_count: s.members_count,
             members_preview: preview_map.remove(&c.id).unwrap_or_default(),
@@ -379,25 +408,56 @@ pub fn get(user: Uuid, id: Uuid, pool: &DbPool) -> Result<ConversationView, Ppdc
     drop(conn);
     views(user, vec![row], pool)?.pop().ok_or_else(forbidden)
 }
+fn normalized_search(query: Option<&str>) -> Result<Option<&str>, PpdcError> {
+    let query = query.map(str::trim).filter(|value| !value.is_empty());
+    if query.is_some_and(|value| value.chars().count() > 200) {
+        return Err(invalid("q must not exceed 200 characters"));
+    }
+    Ok(query)
+}
+
+// Reuse exactly the same access/search predicate for the count and page query.
+// Search the current public display identity, never hidden real names, the
+// viewer's own name, former members, or message history outside their access.
+const CONVERSATION_SEARCH_FROM: &str = "FROM conversations c
+    JOIN conversation_members cm ON cm.conversation_id=c.id
+    WHERE cm.user_id=$1 AND cm.left_at IS NULL AND conversation_readable(c.id,$1)
+      AND ($2::text IS NULL
+        OR strpos(lower(unaccent(COALESCE(c.title,''))),lower(unaccent($2)))>0
+        OR EXISTS(SELECT 1 FROM conversation_members peer JOIN users u ON u.id=peer.user_id
+            WHERE peer.conversation_id=c.id AND peer.left_at IS NULL AND peer.user_id<>$1
+              AND (strpos(lower(unaccent(u.handle)),lower(unaccent($2)))>0
+                OR strpos(lower(unaccent(CASE WHEN u.pseudonymized THEN u.pseudonym
+                    ELSE u.first_name || ' ' || u.last_name END)),lower(unaccent($2)))>0)))";
+
 pub fn list(
     user: Uuid,
     page: ValidatedPagination,
+    query: Option<&str>,
     pool: &DbPool,
 ) -> Result<PaginatedResponse<ConversationView>, PpdcError> {
+    let query = normalized_search(query)?;
     let mut conn = pool.get()?;
-    let total = diesel::sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM conversation_members cm
-        WHERE user_id=$1 AND left_at IS NULL AND conversation_readable(conversation_id,$1)",
-    )
+    let total = diesel::sql_query(format!(
+        "SELECT COUNT(*)::bigint AS count {CONVERSATION_SEARCH_FROM}"
+    ))
     .bind::<SqlUuid, _>(user)
+    .bind::<Nullable<Text>, _>(query)
     .get_result::<Count>(&mut conn)?
     .count;
-    let rows=diesel::sql_query("SELECT c.* FROM conversations c JOIN conversation_members cm ON cm.conversation_id=c.id
-        WHERE cm.user_id=$1 AND cm.left_at IS NULL AND conversation_readable(c.id,$1)
-        ORDER BY (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id=c.id AND m.processing_state='PROCESSED'
-            AND m.position>=cm.history_start_position) DESC NULLS LAST,c.created_at DESC,c.id
-        LIMIT $2 OFFSET $3")
-        .bind::<SqlUuid,_>(user).bind::<BigInt,_>(page.limit).bind::<BigInt,_>(page.offset).load(&mut conn)?;
+    let rows = diesel::sql_query(format!(
+        "SELECT c.* {CONVERSATION_SEARCH_FROM}
+        ORDER BY COALESCE((SELECT MAX(m.created_at) FROM messages m
+            WHERE m.conversation_id=c.id AND m.processing_state='PROCESSED'
+              AND m.position>=cm.history_start_position),cm.joined_at) DESC,
+            c.created_at DESC,c.id
+        LIMIT $3 OFFSET $4"
+    ))
+    .bind::<SqlUuid, _>(user)
+    .bind::<Nullable<Text>, _>(query)
+    .bind::<BigInt, _>(page.limit)
+    .bind::<BigInt, _>(page.offset)
+    .load(&mut conn)?;
     drop(conn);
     Ok(PaginatedResponse::new(
         views(user, rows, pool)?,
