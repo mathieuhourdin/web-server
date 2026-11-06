@@ -17,6 +17,7 @@ use crate::entities_v2::platform_infra::platform_settings;
 use crate::entities_v2::platform_infra::writing_nudge;
 use crate::entities_v2::platform_infra::writing_template;
 use crate::entities_v2::social::blog;
+use crate::entities_v2::social::conversation;
 use crate::entities_v2::{
     album, analysis_summary, asset, audience, content_report, device, document, element,
     error::{ErrorType, PpdcError},
@@ -793,6 +794,15 @@ pub fn create_router() -> Router {
         .api_route("/llm_calls", "/", get(llm_call::get_llm_calls_route))
         .api_route("/llm_calls", "/:id", get(llm_call::get_llm_call_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
+    let conversations_router = Router::new()
+        .api_route("/conversations","/",get(conversation::routes::list).post(conversation::routes::create))
+        .api_route("/conversations","/:id",get(conversation::routes::get).patch(conversation::routes::patch))
+        .api_route("/conversations","/:id/members",get(conversation::routes::members).post(conversation::routes::add_members))
+        .api_route("/conversations","/:id/members/:user_id",patch(conversation::routes::patch_member).delete(conversation::routes::remove_member))
+        .api_route("/conversations","/:id/messages",get(conversation::routes::messages).post(conversation::routes::send))
+        .api_route("/conversations","/:id/read",put(conversation::routes::read))
+        .layer(from_fn(sessions_service::auth_middleware_custom));
+
     let messages_router = Router::new()
         .api_route(
             "/messages",
@@ -1105,6 +1115,7 @@ pub fn create_router() -> Router {
         .nest("/lens", lens_router)
         .nest("/llm_calls", llm_calls_router)
         .nest("/messages", messages_router)
+        .nest("/conversations", conversations_router)
         .nest("/relationships", relationships_router)
         .nest("/audiences", audiences_router)
         .nest("/landmarks", landmarks_router)

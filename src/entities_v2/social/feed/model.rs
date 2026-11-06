@@ -27,6 +27,8 @@ pub enum FeedSourceKind {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct FeedItem {
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub source_message_ids:Option<Vec<Uuid>>,
     pub post_id: Option<Uuid>,
     pub last_distribution_event_id: Option<Uuid>,
     pub last_distribution_at: Option<NaiveDateTime>,

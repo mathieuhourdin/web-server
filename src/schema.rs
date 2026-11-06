@@ -408,7 +408,9 @@ diesel::table! {
     messages (id) {
         id -> Uuid,
         sender_user_id -> Uuid,
-        recipient_user_id -> Uuid,
+        recipient_user_id -> Nullable<Uuid>,
+        conversation_id -> Uuid,
+        position -> Int8,
         landscape_analysis_id -> Nullable<Uuid>,
         trace_id -> Nullable<Uuid>,
         message_type -> Text,

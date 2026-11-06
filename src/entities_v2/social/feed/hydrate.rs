@@ -187,6 +187,7 @@ pub fn find_my_feed_items_paginated(
         pool,
     )?;
     let mut items = hydrate_feed_candidates(rows, user_id, pool)?;
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(user_id,items.iter_mut(),pool)?;
     for item in &mut items {
         if item.source_kind == FeedSourceKind::Trace {
             item.seen_by_preview = Some(
@@ -306,6 +307,7 @@ fn hydrate_feed_candidates(
                 );
             }
             Some(FeedItem {
+                source_message_ids:None,
                 post_id: row.post_id,
                 last_distribution_event_id: row.post_id.and_then(|id|distribution_meta.get(&id)).and_then(|m|m.last_distribution_event_id),
                 last_distribution_at: row.post_id.and_then(|id|distribution_meta.get(&id)).and_then(|m|m.last_distribution_at),

@@ -28,7 +28,7 @@ fn enqueue_received_message_notification_email(
     pool: &DbPool,
 ) -> Result<Option<Uuid>, PpdcError> {
     let sender = User::find(&message.sender_user_id, pool)?;
-    let recipient = User::find(&message.recipient_user_id, pool)?;
+    let recipient = User::find(&message.direct_recipient()?, pool)?;
     if sender.principal_type != UserPrincipalType::Human
         || recipient.principal_type != UserPrincipalType::Human
         || recipient.email.trim().is_empty()
@@ -181,21 +181,26 @@ fn enqueue_weekly_recap_feedback_email(
 }
 
 pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
-    if message.sender_user_id == message.recipient_user_id {
+    let Some(recipient_user_id)=message.recipient_user_id else {
+        crate::entities_v2::social::conversation::service::spawn_group_notification(message,pool);return;
+    };
+    if message.sender_user_id == recipient_user_id {
         return;
     }
 
     tokio::spawn(async move {
+        if !crate::entities_v2::social::conversation::service::notification_recipients(&message,&pool)
+            .map(|ids|ids.contains(&recipient_user_id)).unwrap_or(false) {return;}
         let mut push_sent = false;
         match push::message_received_notification(&message, &pool).await {
             Ok(notification) => {
-                match push::send_to_user(message.recipient_user_id, notification, &pool).await {
+                match push::send_to_user(recipient_user_id, notification, &pool).await {
                     Ok(result) => {
                         push_sent = result.any_sent();
                         info!(
                             target: "notification",
                             message_id = %message.id,
-                            recipient_user_id = %message.recipient_user_id,
+                            recipient_user_id = %recipient_user_id,
                             push_attempted_count = result.attempted_count,
                             push_sent_count = result.sent_count,
                             "message_received_push_dispatch_completed"
@@ -205,7 +210,7 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                         warn!(
                             target: "notification",
                             message_id = %message.id,
-                            recipient_user_id = %message.recipient_user_id,
+                            recipient_user_id = %recipient_user_id,
                             error = %err.message,
                             "message_received_push_dispatch_failed"
                         );
@@ -216,7 +221,7 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                 warn!(
                     target: "notification",
                     message_id = %message.id,
-                    recipient_user_id = %message.recipient_user_id,
+                    recipient_user_id = %recipient_user_id,
                     error = %err.message,
                     "message_received_push_build_failed"
                 );
@@ -233,7 +238,7 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                     warn!(
                         target: "notification",
                         message_id = %message.id,
-                        recipient_user_id = %message.recipient_user_id,
+                        recipient_user_id = %recipient_user_id,
                         email_id = %email_id,
                         error = %err.message,
                         "message_received_email_processing_failed"
@@ -245,7 +250,7 @@ pub fn spawn_message_received_notification(message: Message, pool: DbPool) {
                 warn!(
                     target: "notification",
                     message_id = %message.id,
-                    recipient_user_id = %message.recipient_user_id,
+                    recipient_user_id = %recipient_user_id,
                     error = %err.message,
                     "message_received_email_enqueue_failed"
                 );
@@ -292,20 +297,16 @@ pub fn spawn_message_reaction_notification(
     reaction: MessageReaction,
     pool: DbPool,
 ) {
-    let recipient_user_id = if reaction.user_id == message.sender_user_id {
-        message.recipient_user_id
-    } else if reaction.user_id == message.recipient_user_id {
-        message.sender_user_id
-    } else {
-        return;
-    };
-    if recipient_user_id == reaction.user_id {
-        return;
-    }
+    let recipient_user_id = if reaction.user_id==message.sender_user_id {
+        let Some(id)=message.recipient_user_id else {return;};id
+    } else {message.sender_user_id};
+    if recipient_user_id==reaction.user_id {return;}
+    if !crate::entities_v2::social::conversation::service::reaction_notification_allowed(&message,reaction.user_id,recipient_user_id,&pool).unwrap_or(false) {return;}
 
     tokio::spawn(async move {
         match push::message_reaction_notification(&message, &reaction, &pool).await {
             Ok(notification) => {
+                if !crate::entities_v2::social::conversation::service::reaction_notification_allowed(&message,reaction.user_id,recipient_user_id,&pool).unwrap_or(false){return;}
                 match push::send_to_user(recipient_user_id, notification, &pool).await {
                     Ok(result) => info!(
                         target: "notification",
@@ -344,16 +345,20 @@ pub fn spawn_weekly_recap_feedback_notification(
     feedback: Message,
     pool: DbPool,
 ) {
+    let Some(feedback_recipient)=feedback.recipient_user_id else{return;};
     tokio::spawn(async move {
+        if !crate::entities_v2::social::conversation::service::notification_recipients(&feedback,&pool)
+            .map(|ids|ids.contains(&feedback_recipient)).unwrap_or(false){return;}
+
         let push_sent = match push::message_received_notification(&feedback, &pool).await {
             Ok(notification) => {
-                match push::send_to_user(feedback.recipient_user_id, notification, &pool).await {
+                match push::send_to_user(feedback_recipient, notification, &pool).await {
                     Ok(result) => {
                         info!(
                             target: "notification",
                             analysis_id = %analysis.id,
                             message_id = %feedback.id,
-                            recipient_user_id = %feedback.recipient_user_id,
+                            recipient_user_id = ?feedback.recipient_user_id,
                             push_attempted_count = result.attempted_count,
                             push_sent_count = result.sent_count,
                             "weekly_recap_feedback_push_dispatch_completed"
@@ -365,7 +370,7 @@ pub fn spawn_weekly_recap_feedback_notification(
                             target: "notification",
                             analysis_id = %analysis.id,
                             message_id = %feedback.id,
-                            recipient_user_id = %feedback.recipient_user_id,
+                            recipient_user_id = ?feedback.recipient_user_id,
                             error = %err.message,
                             "weekly_recap_feedback_push_dispatch_failed"
                         );
@@ -407,7 +412,7 @@ pub fn spawn_weekly_recap_feedback_notification(
                     target: "notification",
                     analysis_id = %analysis.id,
                     message_id = %feedback.id,
-                    recipient_user_id = %feedback.recipient_user_id,
+                    recipient_user_id = ?feedback.recipient_user_id,
                     "weekly_recap_feedback_email_skipped"
                 );
             }
@@ -416,7 +421,7 @@ pub fn spawn_weekly_recap_feedback_notification(
                     target: "notification",
                     analysis_id = %analysis.id,
                     message_id = %feedback.id,
-                    recipient_user_id = %feedback.recipient_user_id,
+                    recipient_user_id = ?feedback.recipient_user_id,
                     error = %err.message,
                     "weekly_recap_feedback_email_enqueue_failed"
                 );
@@ -432,15 +437,19 @@ pub fn spawn_daily_recap_feedback_push_notification(
     feedback: Message,
     pool: DbPool,
 ) {
+    let Some(feedback_recipient)=feedback.recipient_user_id else{return;};
     tokio::spawn(async move {
+        if !crate::entities_v2::social::conversation::service::notification_recipients(&feedback,&pool)
+            .map(|ids|ids.contains(&feedback_recipient)).unwrap_or(false){return;}
+
         match push::message_received_notification(&feedback, &pool).await {
             Ok(notification) => {
-                match push::send_to_user(feedback.recipient_user_id, notification, &pool).await {
+                match push::send_to_user(feedback_recipient, notification, &pool).await {
                     Ok(result) => info!(
                         target: "notification",
                         analysis_id = %analysis.id,
                         message_id = %feedback.id,
-                        recipient_user_id = %feedback.recipient_user_id,
+                        recipient_user_id = ?feedback.recipient_user_id,
                         push_attempted_count = result.attempted_count,
                         push_sent_count = result.sent_count,
                         "daily_recap_feedback_push_dispatch_completed"
@@ -449,7 +458,7 @@ pub fn spawn_daily_recap_feedback_push_notification(
                         target: "notification",
                         analysis_id = %analysis.id,
                         message_id = %feedback.id,
-                        recipient_user_id = %feedback.recipient_user_id,
+                        recipient_user_id = ?feedback.recipient_user_id,
                         error = %err.message,
                         "daily_recap_feedback_push_dispatch_failed"
                     ),

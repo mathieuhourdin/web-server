@@ -77,6 +77,8 @@ mod timeout_update_tests {
 #[derive(Deserialize)]
 pub struct NewTraceDto {
     #[serde(default)]
+    pub source_message_ids:Vec<Uuid>,
+    #[serde(default)]
     pub writing_template_id: Option<Uuid>,
     #[serde(default)]
     pub content: String,
@@ -104,6 +106,7 @@ pub struct NewTraceDto {
 
 #[derive(Deserialize)]
 pub struct UpdateTraceDto {
+    pub source_message_ids:Option<Vec<Uuid>>,
     #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub writing_template_id: Option<Option<Uuid>>,
     pub title: Option<String>,
@@ -128,6 +131,7 @@ pub struct UpdateTraceDto {
 
 #[derive(Deserialize)]
 pub struct PatchTraceDto {
+    pub source_message_ids:Option<Vec<Uuid>>,
     #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub writing_template_id: Option<Option<Uuid>>,
     pub title: Option<String>,
@@ -150,6 +154,8 @@ pub struct PatchTraceDto {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Trace {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub source_message_ids:Option<Vec<Uuid>>,
     pub id: Uuid,
     pub derived_from_trace_id: Option<Uuid>,
     #[serde(default)]
@@ -202,6 +208,8 @@ pub struct TraceContentImage {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceListItem {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub source_message_ids:Option<Vec<Uuid>>,
     pub id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_trace_id: Option<Uuid>,
@@ -251,6 +259,8 @@ pub struct TraceListItem {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TraceReadableView {
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub source_message_ids:Option<Vec<Uuid>>,
     pub id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_trace_id: Option<Uuid>,
@@ -354,6 +364,7 @@ pub(crate) struct TraceRow {
 impl From<TraceRow> for Trace {
     fn from(row: TraceRow) -> Self {
         Trace {
+            source_message_ids:None,
             id: row.id,
             derived_from_trace_id: row.derived_from_trace_id,
             continues_trace_id: row.continues_trace_id,
@@ -944,6 +955,7 @@ impl Trace {
                         language_code,
                         writing_template_id,
                     )| Trace {
+                        source_message_ids:None,
                         id,
                         derived_from_trace_id,
                         continues_trace_id,
@@ -1218,6 +1230,7 @@ impl Trace {
                     language_code,
                     writing_template_id,
                 )| TraceListItem {
+                    source_message_ids:None,
                     id,
                     source_trace_id: None,
                     post_id,
@@ -1375,6 +1388,7 @@ impl Trace {
                     language_code,
                     writing_template_id,
                 )| TraceListItem {
+                    source_message_ids:None,
                     id,
                     source_trace_id: None,
                     post_id: Some(post_id),
@@ -1540,6 +1554,7 @@ struct CountRow {
 
 #[derive(Debug, Clone)]
 pub struct NewTrace {
+    pub source_message_ids:Vec<Uuid>,
     pub writing_template_id: Option<Uuid>,
     pub title: String,
     pub subtitle: String,
@@ -1569,6 +1584,7 @@ impl NewTrace {
         journal_id: Uuid,
     ) -> NewTrace {
         NewTrace {
+            source_message_ids:vec![],
             writing_template_id: None,
             title,
             subtitle,

@@ -2,6 +2,7 @@ pub mod album;
 pub mod audience;
 pub mod blog;
 pub mod content_report;
+pub mod conversation;
 pub mod feed;
 pub mod message;
 pub mod post;

@@ -11,6 +11,17 @@ use crate::schema::{relationships, user_blocks};
 use super::model::UserBlock;
 
 impl UserBlock {
+    /// Group admission checks every new/existing pair without quadratic round trips.
+    pub(crate) fn has_block_within_members(
+        members:&[uuid::Uuid],joining:&[uuid::Uuid],pool:&DbPool,
+    )->Result<bool,PpdcError> {
+        if joining.is_empty(){return Ok(false);}
+        Ok(diesel::select(diesel::dsl::exists(user_blocks::table
+            .filter(user_blocks::blocker_user_id.eq_any(members))
+            .filter(user_blocks::blocked_user_id.eq_any(members))
+            .filter(user_blocks::blocker_user_id.eq_any(joining).or(user_blocks::blocked_user_id.eq_any(joining)))
+        )).get_result::<bool>(&mut pool.get()?)?)
+    }
     pub fn ensure_can_interact(
         user_a_id: Uuid,
         user_b_id: Uuid,

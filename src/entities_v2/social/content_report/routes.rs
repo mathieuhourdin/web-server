@@ -88,9 +88,7 @@ fn create_message_report(
     pool: &DbPool,
 ) -> Result<ContentReport, PpdcError> {
     let message = Message::find(message_id, pool)?;
-    if message.sender_user_id != reporter_user_id && message.recipient_user_id != reporter_user_id {
-        return Err(PpdcError::unauthorized());
-    }
+    crate::entities_v2::social::conversation::service::ensure_message_readable(message.id,reporter_user_id,pool)?;
 
     let snapshot_attachment_json = message
         .attachment

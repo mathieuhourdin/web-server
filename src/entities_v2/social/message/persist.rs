@@ -108,7 +108,7 @@ impl Message {
             WHERE id = $16
             "#,
         )
-        .bind::<SqlUuid, _>(self.recipient_user_id)
+        .bind::<Nullable<SqlUuid>, _>(self.recipient_user_id)
         .bind::<Nullable<SqlUuid>, _>(self.landscape_analysis_id)
         .bind::<Nullable<SqlUuid>, _>(self.journal_id)
         .bind::<Nullable<SqlUuid>, _>(self.trace_id)
@@ -129,7 +129,7 @@ impl Message {
     }
 
     pub fn mark_seen(self, viewer_user_id: Uuid, pool: &DbPool) -> Result<Message, PpdcError> {
-        if self.recipient_user_id != viewer_user_id {
+        if self.recipient_user_id != Some(viewer_user_id) {
             return Err(PpdcError::unauthorized());
         }
 
@@ -152,7 +152,7 @@ impl Message {
         viewer_user_id: Uuid,
         pool: &DbPool,
     ) -> Result<(Message, i64), PpdcError> {
-        if self.recipient_user_id != viewer_user_id {
+        if self.recipient_user_id != Some(viewer_user_id) {
             return Err(PpdcError::unauthorized());
         }
 
@@ -188,7 +188,7 @@ impl Message {
         trace_id: Uuid,
         pool: &DbPool,
     ) -> Result<(Message, i64), PpdcError> {
-        if self.recipient_user_id != viewer_user_id {
+        if self.recipient_user_id != Some(viewer_user_id) {
             return Err(PpdcError::unauthorized());
         }
         if self.trace_id != Some(trace_id) {
@@ -233,7 +233,7 @@ impl Message {
         post_id: Uuid,
         pool: &DbPool,
     ) -> Result<(Message, i64), PpdcError> {
-        if self.recipient_user_id != viewer_user_id {
+        if self.recipient_user_id != Some(viewer_user_id) {
             return Err(PpdcError::unauthorized());
         }
         if self.post_id != Some(post_id) {

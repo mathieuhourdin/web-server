@@ -188,6 +188,17 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/admin/analytics/user_segments")=>"Current mutually exclusive user breakdown: churners, private writers, publishers, readers, other; lifetime writing counts and 30-day reading/writing inactivity. Admin only.",
         ("GET","/admin/analytics/writing_nudges")=>"Writing-nudge exposure cohorts by type: shown/opened/dismissed counts, distinct users, no recorded action and opening/dismissal percentages. Date range selects first exposures; outcomes included through as_of. Admin only.",
         ("GET","/writing_templates")=>"List active platform-managed writing starters; paginated, ordered by sort_order/slug/id, optional exact locale filter. Authenticated.",
+        ("POST","/conversations")=>"Create a group or get/create the unique direct conversation with a partner. Groups require accepted relationships with the inviter and compatible membership; history starts at joining.",
+        ("GET","/conversations")=>"Paginated active conversations with unread counts, last readable message, participant previews and the caller's membership settings.",
+        ("GET","/conversations/:id")=>"Read an active conversation and its caller-specific summary. Membership and history boundaries are enforced.",
+        ("PATCH","/conversations/:id")=>"Update a group title as an admin and/or mute/unmute notifications for the caller.",
+        ("GET","/conversations/:id/members")=>"Paginated current conversation members with public profiles, roles and join dates.",
+        ("POST","/conversations/:id/members")=>"Add group members directly as an admin; respects relationships, blocks, sandbox boundaries and since-joining history.",
+        ("PATCH","/conversations/:id/members/:user_id")=>"Promote/demote a group member as an admin; protects the last active admin.",
+        ("DELETE","/conversations/:id/members/:user_id")=>"Leave a group or remove another member as an admin; immediately revokes conversation and message access.",
+        ("GET","/conversations/:id/messages")=>"Read visible processed messages newest-position-first; use before_position for pagination, not offset.",
+        ("POST","/conversations/:id/messages")=>"Send one message to a conversation. Groups support text/replies/trace-post links; direct chats preserve mentor workflows. Returns message and optional pending_reply_message.",
+        ("PUT","/conversations/:id/read")=>"Advance the caller's read cursor monotonically through a visible conversation position; fetching alone does not mark messages read.",
         ("GET","/writing_templates/:id")=>"Retrieve a writing template by UUID, including inactive starters referenced by existing traces. Authenticated.",
         ("GET","/admin/writing_templates")=>"List active and inactive writing templates; optional locale and is_active filters. Admin only.",
         ("POST","/admin/writing_templates")=>"Create a platform writing template with a stable unique slug, title, description and starter text. Admin only.",
@@ -261,7 +272,9 @@ pub async fn schema() -> Json<Value> {
                 op.method, &path,
             );
             let topic =
-                if path.starts_with("/writing_templates") || path.starts_with("/admin/writing_templates") {
+                if path.starts_with("/conversations") {
+                    "conversations"
+                } else if path.starts_with("/writing_templates") || path.starts_with("/admin/writing_templates") {
                     "writing_templates"
                 } else if path.starts_with("/automation/") || path.starts_with("/admin/automation/") {
                     "automation"
@@ -309,7 +322,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -327,7 +340,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -344,6 +357,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "writing_threads" => include_str!("../doc/writing_threads.md"),
         "writing_nudges" => include_str!("../doc/writing_nudges.md"),
         "writing_templates" => include_str!("../doc/writing_templates.md"),
+        "conversations" => include_str!("../doc/conversations.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
         "post_notifications" => include_str!("../doc/post_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
@@ -397,6 +411,10 @@ mod tests {
         assert!(paths["/writing_templates/{id}"].get("get").is_some());
         assert!(paths["/admin/writing_templates"].get("post").is_some());
         assert!(paths["/admin/writing_templates/{id}"].get("patch").is_some());
+        assert!(paths["/conversations"].get("post").is_some());
+        assert!(paths["/conversations/{id}/messages"].get("get").is_some());
+        assert!(paths["/conversations/{id}/members/{user_id}"].get("delete").is_some());
+        assert!(paths["/conversations/{id}/read"].get("put").is_some());
         assert_eq!(
             paths["/users/{id}/publications"]["get"]["externalDocs"]["url"],
             "/api/docs?topic=blogs"

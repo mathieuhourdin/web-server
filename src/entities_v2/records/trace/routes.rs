@@ -136,6 +136,7 @@ fn attach_metadata_to_traces(
     super::continuation::hydrate_continuations(viewer, traces.iter_mut(), pool)?;
     super::translation::hydrate_translations(viewer, traces.iter_mut(), pool)?;
     super::plume::hydrate(viewer, traces.iter_mut(), pool)?;
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(viewer,traces.iter_mut(),pool)?;
     Ok(traces)
 }
 
@@ -325,6 +326,7 @@ pub async fn get_trace_complements_route(
 
 #[derive(Deserialize)]
 pub struct CreateJournalDraftDto {
+    pub source_message_ids:Option<Vec<Uuid>>,
     #[serde(default)]
     pub writing_template_id: Option<Uuid>,
     #[serde(default)]
@@ -357,6 +359,8 @@ pub struct CreateFinalizedTraceDocumentAttachmentDto {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CreateFinalizedJournalTraceDto {
+    #[serde(default)]
+    pub source_message_ids:Vec<Uuid>,
     #[serde(default)]
     pub writing_template_id: Option<Uuid>,
     #[serde(default)]
@@ -706,6 +710,7 @@ fn attach_seen_state_to_trace_list_items(
     mut items: Vec<TraceListItem>,
     pool: &DbPool,
 ) -> Result<Vec<TraceListItem>, PpdcError> {
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(user_id,items.iter_mut(),pool)?;
     super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
     super::translation::hydrate_translations(user_id, items.iter_mut(), pool)?;
     super::plume::hydrate(user_id, items.iter_mut(), pool)?;
@@ -757,6 +762,7 @@ fn attach_seen_state_to_trace_readable_views(
     mut items: Vec<TraceReadableView>,
     pool: &DbPool,
 ) -> Result<Vec<TraceReadableView>, PpdcError> {
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(user_id,items.iter_mut(),pool)?;
     super::continuation::hydrate_continuations(user_id, items.iter_mut(), pool)?;
     super::translation::hydrate_translations(user_id, items.iter_mut(), pool)?;
     super::plume::hydrate(user_id, items.iter_mut(), pool)?;
@@ -777,6 +783,7 @@ fn attach_seen_state_to_trace_readable_views(
 
 fn trace_to_readable_view(trace: Trace, include_owner_fields: bool) -> TraceReadableView {
     TraceReadableView {
+        source_message_ids:if include_owner_fields {trace.source_message_ids}else{None},
         id: trace.id,
         source_trace_id: None,
         journal_id: trace.journal_id,
@@ -1002,6 +1009,7 @@ fn apply_create_draft_payload(
     pool: &DbPool,
 ) -> Result<Trace, PpdcError> {
     let CreateJournalDraftDto {
+        source_message_ids,
         writing_template_id,
         content,
         derived_from_trace_id,
@@ -1016,6 +1024,7 @@ fn apply_create_draft_payload(
     } = payload;
     let mention_update = resolve_mention_update(mentioned_user_ids, mentions)?;
     let mut changed = false;
+    if let Some(ids)=source_message_ids {trace.source_message_ids=Some(ids);changed=true;}
 
     if let Some(template_id) = writing_template_id {
         trace.writing_template_id = Some(template_id);
@@ -1145,8 +1154,9 @@ pub async fn post_journal_draft_route(
 ) -> Result<Json<Trace>, PpdcError> {
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
-    let trace =
+    let mut trace =
         create_or_get_journal_draft(journal, user_id, Some(session.id), payload, &pool).await?;
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(user_id,std::iter::once(&mut trace),&pool)?;
     Ok(Json(trace))
 }
 
@@ -1223,6 +1233,7 @@ pub async fn post_finalized_journal_trace_route(
     );
     new_trace.derived_from_trace_id = payload.derived_from_trace_id;
     new_trace.writing_template_id = payload.writing_template_id;
+    new_trace.source_message_ids = payload.source_message_ids;
     new_trace.is_encrypted = payload.is_encrypted.unwrap_or(false);
     new_trace.encryption_metadata = if new_trace.is_encrypted {
         payload.encryption_metadata
@@ -1286,7 +1297,8 @@ pub async fn post_finalized_journal_trace_route(
         created_attachments = TraceAttachment::find_with_documents_for_trace(trace.id, &pool)?;
     }
 
-    let trace = Trace::find_full_trace(trace.id, &pool)?;
+    let mut trace = Trace::find_full_trace(trace.id, &pool)?;
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(user_id,std::iter::once(&mut trace),&pool)?;
 
     Ok(Json(CreateFinalizedJournalTraceResponse {
         trace,
@@ -1304,6 +1316,7 @@ pub async fn get_journal_draft_route(
     let user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let journal = Journal::find_full(journal_id, &pool)?;
     let mut draft = get_current_journal_draft(&journal, user_id, &pool)?;
+    crate::entities_v2::social::conversation::trace_sources::hydrate_owner(user_id,std::iter::once(&mut draft),&pool)?;
     super::continuation::hydrate_continuations(user_id, std::iter::once(&mut draft), &pool)?;
     super::translation::hydrate_translations(user_id, std::iter::once(&mut draft), &pool)?;
     super::plume::hydrate(user_id, std::iter::once(&mut draft), &pool)?;
@@ -1324,6 +1337,7 @@ pub async fn patch_journal_draft_route(
         resolve_mention_update(payload.mentioned_user_ids.clone(), payload.mentions.clone())?;
     let journal = Journal::find_full(journal_id, &pool)?;
     let mut trace = get_current_journal_draft(&journal, user_id, &pool)?;
+    trace.source_message_ids=payload.source_message_ids;
 
     if let Some(template_id) = payload.writing_template_id {
         trace.writing_template_id = template_id;
@@ -1422,6 +1436,7 @@ pub async fn put_trace_route(
         ));
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    trace.source_message_ids=payload.source_message_ids;
 
     if let Some(template_id) = payload.writing_template_id {
         trace.writing_template_id = template_id;
@@ -1658,6 +1673,7 @@ pub async fn patch_trace_route(
         ));
     }
     trace = finalize_expired_trace_if_needed(trace, &pool, Some(session.id)).await?;
+    trace.source_message_ids=payload.source_message_ids;
     if let Some(template_id) = payload.writing_template_id {
         trace.writing_template_id = template_id;
     }

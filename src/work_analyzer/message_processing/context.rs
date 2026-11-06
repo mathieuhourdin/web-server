@@ -108,16 +108,16 @@ pub fn build(
     };
 
     let participant_a = reply_message.sender_user_id;
-    let participant_b = reply_message.recipient_user_id;
+    let participant_b = reply_message.direct_recipient()?;
     let previous_messages_for_trace = previous_messages
         .into_iter()
         .filter(|message| {
             message.id != reply_message.id
                 && message.id != question_message.id
                 && ((message.sender_user_id == participant_a
-                    && message.recipient_user_id == participant_b)
+                    && message.recipient_user_id == Some(participant_b))
                     || (message.sender_user_id == participant_b
-                        && message.recipient_user_id == participant_a))
+                        && message.recipient_user_id == Some(participant_a)))
         })
         .map(|message| MessageContextItem {
             id: message.id,
@@ -256,9 +256,9 @@ pub fn build_journal(
                 message.id != reply_message.id
                     && message.id != question_message.id
                     && ((message.sender_user_id == mentor_user.id
-                        && message.recipient_user_id == recipient_user.id)
+                        && message.recipient_user_id == Some(recipient_user.id))
                         || (message.sender_user_id == recipient_user.id
-                            && message.recipient_user_id == mentor_user.id))
+                            && message.recipient_user_id == Some(mentor_user.id)))
             })
             .map(message_context_item)
             .collect();

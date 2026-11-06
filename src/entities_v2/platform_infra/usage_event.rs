@@ -488,7 +488,7 @@ fn validate_usage_event_access(
             })?;
             let message = Message::find(resource_id, pool)?;
             if message.message_type != MessageType::MentorFeedback
-                || message.recipient_user_id != user_id
+                || message.recipient_user_id != Some(user_id)
             {
                 return Err(PpdcError::unauthorized());
             }

@@ -72,6 +72,7 @@ impl MessageReaction {
         let emoji = Self::normalize_emoji(emoji)?;
         let mut conn = pool.get()?;
         conn.transaction::<_, PpdcError, _>(|conn| {
+            crate::entities_v2::social::conversation::service::ensure_message_readable_on_connection(message_id,user_id,conn)?;
             messages::table
                 .filter(messages::id.eq(message_id))
                 .select(messages::id)
@@ -119,6 +120,7 @@ impl MessageReaction {
     ) -> Result<bool, PpdcError> {
         let mut conn = pool.get()?;
         conn.transaction::<_, PpdcError, _>(|conn| {
+            crate::entities_v2::social::conversation::service::ensure_message_readable_on_connection(message_id,user_id,conn)?;
             messages::table
                 .filter(messages::id.eq(message_id))
                 .select(messages::id)

@@ -496,6 +496,9 @@ pub(crate) async fn message_received_notification(
         data.insert("sender_avatar_url".to_string(), avatar_url);
     }
     data.insert("message_id".to_string(), message.id.to_string());
+    data.insert("conversation_id".to_string(),message.conversation_id.to_string());
+    data.insert("conversation_kind".to_string(),if message.recipient_user_id.is_some(){"direct"}else{"group"}.to_string());
+    data.insert("message_position".to_string(),message.position.to_string());
     data.insert(
         // `message_type` is reserved by FCM and makes the entire data payload invalid.
         "hupo_message_type".to_string(),
@@ -511,7 +514,7 @@ pub(crate) async fn message_received_notification(
         title: sender.display_name(),
         body: message.content.clone(),
         data,
-        thread_id: Some(message.sender_user_id.to_string()),
+        thread_id: Some(message.conversation_id.to_string()),
     })
 }
 
@@ -572,6 +575,7 @@ pub(crate) async fn message_reaction_notification(
         "message_reaction_updated".to_string(),
     );
     data.insert("message_id".to_string(), message.id.to_string());
+    data.insert("conversation_id".to_string(),message.conversation_id.to_string());
     data.insert("emoji".to_string(), reaction.emoji.clone());
     data.insert("reactor_user_id".to_string(), reactor.id.to_string());
     data.insert("reactor_display_name".to_string(), reactor.display_name());
@@ -585,10 +589,9 @@ pub(crate) async fn message_reaction_notification(
         "message_sender_user_id".to_string(),
         message.sender_user_id.to_string(),
     );
-    data.insert(
-        "message_recipient_user_id".to_string(),
-        message.recipient_user_id.to_string(),
-    );
+    if let Some(recipient)=message.recipient_user_id {
+        data.insert("message_recipient_user_id".to_string(),recipient.to_string());
+    }
     data.insert(
         "message_content_preview".to_string(),
         content_preview(&message.content),
@@ -602,7 +605,7 @@ pub(crate) async fn message_reaction_notification(
         title: reactor.display_name(),
         body: format!("a réagi {} à votre message", reaction.emoji),
         data,
-        thread_id: Some(reactor.id.to_string()),
+        thread_id: Some(message.conversation_id.to_string()),
     })
 }
 

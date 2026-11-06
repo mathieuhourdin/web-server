@@ -479,6 +479,8 @@ impl Trace {
         let mut conn = pool.get()?;
 
         let updated = conn.transaction::<bool, PpdcError, _>(|conn| {
+            // Same conversation-before-message/trace lock order as chat writes.
+            crate::entities_v2::social::conversation::trace_sources::lock_sources(self.source_message_ids.as_deref(),conn)?;
             // Check ownership again inside the write transaction. A revoked or
             // reassigned device is an unknown origin, not another user's device.
             let device_id = if let Some(id) = device_id {
@@ -629,6 +631,7 @@ impl Trace {
             if rows_affected == 0 {
                 return Ok(false);
             }
+            crate::entities_v2::social::conversation::trace_sources::replace(self.id,self.user_id,self.source_message_ids.as_deref(),conn)?;
 
             if let Some(mentioned_user_ids) = mentioned_user_ids {
                 TraceMention::replace_active_with_conn(self.id, mentioned_user_ids, conn)?;
@@ -678,7 +681,9 @@ impl Trace {
             TraceSearchDocument::refresh_for_trace(self.id, pool)?;
         }
 
-        Trace::find_full_trace(self.id, pool)
+        let mut trace=Trace::find_full_trace(self.id,pool)?;
+        crate::entities_v2::social::conversation::trace_sources::hydrate_owner(self.user_id,std::iter::once(&mut trace),pool)?;
+        Ok(trace)
     }
 
     pub fn set_status(mut self, status: TraceStatus, pool: &DbPool) -> Result<Trace, PpdcError> {
@@ -792,12 +797,15 @@ impl NewTrace {
             .bind::<Nullable<SqlUuid>, _>(self.writing_template_id)
             .get_result::<IdRow>(conn)?;
 
+            crate::entities_v2::social::conversation::trace_sources::replace(inserted.id,self.user_id,Some(&self.source_message_ids),conn)?;
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
 
             Ok(inserted)
         })?;
 
-        Trace::find_full_trace(inserted.id, pool)
+        let mut trace=Trace::find_full_trace(inserted.id,pool)?;
+        crate::entities_v2::social::conversation::trace_sources::hydrate_owner(self.user_id,std::iter::once(&mut trace),pool)?;
+        Ok(trace)
     }
 
     pub fn create_finalized(self, pool: &DbPool) -> Result<Trace, PpdcError> {
@@ -913,12 +921,14 @@ impl NewTrace {
             .bind::<Nullable<SqlUuid>, _>(self.writing_template_id)
             .get_result::<IdRow>(conn)?;
 
+            crate::entities_v2::social::conversation::trace_sources::replace(inserted.id,self.user_id,Some(&self.source_message_ids),conn)?;
             recalculate_journal_last_trace_at(conn, self.journal_id)?;
 
             Ok(inserted)
         })?;
 
-        let trace = Trace::find_full_trace(inserted.id, pool)?;
+        let mut trace = Trace::find_full_trace(inserted.id, pool)?;
+        crate::entities_v2::social::conversation::trace_sources::hydrate_owner(self.user_id,std::iter::once(&mut trace),pool)?;
         TraceSearchDocument::refresh_for_trace(trace.id, pool)?;
         Ok(trace)
     }

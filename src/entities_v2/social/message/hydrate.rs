@@ -21,7 +21,7 @@ use super::reaction::MessageReaction;
 type MessageTuple = (
     Uuid,
     Uuid,
-    Uuid,
+    Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
     Option<Uuid>,
@@ -38,6 +38,8 @@ type MessageTuple = (
     Option<NaiveDateTime>,
     NaiveDateTime,
     NaiveDateTime,
+    Uuid,
+    i64,
 );
 
 #[derive(QueryableByName)]
@@ -86,6 +88,8 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         seen_at,
         created_at,
         updated_at,
+        conversation_id,
+        position,
     ) = row;
 
     let attachment_type = attachment_type_raw
@@ -123,10 +127,23 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         seen_at,
         created_at,
         updated_at,
+        conversation_id,
+        position,
     }
 }
 
 impl Message {
+    pub(crate) fn find_many_with_conn(ids:&[Uuid],conn:&mut diesel::PgConnection)->Result<Vec<Message>,PpdcError> {
+        let rows=messages::table.filter(messages::id.eq_any(ids)).select((
+            messages::id,messages::sender_user_id,messages::recipient_user_id,messages::landscape_analysis_id,
+            messages::journal_id,messages::trace_id,messages::post_id,messages::reply_to_message_id,
+            messages::message_type,messages::processing_state,messages::title,messages::content,
+            messages::attachment_type,sql::<Nullable<Text>>("attachment::text"),sql::<Nullable<Text>>("metadata::text"),
+            sql::<Text>("suggested_actions::text"),messages::seen_at,messages::created_at,messages::updated_at,
+            messages::conversation_id,messages::position,
+        )).load::<MessageTuple>(conn)?;
+        Ok(rows.into_iter().map(tuple_to_message).collect())
+    }
     /// Latest completed translation reply belonging to this reader, not the author
     /// or another grantee. One selection/load query for the entire page, followed
     /// by the existing batched reaction hydration (no per-trace message queries).
@@ -162,6 +179,7 @@ impl Message {
                 messages::processing_state,messages::title,messages::content,messages::attachment_type,
                 sql::<Nullable<Text>>("attachment::text"),sql::<Nullable<Text>>("metadata::text"),
                 sql::<Text>("suggested_actions::text"),messages::seen_at,messages::created_at,messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .load::<MessageTuple>(&mut conn)?;
         let messages=rows.into_iter().map(tuple_to_message).collect();
@@ -176,13 +194,10 @@ impl Message {
     ) -> Result<i64, PpdcError> {
         let mut conn = pool.get()?;
 
-        let count = messages::table
-            .filter(messages::recipient_user_id.eq(user_id))
-            .filter(messages::seen_at.is_null())
-            .filter(messages::processing_state.eq(MessageProcessingState::Processed.to_db()))
-            .filter(messages::created_at.ge(created_since))
-            .count()
-            .get_result::<i64>(&mut conn)?;
+        let count = diesel::sql_query("SELECT COUNT(*)::bigint AS count FROM messages
+            WHERE created_at>=$2 AND conversation_message_unread(id,$1)")
+            .bind::<SqlUuid,_>(user_id).bind::<Timestamp,_>(created_since)
+            .get_result::<CountRow>(&mut conn)?.count;
 
         Ok(count)
     }
@@ -211,6 +226,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .first::<MessageTuple>(&mut conn)
             .optional()?;
@@ -242,7 +258,8 @@ impl Message {
                      id AS last_message_id,
                      created_at AS last_created_at
                  FROM messages
-                 WHERE (sender_user_id = $1 OR recipient_user_id = $1)
+                 WHERE recipient_user_id IS NOT NULL AND (sender_user_id = $1 OR recipient_user_id = $1)
+                   AND conversation_message_readable(id,$1)
                    AND processing_state = 'PROCESSED'
                    AND NOT EXISTS (
                      SELECT 1 FROM user_blocks ub
@@ -267,7 +284,8 @@ impl Message {
                  (CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END))
                  AS count
              FROM messages
-             WHERE (sender_user_id = $1 OR recipient_user_id = $1)
+             WHERE recipient_user_id IS NOT NULL AND (sender_user_id = $1 OR recipient_user_id = $1)
+                   AND conversation_message_readable(id,$1)
                AND processing_state = 'PROCESSED'
                AND NOT EXISTS (
                  SELECT 1 FROM user_blocks ub
@@ -323,6 +341,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .load::<MessageTuple>(&mut conn)?
             .into_iter()
@@ -385,7 +404,8 @@ impl Message {
                      id AS last_message_id,
                      created_at AS last_created_at
                  FROM messages
-                 WHERE (sender_user_id = $1 OR recipient_user_id = $1)
+                 WHERE recipient_user_id IS NOT NULL AND (sender_user_id = $1 OR recipient_user_id = $1)
+                   AND conversation_message_readable(id,$1)
                    AND processing_state = 'PROCESSED'
                    AND (trace_id = $2 OR ($3 IS NOT NULL AND post_id = $3))
                    AND NOT EXISTS (
@@ -458,6 +478,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .load::<MessageTuple>(conn)?
             .into_iter()
@@ -553,6 +574,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .offset(offset)
@@ -605,7 +627,8 @@ impl Message {
     ) -> Result<(Vec<Message>, i64), PpdcError> {
         let mut conn = pool.get()?;
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
-        let mut count_query = messages::table.into_boxed();
+        let mut count_query = messages::table.filter(messages::recipient_user_id.is_not_null())
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')"))).into_boxed();
 
         if !blocked_user_ids.is_empty() {
             count_query = count_query
@@ -634,7 +657,8 @@ impl Message {
 
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let mut query = messages::table.into_boxed();
+        let mut query = messages::table.filter(messages::recipient_user_id.is_not_null())
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')"))).into_boxed();
 
         if !blocked_user_ids.is_empty() {
             query = query
@@ -681,6 +705,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .offset(offset)
@@ -726,6 +751,7 @@ impl Message {
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let total = messages::table
             .filter(messages::journal_id.eq(Some(journal_id)))
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')")))
             .filter(
                 messages::sender_user_id
                     .eq(user_id)
@@ -738,6 +764,7 @@ impl Message {
 
         let rows = messages::table
             .filter(messages::journal_id.eq(Some(journal_id)))
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')")))
             .filter(
                 messages::sender_user_id
                     .eq(user_id)
@@ -765,6 +792,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .offset(offset)
@@ -788,6 +816,7 @@ impl Message {
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let total = messages::table
             .filter(messages::trace_id.eq(Some(trace_id)))
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')")))
             .filter(
                 messages::sender_user_id
                     .eq(user_id)
@@ -800,6 +829,7 @@ impl Message {
 
         let rows = messages::table
             .filter(messages::trace_id.eq(Some(trace_id)))
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')")))
             .filter(
                 messages::sender_user_id
                     .eq(user_id)
@@ -827,6 +857,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .offset(offset)
@@ -851,7 +882,8 @@ impl Message {
         let mut conn = pool.get()?;
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
 
-        let mut count_query = messages::table.into_boxed();
+        let mut count_query = messages::table.filter(messages::recipient_user_id.is_not_null())
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')"))).into_boxed();
         count_query = match post_id {
             Some(post_id) => count_query.filter(
                 messages::trace_id
@@ -879,7 +911,8 @@ impl Message {
         }
         let total = count_query.count().get_result::<i64>(&mut conn)?;
 
-        let mut query = messages::table.into_boxed();
+        let mut query = messages::table.filter(messages::recipient_user_id.is_not_null())
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')"))).into_boxed();
         query = match post_id {
             Some(post_id) => query.filter(
                 messages::trace_id
@@ -927,6 +960,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .offset(offset)
@@ -950,6 +984,7 @@ impl Message {
         let blocked_user_ids = UserBlock::blocked_user_ids_in_either_direction(user_id, pool)?;
         let total = messages::table
             .filter(messages::post_id.eq(Some(post_id)))
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')")))
             .filter(
                 messages::sender_user_id
                     .eq(user_id)
@@ -962,6 +997,7 @@ impl Message {
 
         let rows = messages::table
             .filter(messages::post_id.eq(Some(post_id)))
+            .filter(sql::<Bool>(&format!("conversation_message_readable(messages.id,'{user_id}')")))
             .filter(
                 messages::sender_user_id
                     .eq(user_id)
@@ -989,6 +1025,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .offset(offset)
@@ -1033,6 +1070,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .first::<MessageTuple>(&mut conn)
@@ -1074,6 +1112,7 @@ impl Message {
                 messages::seen_at,
                 messages::created_at,
                 messages::updated_at,
+                messages::conversation_id,messages::position,
             ))
             .order(messages::created_at.desc())
             .limit(limit.max(1))

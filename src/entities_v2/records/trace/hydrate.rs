@@ -77,6 +77,7 @@ fn tuple_to_trace(row: TraceTuple) -> Trace {
     ) = row;
 
     Trace {
+        source_message_ids:None,
         id,
         derived_from_trace_id,
         continues_trace_id,

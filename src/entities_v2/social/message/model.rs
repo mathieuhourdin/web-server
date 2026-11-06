@@ -81,7 +81,9 @@ impl MessageMetadata {
 pub struct Message {
     pub id: Uuid,
     pub sender_user_id: Uuid,
-    pub recipient_user_id: Uuid,
+    pub recipient_user_id: Option<Uuid>,
+    pub conversation_id: Uuid,
+    pub position: i64,
     pub landscape_analysis_id: Option<Uuid>,
     pub journal_id: Option<Uuid>,
     pub trace_id: Option<Uuid>,
@@ -100,6 +102,13 @@ pub struct Message {
     pub seen_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+impl Message {
+    pub fn direct_recipient(&self) -> Result<Uuid,crate::entities_v2::error::PpdcError> {
+        self.recipient_user_id.ok_or_else(||crate::entities_v2::error::PpdcError::new(
+            400,crate::entities_v2::error::ErrorType::ApiError,"This operation requires a direct message".into()))
+    }
 }
 
 /// One row of the chat screen: the conversation partner, the most recent message

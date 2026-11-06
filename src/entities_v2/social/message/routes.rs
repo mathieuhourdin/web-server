@@ -109,15 +109,7 @@ fn ensure_message_visible_to_user(
     user_id: Uuid,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    if message.sender_user_id != user_id && message.recipient_user_id != user_id {
-        return Err(PpdcError::unauthorized());
-    }
-    let partner_id = if message.sender_user_id == user_id {
-        message.recipient_user_id
-    } else {
-        message.sender_user_id
-    };
-    UserBlock::ensure_can_interact(user_id, partner_id, pool)
+    crate::entities_v2::social::conversation::service::ensure_message_readable(message.id,user_id,pool)
 }
 
 fn hydrate_message_reactions(
@@ -186,13 +178,13 @@ pub(crate) fn resolve_reply_context(
 
     let reply_target = Message::find(reply_to_message_id, pool)?;
     if reply_target.sender_user_id != sender_user_id
-        && reply_target.recipient_user_id != sender_user_id
+        && reply_target.recipient_user_id != Some(sender_user_id)
     {
         return Err(PpdcError::unauthorized());
     }
     if !is_same_conversation(
         reply_target.sender_user_id,
-        reply_target.recipient_user_id,
+        reply_target.direct_recipient()?,
         sender_user_id,
         recipient_user_id,
     ) {
@@ -765,7 +757,7 @@ pub async fn post_message_route(
         }
         .create_with_draft_context(draft_context.as_ref(), &pool)?;
         let pending_reply_message = NewMessage {
-            sender_user_id: question_message.recipient_user_id,
+            sender_user_id: question_message.direct_recipient()?,
             recipient_user_id: sender_user_id,
             landscape_analysis_id: question_message.landscape_analysis_id,
             journal_id: question_message.journal_id,
@@ -912,6 +904,10 @@ pub async fn put_message_route(
     if message.sender_user_id != sender_user_id {
         return Err(PpdcError::unauthorized());
     }
+    ensure_message_visible_to_user(&message,sender_user_id,&pool)?;
+    if message.recipient_user_id!=Some(payload.recipient_user_id) {
+        return Err(PpdcError::new(400,ErrorType::ApiError,"Message participants cannot be changed".into()));
+    }
     let recipient = User::find(&payload.recipient_user_id, &pool)?;
     ensure_can_send_message(sender_user_id, recipient.id, &pool)?;
     let recipient_is_service_mentor = is_service_mentor(&recipient, &pool)?;
@@ -1029,7 +1025,7 @@ pub async fn put_message_route(
         }
     }
 
-    message.recipient_user_id = payload.recipient_user_id;
+    message.recipient_user_id = Some(payload.recipient_user_id);
     message.landscape_analysis_id = payload.landscape_analysis_id;
     message.trace_id = normalized_trace_id;
     message.post_id = normalized_post_id;

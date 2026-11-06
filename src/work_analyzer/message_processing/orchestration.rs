@@ -98,7 +98,7 @@ async fn run_message_inner(reply_message: Message, pool: &DbPool) -> Result<Mess
     })?;
     let question_message = Message::find(question_message_id, pool)?;
     let mentor_user = User::find(&reply_message.sender_user_id, pool)?;
-    let recipient_user = User::find(&reply_message.recipient_user_id, pool)?;
+    let recipient_user = User::find(&reply_message.direct_recipient()?, pool)?;
     if !recipient_user.allows_ai_features() {
         return Err(PpdcError::new(
             403,
