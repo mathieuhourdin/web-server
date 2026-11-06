@@ -67,7 +67,7 @@ impl PushProvider {
     }
 }
 
-fn device_type_api_value(db_value: &str) -> &str {
+pub(crate) fn device_type_api_value(db_value: &str) -> &str {
     match db_value {
         "IOS" => "ios",
         "ANDROID" => "android",
@@ -77,7 +77,7 @@ fn device_type_api_value(db_value: &str) -> &str {
     }
 }
 
-fn push_provider_api_value(db_value: &str) -> &str {
+pub(crate) fn push_provider_api_value(db_value: &str) -> &str {
     match db_value {
         "APNS" => "apns",
         "FCM" => "fcm",

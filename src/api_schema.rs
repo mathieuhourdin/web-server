@@ -187,6 +187,8 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("POST","/me/writing_nudges/:nudge_id/events")=>"Record shown, dismissed or opened for an owned writing suggestion. Idempotent 204; stale/unknown IDs are harmless no-ops. Does not change trace content or seen state.",
         ("GET","/admin/analytics/user_segments")=>"Current mutually exclusive user breakdown: churners, private writers, publishers, readers, other; lifetime writing counts and 30-day reading/writing inactivity. Admin only.",
         ("GET","/admin/analytics/writing_nudges")=>"Writing-nudge exposure cohorts by type: shown/opened/dismissed counts, distinct users, no recorded action and opening/dismissal percentages. Date range selects first exposures; outcomes included through as_of. Admin only.",
+        ("GET","/admin/analytics/devices")=>"Current recently-active device snapshot: distinct users/devices by platform, app version, OS and browser; multi-platform users and registration coverage. active_within_days defaults to 30 (1–366). Excludes service/demo accounts and revoked devices. Admin only.",
+        ("GET","/admin/users/:id/devices")=>"Paginated device metadata for one user, including revoked devices, ordered by last activity. Exposes push-token presence/provider/update time but never token values or installation identifiers. Admin only.",
         ("GET","/writing_templates")=>"List active platform-managed writing starters; paginated, ordered by sort_order/slug/id, optional exact locale filter. Authenticated.",
         ("POST","/conversations")=>"Create a group or get/create the unique direct conversation with a partner. Groups require accepted relationships with the inviter and compatible membership; history starts at joining.",
         ("GET","/conversations")=>"Paginated active conversations with unread counts, last readable message, participant previews and the caller's membership settings.",
@@ -272,7 +274,9 @@ pub async fn schema() -> Json<Value> {
                 op.method, &path,
             );
             let topic =
-                if path.starts_with("/conversations") {
+                if path == "/admin/analytics/devices" || path == "/admin/users/:id/devices" {
+                    "devices_analytics"
+                } else if path.starts_with("/conversations") {
                     "conversations"
                 } else if path.starts_with("/writing_templates") || path.starts_with("/admin/writing_templates") {
                     "writing_templates"
@@ -322,7 +326,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -340,7 +344,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -358,6 +362,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "writing_nudges" => include_str!("../doc/writing_nudges.md"),
         "writing_templates" => include_str!("../doc/writing_templates.md"),
         "conversations" => include_str!("../doc/conversations.md"),
+        "devices_analytics" => include_str!("../doc/devices_analytics.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
         "post_notifications" => include_str!("../doc/post_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
@@ -407,6 +412,10 @@ mod tests {
         assert!(paths["/admin/analytics/users"].get("get").is_some());
         assert!(paths["/admin/analytics/user_segments"].get("get").is_some());
         assert!(paths["/admin/analytics/writing_nudges"].get("get").is_some());
+        for path in ["/admin/analytics/devices", "/admin/users/{id}/devices"] {
+            assert_eq!(paths[path]["get"]["externalDocs"]["url"], "/api/docs?topic=devices_analytics");
+            assert!(paths[path]["get"]["description"].as_str().unwrap().contains("Admin only"));
+        }
         assert!(paths["/writing_templates"].get("get").is_some());
         assert!(paths["/writing_templates/{id}"].get("get").is_some());
         assert!(paths["/admin/writing_templates"].get("post").is_some());

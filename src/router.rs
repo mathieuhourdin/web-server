@@ -137,6 +137,7 @@ pub fn create_router() -> Router {
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
     let admin_analytics_router = Router::new()
+        .api_route("/admin/analytics", "/devices", get(user::get_admin_device_analytics_route))
         .api_route(
             "/admin/analytics",
             "/writing_nudges",
@@ -202,6 +203,7 @@ pub fn create_router() -> Router {
         )
         .nest("/analytics", admin_analytics_router)
         .api_route("/admin", "/users", get(user::get_admin_users_route))
+        .api_route("/admin", "/users/:id/devices", get(user::get_admin_user_devices_route))
         .api_route(
             "/admin",
             "/users/:id/ai_features",
