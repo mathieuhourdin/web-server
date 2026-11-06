@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::db::DbPool;
 use crate::entities_v2::{
+    asset::Asset,
     error::{ErrorType, PpdcError},
     relationship::{Relationship, RelationshipStatus},
     user::{User, UserPrincipalType},
@@ -401,6 +402,12 @@ impl TraceMention {
             .map(|user| (user.id, user))
             .collect::<HashMap<_, _>>();
 
+        let profile_asset_ids = summaries_by_user_id
+            .values()
+            .filter_map(|user| user.profile_picture_asset_id)
+            .collect::<Vec<_>>();
+        let profile_urls = Asset::find_public_urls_by_ids(&profile_asset_ids, pool)?;
+
         let mut mentions_by_trace_id = HashMap::<Uuid, Vec<TraceMentionUser>>::new();
         for (trace_id, user_id, allows_reshare, _) in rows {
             if let Some(user) = summaries_by_user_id.get(&user_id) {
@@ -411,7 +418,10 @@ impl TraceMention {
                         user_id,
                         handle: user.handle.clone(),
                         display_name: user.display_name(),
-                        profile_picture_display_url: user.profile_picture_display_url(pool),
+                        profile_picture_display_url: user
+                            .profile_picture_asset_id
+                            .and_then(|id| profile_urls.get(&id).cloned())
+                            .or_else(|| user.profile_picture_url.clone()),
                         allows_reshare,
                     });
             }

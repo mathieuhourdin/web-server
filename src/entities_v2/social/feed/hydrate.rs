@@ -13,6 +13,7 @@ use crate::entities_v2::{
     post_grant::PostGrant,
     source_projection::{load_source_projection_map, SourceProjectionKind},
     trace::TraceContentImage,
+    trace_mention::TraceMention,
     user::User,
     user_post_state::{PostSeenByPreview, UserPostState, SEEN_BY_PREVIEW_LIMIT},
 };
@@ -216,6 +217,14 @@ fn hydrate_feed_candidates(
     let distribution_meta=crate::entities_v2::post::distribution_event::metadata(&rows.iter().filter_map(|r|r.post_id).collect::<Vec<_>>(), &mut conn)?;
     drop(conn);
 
+    let trace_ids = rows
+        .iter()
+        .filter_map(|row| row.source_trace_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mentions_by_trace_id = TraceMention::find_active_users_by_trace_ids(&trace_ids, pool)?;
+
     let image_ids = projections
         .values()
         .filter_map(|p| p.cover_image_asset_id)
@@ -322,6 +331,16 @@ fn hydrate_feed_candidates(
                 translation_message: None,
                 language_code: projection.language_code.clone(),
                 writing_template_id: projection.writing_template_id,
+                // A trace can be present through multiple publications. Don't
+                // consume its mention list when hydrating the first card.
+                mentions: if projection.source_kind == SourceProjectionKind::Trace {
+                    mentions_by_trace_id
+                        .get(&projection.source_id)
+                        .cloned()
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                },
                 plume: Default::default(),
                 original_source_id: projection.original_source_id,
                 original_author_user_id: projection.original_author_user_id,

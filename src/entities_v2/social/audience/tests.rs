@@ -729,6 +729,60 @@ async fn writing_threads_chain_branch_drafts_and_projection_fences() {
     assert_cache(&f);
 }
 
+#[test]
+#[ignore = "Requires an explicitly configured disposable audience_test; synthetic fixtures only"]
+fn feed_mentions_are_batched_active_and_trace_scoped() {
+    use crate::entities_v2::feed::{
+        hydrate::{find_feed_items_paginated, find_my_feed_items_paginated}, model::FeedSourceKind,
+    };
+    use diesel_migrations::{embed_migrations, MigrationHarness};
+    let url=std::env::var("AUDIENCE_TEST_DATABASE_URL").unwrap();
+    assert_eq!(url::Url::parse(&url).unwrap().path(),"/audience_test");
+    const MIGRATIONS: diesel_migrations::EmbeddedMigrations=embed_migrations!();
+    diesel::PgConnection::establish(&url).unwrap().run_pending_migrations(MIGRATIONS).unwrap();
+    let f=Fixture::new();
+    let (trace_a,post_a)=f.publication();
+    let (trace_b,post_b)=f.publication();
+    let (private,_)=f.publication();
+    let document_post=Uuid::new_v4();
+    // Reuse a trace UUID in the other record tables: non-trace cards must not
+    // accidentally inherit mentions merely because their source IDs collide.
+    f.pool.get().unwrap().batch_execute(&format!("UPDATE users SET pseudonymized=TRUE,pseudonym='Synthetic alias',
+        profile_picture_url='https://example.invalid/reader.png' WHERE id='{}';
+        INSERT INTO trace_mentions(trace_id,mentioned_user_id,allows_reshare,removed_at) VALUES
+            ('{trace_a}','{}',TRUE,NULL),('{trace_a}','{}',FALSE,NOW()),
+            ('{trace_b}','{}',FALSE,NULL),('{private}','{}',FALSE,NULL);
+        INSERT INTO albums(id,owner_user_id,title,visibility,completion_status)
+            VALUES('{trace_a}','{}','Synthetic album','PRIVATE','IN_PROGRESS');
+        INSERT INTO documents(id,owner_user_id,document_role,content_source,title)
+            VALUES('{trace_a}','{}','CREATION','REFERENCE_ONLY','Synthetic document');
+        INSERT INTO posts(id,user_id,source_document_id,title,subtitle,content,interaction_type,post_type,status,publishing_date)
+            VALUES('{document_post}','{}','{trace_a}','','','','OUTPUT','IDEA','PUBLISHED',NOW());",
+        f.reader,f.reader,f.stranger,f.reader,f.stranger,f.owner,f.owner,f.owner)).unwrap();
+    for post in [post_a,post_b,document_post] {
+        PostGrant::create_or_update(&Post::find_full(post,&f.pool).unwrap(),f.owner,NewPostGrantDto {
+            grantee_user_id:Some(f.reader),grantee_scope:None,access_level:None,
+        },&f.pool).unwrap();
+    }
+    let (shared,_)=find_feed_items_paginated(f.reader,None,0,20,&f.pool).unwrap();
+    for (id,allows_reshare) in [(trace_a,true),(trace_b,false)] {
+        let item=shared.iter().find(|i|i.source_kind==FeedSourceKind::Trace && i.source_id==id).unwrap();
+        assert_eq!(item.mentions.len(),1);
+        let mention=&item.mentions[0];
+        assert_eq!(mention.user_id,f.reader);
+        assert_eq!(mention.display_name,"Synthetic alias");
+        assert_eq!(mention.profile_picture_display_url.as_deref(),Some("https://example.invalid/reader.png"));
+        assert_eq!(mention.allows_reshare,allows_reshare);
+        assert_eq!(serde_json::to_value(item).unwrap()["mentions"][0]["user_id"],f.reader.to_string());
+    }
+    assert!(!shared.iter().any(|i|i.source_kind==FeedSourceKind::Trace && i.source_id==private));
+    assert!(shared.iter().find(|i|i.source_kind==FeedSourceKind::Document).unwrap().mentions.is_empty());
+    let (own,_)=find_my_feed_items_paginated(f.owner,None,0,20,&f.pool).unwrap();
+    assert_eq!(own.iter().find(|i|i.source_kind==FeedSourceKind::Trace && i.source_id==private).unwrap().mentions[0].user_id,f.stranger);
+    let album=own.iter().find(|i|i.source_kind==FeedSourceKind::Album).unwrap();
+    assert_eq!(serde_json::to_value(album).unwrap()["mentions"],serde_json::json!([]));
+}
+
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable PostgreSQL database"]
 async fn my_feed_batches_seen_previews_and_private_trace_seen_by_is_empty() {

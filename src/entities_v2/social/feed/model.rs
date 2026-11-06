@@ -39,6 +39,7 @@ pub struct FeedItem {
     pub translation_message: Option<crate::entities_v2::message::Message>,
     pub language_code: Option<String>,
     pub writing_template_id: Option<Uuid>,
+    pub mentions: Vec<crate::entities_v2::trace_mention::TraceMentionUser>,
     #[serde(flatten, default)]
     pub plume: crate::entities_v2::trace::plume::PlumeSummary,
     #[serde(skip_serializing_if = "Option::is_none")]

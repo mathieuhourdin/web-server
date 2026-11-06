@@ -239,8 +239,9 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/writing_threads/:id")=>"Read an owned writing thread, generated title/question/journey summary and cached metrics.",
         ("GET","/writing_threads/:id/traces")=>"List finalized, unarchived member traces in continuation order, with limit/offset pagination. Owner only.",
         ("POST","/writing_threads/:id/generation")=>"Queue generation of a writing thread's display information, subject to AI consent and quota.",
-        ("GET","/feed")=>"Read accessible feed items; publication notification suppression does not remove items from this feed.",
-        ("GET","/me/feed")=>"Read the caller's own feed with batched seen-by previews. Optional sharing=shared|private filters finalized traces by current exposure and excludes album cards; omission preserves the combined feed.",
+        ("GET","/feed")=>"Read accessible feed items with batched active trace mentions (user identity/avatar and allows_reshare); non-trace cards have mentions=[]. Publication notification suppression does not remove items from this feed.",
+        ("GET","/posts/feed")=>"Alias of GET /feed, including batched active trace mentions and empty mention lists for other card kinds.",
+        ("GET","/me/feed")=>"Read the caller's own feed with batched active trace mentions and seen-by previews. Optional sharing=shared|private filters finalized traces by current exposure and excludes album cards; omission preserves the combined feed. Non-trace cards have mentions=[].",
         ("GET","/me/traces/export")=>"Download owned traces as md, txt or json. Optional journal_ids is a comma-separated list of up to 100 owned journal UUIDs; optional from/to dates are inclusive. Omission exports all journals.",
         ("POST","/me/wal")=>"Append raw input to today's Flux/WAL and reschedule automatic compilation for five minutes after this append. Returns automation.scheduled_for.",
         ("GET","/me/wal")=>"Read today's Flux/WAL, including its persisted compilation schedule, without replacing previous days.",
@@ -323,6 +324,9 @@ pub async fn schema() -> Json<Value> {
             if path.contains("traces") || path.ends_with("/feed") || path == "/feed" {
                 operation["x-related-contracts"] = json!(["/api/docs?topic=trace_translations"]);
             }
+            if matches!(path.as_str(), "/feed" | "/posts/feed" | "/me/feed") {
+                operation["x-related-contracts"] = json!(["/api/docs?topic=trace_translations", "/api/docs?topic=feed_mentions"]);
+            }
             if path == "/users/:id" {
                 operation["x-related-contracts"] = json!(["/api/docs?topic=mentor_feedback_style"]);
             }
@@ -332,7 +336,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style","feed_mentions"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -350,7 +354,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style","feed_mentions"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -370,6 +374,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "conversations" => include_str!("../doc/conversations.md"),
         "devices_analytics" => include_str!("../doc/devices_analytics.md"),
         "mentor_feedback_style" => include_str!("../doc/mentor_feedback_style.md"),
+        "feed_mentions" => include_str!("../doc/feed_mentions.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),
         "post_notifications" => include_str!("../doc/post_notifications.md"),
         "trace_translations" => include_str!("../doc/trace_translation_messages.md"),
