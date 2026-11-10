@@ -802,6 +802,9 @@ pub fn create_router() -> Router {
         .api_route("/conversations","/:id/members",get(conversation::routes::members).post(conversation::routes::add_members))
         .api_route("/conversations","/:id/members/:user_id",patch(conversation::routes::patch_member).delete(conversation::routes::remove_member))
         .api_route("/conversations","/:id/messages",get(conversation::routes::messages).post(conversation::routes::send))
+        .api_route("/conversations","/:id/images",post(conversation::images::upload).layer(DefaultBodyLimit::max(6*1024*1024)))
+        .api_route("/conversations","/:id/images/:image_id/url",get(conversation::images::download_url))
+        .api_route("/conversations","/:id/images/:image_id",delete(conversation::images::cancel))
         .api_route("/conversations","/:id/read",put(conversation::routes::read))
         .layer(from_fn(sessions_service::auth_middleware_custom));
 
@@ -957,6 +960,7 @@ pub fn create_router() -> Router {
         .api_route("/feed", "/", get(feed::get_feed_route))
         .layer(from_fn(sessions_service::auth_middleware_custom));
     let me_router = Router::new()
+        .api_route("/me", "/conversation_events", get(conversation::events::routes::stream))
         .api_route(
             "/me",
             "/writing_nudges/current",

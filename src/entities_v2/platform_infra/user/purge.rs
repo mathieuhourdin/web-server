@@ -41,6 +41,7 @@ pub async fn purge_user(
     for asset in &assets {
         asset.delete_storage_objects().await?;
     }
+    crate::entities_v2::social::conversation::images::purge_owned(user_id,pool).await?;
 
     let mut conn = pool.get()?;
     conn.transaction::<_, diesel::result::Error, _>(|conn| {

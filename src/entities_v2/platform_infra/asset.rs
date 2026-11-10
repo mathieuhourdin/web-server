@@ -490,35 +490,7 @@ impl Asset {
         &self,
         expires_in_seconds: u64,
     ) -> Result<(String, NaiveDateTime), PpdcError> {
-        let signer = CredentialsBuilder::default()
-            .build_signer()
-            .map_err(|err| {
-                PpdcError::new(
-                    500,
-                    ErrorType::InternalError,
-                    format!("Failed to build GCP signer: {}", err),
-                )
-            })?;
-
-        let url = SignedUrlBuilder::for_object(
-            format!("projects/_/buckets/{}", self.bucket),
-            self.object_key.clone(),
-        )
-        .with_method(Method::GET)
-        .with_expiration(Duration::from_secs(expires_in_seconds))
-        .sign_with(&signer)
-        .await
-        .map_err(|err| {
-            PpdcError::new(
-                500,
-                ErrorType::InternalError,
-                format!("Failed to sign asset URL: {}", err),
-            )
-        })?;
-
-        let expires_at =
-            Utc::now().naive_utc() + ChronoDuration::seconds(expires_in_seconds as i64);
-        Ok((url, expires_at))
+        sign_gcs_read_url(&self.bucket, &self.object_key, expires_in_seconds).await
     }
 
     pub fn public_url(&self) -> Option<String> {
@@ -555,6 +527,42 @@ impl Asset {
             .map(tuple_to_asset)
             .collect()
     }
+}
+
+/// Shared storage primitive; authorization remains in each resource's domain.
+pub(crate) async fn sign_gcs_read_url(
+    bucket: &str,
+    object_key: &str,
+    expires_in_seconds: u64,
+) -> Result<(String, NaiveDateTime), PpdcError> {
+    let signer = CredentialsBuilder::default()
+        .build_signer()
+        .map_err(|err| {
+            PpdcError::new(
+                500,
+                ErrorType::InternalError,
+                format!("Failed to build GCP signer: {}", err),
+            )
+        })?;
+
+    let url = SignedUrlBuilder::for_object(
+        format!("projects/_/buckets/{}", bucket),
+        object_key.to_string(),
+    )
+    .with_method(Method::GET)
+    .with_expiration(Duration::from_secs(expires_in_seconds))
+    .sign_with(&signer)
+    .await
+    .map_err(|err| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            format!("Failed to sign asset URL: {}", err),
+        )
+    })?;
+
+    let expires_at = Utc::now().naive_utc() + ChronoDuration::seconds(expires_in_seconds as i64);
+    Ok((url, expires_at))
 }
 
 impl NewAsset {
@@ -736,6 +744,25 @@ async fn upload_object_to_gcs(
     mime_type: &str,
     content_bytes: Vec<u8>,
 ) -> Result<(), PpdcError> {
+    write_gcs_object(bucket_name, object_key, mime_type, content_bytes, false).await
+}
+
+pub(crate) async fn upload_conversation_image_to_gcs(
+    bucket_name: &str,
+    object_key: &str,
+    mime_type: &str,
+    content_bytes: Vec<u8>,
+) -> Result<(), PpdcError> {
+    write_gcs_object(bucket_name, object_key, mime_type, content_bytes, true).await
+}
+
+async fn write_gcs_object(
+    bucket_name: &str,
+    object_key: &str,
+    mime_type: &str,
+    content_bytes: Vec<u8>,
+    temporary: bool,
+) -> Result<(), PpdcError> {
     let storage = Storage::builder().build().await.map_err(|err| {
         PpdcError::new(
             500,
@@ -744,22 +771,25 @@ async fn upload_object_to_gcs(
         )
     })?;
 
-    storage
+    let mut request = storage
         .write_object(
             format!("projects/_/buckets/{}", bucket_name),
             object_key.to_string(),
             Bytes::from(content_bytes),
         )
-        .set_content_type(mime_type.to_string())
-        .send_buffered()
-        .await
-        .map_err(|err| {
-            PpdcError::new(
-                500,
-                ErrorType::InternalError,
-                format!("Failed to upload to GCS: {}", err),
-            )
-        })?;
+        .set_content_type(mime_type.to_string());
+    if temporary {
+        request = request
+            .set_cache_control("private, no-store")
+            .set_if_generation_match(0);
+    }
+    request.send_buffered().await.map_err(|err| {
+        PpdcError::new(
+            500,
+            ErrorType::InternalError,
+            format!("Failed to upload to GCS: {}", err),
+        )
+    })?;
 
     Ok(())
 }
@@ -802,7 +832,10 @@ pub async fn download_asset_bytes_from_gcs(
     Ok(bytes)
 }
 
-async fn delete_object_from_gcs(bucket_name: &str, object_key: &str) -> Result<(), PpdcError> {
+pub(crate) async fn delete_object_from_gcs(
+    bucket_name: &str,
+    object_key: &str,
+) -> Result<(), PpdcError> {
     let storage = StorageControl::builder().build().await.map_err(|err| {
         PpdcError::new(
             500,
@@ -811,21 +844,29 @@ async fn delete_object_from_gcs(bucket_name: &str, object_key: &str) -> Result<(
         )
     })?;
 
-    storage
+    let result = storage
         .delete_object()
         .set_bucket(format!("projects/_/buckets/{}", bucket_name))
         .set_object(object_key.to_string())
         .send()
-        .await
-        .map_err(|err| {
+        .await;
+    match result {
+        Ok(_) => Ok(()),
+        // Lifecycle deletion may already have removed temporary objects.
+        Err(err)
+            if err.http_status_code() == Some(404)
+                || err.status().is_some_and(|s| s.code.name() == "NOT_FOUND") =>
+        {
+            Ok(())
+        }
+        Err(err) => Err({
             PpdcError::new(
                 500,
                 ErrorType::InternalError,
                 format!("Failed to delete GCS object: {}", err),
             )
-        })?;
-
-    Ok(())
+        }),
+    }
 }
 
 pub async fn upload_asset_for_user(

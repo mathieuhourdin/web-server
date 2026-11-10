@@ -119,7 +119,7 @@ pub async fn patch_member(
 ) -> Result<StatusCode, PpdcError> {
     let user = actor(&s)?;
     blocking(move || {
-        service::change_member(user, id, target, Some(input.role), &pool)?;
+        service::patch_member(user, id, target, input, &pool)?;
         Ok(StatusCode::NO_CONTENT)
     })
     .await
@@ -193,6 +193,7 @@ pub async fn send(
                 message_type: input.message_type,
                 title: input.title,
                 content: input.content,
+                image_attachment_ids: input.image_attachment_ids,
                 attachment_type: input.attachment_type,
                 attachment: input.attachment,
                 writing_thread_id: input.writing_thread_id,

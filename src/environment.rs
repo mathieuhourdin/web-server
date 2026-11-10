@@ -107,6 +107,14 @@ pub fn get_gcs_bucket_name() -> String {
     std::env::var("GCS_BUCKET_NAME").expect("GCS_BUCKET_NAME should be provided")
 }
 
+pub fn get_conversation_images_bucket() -> Option<String> {
+    dotenv().ok();
+    std::env::var("GCS_CONVERSATION_IMAGES_BUCKET")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub fn get_gcs_public_assets_bucket_name() -> Option<String> {
     dotenv().ok();
     std::env::var("GCS_PUBLIC_ASSETS_BUCKET_NAME")

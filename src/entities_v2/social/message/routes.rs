@@ -527,6 +527,14 @@ pub async fn post_message_route(
         None if recipient_is_service_mentor => MessageType::Question,
         None => MessageType::General,
     };
+    crate::entities_v2::social::conversation::images::validate_ids(&payload.image_attachment_ids)?;
+    if !payload.image_attachment_ids.is_empty()
+        && (recipient_is_service_mentor || message_type!=MessageType::General || payload.attachment.is_some()) {
+        return Err(PpdcError::new(400,ErrorType::ApiError,"Images are only supported on ordinary human messages".into()));
+    }
+    if !payload.image_attachment_ids.is_empty() && payload.content.chars().count()>50_000 {
+        return Err(PpdcError::new(400,ErrorType::ApiError,"Message content must not exceed 50000 characters".into()));
+    }
 
     if message_type == MessageType::JournalFeedbackRequest {
         return Err(PpdcError::new(
@@ -803,7 +811,7 @@ pub async fn post_message_route(
         suggested_actions: Vec::new(),
         metadata: None,
     }
-    .create(&pool)?;
+    .create_with_images(&payload.image_attachment_ids, &pool)?;
     notification::spawn_message_received_notification(message.clone(), pool.clone());
     Ok(Json(MessageCreationResponse {
         question_message: message,

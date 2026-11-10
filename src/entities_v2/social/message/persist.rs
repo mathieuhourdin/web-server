@@ -274,6 +274,17 @@ impl Message {
 }
 
 impl NewMessage {
+    pub fn create_with_images(self, image_ids: &[Uuid], pool: &DbPool) -> Result<Message, PpdcError> {
+        let mut conn=pool.get()?;
+        let id=conn.transaction::<_,PpdcError,_>(|conn| {
+            let id=self.insert(conn)?;
+            crate::entities_v2::social::conversation::images::bind(id,image_ids,conn)?;
+            Ok(id)
+        })?;
+        drop(conn);
+        Message::find(id,pool)
+    }
+
     pub fn create(self, pool: &DbPool) -> Result<Message, PpdcError> {
         self.create_with_draft_context(None, pool)
     }

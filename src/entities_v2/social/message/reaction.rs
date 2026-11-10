@@ -188,6 +188,7 @@ impl MessageReaction {
         for message in &mut messages {
             message.reactions = by_message_id.remove(&message.id).unwrap_or_default();
         }
+        crate::entities_v2::social::conversation::images::hydrate(&mut messages, conn)?;
         Ok(messages)
     }
 }

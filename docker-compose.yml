@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "3000:3000"
+    environment:
+      GCS_CONVERSATION_IMAGES_BUCKET: ${GCS_CONVERSATION_IMAGES_BUCKET:-}
     volumes:
       - ./:/usr/src/app
       - ./logs:/usr/src/app/logs

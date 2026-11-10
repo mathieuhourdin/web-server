@@ -1,0 +1,10 @@
+DROP TRIGGER hupo_conversation_access_events ON user_blocks;
+DROP TRIGGER hupo_conversation_events ON conversations;
+DROP TRIGGER hupo_membership_events ON conversation_members;
+DROP TRIGGER hupo_reaction_events ON message_reactions;
+DROP TRIGGER hupo_message_events ON messages;
+DROP FUNCTION hupo_notify_conversation_access_change();
+DROP FUNCTION hupo_notify_conversation_change();
+DROP FUNCTION hupo_notify_membership_change();
+DROP FUNCTION hupo_notify_reaction_change();
+DROP FUNCTION hupo_notify_message_change();

@@ -55,6 +55,11 @@ fn direct(a: Uuid, b: Uuid, text: &str, pool: &DbPool) -> Message {
 
 #[test]
 fn conversation_contract_and_source_update_semantics() {
+    let absent:PatchMember=serde_json::from_value(serde_json::json!({"role":"member"})).unwrap();
+    assert_eq!(absent.nickname,None);
+    let clear:PatchMember=serde_json::from_value(serde_json::json!({"nickname":null})).unwrap();
+    assert_eq!(clear.nickname,Some(None));
+    assert!(clear.role.is_none());
     for (kind, db) in [
         (ConversationKind::Direct, "DIRECT"),
         (ConversationKind::Group, "GROUP"),

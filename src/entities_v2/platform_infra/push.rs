@@ -549,7 +549,8 @@ pub(crate) async fn message_received_notification(
         "hupo_message_type".to_string(),
         message.message_type.to_db().to_ascii_lowercase(),
     );
-    data.insert("message_content".to_string(), message.content.clone());
+    data.insert("message_content".to_string(), message.notification_text());
+    data.insert("message_image_count".to_string(), message.images.len().to_string());
     data.insert(
         "message_timestamp".to_string(),
         message.created_at.and_utc().timestamp_millis().to_string(),
@@ -557,7 +558,7 @@ pub(crate) async fn message_received_notification(
 
     Ok(PushNotification {
         title: sender.display_name(),
-        body: message.content.clone(),
+        body: message.notification_text(),
         data,
         thread_id: Some(message.conversation_id.to_string()),
     })

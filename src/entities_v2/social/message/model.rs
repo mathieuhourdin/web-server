@@ -99,12 +99,20 @@ pub struct Message {
     pub metadata: Option<MessageMetadata>,
     #[serde(default)]
     pub reactions: Vec<MessageReactionSummary>,
+    #[serde(default)]
+    pub images: Vec<crate::entities_v2::social::conversation::images::MessageImage>,
     pub seen_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
 
 impl Message {
+    pub fn notification_text(&self) -> String {
+        if self.content.trim().is_empty() && !self.images.is_empty() {
+            if self.images.len()==1 { "📷 Photo".into() } else { format!("📷 {} photos", self.images.len()) }
+        } else { self.content.clone() }
+    }
+
     pub fn direct_recipient(&self) -> Result<Uuid,crate::entities_v2::error::PpdcError> {
         self.recipient_user_id.ok_or_else(||crate::entities_v2::error::PpdcError::new(
             400,crate::entities_v2::error::ErrorType::ApiError,"This operation requires a direct message".into()))
@@ -131,6 +139,8 @@ pub struct NewMessageDto {
     pub message_type: Option<MessageType>,
     pub title: Option<String>,
     pub content: String,
+    #[serde(default)]
+    pub image_attachment_ids: Vec<Uuid>,
     pub attachment_type: Option<MessageAttachmentType>,
     pub attachment: Option<MessageAttachment>,
     pub writing_thread_id: Option<Uuid>,

@@ -104,6 +104,8 @@ pub(super) struct MembershipRow {
     pub last_read_position: i64,
     #[diesel(sql_type=Nullable<Timestamp>)]
     pub muted_at: Option<NaiveDateTime>,
+    #[diesel(sql_type=Nullable<Text>)]
+    pub nickname: Option<String>,
 }
 #[derive(Debug, Serialize)]
 pub struct MembershipView {
@@ -112,6 +114,7 @@ pub struct MembershipView {
     pub history_start_position: i64,
     pub last_read_position: i64,
     pub muted_at: Option<NaiveDateTime>,
+    pub nickname: Option<String>,
 }
 impl TryFrom<MembershipRow> for MembershipView {
     type Error = PpdcError;
@@ -122,12 +125,14 @@ impl TryFrom<MembershipRow> for MembershipView {
             history_start_position: m.history_start_position,
             last_read_position: m.last_read_position,
             muted_at: m.muted_at,
+            nickname: m.nickname,
         })
     }
 }
 #[derive(Serialize)]
 pub struct MemberView {
     pub user: UserPublicResponse,
+    pub nickname: Option<String>,
     pub role: MemberRole,
     pub joined_at: NaiveDateTime,
 }
@@ -175,7 +180,9 @@ pub struct AddMembers {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PatchMember {
-    pub role: MemberRole,
+    pub role: Option<MemberRole>,
+    #[serde(default, deserialize_with="crate::serde_helpers::double_option")]
+    pub nickname: Option<Option<String>>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -192,6 +199,8 @@ pub struct MessagesQuery {
 #[serde(deny_unknown_fields)]
 pub struct SendMessage {
     pub content: String,
+    #[serde(default)]
+    pub image_attachment_ids: Vec<Uuid>,
     pub title: Option<String>,
     pub reply_to_message_id: Option<Uuid>,
     pub trace_id: Option<Uuid>,

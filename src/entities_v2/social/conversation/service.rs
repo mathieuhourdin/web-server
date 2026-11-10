@@ -163,7 +163,7 @@ fn add_locked(
     for id in ids {
         let member = diesel::sql_query("INSERT INTO conversation_members(conversation_id,user_id,role,history_start_position,last_read_position)
             VALUES($1,$2,'MEMBER',$3,$4) ON CONFLICT(conversation_id,user_id) DO UPDATE
-            SET role='MEMBER',joined_at=NOW(),left_at=NULL,history_start_position=$3,last_read_position=$4,muted_at=NULL
+            SET role='MEMBER',joined_at=NOW(),left_at=NULL,history_start_position=$3,last_read_position=$4,muted_at=NULL,nickname=NULL
             WHERE conversation_members.left_at IS NOT NULL RETURNING *")
             .bind::<SqlUuid,_>(c.id).bind::<SqlUuid,_>(id).bind::<BigInt,_>(c.last_message_position+1)
             .bind::<BigInt,_>(c.last_message_position).get_result::<MembershipRow>(conn).optional()?;
@@ -233,7 +233,10 @@ pub fn change_member(
     role: Option<MemberRole>,
     pool: &DbPool,
 ) -> Result<(), PpdcError> {
-    pool.get()?.transaction(|conn| {
+    pool.get()?.transaction(|conn| change_member_on_connection(actor,id,target,role,conn))
+}
+
+fn change_member_on_connection(actor:Uuid,id:Uuid,target:Uuid,role:Option<MemberRole>,conn:&mut PgConnection)->Result<(),PpdcError> {
         let(c,m)=lock(actor,id,conn)?;
         if c.kind!="GROUP" {return Err(invalid("Direct conversation membership is fixed; use mute instead"));}
         if actor!=target || role.is_some() {group_admin(&c,&m)?;}
@@ -255,6 +258,25 @@ pub fn change_member(
         } else {
             diesel::sql_query("UPDATE conversation_members SET left_at=NOW() WHERE conversation_id=$1 AND user_id=$2")
                 .bind::<SqlUuid,_>(id).bind::<SqlUuid,_>(target).execute(conn)?;
+        }
+        Ok(())
+}
+
+pub fn patch_member(actor:Uuid,id:Uuid,target:Uuid,input:PatchMember,pool:&DbPool)->Result<(),PpdcError> {
+    if input.role.is_none() && input.nickname.is_none() {return Err(invalid("Provide role and/or nickname"));}
+    let nickname=input.nickname.map(|value|value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty()));
+    if nickname.as_ref().and_then(|s|s.as_ref()).is_some_and(|s|s.chars().count()>80 || s.chars().any(char::is_control)) {
+        return Err(invalid("nickname must not exceed 80 characters or contain control characters"));
+    }
+    pool.get()?.transaction::<_,PpdcError,_>(|conn| {
+        lock(actor,id,conn)?;
+        let exists=diesel::sql_query("SELECT user_id AS id FROM conversation_members WHERE conversation_id=$1 AND user_id=$2 AND left_at IS NULL")
+            .bind::<SqlUuid,_>(id).bind::<SqlUuid,_>(target).get_result::<Id>(conn).optional()?;
+        if exists.is_none(){return Err(forbidden());}
+        if let Some(role)=input.role {change_member_on_connection(actor,id,target,Some(role),conn)?;}
+        if let Some(nickname)=nickname {
+            diesel::sql_query("UPDATE conversation_members SET nickname=$3 WHERE conversation_id=$1 AND user_id=$2 AND left_at IS NULL")
+                .bind::<SqlUuid,_>(id).bind::<SqlUuid,_>(target).bind::<Nullable<Text>,_>(nickname).execute(conn)?;
         }
         Ok(())
     })
@@ -307,6 +329,7 @@ fn member_views(
                 r.conversation_id,
                 MemberView {
                     user: response,
+                    nickname: r.nickname,
                     role: MemberRole::from_db(&r.role)?,
                     joined_at: r.joined_at,
                 },
@@ -349,7 +372,7 @@ fn views(
         .bind::<Array<SqlUuid>,_>(&ids).bind::<SqlUuid,_>(user).load::<SummaryRow>(&mut conn)?;
     let own=diesel::sql_query("SELECT * FROM conversation_members WHERE conversation_id=ANY($1) AND user_id=$2 AND left_at IS NULL")
         .bind::<Array<SqlUuid>,_>(&ids).bind::<SqlUuid,_>(user).load::<MembershipRow>(&mut conn)?;
-    let preview=diesel::sql_query("SELECT conversation_id,user_id,role,joined_at,left_at,history_start_position,last_read_position,muted_at
+    let preview=diesel::sql_query("SELECT conversation_id,user_id,role,joined_at,left_at,history_start_position,last_read_position,muted_at,nickname
         FROM (SELECT cm.*,ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY joined_at,user_id) AS n
             FROM conversation_members cm WHERE conversation_id=ANY($1) AND left_at IS NULL) p WHERE n<=4")
         .bind::<Array<SqlUuid>,_>(&ids).load::<MembershipRow>(&mut conn)?;
@@ -575,6 +598,7 @@ pub fn read(
 }
 
 pub fn send(user: Uuid, id: Uuid, input: SendMessage, pool: &DbPool) -> Result<Message, PpdcError> {
+    super::images::validate_ids(&input.image_attachment_ids)?;
     if input
         .message_type
         .is_some_and(|t| t != crate::entities_v2::message::MessageType::General)
@@ -586,7 +610,7 @@ pub fn send(user: Uuid, id: Uuid, input: SendMessage, pool: &DbPool) -> Result<M
     {
         return Err(invalid("Groups currently support ordinary text messages and trace/post links, not mentor requests or attachments"));
     }
-    if input.content.trim().is_empty() || input.content.chars().count() > 50_000 {
+    if (input.content.trim().is_empty() && input.image_attachment_ids.is_empty()) || input.content.chars().count() > 50_000 {
         return Err(invalid(
             "Message content must contain 1 to 50000 characters",
         ));
@@ -632,11 +656,13 @@ pub fn send(user: Uuid, id: Uuid, input: SendMessage, pool: &DbPool) -> Result<M
                 .bind::<SqlUuid,_>(reply).get_result::<Id>(conn)?;
             if target.id!=id {return Err(invalid("Replies must belong to the same conversation"));}
         }
-        Ok(diesel::sql_query("INSERT INTO messages(sender_user_id,conversation_id,message_type,processing_state,title,content,reply_to_message_id,trace_id,post_id)
+        let message_id=diesel::sql_query("INSERT INTO messages(sender_user_id,conversation_id,message_type,processing_state,title,content,reply_to_message_id,trace_id,post_id)
             VALUES($1,$2,'GENERAL','PROCESSED',$3,$4,$5,$6,$7) RETURNING id")
             .bind::<SqlUuid,_>(user).bind::<SqlUuid,_>(id).bind::<Text,_>(input.title.unwrap_or_default()).bind::<Text,_>(input.content)
             .bind::<Nullable<SqlUuid>,_>(input.reply_to_message_id).bind::<Nullable<SqlUuid>,_>(input.trace_id)
-            .bind::<Nullable<SqlUuid>,_>(input.post_id).get_result::<Id>(conn)?.id)
+            .bind::<Nullable<SqlUuid>,_>(input.post_id).get_result::<Id>(conn)?.id;
+        super::images::bind(message_id,&input.image_attachment_ids,conn)?;
+        Ok(message_id)
     })?;
     drop(conn);
     Message::find(message_id, pool)
@@ -659,8 +685,8 @@ pub fn spawn_group_notification(message: Message, pool: DbPool) {
             let recipients=notification_recipients(&message,&pool)?;
             let mut notification=crate::entities_v2::platform_infra::push::message_received_notification(&message,&pool).await?;
             notification.data.insert("conversation_kind".into(),"group".into());
-            notification.body=message.content.chars().take(160).collect();
-            notification.data.insert("message_content".into(),message.content.chars().take(240).collect());
+            notification.body=message.notification_text().chars().take(160).collect();
+            notification.data.insert("message_content".into(),message.notification_text().chars().take(240).collect());
             let row=diesel::sql_query("SELECT * FROM conversations WHERE id=$1")
                 .bind::<SqlUuid,_>(message.conversation_id).get_result::<ConversationRow>(&mut *pool.get()?)?;
             if let Some(title)=row.title {notification.data.insert("conversation_title".into(),title.clone());notification.title=format!("{} · {}",notification.title,title);}

@@ -1,0 +1,8 @@
+[
+  {
+    "origin":["https://app.hupo.fr","http://localhost:5173"],
+    "method":["GET","HEAD"],
+    "responseHeader":["Content-Type","Content-Length","Cache-Control"],
+    "maxAgeSeconds":300
+  }
+]

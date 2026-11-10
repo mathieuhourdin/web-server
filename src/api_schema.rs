@@ -195,14 +195,18 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/writing_templates")=>"List active platform-managed writing starters; paginated, ordered by sort_order/slug/id, optional exact locale filter. Authenticated.",
         ("POST","/conversations")=>"Create a group or get/create the unique direct conversation with a partner. Groups require accepted relationships with the inviter and compatible membership; history starts at joining.",
         ("GET","/conversations")=>"Paginated active conversations with optional q search over titles and other active members' public display names/handles (case/accent-insensitive, max 200 characters). Ordered by sort_at: newest readable processed message date, or the caller's joined_at when none exists. Includes unread counts, participant previews and membership settings.",
+        ("GET","/me/conversation_events")=>"Authenticated best-effort SSE for conversation/message/reaction changes. Starts with resync_required; no persisted event history or Last-Event-ID replay. Message payloads are hydrated for the current caller and enforce membership/history/session access. Keep HTTP writes and background push behavior unchanged; reconnect and resynchronize through normal read APIs.",
         ("GET","/conversations/:id")=>"Read an active conversation and its caller-specific summary. Membership and history boundaries are enforced.",
         ("PATCH","/conversations/:id")=>"Update a group title as an admin and/or mute/unmute notifications for the caller.",
         ("GET","/conversations/:id/members")=>"Paginated current conversation members with public profiles, roles and join dates.",
         ("POST","/conversations/:id/members")=>"Add group members directly as an admin; respects relationships, blocks, sandbox boundaries and since-joining history.",
-        ("PATCH","/conversations/:id/members/:user_id")=>"Promote/demote a group member as an admin; protects the last active admin.",
+        ("PATCH","/conversations/:id/members/:user_id")=>"Set/clear a shared conversation nickname as any active member (nickname string/null, max 80 characters). Optional role changes remain group-admin-only and protect the last active admin. Combined changes are atomic; returns 204.",
         ("DELETE","/conversations/:id/members/:user_id")=>"Leave a group or remove another member as an admin; immediately revokes conversation and message access.",
         ("GET","/conversations/:id/messages")=>"Read visible processed messages newest-position-first; use before_position for pagination, not offset.",
-        ("POST","/conversations/:id/messages")=>"Send one message to a conversation. Groups support text/replies/trace-post links; direct chats preserve mentor workflows. Returns message and optional pending_reply_message.",
+        ("POST","/conversations/:id/messages")=>"Send text/replies/trace-post links and up to four image_attachment_ids to a human direct/group conversation; image-only messages may use empty content. Direct chats preserve mentor workflows, but mentor images are not supported. Returns message (including images metadata) and optional pending_reply_message.",
+        ("POST","/conversations/:id/images")=>"Upload one temporary JPEG/PNG/WebP through the API (multipart file, 5 MiB maximum). Human conversation members only. Returns image metadata; sending subsequently claims its ID atomically. Remote lifetime is 45 days; no permanent Asset is created.",
+        ("GET","/conversations/:id/images/:image_id/url")=>"Get a private download URL valid for at most five minutes and never beyond retention. Requires current access to the image's sent message and its joining-history scope; expired images return 410 after authorization.",
+        ("DELETE","/conversations/:id/images/:image_id")=>"Cancel an owned unsent conversation image and delete its storage object. Sent images cannot be cancelled; already-cancelled uploads can be retried. Returns 204.",
         ("PUT","/conversations/:id/read")=>"Advance the caller's read cursor monotonically through a visible conversation position; fetching alone does not mark messages read.",
         ("GET","/writing_templates/:id")=>"Retrieve a writing template by UUID, including inactive starters referenced by existing traces. Authenticated.",
         ("GET","/admin/writing_templates")=>"List active and inactive writing templates; optional locale and is_active filters. Admin only.",
@@ -280,7 +284,7 @@ pub async fn schema() -> Json<Value> {
             let topic =
                 if path == "/admin/analytics/devices" || path == "/admin/users/:id/devices" {
                     "devices_analytics"
-                } else if path.starts_with("/conversations") {
+                } else if path.starts_with("/conversations") || path == "/me/conversation_events" {
                     "conversations"
                 } else if path.starts_with("/writing_templates") || path.starts_with("/admin/writing_templates") {
                     "writing_templates"
@@ -321,6 +325,9 @@ pub async fn schema() -> Json<Value> {
                 "x-delegated-agent-allowed":scope.is_some() || matches!(path.as_str(),"/api/schema"|"/api/docs"|"/me/capabilities"),
                 "externalDocs":{"url":format!("/api/docs?topic={topic}"),"description":"Detailed feature contract"}
             });
+            if path == "/me/conversation_events" {
+                operation["responses"]["200"]=json!({"description":"Best-effort SSE stream. Always starts with resync_required; authenticated reconnection and API resynchronization are required, with no event replay.","content":{"text/event-stream":{"schema":{"type":"string"}}}});
+            }
             if path.contains("traces") || path.ends_with("/feed") || path == "/feed" {
                 operation["x-related-contracts"] = json!(["/api/docs?topic=trace_translations"]);
             }
@@ -433,6 +440,7 @@ mod tests {
         assert!(paths["/admin/writing_templates"].get("post").is_some());
         assert!(paths["/admin/writing_templates/{id}"].get("patch").is_some());
         assert!(paths["/conversations"].get("post").is_some());
+        assert_eq!(paths["/me/conversation_events"]["get"]["externalDocs"]["url"], "/api/docs?topic=conversations");
         assert!(paths["/conversations/{id}/messages"].get("get").is_some());
         assert!(paths["/conversations/{id}/members/{user_id}"].get("delete").is_some());
         assert!(paths["/conversations/{id}/read"].get("put").is_some());

@@ -124,6 +124,7 @@ fn tuple_to_message(row: MessageTuple) -> Message {
         suggested_actions,
         metadata,
         reactions: Vec::new(),
+        images: Vec::new(),
         seen_at,
         created_at,
         updated_at,
@@ -230,9 +231,11 @@ impl Message {
             ))
             .first::<MessageTuple>(&mut conn)
             .optional()?;
-        row.map(tuple_to_message).ok_or_else(|| {
+        let mut message = row.map(tuple_to_message).ok_or_else(|| {
             PpdcError::new(404, ErrorType::ApiError, "Message not found".to_string())
-        })
+        })?;
+        crate::entities_v2::social::conversation::images::hydrate(std::slice::from_mut(&mut message), &mut conn)?;
+        Ok(message)
     }
 
     /// Builds the chat-screen conversation list for `viewer_user_id`: one entry per

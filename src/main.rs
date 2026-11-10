@@ -12,6 +12,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut conn = pool.get()?;
     conn.run_pending_migrations(MIGRATIONS)?;
+    drop(conn);
+
+    web_server::entities_v2::social::conversation::events::start();
 
     web_server::entities_v2::wal::start_carryover_worker(pool.clone());
     web_server::entities_v2::wal::start_compilation_worker(pool.clone());
