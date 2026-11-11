@@ -56,6 +56,8 @@ pub struct User {
     pub profile_picture_url: Option<String>,
     pub profile_picture_asset_id: Option<Uuid>,
     pub is_platform_user: bool,
+    #[serde(default, skip_serializing)]
+    pub is_test_account: bool,
     pub biography: Option<String>,
     pub pseudonym: String,
     pub pseudonymized: bool,
@@ -1340,7 +1342,9 @@ pub fn find_similar_users(
         SELECT id, first_name, last_name,
                similarity(first_name || ' ' || last_name, $1) AS score
         FROM users
-        WHERE (first_name || ' ' || last_name) % $1
+        WHERE NOT is_test_account
+          AND NOT EXISTS(SELECT 1 FROM automation_demo_users d WHERE d.user_id=users.id)
+          AND (first_name || ' ' || last_name) % $1
         ORDER BY score DESC
         LIMIT {}
         ",
@@ -1389,6 +1393,7 @@ mod tests {
             profile_picture_url: None,
             profile_picture_asset_id: None,
             is_platform_user: false,
+            is_test_account: false,
             biography: Some("Biography".to_string()),
             pseudonym: "Analytical Poet".to_string(),
             pseudonymized,

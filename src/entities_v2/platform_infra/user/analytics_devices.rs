@@ -114,9 +114,8 @@ fn load_analytics(
     // One statement gives every breakdown the same snapshot. Active means a recent
     // authenticated request on a registered, non-revoked device, not an app open.
     let rows = diesel::sql_query("WITH eligible_users AS (
-        SELECT u.id FROM users u
+        SELECT u.id FROM analytics_users u
         WHERE u.principal_type='HUMAN' AND u.is_platform_user=TRUE
-          AND NOT EXISTS(SELECT 1 FROM automation_demo_users a WHERE a.user_id=u.id)
     ), active_devices AS (
         SELECT d.user_id,
             CASE d.device_type WHEN 'IOS' THEN 'ios' WHEN 'ANDROID' THEN 'android'

@@ -539,6 +539,7 @@ diesel::table! {
         last_distribution_event_id -> Nullable<Uuid>,
         last_distribution_at -> Nullable<Timestamp>,
         publication_channel_id -> Nullable<Uuid>,
+        ordering_date -> Nullable<Timestamp>,
     }
 }
 
@@ -890,6 +891,7 @@ diesel::table! {
         wal_content -> Text,
         wal_compiled -> Jsonb,
         mentor_feedback_style -> Text,
+        is_test_account -> Bool,
     }
 }
 

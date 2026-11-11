@@ -53,6 +53,29 @@ async fn user_publications_does_not_disclose_other_users_blog_identities() {
     }
 }
 
+#[test]
+fn publication_ordering_patch_distinguishes_missing_null_and_timestamp() {
+    use serde_json::json;
+    let input: PatchPublicationInput = serde_json::from_value(json!({})).unwrap();
+    assert!(input.ordering_date.is_none());
+    let input: PatchPublicationInput =
+        serde_json::from_value(json!({"ordering_date":null})).unwrap();
+    assert_eq!(input.ordering_date, Some(None));
+    let input: PatchPublicationInput =
+        serde_json::from_value(json!({"ordering_date":"2099-01-01T03:00:00+03:00"})).unwrap();
+    assert_eq!(
+        input.ordering_date.unwrap().unwrap().to_rfc3339(),
+        "2099-01-01T00:00:00+00:00"
+    );
+    assert!(
+        serde_json::from_value::<PatchPublicationInput>(json!({"ordering_date":"not a date"}))
+            .is_err()
+    );
+    assert!(
+        serde_json::from_value::<PatchPublicationInput>(json!({"publishing_date":null})).is_err()
+    );
+}
+
 #[tokio::test]
 #[ignore = "Requires an explicitly configured disposable blog_test PostgreSQL database"]
 async fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
@@ -286,6 +309,146 @@ async fn live_publications_are_isolated_and_subjects_do_not_publish_private_item
     let items = subject_items(&blog, subject.id, page, &pool).unwrap();
     assert_eq!(items.total, 1);
     assert_eq!(items.items[0].source_trace_id, Some(trace));
+    // Editorial placement is per blog, not a new publication/distribution.
+    let before = posts(&blog, true, page, &pool)
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|p| p.id)
+        .collect::<Vec<_>>();
+    let all_before = owner_publications(owner, page, &pool)
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|p| p.publication.id)
+        .collect::<Vec<_>>();
+    assert_eq!(before[0], subject.id);
+    #[derive(QueryableByName)]
+    struct Events {
+        #[diesel(sql_type=diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let events = || {
+        diesel::sql_query(
+            "SELECT count(*)::bigint AS count FROM post_distribution_events WHERE post_id=$1",
+        )
+        .bind::<SqlUuid, _>(published.id)
+        .get_result::<Events>(&mut pool.get().unwrap())
+        .unwrap()
+        .count
+    };
+    let event_count = events();
+    let ordering_input = || {
+        serde_json::from_value::<PatchPublicationInput>(
+            serde_json::json!({"ordering_date":"2099-01-01T03:00:00+03:00"}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        patch_publication(&other, published.id, ordering_input(), &pool)
+            .err()
+            .unwrap()
+            .status_code,
+        404
+    );
+    let mut outsider = crate::entities_v2::session::Session::anonymous();
+    outsider.user_id = Some(Uuid::new_v4());
+    assert!(super::routes::patch_publication(
+        axum::Extension(pool.clone()),
+        axum::Extension(outsider),
+        axum::extract::Path((blog.id, published.id)),
+        axum::Json(ordering_input())
+    )
+    .await
+    .is_err());
+    let reordered = patch_publication(&blog, published.id, ordering_input(), &pool).unwrap();
+    assert!(reordered.ordering_date.is_some());
+    assert_eq!(reordered.publishing_date, published.publishing_date);
+    assert_eq!(
+        reordered.last_distribution_at,
+        published.last_distribution_at
+    );
+    assert_eq!(
+        reordered.last_distribution_event_id,
+        published.last_distribution_event_id
+    );
+    assert_eq!(reordered.short_code, published.short_code);
+    assert_eq!(events(), event_count);
+    for anonymous in [false, true] {
+        assert_eq!(
+            posts(&blog, anonymous, page, &pool).unwrap().items[0].id,
+            published.id
+        );
+    }
+    assert_eq!(
+        posts(
+            &blog,
+            true,
+            ValidatedPagination {
+                offset: 1,
+                limit: 1
+            },
+            &pool
+        )
+        .unwrap()
+        .items[0]
+            .id,
+        subject.id
+    );
+    assert!(post(&other, elsewhere.id, false, &pool)
+        .unwrap()
+        .ordering_date
+        .is_none());
+    assert_eq!(
+        owner_publications(owner, page, &pool)
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|p| p.publication.id)
+            .collect::<Vec<_>>(),
+        all_before
+    );
+    assert_eq!(
+        patch_publication(
+            &blog,
+            published.id,
+            serde_json::from_value(serde_json::json!({})).unwrap(),
+            &pool
+        )
+        .unwrap()
+        .ordering_date,
+        reordered.ordering_date
+    );
+    assert_eq!(
+        publish(&blog, trace, false, &pool).unwrap().ordering_date,
+        reordered.ordering_date
+    );
+    let cleared = patch_publication(
+        &blog,
+        published.id,
+        serde_json::from_value(serde_json::json!({"ordering_date":null})).unwrap(),
+        &pool,
+    )
+    .unwrap();
+    assert!(cleared.ordering_date.is_none());
+    assert_eq!(
+        posts(&blog, true, page, &pool)
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>(),
+        before
+    );
+    assert_eq!(events(), event_count);
+    assert!(pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE posts SET ordering_date=NOW() WHERE id='{}'",
+            social.id
+        ))
+        .is_err());
     pool.get()
         .unwrap()
         .batch_execute(&format!(
@@ -352,6 +515,19 @@ async fn live_publications_are_isolated_and_subjects_do_not_publish_private_item
     assert!(post(&other, elsewhere.id, true, &pool).is_err());
     assert!(super::model::short_target(&elsewhere.short_code, &pool).is_err());
     assert!(publish(&other, trace, false, &pool).is_err());
+    pool.get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE albums SET completion_status='ARCHIVED' WHERE id='{album}'"
+        ))
+        .unwrap();
+    let status = post(&blog, subject.id, false, &pool).unwrap().status;
+    assert_eq!(
+        patch_publication(&blog, subject.id, ordering_input(), &pool)
+            .unwrap()
+            .status,
+        status
+    );
     pool.get()
         .unwrap()
         .batch_execute(&format!("DELETE FROM users WHERE id='{owner}'"))

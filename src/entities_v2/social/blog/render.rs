@@ -88,9 +88,13 @@ fn page(
     } else {
         "summary"
     };
-    let image = image
-        .map(|u| format!("<meta property=\"og:image\" content=\"{}\"><meta name=\"twitter:image\" content=\"{}\">", escape(&u),escape(&u)))
-        .unwrap_or_default();
+    let logo_metadata = if image.is_none() {
+        "<meta property=\"og:image:type\" content=\"image/png\"><meta property=\"og:image:width\" content=\"1024\"><meta property=\"og:image:height\" content=\"1024\"><meta property=\"og:image:alt\" content=\"Logo Hupo\"><meta name=\"twitter:image:alt\" content=\"Logo Hupo\">"
+    } else {
+        ""
+    };
+    let preview_url = image.unwrap_or_else(|| format!("{}/_assets/hupo.png", base()));
+    let image = format!("<meta property=\"og:image\" content=\"{}\"><meta name=\"twitter:image\" content=\"{}\">{logo_metadata}", escape(&preview_url), escape(&preview_url));
     let og_type = if url == blog_url(blog) {
         "website"
     } else {
@@ -231,9 +235,7 @@ pub fn article(
     let image = post
         .image_asset_id
         .map(|id| image_url(blog, Some(post), id));
-    let preview_image = image
-        .clone()
-        .or_else(|| blog.image_asset_id.map(|id| image_url(blog, None, id)));
+    let preview_image = image.clone();
     let cover = image
         .as_ref()
         .map(|u| format!("<img src=\"{}\" alt=\"\">", escape(u)))
@@ -289,7 +291,7 @@ mod tests {
             created_at: now,
             updated_at: now,
         };
-        let post = super::Publication {
+        let mut post = super::Publication {
             id: uuid::Uuid::new_v4(),
             short_code: "k7Mx2Qa9".into(),
             publication_channel_id: blog.id,
@@ -299,6 +301,7 @@ mod tests {
             publishing_date: Some(now),
             last_distribution_event_id: None,
             last_distribution_at: None,
+            ordering_date: None,
             title: "A \"quoted\" title".into(),
             subtitle: "".into(),
             content: "## Opening\n\nA **clear** thought.".into(),
@@ -352,10 +355,7 @@ mod tests {
             meta("property", "og:url"),
             Some(super::post_url(&blog, &post))
         );
-        assert_eq!(
-            meta("name", "twitter:card").as_deref(),
-            Some("summary_large_image")
-        );
+        assert_eq!(meta("name", "twitter:card").as_deref(), Some("summary"));
         assert_eq!(meta("name", "twitter:title"), meta("property", "og:title"));
         assert_eq!(
             meta("name", "twitter:description"),
@@ -364,8 +364,16 @@ mod tests {
         assert_eq!(meta("name", "twitter:image"), meta("property", "og:image"));
         assert_eq!(
             meta("name", "twitter:image"),
-            Some(super::image_url(&blog, None, blog.image_asset_id.unwrap()))
+            Some(format!("{}/_assets/hupo.png", super::base()))
         );
+        assert_eq!(
+            meta("property", "og:image:type").as_deref(),
+            Some("image/png")
+        );
+        assert_eq!(meta("property", "og:image:width").as_deref(), Some("1024"));
+        // A preview fallback is not inserted as a cover in the article body.
+        let cover = scraper::Selector::parse("article > img").unwrap();
+        assert!(document.select(&cover).next().is_none());
         let selector = scraper::Selector::parse("link[rel='canonical']").unwrap();
         assert_eq!(
             document
@@ -383,7 +391,23 @@ mod tests {
             .unwrap();
         let html = std::str::from_utf8(&bytes).unwrap();
         assert!(html.contains("name=\"twitter:card\" content=\"summary\""));
-        assert!(!html.contains("name=\"twitter:image\""));
+        assert!(html.contains(&format!(
+            "name=\"twitter:image\" content=\"{}/_assets/hupo.png\"",
+            super::base()
+        )));
+
+        post.image_asset_id = Some(uuid::Uuid::new_v4());
+        let response = super::article(&blog, &post, None);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let html = std::str::from_utf8(&bytes).unwrap();
+        assert!(html.contains("name=\"twitter:card\" content=\"summary_large_image\""));
+        assert!(html.contains(&format!(
+            "name=\"twitter:image\" content=\"{}\"",
+            super::image_url(&blog, Some(&post), post.image_asset_id.unwrap())
+        )));
+        assert!(!html.contains("/_assets/hupo.png"));
     }
 
     #[test]
@@ -499,6 +523,10 @@ mod tests {
         let html = std::str::from_utf8(&body).unwrap();
         assert!(html.contains("rel=\"icon\" type=\"image/svg+xml\""));
         assert_eq!(html.matches("/_assets/hupo.svg").count(), 2);
+        assert!(html.contains(&format!(
+            "property=\"og:image\" content=\"{}/_assets/hupo.png\"",
+            super::base()
+        )));
         assert!(html.contains("<footer><a href=\"https://hupo.fr\">"));
         let document = scraper::Html::parse_document(html);
         let selector = scraper::Selector::parse("header a.hupo-home").unwrap();

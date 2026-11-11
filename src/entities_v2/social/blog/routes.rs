@@ -1,5 +1,7 @@
 use super::{
-    model::{self, Blog, BlogInput, PublicationResponse, UserPublicationResponse},
+    model::{
+        self, Blog, BlogInput, PatchPublicationInput, PublicationResponse, UserPublicationResponse,
+    },
     render, urls,
 };
 use crate::{
@@ -29,12 +31,15 @@ pub fn management_router() -> Router {
         .api_route(
             "/blogs",
             "/:id/publications/:publication_id",
-            get(read_publication).delete(unpublish),
+            get(read_publication)
+                .patch(patch_publication)
+                .delete(unpublish),
         )
 }
 pub fn public_router() -> Router {
     Router::new()
         .api_route("/blog", "/_assets/hupo.svg", get(logo))
+        .api_route("/blog", "/_assets/hupo.png", get(preview_logo))
         .api_route("/blog", "/_assets/share.js", get(share_script))
         .api_route("/blog", "/p/:short_code", get(short_link))
         .api_route("/blog", "/:slug", get(home))
@@ -45,6 +50,16 @@ pub fn public_router() -> Router {
             "/:slug/posts/:post_id/assets/:asset_id",
             get(post_image),
         )
+}
+async fn preview_logo() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        include_bytes!("../../../../public/assets/email-icon.png").as_slice(),
+    )
 }
 async fn share_script() -> impl IntoResponse {
     (
@@ -172,6 +187,21 @@ async fn read_publication(
     Ok(Json(
         model::post(&blog, post, false, &pool)?.with_urls(&blog.slug),
     ))
+}
+pub(super) async fn patch_publication(
+    Extension(pool): Extension<DbPool>,
+    Extension(session): Extension<Session>,
+    Path((id, publication)): Path<(Uuid, Uuid)>,
+    Json(input): Json<PatchPublicationInput>,
+) -> Result<Json<PublicationResponse>, Error> {
+    tokio::task::spawn_blocking(move || {
+        let blog = model::owned(id, user(&session)?, &pool)?;
+        Ok(Json(
+            model::patch_publication(&blog, publication, input, &pool)?.with_urls(&blog.slug),
+        ))
+    })
+    .await
+    .map_err(|_| model::error(500, "Unable to update publication ordering"))?
 }
 async fn publish_trace(
     Extension(pool): Extension<DbPool>,

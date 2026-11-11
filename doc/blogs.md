@@ -58,8 +58,9 @@ The account owner ID and real account name are not exposed in the public pages.
 - `PUT /blogs/:id/traces/:trace_id`: publish/republish a trace, no request body.
 - `PUT /blogs/:id/albums/:album_id`: publish/republish an album subject, no body.
 - `GET /blogs/:id/publications?limit=20&offset=0`: all its publications, including archived
-  ones, with pagination. Descending publication date, then ID.
+  ones, with pagination. Descending effective ordering date, then ID (see below).
 - `GET /blogs/:id/publications/:post_id`: one publication.
+- `PATCH /blogs/:id/publications/:post_id`: update editorial ordering (see below).
 - `DELETE /blogs/:id/publications/:post_id`: unpublish (archive), 204.
 
 Publication objects returned by publish, detail and management collection routes
@@ -78,6 +79,43 @@ their existing `blog` identity. Clients should use `short_url` for compact shari
 and `public_url` for canonical navigation instead of constructing these URLs.
 URLs may be returned to the owner for an archived publication/disabled blog;
 having a URL does not imply that it is currently publicly available.
+
+### Editorial ordering, without changing publication history
+
+```http
+PATCH /blogs/:id/publications/:publication_id
+Content-Type: application/json
+
+{"ordering_date":"2026-08-05T14:58:02Z"}
+```
+
+Authenticated blog owner only. Returns 200 with the usual publication object,
+including nullable `ordering_date`, `public_url` and `short_url`. All publication
+read/list/publish responses also include `ordering_date` (UTC, serialized like
+the existing timestamp fields). Input timestamps must be RFC3339 with a timezone;
+offsets are normalized to UTC. Clients can use a trace's `finalized_at` as a
+convenient preset, explicitly treating those existing timezone-less values as UTC.
+
+`{"ordering_date":null}` clears the override; `{}` leaves it unchanged. Unknown
+fields and invalid timestamps are rejected. A publication outside this blog is
+404; canonical blog-owner checks also apply. Repeating a value is safe.
+
+The per-blog management listing and public homepage order by
+`COALESCE(ordering_date,last_distribution_at,publishing_date) DESC NULLS LAST`,
+then publication ID descending for stable pagination. Trace articles and album
+subject cards both support this. Future ordering dates are not scheduled
+publication: availability still depends only on the existing visibility rules.
+
+The override is independent for each blog and survives unpublish/republish.
+It changes no source/writing dates, displayed byline dates, publication dates,
+distribution events, notification recipients or social-feed ordering. It does
+not generate any notification. The all-blogs `/users/:id/publications` collection
+keeps its actual distribution chronology; articles inside an album subject keep
+the album's ordering rules. No ordering override is set on existing data.
+
+Migration `2026-11-11-130000_blog_publication_ordering` adds the nullable field
+and a per-channel expression index. No manual backfill or new environment
+configuration is needed. Normal/social posts cannot carry an ordering override.
 
 ### Publications across all of my blogs
 
@@ -231,18 +269,23 @@ on insertion, including non-HTTP writers. Social posts never receive a blog link
 No backfill command, new environment variable, bucket or nginx rule is needed.
 Rollback removes the aliases, so already-shared short URLs would stop working.
 
-SSR pages include `og:title`, `og:description`, `og:url`, `og:type`, optional
+SSR pages include `og:title`, `og:description`, `og:url`, `og:type`,
 `og:image` and `og:site_name`, plus explicit `twitter:card`, `twitter:title`,
-`twitter:description` and optional `twitter:image`. Article descriptions prefer
+`twitter:description` and `twitter:image`. Article descriptions prefer
 their subtitle and fall back to a short plain-text Markdown excerpt. Image
-previews prefer the article image, then the blog image; without either, the page
-declares a text `summary` card rather than `summary_large_image`. The homepage
+previews use the article's cover image, or Hupo's logo when it has none (not the
+blog's image). The homepage uses its blog image, or the same Hupo fallback.
+The logo is a public static 1024×1024 PNG at `GET /blog/_assets/hupo.png`, reused
+from the existing Hupo brand asset; no bucket or signed URL is required.
+The square-logo fallback uses a `summary` card with image dimensions/type and
+alt text; custom cover images use `summary_large_image`. The homepage
 uses `og:type=website`; articles/album subject pages use `article`.
 
 Canonical and Open Graph URLs stay on the long article URL even when the visitor
-arrives through a short alias. Preview image URLs use the existing guarded public
-media routes, not expiring GCS signatures embedded in HTML. Unpublishing stops
-new access; third-party preview caches/downloaded images cannot be recalled.
+arrives through a short alias. Custom preview image URLs use the existing guarded
+public media routes, not expiring GCS signatures embedded in HTML; the Hupo logo
+is a permanently public brand asset. Unpublishing stops new access to custom
+media; third-party preview caches/downloaded images cannot be recalled.
 Actual preview layout/caching is controlled by the receiving platform, not Hupo.
 Normal startup applies the new migration. No new bucket, public bucket policy,
 LLM credentials or worker is needed.

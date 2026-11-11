@@ -8,6 +8,7 @@ mod model;
 mod mentor_feedback_style;
 mod purge;
 mod routes;
+pub mod test_account;
 
 pub use admin::{
     delete_admin_user_route, get_admin_analytics_summary_route, get_admin_analytics_users_route,

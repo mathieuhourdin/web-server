@@ -55,7 +55,7 @@ pub(super) fn load_series(
     ), activity AS (
         SELECT timezone({timezone},ue.occurred_at AT TIME ZONE 'UTC')::date AS day,
             {count}::bigint AS count
-        FROM usage_events ue JOIN users u ON u.id=ue.user_id
+        FROM usage_events ue JOIN analytics_users u ON u.id=ue.user_id
         WHERE u.principal_type='HUMAN' AND u.is_platform_user=TRUE AND ue.event_type=$3
           AND ue.occurred_at>=($1::date-interval '1 day')
           AND ue.occurred_at<($2::date+interval '2 days')
@@ -153,7 +153,7 @@ fn load_funnel(
     // context survives replacement of a user's current nudge state.
     let rows = diesel::sql_query(format!("WITH cohort AS (
         SELECT ue.user_id,ue.resource_id,ue.context_json->>'nudge_type' AS nudge_type,ue.occurred_at
-        FROM usage_events ue JOIN users u ON u.id=ue.user_id
+        FROM usage_events ue JOIN analytics_users u ON u.id=ue.user_id
         WHERE u.principal_type='HUMAN' AND u.is_platform_user=TRUE
           AND ue.event_type='WRITING_NUDGE_SHOWN' AND ue.resource_id IS NOT NULL
           AND ue.occurred_at>=($1::date-interval '1 day')

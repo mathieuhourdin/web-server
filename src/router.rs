@@ -203,6 +203,7 @@ pub fn create_router() -> Router {
         )
         .nest("/analytics", admin_analytics_router)
         .api_route("/admin", "/users", get(user::get_admin_users_route))
+        .api_route("/admin", "/users/:id/test_account", patch(user::test_account::patch))
         .api_route("/admin", "/users/:id/devices", get(user::get_admin_user_devices_route))
         .api_route(
             "/admin",

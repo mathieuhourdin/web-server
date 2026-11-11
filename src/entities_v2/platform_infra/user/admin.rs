@@ -73,6 +73,8 @@ struct AdminUserRow {
     #[diesel(sql_type = Bool)]
     is_platform_user: bool,
     #[diesel(sql_type = Bool)]
+    is_test_account: bool,
+    #[diesel(sql_type = Bool)]
     ai_features_enabled: bool,
     #[diesel(sql_type = Bool)]
     ai_features_enabled_by_admin: bool,
@@ -387,6 +389,7 @@ pub struct AdminUsersQuery {
     pub ai_features_enabled_by_admin: Option<bool>,
     pub principal_type: Option<UserPrincipalType>,
     pub is_platform_user: Option<bool>,
+    pub is_test_account: Option<bool>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -402,6 +405,7 @@ pub struct AdminUserListItem {
     pub created_at: NaiveDateTime,
     pub principal_type: UserPrincipalType,
     pub is_platform_user: bool,
+    pub is_test_account: bool,
     pub ai_features_enabled: bool,
     pub ai_features_enabled_by_admin: bool,
     pub allows_ai_features: bool,
@@ -485,7 +489,10 @@ fn aggregate_user_llm_cost_rows(
     (total, by_model)
 }
 
-pub(super) fn ensure_admin_session_user(session: &Session, pool: &DbPool) -> Result<User, PpdcError> {
+pub(super) fn ensure_admin_session_user(
+    session: &Session,
+    pool: &DbPool,
+) -> Result<User, PpdcError> {
     let session_user_id = session.user_id.ok_or_else(PpdcError::unauthorized)?;
     let session_user = User::find(&session_user_id, pool)?;
     if !session_user.has_role(UserRole::Admin, pool)? {
@@ -601,7 +608,7 @@ pub(super) fn load_platform_metric_points(
                         )::date AS day,
                         COUNT(*)::bigint AS count
                     FROM usage_events ue
-                    INNER JOIN users u ON u.id = ue.user_id
+                    INNER JOIN analytics_users u ON u.id = ue.user_id
                     WHERE u.principal_type = 'HUMAN'
                       AND u.is_platform_user = TRUE
                       AND ue.event_type = $3
@@ -630,7 +637,7 @@ pub(super) fn load_platform_metric_points(
                     )
                     SELECT d.day, COUNT(u.id)::bigint AS count
                     FROM days d
-                    LEFT JOIN users u
+                    LEFT JOIN analytics_users u
                       ON u.principal_type = 'HUMAN'
                      AND u.is_platform_user = TRUE
                      AND u.created_at < (d.day + interval '1 day')
@@ -649,6 +656,7 @@ pub(super) fn load_platform_metric_points(
                       ON t.finalized_at >= d.day::timestamp
                      AND t.finalized_at < (d.day + interval '1 day')
                      AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
+                     AND EXISTS(SELECT 1 FROM analytics_users au WHERE au.id=t.user_id)
                     GROUP BY d.day
                     ORDER BY d.day
                     "#
@@ -661,6 +669,7 @@ pub(super) fn load_platform_metric_points(
                     SELECT d.day, COUNT(p.id)::bigint AS count
                     FROM days d
                     LEFT JOIN posts p ON p.publication_channel_id IS NULL AND p.status = 'PUBLISHED'
+                     AND EXISTS(SELECT 1 FROM analytics_users au WHERE au.id=p.user_id)
                      AND COALESCE(p.publishing_date, p.created_at) >= d.day::timestamp
                      AND COALESCE(p.publishing_date, p.created_at) < (d.day + interval '1 day')
                     GROUP BY d.day
@@ -676,6 +685,7 @@ pub(super) fn load_platform_metric_points(
                     FROM days d
                     LEFT JOIN usage_events ue
                       ON ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
+                     AND EXISTS(SELECT 1 FROM analytics_users au WHERE au.id=ue.user_id)
                      AND ue.occurred_at >= d.day::timestamp
                      AND ue.occurred_at < (d.day + interval '1 day')
                     GROUP BY d.day
@@ -694,7 +704,7 @@ pub(super) fn load_platform_metric_points(
                       ON t.finalized_at >= (d.day::timestamp - interval '29 days')
                      AND t.finalized_at < (d.day + interval '1 day')
                      AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-                    LEFT JOIN users u
+                    LEFT JOIN analytics_users u
                       ON u.id = t.user_id
                      AND u.principal_type = 'HUMAN'
                      AND u.is_platform_user = TRUE
@@ -714,7 +724,7 @@ pub(super) fn load_platform_metric_points(
                       ON t.finalized_at >= (d.day::timestamp - interval '13 days')
                      AND t.finalized_at < (d.day + interval '1 day')
                      AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
-                    LEFT JOIN users u
+                    LEFT JOIN analytics_users u
                       ON u.id = t.user_id
                      AND u.principal_type = 'HUMAN'
                      AND u.is_platform_user = TRUE
@@ -734,7 +744,7 @@ pub(super) fn load_platform_metric_points(
                       ON ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                      AND ue.occurred_at >= (d.day::timestamp - interval '29 days')
                      AND ue.occurred_at < (d.day + interval '1 day')
-                    LEFT JOIN users u
+                    LEFT JOIN analytics_users u
                       ON u.id = ue.user_id
                      AND u.principal_type = 'HUMAN'
                      AND u.is_platform_user = TRUE
@@ -754,7 +764,7 @@ pub(super) fn load_platform_metric_points(
                       ON ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                      AND ue.occurred_at >= (d.day::timestamp - interval '6 days')
                      AND ue.occurred_at < (d.day + interval '1 day')
-                    LEFT JOIN users u
+                    LEFT JOIN analytics_users u
                       ON u.id = ue.user_id
                      AND u.principal_type = 'HUMAN'
                      AND u.is_platform_user = TRUE
@@ -1000,6 +1010,7 @@ pub async fn get_admin_users_route(
           AND ($2 IS NULL OR u.ai_features_enabled_by_admin = $2)
           AND ($3 IS NULL OR u.principal_type = $3)
           AND ($4 IS NULL OR u.is_platform_user = $4)
+          AND ($5 IS NULL OR u.is_test_account = $5)
     "#;
 
     let total = sql_query(format!("SELECT COUNT(*)::bigint AS value {}", filter_sql))
@@ -1007,6 +1018,7 @@ pub async fn get_admin_users_route(
         .bind::<Nullable<Bool>, _>(params.ai_features_enabled_by_admin)
         .bind::<Nullable<Text>, _>(principal_type.clone())
         .bind::<Nullable<Bool>, _>(params.is_platform_user)
+        .bind::<Nullable<Bool>, _>(params.is_test_account)
         .get_result::<CountRow>(&mut conn)?
         .value;
 
@@ -1021,6 +1033,7 @@ pub async fn get_admin_users_route(
             u.created_at,
             u.principal_type,
             u.is_platform_user,
+            u.is_test_account,
             u.ai_features_enabled,
             u.ai_features_enabled_by_admin,
             COALESCE((
@@ -1089,8 +1102,8 @@ pub async fn get_admin_users_route(
             )::bigint AS ai_requests_last_7d
         {}
         ORDER BY u.created_at DESC
-        OFFSET $5
-        LIMIT $6
+        OFFSET $6
+        LIMIT $7
         "#,
         filter_sql
     ))
@@ -1098,6 +1111,7 @@ pub async fn get_admin_users_route(
     .bind::<Nullable<Bool>, _>(params.ai_features_enabled_by_admin)
     .bind::<Nullable<Text>, _>(principal_type)
     .bind::<Nullable<Bool>, _>(params.is_platform_user)
+    .bind::<Nullable<Bool>, _>(params.is_test_account)
     .bind::<BigInt, _>(pagination.offset)
     .bind::<BigInt, _>(pagination.limit)
     .load::<AdminUserRow>(&mut conn)?;
@@ -1116,6 +1130,7 @@ pub async fn get_admin_users_route(
                 created_at: row.created_at,
                 principal_type,
                 is_platform_user: row.is_platform_user,
+                is_test_account: row.is_test_account,
                 ai_features_enabled: row.ai_features_enabled,
                 ai_features_enabled_by_admin: row.ai_features_enabled_by_admin,
                 allows_ai_features: row.ai_features_enabled && row.ai_features_enabled_by_admin,
@@ -1311,12 +1326,12 @@ pub async fn get_admin_analytics_summary_route(
         r#"
         SELECT
             (SELECT COUNT(*)::bigint
-             FROM users u
+             FROM analytics_users u
              WHERE u.principal_type = 'HUMAN'
                AND u.is_platform_user = TRUE) AS users,
             (SELECT COUNT(DISTINCT t.user_id)::bigint
              FROM traces t
-             INNER JOIN users u ON u.id = t.user_id
+             INNER JOIN analytics_users u ON u.id = t.user_id
              WHERE u.principal_type = 'HUMAN'
                AND u.is_platform_user = TRUE
                AND t.finalized_at IS NOT NULL
@@ -1325,20 +1340,20 @@ pub async fn get_admin_analytics_summary_route(
                AND t.finalized_at < (CURRENT_DATE + interval '1 day')) AS active_writers_30d,
             (SELECT COUNT(DISTINCT ue.user_id)::bigint
              FROM usage_events ue
-             INNER JOIN users u ON u.id = ue.user_id
+             INNER JOIN analytics_users u ON u.id = ue.user_id
              WHERE u.principal_type = 'HUMAN'
                AND u.is_platform_user = TRUE
                AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
                AND ue.occurred_at >= (CURRENT_DATE - interval '29 days')
                AND ue.occurred_at < (CURRENT_DATE + interval '1 day')) AS active_readers_30d,
             (SELECT COUNT(*)::bigint
-             FROM lenses
+             FROM lenses l JOIN analytics_users au ON au.id=l.user_id
              WHERE processing_state = 'FAILED') AS failed_lenses_count,
             (SELECT COUNT(*)::bigint
-             FROM landscape_analyses
+             FROM landscape_analyses la JOIN analytics_users au ON au.id=la.user_id
              WHERE processing_state = 'FAILED') AS failed_analyses_count,
             (SELECT COUNT(*)::bigint
-             FROM users u
+             FROM analytics_users u
              WHERE u.principal_type = 'HUMAN'
                AND u.is_platform_user = TRUE
                AND u.onboarding_version = 1
@@ -1416,11 +1431,8 @@ pub async fn get_admin_analytics_users_route(
     };
 
     let mut conn = pool.get()?;
-    let total = users::table
-        .filter(users::principal_type.eq(UserPrincipalType::Human))
-        .filter(users::is_platform_user.eq(true))
-        .count()
-        .get_result::<i64>(&mut conn)?;
+    let total = sql_query("SELECT count(*)::bigint AS value FROM analytics_users WHERE principal_type='HUMAN' AND is_platform_user")
+        .get_result::<CountRow>(&mut conn)?.value;
 
     let rows = sql_query(format!(
         r#"
@@ -1451,7 +1463,7 @@ pub async fn get_admin_analytics_users_route(
         written_traces AS (
             SELECT t.user_id, COUNT(*)::bigint AS count
             FROM traces t
-            INNER JOIN users trace_user ON trace_user.id = t.user_id
+            INNER JOIN analytics_users trace_user ON trace_user.id = t.user_id
             WHERE t.finalized_at IS NOT NULL
               AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
               AND t.finalized_at >= ($1::date - interval '1 day')
@@ -1475,7 +1487,7 @@ pub async fn get_admin_analytics_users_route(
             COALESCE(fl.count, 0)::bigint AS failed_lenses_count,
             COALESCE(wt.count, 0)::bigint AS written_traces_count,
             GREATEST(COALESCE(lu.last_activity_at, u.created_at), u.created_at) AS last_activity_at
-        FROM users u
+        FROM analytics_users u
         LEFT JOIN last_usage lu ON lu.user_id = u.id
         LEFT JOIN draft_posts dp ON dp.user_id = u.id
         LEFT JOIN hlp_landmarks hl ON hl.user_id = u.id
@@ -1577,16 +1589,13 @@ pub async fn get_admin_recent_user_activity_route(
 
     let mut conn = pool.get()?;
 
-    let total = users::table
-        .filter(users::principal_type.eq(UserPrincipalType::Human))
-        .filter(users::is_platform_user.eq(true))
-        .count()
-        .get_result::<i64>(&mut conn)?;
+    let total = sql_query("SELECT count(*)::bigint AS value FROM analytics_users WHERE principal_type='HUMAN' AND is_platform_user")
+        .get_result::<CountRow>(&mut conn)?.value;
 
     let user_rows = sql_query(
         r#"
         SELECT u.id AS user_id
-        FROM users u
+        FROM analytics_users u
         LEFT JOIN usage_events ue ON ue.user_id = u.id
         WHERE u.principal_type = $1
           AND u.is_platform_user = TRUE
@@ -1783,7 +1792,7 @@ pub async fn get_admin_platform_overview_route(
     let failed_lenses_count = sql_query(
         r#"
         SELECT COUNT(*)::bigint AS value
-        FROM lenses
+        FROM lenses l JOIN analytics_users au ON au.id=l.user_id
         WHERE processing_state = 'FAILED'
         "#,
     )
@@ -1793,7 +1802,7 @@ pub async fn get_admin_platform_overview_route(
     let failed_analyses_count = sql_query(
         r#"
         SELECT COUNT(*)::bigint AS value
-        FROM landscape_analyses
+        FROM landscape_analyses la JOIN analytics_users au ON au.id=la.user_id
         WHERE processing_state = 'FAILED'
         "#,
     )
@@ -1803,7 +1812,7 @@ pub async fn get_admin_platform_overview_route(
     let onboarded_users_without_mentor_count = sql_query(
         r#"
         SELECT COUNT(*)::bigint AS value
-        FROM users
+        FROM analytics_users
         WHERE principal_type = 'HUMAN'
           AND is_platform_user = TRUE
           AND onboarding_version = 1
@@ -1825,7 +1834,7 @@ pub async fn get_admin_platform_overview_route(
             SELECT
                 u.id,
                 {timezone} AS timezone_name
-            FROM users u
+            FROM analytics_users u
             WHERE u.principal_type = 'HUMAN'
               AND u.is_platform_user = TRUE
         ),
@@ -1844,20 +1853,23 @@ pub async fn get_admin_platform_overview_route(
             COALESCE((
                 SELECT COUNT(*)::bigint
                 FROM traces t
-                WHERE t.finalized_at IS NOT NULL
+                WHERE EXISTS(SELECT 1 FROM analytics_users au WHERE au.id=t.user_id)
+                  AND t.finalized_at IS NOT NULL
                   AND t.trace_type IN ('USER_TRACE', 'WORKSPACE_TRACE')
                   AND t.finalized_at::date = d.day
             ), 0)::bigint AS written_traces_count,
             COALESCE((
                 SELECT COUNT(*)::bigint
                 FROM posts p
-                WHERE p.publication_channel_id IS NULL AND p.status = 'PUBLISHED'
+                WHERE EXISTS(SELECT 1 FROM analytics_users au WHERE au.id=p.user_id)
+                  AND p.publication_channel_id IS NULL AND p.status = 'PUBLISHED'
                   AND COALESCE(p.publishing_date, p.created_at)::date = d.day
             ), 0)::bigint AS published_posts_count,
             COALESCE((
                 SELECT COUNT(*)::bigint
                 FROM usage_events ue
-                WHERE ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
+                WHERE EXISTS(SELECT 1 FROM analytics_users au WHERE au.id=ue.user_id)
+                  AND ue.event_type = 'FOLLOWED_JOURNAL_OPENED'
                   AND ue.occurred_at::date = d.day
             ), 0)::bigint AS followed_journal_opened_count,
             COALESCE((
@@ -1880,7 +1892,7 @@ pub async fn get_admin_platform_overview_route(
             ), 0)::bigint AS post_opened_count,
             COALESCE((
                 SELECT COUNT(*)::bigint
-                FROM users u
+                FROM analytics_users u
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
                   AND u.created_at < (d.day + interval '1 day')
@@ -1888,7 +1900,7 @@ pub async fn get_admin_platform_overview_route(
             COALESCE((
                 SELECT COUNT(DISTINCT t.user_id)::bigint
                 FROM traces t
-                INNER JOIN users u ON u.id = t.user_id
+                INNER JOIN analytics_users u ON u.id = t.user_id
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
                   AND t.finalized_at IS NOT NULL
@@ -1899,7 +1911,7 @@ pub async fn get_admin_platform_overview_route(
             COALESCE((
                 SELECT COUNT(DISTINCT t.user_id)::bigint
                 FROM traces t
-                INNER JOIN users u ON u.id = t.user_id
+                INNER JOIN analytics_users u ON u.id = t.user_id
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
                   AND t.finalized_at IS NOT NULL
@@ -1910,7 +1922,7 @@ pub async fn get_admin_platform_overview_route(
             COALESCE((
                 SELECT COUNT(DISTINCT ue.user_id)::bigint
                 FROM usage_events ue
-                INNER JOIN users u ON u.id = ue.user_id
+                INNER JOIN analytics_users u ON u.id = ue.user_id
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
                   AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')
@@ -1920,7 +1932,7 @@ pub async fn get_admin_platform_overview_route(
             COALESCE((
                 SELECT COUNT(DISTINCT ue.user_id)::bigint
                 FROM usage_events ue
-                INNER JOIN users u ON u.id = ue.user_id
+                INNER JOIN analytics_users u ON u.id = ue.user_id
                 WHERE u.principal_type = 'HUMAN'
                   AND u.is_platform_user = TRUE
                   AND ue.event_type IN ('FOLLOWED_JOURNAL_OPENED', 'POST_OPENED', 'DOCUMENT_OPENED', 'ALBUM_OPENED')

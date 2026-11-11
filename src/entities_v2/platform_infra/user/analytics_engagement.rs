@@ -13,7 +13,7 @@ use diesel::{
 use serde::Serialize;
 
 const USERS: &str = "eligible_users AS (
-    SELECT id,created_at FROM users WHERE principal_type='HUMAN' AND is_platform_user=TRUE
+    SELECT id,created_at FROM analytics_users WHERE principal_type='HUMAN' AND is_platform_user=TRUE
 )";
 const READ_EVENTS: &str =
     "'FOLLOWED_JOURNAL_OPENED','POST_OPENED','DOCUMENT_OPENED','ALBUM_OPENED'";

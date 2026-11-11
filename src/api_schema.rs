@@ -215,6 +215,8 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/healthz")=>"Public database readiness check: runs SELECT 1 and returns 200 when PostgreSQL responds, otherwise 503. No user data or connection details; responses are not cacheable.",
         ("GET","/api/schema")=>"Discover the live API route catalog in OpenAPI 3.1 format; payload schemas are not fully typed yet.",
         ("GET","/api/docs")=>"Read API conventions or a feature-specific Markdown contract using the topic query parameter.",
+        ("PATCH","/admin/users/:id/test_account")=>"Admin only: set is_test_account (required boolean). Returns id and is_test_account. Idempotent classification hides the account from discovery and excludes it from platform analytics; preserves login, content, grants and per-user diagnostics. See /api/docs?topic=test_accounts.",
+        ("GET","/admin/users")=>"Admin account management with limit/offset pagination. Returns is_test_account; optional is_test_account=true|false filter. Omission includes both test and normal accounts.",
         ("POST","/admin/automation/clients")=>"Provision a scoped automation client. The new bearer secret is returned only once.",
         ("POST","/admin/automation/clients/:id/token")=>"Rotate the agent key and revoke its delegated sessions.",
         ("DELETE","/admin/automation/clients/:id")=>"Revoke an automation client; its delegated credentials stop working.",
@@ -229,8 +231,10 @@ fn purpose(method: &str, path: &str, fallback: &str) -> String {
         ("GET","/me/audience/:user_id/traces")=>"Audit which of your finalized traces this reader can currently access across journals. Owner only; limit/offset pagination with an accurate total.",
         ("GET","/journals/:id/images")=>"List images from readable finalized journal traces, newest finalized_at first. Lightweight trace/asset IDs and dimensions only; supports limit/offset pagination with a viewer-scoped total.",
         ("GET","/users/:id/publications")=>"List the caller's PUBLISHED channel publications across all owned blogs, including disabled blogs, with blog identity and limit/offset pagination. Owner only; excludes social posts, archived publications and distribution-event history. Sorted by latest distribution date.",
+        ("PATCH","/blogs/:id/publications/:publication_id")=>"Owner only: set ordering_date to an RFC3339 timestamp, clear it with null, or leave unchanged by omitting it. Returns the publication with URLs. Changes only per-blog editorial ordering; does not change displayed/publication dates, source traces, distribution events, social feeds or notifications. See /api/docs?topic=blogs.",
         ("GET","/blog/p/:short_code")=>"Resolve a stable eight-character publication sharing alias to the current canonical blog article URL using a non-cacheable 307 redirect. Rechecks enabled blog, publication/source visibility and demo-account restrictions; unavailable targets return non-cacheable 404. Not an access token or arbitrary redirect URL.",
         ("GET","/blog/_assets/share.js")=>"Public static progressive-enhancement script for article sharing: native share menu, clipboard copy and manual-copy fallback. Contains no user content or tracking.",
+        ("GET","/blog/_assets/hupo.png")=>"Public static 1024x1024 PNG Hupo logo used as the Open Graph and Twitter image fallback on blog pages with no cover image.",
         ("GET","/posts/:id/distribution_events")=>"List the post publisher's immutable distribution-event history, newest first, with limit/offset pagination.",
         ("POST","/posts/:id/distribution_events")=>"Record an idempotent post distribution event, update feed position and dispatch to selected eligible recipients. Does not create another durable publication or access grants.",
         ("PUT","/traces/:id/plume")=>"Give one plume to accessible finalized writing by someone else. Idempotent; no request body. Returns plume_count and plumed_by_me.",
@@ -284,7 +288,9 @@ pub async fn schema() -> Json<Value> {
                 op.method, &path,
             );
             let topic =
-                if path == "/admin/analytics/devices" || path == "/admin/users/:id/devices" {
+                if path == "/admin/users/:id/test_account" || path == "/admin/users" {
+                    "test_accounts"
+                } else if path == "/admin/analytics/devices" || path == "/admin/users/:id/devices" {
                     "devices_analytics"
                 } else if path.starts_with("/conversations") || path == "/me/conversation_events" {
                     "conversations"
@@ -345,7 +351,7 @@ pub async fn schema() -> Json<Value> {
             if path == "/api/docs" {
                 operation["parameters"] = json!([{"name":"topic","in":"query","required":false,
                     "description":"Documentation topic; omission returns the overview.",
-                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style","feed_mentions"]}}]);
+                    "schema":{"type":"string","enum":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style","feed_mentions","test_accounts"]}}]);
             }
             item.insert(op.method.to_ascii_lowercase(), operation);
         }
@@ -363,7 +369,7 @@ pub async fn schema() -> Json<Value> {
         }},
         "x-coverage":{"routes":"all-explicit-registrations","operation_count":count,"payloads":"not-yet-typed",
             "descriptions":"handler-derived-with-curated-overrides","excluded":["implicit HEAD/OPTIONS","static /public files","404 fallback"]},
-        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style","feed_mentions"],
+        "x-documentation-topics":["overview","platform","automation","writing_threads","draft_mentor","post_notifications","trace_translations","trace_languages","social_updates","trace_chronology","blogs","post_distribution_events","journal_stats","journal_images","album_stats","feed_and_exports","analytics_engagement","writing_nudges","writing_templates","conversations","devices_analytics","mentor_feedback_style","feed_mentions","test_accounts"],
         "externalDocs":{"url":"/api/docs","description":"Usage guide and detailed feature contracts"}}),
     )
 }
@@ -382,6 +388,7 @@ pub async fn docs(Query(query): Query<DocsQuery>) -> Response {
         "writing_templates" => include_str!("../doc/writing_templates.md"),
         "conversations" => include_str!("../doc/conversations.md"),
         "devices_analytics" => include_str!("../doc/devices_analytics.md"),
+        "test_accounts" => include_str!("../doc/test_accounts.md"),
         "mentor_feedback_style" => include_str!("../doc/mentor_feedback_style.md"),
         "feed_mentions" => include_str!("../doc/feed_mentions.md"),
         "draft_mentor" => include_str!("../doc/draft_mentor_messages.md"),

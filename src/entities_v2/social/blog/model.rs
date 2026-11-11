@@ -6,7 +6,7 @@ use crate::{
     },
     pagination::{PaginatedResponse, ValidatedPagination},
 };
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel::{
     prelude::*,
     sql_types::{BigInt, Bool, Nullable, Text, Timestamp, Uuid as SqlUuid},
@@ -80,6 +80,8 @@ pub struct Publication {
     pub last_distribution_event_id: Option<Uuid>,
     #[diesel(sql_type=Nullable<Timestamp>)]
     pub last_distribution_at: Option<NaiveDateTime>,
+    #[diesel(sql_type=Nullable<Timestamp>)]
+    pub ordering_date: Option<NaiveDateTime>,
     #[diesel(sql_type=Text)]
     pub title: String,
     #[diesel(sql_type=Text)]
@@ -90,6 +92,13 @@ pub struct Publication {
     pub image_asset_id: Option<Uuid>,
     #[diesel(sql_type=Nullable<Timestamp>)]
     pub finalized_at: Option<NaiveDateTime>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PatchPublicationInput {
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
+    pub ordering_date: Option<Option<DateTime<Utc>>>,
 }
 
 #[derive(Serialize, QueryableByName)]
@@ -158,7 +167,7 @@ const POST_FROM: &str = " FROM posts p
     LEFT JOIN albums a ON a.id=p.source_album_id";
 const POST_COLUMNS: &str =
     "SELECT p.id,link.code AS short_code,p.publication_channel_id,p.source_trace_id,p.source_album_id,
-    p.status,p.publishing_date,p.last_distribution_event_id,p.last_distribution_at,COALESCE(t.title,a.title,'') AS title,
+    p.status,p.publishing_date,p.last_distribution_event_id,p.last_distribution_at,p.ordering_date,COALESCE(t.title,a.title,'') AS title,
     COALESCE(t.subtitle,a.subtitle,'') AS subtitle,COALESCE(t.content,a.content,'') AS content,
     COALESCE(t.content_image_asset_id,a.cover_image_asset_id) AS image_asset_id,t.finalized_at";
 // Check the current source on every anonymous read, not just at publication.
@@ -322,7 +331,7 @@ pub fn posts(
     .count;
     let items = diesel::sql_query(format!(
         "{POST_COLUMNS}{POST_FROM} WHERE p.publication_channel_id=$1{predicate}
-        ORDER BY p.last_distribution_at DESC NULLS LAST,p.id DESC LIMIT $2 OFFSET $3"
+        ORDER BY COALESCE(p.ordering_date,p.last_distribution_at,p.publishing_date) DESC NULLS LAST,p.id DESC LIMIT $2 OFFSET $3"
     ))
     .bind::<SqlUuid, _>(blog.id)
     .bind::<BigInt, _>(page.limit)
@@ -373,6 +382,29 @@ pub fn post(
     .bind::<SqlUuid, _>(blog.id)
     .bind::<SqlUuid, _>(id)
     .get_result(&mut pool.get()?)?)
+}
+
+pub fn patch_publication(
+    blog: &Blog,
+    id: Uuid,
+    input: PatchPublicationInput,
+    pool: &DbPool,
+) -> Result<Publication, PpdcError> {
+    if let Some(date) = input.ordering_date {
+        let updated = diesel::sql_query(
+            "UPDATE posts SET ordering_date=$3,updated_at=NOW()
+             WHERE id=$1 AND publication_channel_id=$2 AND user_id=$4",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(blog.id)
+        .bind::<Nullable<Timestamp>, _>(date.map(|date| date.naive_utc()))
+        .bind::<SqlUuid, _>(blog.user_id)
+        .execute(&mut pool.get()?)?;
+        if updated == 0 {
+            return Err(error(404, "Publication not found"));
+        }
+    }
+    post(blog, id, false, pool)
 }
 
 pub fn publish(
