@@ -1,4 +1,7 @@
-use super::model::{Blog, Publication};
+use super::{
+    model::{Blog, Publication},
+    urls,
+};
 use crate::pagination::PaginatedResponse;
 use axum::{
     http::header,
@@ -57,16 +60,13 @@ fn escape(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 fn base() -> String {
-    std::env::var("BLOG_BASE_URL")
-        .unwrap_or_else(|_| "/blog".to_owned())
-        .trim_end_matches('/')
-        .to_owned()
+    urls::base()
 }
 fn blog_url(blog: &Blog) -> String {
     format!("{}/{}", base(), blog.slug)
 }
 fn post_url(blog: &Blog, post: &Publication) -> String {
-    format!("{}/posts/{}", blog_url(blog), post.id)
+    urls::publication(&blog.slug, post.id)
 }
 fn image_url(blog: &Blog, post: Option<&Publication>, asset: uuid::Uuid) -> String {
     match post {
@@ -83,14 +83,28 @@ fn page(
     body: String,
 ) -> Response {
     let logo_url = escape(&format!("{}/_assets/hupo.svg", base()));
+    let card = if image.is_some() {
+        "summary_large_image"
+    } else {
+        "summary"
+    };
     let image = image
-        .map(|u| format!("<meta property=\"og:image\" content=\"{}\">", escape(&u)))
+        .map(|u| format!("<meta property=\"og:image\" content=\"{}\"><meta name=\"twitter:image\" content=\"{}\">", escape(&u),escape(&u)))
         .unwrap_or_default();
+    let og_type = if url == blog_url(blog) {
+        "website"
+    } else {
+        "article"
+    };
+    let site_name = escape(&blog.name);
+    let twitter_title = escape(title);
+    let twitter_description = escape(description);
     let html = format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{}</title><meta name="description" content="{}"><link rel="canonical" href="{}">
 <link rel="icon" type="image/svg+xml" href="{logo_url}">
-<meta property="og:type" content="article"><meta property="og:title" content="{}"><meta property="og:description" content="{}"><meta property="og:url" content="{}">{}
+<meta property="og:type" content="{og_type}"><meta property="og:site_name" content="{site_name}"><meta property="og:title" content="{}"><meta property="og:description" content="{}"><meta property="og:url" content="{}">{}
+<meta name="twitter:card" content="{card}"><meta name="twitter:title" content="{twitter_title}"><meta name="twitter:description" content="{twitter_description}">
 <meta name="author" content="{}"><style>
 :root{{color-scheme:light dark}}body{{font-family:Georgia,serif;line-height:1.65;max-width:740px;margin:auto;padding:40px 22px}}
 a{{color:inherit;text-underline-offset:4px}}header{{border-bottom:1px solid #8886;margin-bottom:32px;padding-bottom:24px}}
@@ -215,6 +229,9 @@ pub fn article(
     let image = post
         .image_asset_id
         .map(|id| image_url(blog, Some(post), id));
+    let preview_image = image
+        .clone()
+        .or_else(|| blog.image_asset_id.map(|id| image_url(blog, None, id)));
     let cover = image
         .as_ref()
         .map(|u| format!("<img src=\"{}\" alt=\"\">", escape(u)))
@@ -233,18 +250,115 @@ pub fn article(
             pagination(&post_url(blog, post), items)
         );
     }
+    let description = if post.subtitle.trim().is_empty() {
+        excerpt(&post.content)
+    } else {
+        post.subtitle.trim().to_owned()
+    };
     page(
         blog,
         &format!("{} — {}", post.title, blog.name),
-        &post.subtitle,
+        &description,
         &post_url(blog, post),
-        image,
+        preview_image,
         body,
     )
 }
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn article_previews_have_open_graph_twitter_and_excerpt_fallbacks() {
+        let now = chrono::Utc::now().naive_utc();
+        let mut blog = super::Blog {
+            id: uuid::Uuid::new_v4(),
+            user_id: uuid::Uuid::new_v4(),
+            slug: "preview-blog".into(),
+            name: "A blog".into(),
+            username: "A pseudonym".into(),
+            description: "Introduction".into(),
+            image_asset_id: Some(uuid::Uuid::new_v4()),
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+        };
+        let post = super::Publication {
+            id: uuid::Uuid::new_v4(),
+            short_code: "k7Mx2Qa9".into(),
+            publication_channel_id: blog.id,
+            source_trace_id: Some(uuid::Uuid::new_v4()),
+            source_album_id: None,
+            status: "PUBLISHED".into(),
+            publishing_date: Some(now),
+            last_distribution_event_id: None,
+            last_distribution_at: None,
+            title: "A \"quoted\" title".into(),
+            subtitle: "".into(),
+            content: "## Opening\n\nA **clear** thought.".into(),
+            image_asset_id: None,
+            finalized_at: Some(now),
+        };
+        let response = super::article(&blog, &post, None);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let html = std::str::from_utf8(&bytes).unwrap();
+        let document = scraper::Html::parse_document(html);
+        let meta = |attribute: &str, name: &str| {
+            let selector =
+                scraper::Selector::parse(&format!("meta[{attribute}='{name}']")).unwrap();
+            document
+                .select(&selector)
+                .next()
+                .and_then(|node| node.value().attr("content"))
+                .map(str::to_owned)
+        };
+        assert_eq!(
+            meta("property", "og:title").as_deref(),
+            Some("A \"quoted\" title — A blog")
+        );
+        assert_eq!(
+            meta("property", "og:description").as_deref(),
+            Some("Opening A clear thought.")
+        );
+        assert_eq!(
+            meta("property", "og:url"),
+            Some(super::post_url(&blog, &post))
+        );
+        assert_eq!(
+            meta("name", "twitter:card").as_deref(),
+            Some("summary_large_image")
+        );
+        assert_eq!(meta("name", "twitter:title"), meta("property", "og:title"));
+        assert_eq!(
+            meta("name", "twitter:description"),
+            meta("property", "og:description")
+        );
+        assert_eq!(meta("name", "twitter:image"), meta("property", "og:image"));
+        assert_eq!(
+            meta("name", "twitter:image"),
+            Some(super::image_url(&blog, None, blog.image_asset_id.unwrap()))
+        );
+        let selector = scraper::Selector::parse("link[rel='canonical']").unwrap();
+        assert_eq!(
+            document
+                .select(&selector)
+                .next()
+                .unwrap()
+                .value()
+                .attr("href"),
+            Some(super::post_url(&blog, &post).as_str())
+        );
+        blog.image_asset_id = None;
+        let response = super::article(&blog, &post, None);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let html = std::str::from_utf8(&bytes).unwrap();
+        assert!(html.contains("name=\"twitter:card\" content=\"summary\""));
+        assert!(!html.contains("name=\"twitter:image\""));
+    }
+
     #[test]
     fn markdown_renders_readable_blocks_and_inline_formatting() {
         let html = super::render_markdown(concat!(

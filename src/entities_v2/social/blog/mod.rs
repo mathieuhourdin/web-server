@@ -2,6 +2,7 @@
 mod model;
 mod render;
 mod routes;
+mod urls;
 
 pub use routes::*;
 

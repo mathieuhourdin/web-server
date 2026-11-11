@@ -53,9 +53,14 @@ async fn user_publications_does_not_disclose_other_users_blog_identities() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "Requires an explicitly configured disposable blog_test PostgreSQL database"]
-fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
+async fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
+    use diesel::{
+        prelude::*,
+        sql_types::{Text, Uuid as SqlUuid},
+    };
+    use diesel_migrations::{embed_migrations, MigrationHarness};
     let url = std::env::var("BLOG_TEST_DATABASE_URL")
         .expect("Set BLOG_TEST_DATABASE_URL to a disposable migrated blog_test database");
     assert_eq!(url::Url::parse(&url).unwrap().path(), "/blog_test");
@@ -63,6 +68,19 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
         .max_size(4)
         .build(ConnectionManager::new(url))
         .unwrap();
+    const MIGRATIONS: diesel_migrations::EmbeddedMigrations = embed_migrations!();
+    let mut conn = pool.get().unwrap();
+    let pending = conn.pending_migrations(MIGRATIONS).unwrap();
+    let backfill = pending
+        .iter()
+        .any(|m| m.name().version().to_string().replace('-', "") == "20261111100000");
+    for migration in pending
+        .iter()
+        .filter(|m| m.name().version().to_string().replace('-', "") != "20261111100000")
+    {
+        conn.run_migration(&**migration).unwrap();
+    }
+    drop(conn);
     let owner = Uuid::new_v4();
     let journal = Uuid::new_v4();
     let trace = Uuid::new_v4();
@@ -71,9 +89,9 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
     pool.get().unwrap().batch_execute(&format!("INSERT INTO users(id,email,first_name,last_name,handle,password,updated_at)
         VALUES('{owner}','{owner}@test.invalid','Blog','Test','@{owner}','unused',NOW());
         INSERT INTO journals(id,user_id,title,subtitle,content,journal_type,status) VALUES('{journal}','{owner}','Test','','','USER_JOURNAL','ACTIVE');
-        INSERT INTO traces(id,user_id,journal_id,title,subtitle,content,interaction_date,trace_type,status,start_writing_at,finalized_at)
-        VALUES('{trace}','{owner}','{journal}','Public','','First',NOW(),'USER_TRACE','FINALIZED',NOW(),NOW()),
-              ('{private}','{owner}','{journal}','Private','','Secret',NOW(),'USER_TRACE','FINALIZED',NOW(),NOW());
+        INSERT INTO traces(id,user_id,journal_id,title,subtitle,content,trace_type,status,start_writing_at,finalized_at)
+        VALUES('{trace}','{owner}','{journal}','Public','','First','USER_TRACE','FINALIZED',NOW(),NOW()),
+              ('{private}','{owner}','{journal}','Private','','Secret','USER_TRACE','FINALIZED',NOW(),NOW());
         INSERT INTO albums(id,owner_user_id,title,subtitle,content,ordering_mode,completion_status,visibility)
         VALUES('{album}','{owner}','Subject','','','MANUAL','COMPLETE','PRIVATE');
         INSERT INTO album_items(album_id,trace_id,ordering_index) VALUES('{album}','{trace}',0),('{album}','{private}',1);"
@@ -86,15 +104,103 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
         image_asset_id: None,
         enabled: true,
     };
-    let blog = save(None, owner, input(format!("notes-{owner}")), &pool).unwrap();
+    let mut blog = save(None, owner, input(format!("notes-{owner}")), &pool).unwrap();
     let other = save(None, owner, input(format!("other-{owner}")), &pool).unwrap();
+    let legacy = Uuid::new_v4();
+    let archived_legacy = Uuid::new_v4();
+    if backfill {
+        pool.get().unwrap().batch_execute(&format!("INSERT INTO posts(id,user_id,publication_channel_id,source_trace_id,title,subtitle,content,interaction_type,post_type,status,publishing_date,notification_mode)
+            VALUES('{legacy}','{owner}','{}','{trace}','','','','OUTPUT','IDEA','PUBLISHED','2026-01-02','NONE'),
+                  ('{archived_legacy}','{owner}','{}','{private}','','','','OUTPUT','IDEA','ARCHIVED','2026-01-03','NONE');",blog.id,blog.id)).unwrap();
+    }
+    pool.get()
+        .unwrap()
+        .run_pending_migrations(MIGRATIONS)
+        .unwrap();
     let published = publish(&blog, trace, false, &pool).unwrap();
+    if backfill {
+        assert_eq!(published.id, legacy);
+        assert_eq!(
+            published.publishing_date.unwrap().date().to_string(),
+            "2026-01-02"
+        );
+        #[derive(QueryableByName)]
+        struct Code {
+            #[diesel(sql_type=Text)]
+            code: String,
+        }
+        let archived_code =
+            diesel::sql_query("SELECT code FROM blog_publication_links WHERE publication_id=$1")
+                .bind::<SqlUuid, _>(archived_legacy)
+                .get_result::<Code>(&mut *pool.get().unwrap())
+                .unwrap()
+                .code;
+        assert!(super::model::short_target(&archived_code, &pool).is_err());
+    }
+    assert!(super::urls::valid_short_code(&published.short_code));
+    assert_eq!(
+        super::model::short_target(&published.short_code, &pool)
+            .unwrap()
+            .id,
+        published.id
+    );
     assert_eq!(
         publish(&blog, trace, false, &pool).unwrap().id,
         published.id
     );
     let elsewhere = publish(&other, trace, false, &pool).unwrap();
     assert_ne!(published.id, elsewhere.id);
+    assert_ne!(published.short_code, elsewhere.short_code);
+    assert_eq!(
+        publish(&blog, trace, false, &pool).unwrap().short_code,
+        published.short_code
+    );
+    let response = super::routes::short_link(
+        axum::Extension(pool.clone()),
+        axum::extract::Path(published.short_code.clone()),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::TEMPORARY_REDIRECT
+    );
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(
+        response.headers()["location"],
+        super::urls::publication(&blog.slug, published.id)
+    );
+    let api = serde_json::to_value(
+        post(&blog, published.id, false, &pool)
+            .unwrap()
+            .with_urls(&blog.slug),
+    )
+    .unwrap();
+    assert_eq!(api["short_url"], super::urls::short(&published.short_code));
+    assert_eq!(
+        api["public_url"],
+        super::urls::publication(&blog.slug, published.id)
+    );
+    blog = save(
+        Some(blog.id),
+        owner,
+        input(format!("renamed-{owner}")),
+        &pool,
+    )
+    .unwrap();
+    assert_eq!(
+        super::model::short_target(&published.short_code, &pool)
+            .unwrap()
+            .slug,
+        blog.slug
+    );
+    assert!(pool
+        .get()
+        .unwrap()
+        .batch_execute(&format!(
+            "UPDATE blog_publication_links SET code='AAAAAAAA' WHERE publication_id='{}'",
+            published.id
+        ))
+        .is_err());
     assert!(Post::find_full(published.id, &pool).is_err());
     assert!(Post::find_for_trace_and_publisher(trace, owner, &pool)
         .unwrap()
@@ -200,6 +306,19 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
         ))
         .is_err());
     unpublish(&blog, published.id, &pool).unwrap();
+    assert!(super::model::short_target(&published.short_code, &pool).is_err());
+    let missing = super::routes::short_link(
+        axum::Extension(pool.clone()),
+        axum::extract::Path(published.short_code.clone()),
+    )
+    .await;
+    assert_eq!(missing.status(), axum::http::StatusCode::NOT_FOUND);
+    assert_eq!(missing.headers()["cache-control"], "no-store");
+    assert_eq!(
+        publish(&blog, trace, false, &pool).unwrap().short_code,
+        published.short_code
+    );
+    unpublish(&blog, published.id, &pool).unwrap();
     assert_eq!(owner_publications(owner, page, &pool).unwrap().total, 2);
     assert!(post(&blog, published.id, true, &pool).is_err());
     assert_eq!(
@@ -218,6 +337,7 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
     )
     .unwrap();
     assert!(public(&blog.slug, &pool).is_err());
+    assert!(super::model::short_target(&subject.short_code, &pool).is_err());
     let disabled = owner_publications(owner, page, &pool).unwrap();
     assert!(disabled
         .items
@@ -230,6 +350,7 @@ fn live_publications_are_isolated_and_subjects_do_not_publish_private_items() {
         ))
         .unwrap();
     assert!(post(&other, elsewhere.id, true, &pool).is_err());
+    assert!(super::model::short_target(&elsewhere.short_code, &pool).is_err());
     assert!(publish(&other, trace, false, &pool).is_err());
     pool.get()
         .unwrap()

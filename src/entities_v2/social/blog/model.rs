@@ -64,6 +64,8 @@ const BLOG_SELECT: &str = "SELECT c.id,c.user_id,c.enabled,c.created_at,c.update
 pub struct Publication {
     #[diesel(sql_type=SqlUuid)]
     pub id: Uuid,
+    #[diesel(sql_type=Text)]
+    pub short_code: String,
     #[diesel(sql_type=SqlUuid)]
     pub publication_channel_id: Uuid,
     #[diesel(sql_type=Nullable<SqlUuid>)]
@@ -113,13 +115,49 @@ pub struct UserPublication {
     pub blog: BlogIdentity,
 }
 
+#[derive(Serialize)]
+pub struct PublicationResponse {
+    #[serde(flatten)]
+    pub publication: Publication,
+    pub public_url: String,
+    pub short_url: String,
+}
+impl Publication {
+    pub fn with_urls(self, slug: &str) -> PublicationResponse {
+        PublicationResponse {
+            public_url: super::urls::publication(slug, self.id),
+            short_url: super::urls::short(&self.short_code),
+            publication: self,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct UserPublicationResponse {
+    #[serde(flatten)]
+    pub publication: PublicationResponse,
+    pub blog: BlogIdentity,
+}
+impl UserPublication {
+    pub fn with_urls(self) -> UserPublicationResponse {
+        UserPublicationResponse {
+            publication: self.publication.with_urls(&self.blog.slug),
+            blog: self.blog,
+        }
+    }
+}
+
+const PUBLIC_BLOG: &str =
+    "c.enabled AND NOT EXISTS(SELECT 1 FROM automation_demo_users d WHERE d.user_id=c.user_id)";
+
 // A deliberately narrow public projection. No journal/mention/translation/source
 // asset metadata is hydrated, and public publication never grants source access.
 const POST_FROM: &str = " FROM posts p
+    JOIN blog_publication_links link ON link.publication_id=p.id
     LEFT JOIN traces t ON t.id=p.source_trace_id
     LEFT JOIN albums a ON a.id=p.source_album_id";
 const POST_COLUMNS: &str =
-    "SELECT p.id,p.publication_channel_id,p.source_trace_id,p.source_album_id,
+    "SELECT p.id,link.code AS short_code,p.publication_channel_id,p.source_trace_id,p.source_album_id,
     p.status,p.publishing_date,p.last_distribution_event_id,p.last_distribution_at,COALESCE(t.title,a.title,'') AS title,
     COALESCE(t.subtitle,a.subtitle,'') AS subtitle,COALESCE(t.content,a.content,'') AS content,
     COALESCE(t.content_image_asset_id,a.cover_image_asset_id) AS image_asset_id,t.finalized_at";
@@ -187,13 +225,36 @@ pub fn owned(id: Uuid, owner: Uuid, pool: &DbPool) -> Result<Blog, PpdcError> {
     )
 }
 pub fn public(slug: &str, pool: &DbPool) -> Result<Blog, PpdcError> {
-    Ok(diesel::sql_query(format!(
-        "{BLOG_SELECT} WHERE b.slug=$1 AND c.enabled
-        AND NOT EXISTS(SELECT 1 FROM automation_demo_users d WHERE d.user_id=c.user_id)"
-    ))
-    .bind::<Text, _>(slug)
-    .get_result(&mut pool.get()?)?)
+    Ok(
+        diesel::sql_query(format!("{BLOG_SELECT} WHERE b.slug=$1 AND {PUBLIC_BLOG}"))
+            .bind::<Text, _>(slug)
+            .get_result(&mut pool.get()?)?,
+    )
 }
+#[derive(QueryableByName)]
+pub(super) struct ShortTarget {
+    #[diesel(sql_type=SqlUuid)]
+    pub id: Uuid,
+    #[diesel(sql_type=Text)]
+    pub slug: String,
+}
+
+pub(super) fn short_target(code: &str, pool: &DbPool) -> Result<ShortTarget, PpdcError> {
+    if !super::urls::valid_short_code(code) {
+        return Err(error(404, "Publication not found"));
+    }
+    diesel::sql_query(format!(
+        "SELECT p.id,b.slug {POST_FROM}
+        JOIN publication_channels c ON c.id=p.publication_channel_id
+        JOIN blogs b ON b.channel_id=c.id
+        WHERE link.code=$1 AND {PUBLIC_BLOG} {PUBLIC_SOURCE}"
+    ))
+    .bind::<Text, _>(code)
+    .get_result::<ShortTarget>(&mut *pool.get()?)
+    .optional()?
+    .ok_or_else(|| error(404, "Publication not found"))
+}
+
 pub fn list(
     owner: Uuid,
     page: ValidatedPagination,

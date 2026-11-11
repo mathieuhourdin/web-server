@@ -1,6 +1,6 @@
 use super::{
-    model::{self, Blog, BlogInput, Publication, UserPublication},
-    render,
+    model::{self, Blog, BlogInput, PublicationResponse, UserPublicationResponse},
+    render, urls,
 };
 use crate::{
     api_schema::{get, put, DocumentedRoutes},
@@ -35,6 +35,7 @@ pub fn management_router() -> Router {
 pub fn public_router() -> Router {
     Router::new()
         .api_route("/blog", "/_assets/hupo.svg", get(logo))
+        .api_route("/blog", "/p/:short_code", get(short_link))
         .api_route("/blog", "/:slug", get(home))
         .api_route("/blog", "/:slug/posts/:post_id", get(article))
         .api_route("/blog", "/:slug/assets/:asset_id", get(blog_image))
@@ -111,9 +112,19 @@ async fn list_publications(
     Extension(session): Extension<Session>,
     Path(id): Path<Uuid>,
     Query(page): Query<PaginationParams>,
-) -> Result<Json<PaginatedResponse<Publication>>, Error> {
+) -> Result<Json<PaginatedResponse<PublicationResponse>>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
-    Ok(Json(model::posts(&blog, false, page.validate()?, &pool)?))
+    let pagination = page.validate()?;
+    let posts = model::posts(&blog, false, pagination, &pool)?;
+    Ok(Json(PaginatedResponse::new(
+        posts
+            .items
+            .into_iter()
+            .map(|post| post.with_urls(&blog.slug))
+            .collect(),
+        pagination,
+        posts.total,
+    )))
 }
 
 pub async fn get_user_publications_route(
@@ -121,43 +132,55 @@ pub async fn get_user_publications_route(
     Extension(session): Extension<Session>,
     Path(user_id): Path<Uuid>,
     Query(page): Query<PaginationParams>,
-) -> Result<Json<PaginatedResponse<UserPublication>>, Error> {
+) -> Result<Json<PaginatedResponse<UserPublicationResponse>>, Error> {
     // Public blogs can use unrelated pseudonyms. Do not reveal their account
     // association through a user-level listing without an explicit product choice.
     let owner = user(&session)?;
     if owner != user_id {
         return Err(Error::unauthorized());
     }
-    Ok(Json(model::owner_publications(
-        owner,
-        page.validate()?,
-        &pool,
-    )?))
+    let pagination = page.validate()?;
+    let posts = model::owner_publications(owner, pagination, &pool)?;
+    Ok(Json(PaginatedResponse::new(
+        posts
+            .items
+            .into_iter()
+            .map(|post| post.with_urls())
+            .collect(),
+        pagination,
+        posts.total,
+    )))
 }
 
 async fn read_publication(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path((id, post)): Path<(Uuid, Uuid)>,
-) -> Result<Json<Publication>, Error> {
+) -> Result<Json<PublicationResponse>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
-    Ok(Json(model::post(&blog, post, false, &pool)?))
+    Ok(Json(
+        model::post(&blog, post, false, &pool)?.with_urls(&blog.slug),
+    ))
 }
 async fn publish_trace(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path((id, source)): Path<(Uuid, Uuid)>,
-) -> Result<Json<Publication>, Error> {
+) -> Result<Json<PublicationResponse>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
-    Ok(Json(model::publish(&blog, source, false, &pool)?))
+    Ok(Json(
+        model::publish(&blog, source, false, &pool)?.with_urls(&blog.slug),
+    ))
 }
 async fn publish_album(
     Extension(pool): Extension<DbPool>,
     Extension(session): Extension<Session>,
     Path((id, source)): Path<(Uuid, Uuid)>,
-) -> Result<Json<Publication>, Error> {
+) -> Result<Json<PublicationResponse>, Error> {
     let blog = model::owned(id, user(&session)?, &pool)?;
-    Ok(Json(model::publish(&blog, source, true, &pool)?))
+    Ok(Json(
+        model::publish(&blog, source, true, &pool)?.with_urls(&blog.slug),
+    ))
 }
 async fn unpublish(
     Extension(pool): Extension<DbPool>,
@@ -176,6 +199,36 @@ async fn home(
     let blog = model::public(&slug, &pool)?;
     let posts = model::posts(&blog, true, page.validate()?, &pool)?;
     Ok(render::home(&blog, &posts))
+}
+pub(super) async fn short_link(
+    Extension(pool): Extension<DbPool>,
+    Path(code): Path<String>,
+) -> Response {
+    let mut response =
+        match tokio::task::spawn_blocking(move || model::short_target(&code, &pool)).await {
+            Ok(Ok(target)) => {
+                Redirect::temporary(&urls::publication(&target.slug, target.id)).into_response()
+            }
+            Ok(Err(error)) => error.into_response(),
+            Err(_) => Error::new(
+                500,
+                crate::entities_v2::error::ErrorType::InternalError,
+                "Unable to resolve publication link".into(),
+            )
+            .into_response(),
+        };
+    // Never cache either a redirect or a negative lookup: current publication
+    // and source availability must be checked again on every new visit.
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    response
+        .headers_mut()
+        .insert(header::REFERRER_POLICY, "no-referrer".parse().unwrap());
+    response
+        .headers_mut()
+        .insert("x-robots-tag", "noindex".parse().unwrap());
+    response
 }
 async fn article(
     Extension(pool): Extension<DbPool>,

@@ -62,6 +62,23 @@ The account owner ID and real account name are not exposed in the public pages.
 - `GET /blogs/:id/publications/:post_id`: one publication.
 - `DELETE /blogs/:id/publications/:post_id`: unpublish (archive), 204.
 
+Publication objects returned by publish, detail and management collection routes
+also include:
+
+```json
+{
+  "short_code":"k7Mx2Qa9",
+  "short_url":"https://blog.hupo.fr/p/k7Mx2Qa9",
+  "public_url":"https://blog.hupo.fr/notes/posts/publication-uuid"
+}
+```
+
+The same fields are included on `GET /users/:id/publications` items, alongside
+their existing `blog` identity. Clients should use `short_url` for compact sharing
+and `public_url` for canonical navigation instead of constructing these URLs.
+URLs may be returned to the owner for an archived publication/disabled blog;
+having a URL does not imply that it is currently publicly available.
+
 ### Publications across all of my blogs
 
 ```http
@@ -140,6 +157,8 @@ Publication responses use this narrow live projection:
 ## Anonymous HTML and media
 
 - `GET /blog/:slug?limit=20&offset=0`: paginated public blog page.
+- `GET /blog/p/:short_code`: 307 redirect to the current canonical article/subject
+  URL. On `blog.hupo.fr` this is `/p/:short_code` through the existing nginx mapping.
 - `GET /blog/:slug/posts/:post_id`: article or subject page. For subjects,
   pagination applies to visible articles; order follows the album's manual,
   added-at or chronological order (chronological uses finalized_at).
@@ -173,6 +192,45 @@ Set `BLOG_BASE_URL=https://blog.hupo.fr` for absolute page/media/canonical URLs.
 Without it, local URLs use `/blog`. Add DNS and TLS for `blog.hupo.fr`, and configure
 nginx to proxy the public hostname to the Axum `/blog/` prefix. A sample is in
 `ops/blog/nginx.conf.example`; do not replace the existing API server block.
+
+### Short sharing links and preview metadata
+
+Short codes are eight case-sensitive URL-safe characters (`A-Z`, `a-z`, `0-9`,
+`-`, `_`), generated independently from publication/source IDs with collision
+retries and a unique index. There is one immutable code per publication, not per
+trace: publishing the same trace on another blog produces a different link.
+Title edits, blog renames and unpublish/republish preserve the short code.
+The target always uses the blog's current slug. Existing long article/asset routes
+remain unchanged and long article URLs remain canonical.
+
+The redirect is deliberately temporary (307), not a permanent browser-cached
+redirect. Both redirects and failures have `Cache-Control: no-store`. Every lookup
+reuses current public-blog and publication/source predicates: unpublished,
+disabled, archived/encrypted/unavailable sources and excluded demo accounts
+return 404. A short code is not a private sharing token or a grant to the trace
+API. It cannot redirect to an arbitrary external URL. No new click-tracking table,
+analytics event or access counter is introduced; ordinary HTTP logs are unchanged.
+
+Migration `2026-11-11-100000_blog_short_links` backfills live AND archived channel
+publications in `blog_publication_links`, without modifying posts, source content,
+publication dates or grants. New channel publications receive a link atomically
+on insertion, including non-HTTP writers. Social posts never receive a blog link.
+No backfill command, new environment variable, bucket or nginx rule is needed.
+Rollback removes the aliases, so already-shared short URLs would stop working.
+
+SSR pages include `og:title`, `og:description`, `og:url`, `og:type`, optional
+`og:image` and `og:site_name`, plus explicit `twitter:card`, `twitter:title`,
+`twitter:description` and optional `twitter:image`. Article descriptions prefer
+their subtitle and fall back to a short plain-text Markdown excerpt. Image
+previews prefer the article image, then the blog image; without either, the page
+declares a text `summary` card rather than `summary_large_image`. The homepage
+uses `og:type=website`; articles/album subject pages use `article`.
+
+Canonical and Open Graph URLs stay on the long article URL even when the visitor
+arrives through a short alias. Preview image URLs use the existing guarded public
+media routes, not expiring GCS signatures embedded in HTML. Unpublishing stops
+new access; third-party preview caches/downloaded images cannot be recalled.
+Actual preview layout/caching is controlled by the receiving platform, not Hupo.
 Normal startup applies the new migration. No new bucket, public bucket policy,
 LLM credentials or worker is needed.
 
