@@ -196,6 +196,9 @@ nginx to proxy the public hostname to the Axum `/blog/` prefix. A sample is in
 
 ### Short sharing links and preview metadata
 
+All blog pages link to `https://hupo.fr` through **Découvrir Hupo** in the header
+and the existing **Publié avec Hupo** footer/logo.
+
 Article and album-subject pages have a **Partager** control near the byline.
 It shares the short URL through the device's native share menu when supported;
 otherwise it copies the link and announces `Lien copié`. If clipboard access is

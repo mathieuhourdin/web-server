@@ -108,6 +108,7 @@ fn page(
 <meta name="author" content="{}"><style>
 :root{{color-scheme:light dark}}body{{font-family:Georgia,serif;line-height:1.65;max-width:740px;margin:auto;padding:40px 22px}}
 a{{color:inherit;text-underline-offset:4px}}header{{border-bottom:1px solid #8886;margin-bottom:32px;padding-bottom:24px}}
+.blog-heading{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}.hupo-home{{font: .85rem system-ui,sans-serif;opacity:.8;white-space:nowrap}}
 h1,h2{{line-height:1.2}}h1{{font-size:2.3rem}}small,.byline{{opacity:.7}}.text{{white-space:pre-wrap;overflow-wrap:anywhere}}
 .markdown{{overflow-wrap:anywhere}}.markdown p,.markdown ul,.markdown ol,.markdown blockquote,.markdown pre{{margin:1em 0}}
 .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{{line-height:1.25;margin:1.4em 0 .6em}}
@@ -118,7 +119,7 @@ h1,h2{{line-height:1.2}}h1{{font-size:2.3rem}}small,.byline{{opacity:.7}}.text{{
 img{{max-width:100%;height:auto;border-radius:8px}}.entry{{margin:32px 0}}nav{{display:flex;gap:24px;margin:32px 0}}footer{{margin-top:60px;opacity:.65;font-size:.85rem}}
 footer a{{display:inline-flex;align-items:center;gap:8px;text-decoration:none}}footer img{{width:32px;height:32px;flex-shrink:0}}.excerpt{{opacity:.85;margin-top:8px}}
 .sharing{{margin:24px 0;font:inherit}}.sharing button,.sharing summary{{cursor:pointer}}.sharing button{{font:inherit;color:inherit;background:transparent;border:1px solid #8886;border-radius:6px;padding:.4em .8em}}.sharing input{{box-sizing:border-box;width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #8886;border-radius:6px;padding:.5em;margin:.5em 0}}.sharing [role=status]{{display:block;font-size:.85rem;margin-top:.5em}}.sharing label{{display:block;margin-top:.5em}}.sharing a{{font-size:.85rem}}
-</style></head><body><header><a href="{}">{}</a><div class="byline">{}</div></header>{}<footer><a href="https://hupo.fr">Publié avec <img src="{logo_url}" width="32" height="32" alt="">Hupo</a></footer></body></html>"#,
+</style></head><body><header><div class="blog-heading"><a href="{}">{}</a><a class="hupo-home" href="https://hupo.fr">Découvrir Hupo ↗</a></div><div class="byline">{}</div></header>{}<footer><a href="https://hupo.fr">Publié avec <img src="{logo_url}" width="32" height="32" alt="">Hupo</a></footer></body></html>"#,
         escape(title),
         escape(description),
         escape(url),
@@ -499,6 +500,11 @@ mod tests {
         assert!(html.contains("rel=\"icon\" type=\"image/svg+xml\""));
         assert_eq!(html.matches("/_assets/hupo.svg").count(), 2);
         assert!(html.contains("<footer><a href=\"https://hupo.fr\">"));
+        let document = scraper::Html::parse_document(html);
+        let selector = scraper::Selector::parse("header a.hupo-home").unwrap();
+        let link = document.select(&selector).next().unwrap();
+        assert_eq!(link.value().attr("href"), Some("https://hupo.fr"));
+        assert_eq!(link.text().collect::<String>(), "Découvrir Hupo ↗");
         assert!(html.contains("width=\"32\" height=\"32\""));
     }
 }
