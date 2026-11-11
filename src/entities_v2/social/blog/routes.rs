@@ -35,6 +35,7 @@ pub fn management_router() -> Router {
 pub fn public_router() -> Router {
     Router::new()
         .api_route("/blog", "/_assets/hupo.svg", get(logo))
+        .api_route("/blog", "/_assets/share.js", get(share_script))
         .api_route("/blog", "/p/:short_code", get(short_link))
         .api_route("/blog", "/:slug", get(home))
         .api_route("/blog", "/:slug/posts/:post_id", get(article))
@@ -44,6 +45,16 @@ pub fn public_router() -> Router {
             "/:slug/posts/:post_id/assets/:asset_id",
             get(post_image),
         )
+}
+async fn share_script() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        include_str!("../../../../public/assets/blog-share.js"),
+    )
 }
 async fn logo() -> impl IntoResponse {
     (

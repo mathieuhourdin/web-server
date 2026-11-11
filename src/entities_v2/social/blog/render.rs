@@ -117,6 +117,7 @@ h1,h2{{line-height:1.2}}h1{{font-size:2.3rem}}small,.byline{{opacity:.7}}.text{{
 .markdown table{{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse}}.markdown th,.markdown td{{border:1px solid #8886;padding:.4em .7em}}
 img{{max-width:100%;height:auto;border-radius:8px}}.entry{{margin:32px 0}}nav{{display:flex;gap:24px;margin:32px 0}}footer{{margin-top:60px;opacity:.65;font-size:.85rem}}
 footer a{{display:inline-flex;align-items:center;gap:8px;text-decoration:none}}footer img{{width:32px;height:32px;flex-shrink:0}}.excerpt{{opacity:.85;margin-top:8px}}
+.sharing{{margin:24px 0;font:inherit}}.sharing button,.sharing summary{{cursor:pointer}}.sharing button{{font:inherit;color:inherit;background:transparent;border:1px solid #8886;border-radius:6px;padding:.4em .8em}}.sharing input{{box-sizing:border-box;width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #8886;border-radius:6px;padding:.5em;margin:.5em 0}}.sharing [role=status]{{display:block;font-size:.85rem;margin-top:.5em}}.sharing label{{display:block;margin-top:.5em}}.sharing a{{font-size:.85rem}}
 </style></head><body><header><a href="{}">{}</a><div class="byline">{}</div></header>{}<footer><a href="https://hupo.fr">Publié avec <img src="{logo_url}" width="32" height="32" alt="">Hupo</a></footer></body></html>"#,
         escape(title),
         escape(description),
@@ -134,7 +135,7 @@ footer a{{display:inline-flex;align-items:center;gap:8px;text-decoration:none}}f
     let mut response = Html(html).into_response();
     for (key,value) in [
         (header::CACHE_CONTROL,"no-store"),
-        (header::CONTENT_SECURITY_POLICY,"default-src 'none'; img-src 'self' https:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"),
+        (header::CONTENT_SECURITY_POLICY,"default-src 'none'; img-src 'self' https:; style-src 'unsafe-inline'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"),
         (header::X_CONTENT_TYPE_OPTIONS,"nosniff"),
         (header::REFERRER_POLICY,"no-referrer"),
     ]{response.headers_mut().insert(key,value.parse().unwrap());}
@@ -241,7 +242,12 @@ pub fn article(
         .or(post.publishing_date)
         .map(|d| d.format("%Y-%m-%d").to_string())
         .unwrap_or_default();
-    let mut body=format!("<article><h1>{}</h1><p class=\"byline\">{} · {date}</p><p>{}</p>{cover}<div class=\"markdown\">{}</div></article>",
+    let short_url = escape(&urls::short(&post.short_code));
+    let script_url = escape(&format!("{}/_assets/share.js", base()));
+    let sharing = format!(
+        r#"<div class="sharing"><button id="share-article" type="button" hidden>Partager</button><details id="share-fallback"><summary>Partager</summary><label for="share-url">Lien court de cet article</label><input id="share-url" type="text" readonly value="{short_url}"><button id="copy-share-url" type="button" hidden>Copier le lien</button> <a href="{short_url}">Ouvrir le lien court</a></details><span id="share-status" role="status" aria-live="polite"></span></div><script src="{script_url}" defer></script>"#
+    );
+    let mut body=format!("<article><h1>{}</h1><p class=\"byline\">{} · {date}</p>{sharing}<p>{}</p>{cover}<div class=\"markdown\">{}</div></article>",
         escape(&post.title),escape(&blog.username),escape(&post.subtitle),render_markdown(&post.content));
     if let Some(items) = items {
         body += &format!(
@@ -299,11 +305,31 @@ mod tests {
             finalized_at: Some(now),
         };
         let response = super::article(&blog, &post, None);
+        let csp = response.headers()[axum::http::header::CONTENT_SECURITY_POLICY]
+            .to_str()
+            .unwrap();
+        assert!(csp.contains("script-src 'self';"));
+        assert!(!csp.contains("script-src 'unsafe-inline'"));
         let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
             .await
             .unwrap();
         let html = std::str::from_utf8(&bytes).unwrap();
         let document = scraper::Html::parse_document(html);
+        let share_input = scraper::Selector::parse("#share-url[readonly]").unwrap();
+        assert_eq!(
+            document
+                .select(&share_input)
+                .next()
+                .unwrap()
+                .value()
+                .attr("value"),
+            Some(super::urls::short(&post.short_code).as_str())
+        );
+        let script = scraper::Selector::parse("script[src][defer]").unwrap();
+        assert_eq!(
+            document.select(&script).next().unwrap().value().attr("src"),
+            Some(format!("{}/_assets/share.js", super::base()).as_str())
+        );
         let meta = |attribute: &str, name: &str| {
             let selector =
                 scraper::Selector::parse(&format!("meta[{attribute}='{name}']")).unwrap();

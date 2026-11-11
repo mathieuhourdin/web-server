@@ -177,7 +177,8 @@ supported. Titles, subtitles, blog descriptions and metadata remain plain escape
 text. List excerpts are plain text extracted from Markdown, without formatting
 syntax or link destinations. Source content and API JSON remain unchanged.
 Canonical/Open Graph metadata, the restrictive CSP and `Cache-Control: no-store`
-remain in place. No client-side JavaScript, migration or new environment variable.
+remain in place. Article sharing is progressively enhanced with one small same-origin
+JavaScript file; Markdown remains sanitized and inline scripts remain prohibited.
 
 Storage stays private. Media routes check the current public publication and exact
 asset association before redirecting to a 60-second signed URL. Previously issued
@@ -194,6 +195,15 @@ nginx to proxy the public hostname to the Axum `/blog/` prefix. A sample is in
 `ops/blog/nginx.conf.example`; do not replace the existing API server block.
 
 ### Short sharing links and preview metadata
+
+Article and album-subject pages have a **Partager** control near the byline.
+It shares the short URL through the device's native share menu when supported;
+otherwise it copies the link and announces `Lien copié`. If clipboard access is
+unavailable or refused, it reveals a selectable link for manual copying. Canceling
+the native share menu does not copy anything. Without JavaScript, a `Partager`
+disclosure still exposes the short link. No login, external script or tracking is
+required. The script is served at `GET /blog/_assets/share.js`; the existing nginx
+prefix mapping handles it without changes.
 
 Short codes are eight case-sensitive URL-safe characters (`A-Z`, `a-z`, `0-9`,
 `-`, `_`), generated independently from publication/source IDs with collision
